@@ -1,0 +1,35 @@
+{
+  "name": "effect-sax",
+  "version": "0.1.0",
+  "description": "Message-based reactive XML processing with Effect",
+  "module": "source/index.ts",
+  "type": "module",
+  "main": "source/index.ts",
+  "scripts": {
+    "test": "bun test tests/",
+    "example": "bun run examples/usage.ts"
+  },
+  "dependencies": {
+    "effect": "^3.0.0",
+    "@effect/schema": "^0.64.0",
+    "@effect/platform": "^0.54.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "xml",
+    "parser",
+    "streaming",
+    "effect",
+    "reactive",
+    "schema",
+    "type-safe",
+    "bun"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thomasfosterau/effect-sax.git"
+  },
+  "license": "MIT"
+}
