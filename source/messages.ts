@@ -63,8 +63,8 @@ export const StreamMessage = Schema.Union(
 export type StreamMessage = Schema.Schema.Type<typeof StreamMessage>;
 
 // Processing configuration
-export class ProcessorConfig extends Schema.Class<ProcessorConfig>("ProcessorConfig")({
-  collapseWhitespace: Schema.optional(Schema.Boolean),
-  preserveEmptyText: Schema.optional(Schema.Boolean),
-  strictValidation: Schema.optional(Schema.Boolean),
-}) {}
+export interface ProcessorConfig {
+  collapseWhitespace?: boolean;
+  preserveEmptyText?: boolean;
+  strictValidation?: boolean;
+}

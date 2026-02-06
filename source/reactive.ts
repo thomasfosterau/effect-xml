@@ -35,9 +35,9 @@ export const createMessageStream = (
   const keepEmpty = config.preserveEmptyText ?? false;
 
   return Stream.mapEffect(
-    Stream.fromEffect(
-      Effect.map(processMarkup(markup), (msgChunk) => Stream.fromChunk(msgChunk))
-    ).pipe(Stream.flattenChunks),
+    Stream.fromEffect(processMarkup(markup)).pipe(
+      Stream.flatMap((msgChunk) => Stream.fromChunk(msgChunk))
+    ),
     (msg) =>
       Effect.sync(() => {
         // Apply transformations

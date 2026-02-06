@@ -1,6 +1,6 @@
 /**
- * Chunk-boundary-aware XML processor
- * Uses a unique pull-based architecture with boundary detection
+ * State machine XML processor
+ * Processes complete, well-formed XML strings into typed messages
  */
 import * as Effect from "effect/Effect";
 import * as Chunk from "effect/Chunk";
@@ -18,6 +18,7 @@ import {
 // Processor workspace
 interface ProcessorWorkspace {
   offset: number;
+  textStartOffset: number;
   collected: string;
   tagBuffer: string;
   propKey: string;
@@ -31,7 +32,6 @@ type ProcessingPhase =
   | "TEXT_MODE"
   | "OPENING_BRACKET"
   | "CLOSING_BRACKET"
-  | "TAG_IDENTIFIER"
   | "PROPERTY_KEY"
   | "PROPERTY_VALUE"
   | "COMMENT_MODE"
@@ -41,6 +41,7 @@ type ProcessingPhase =
 
 const createWorkspace = (): ProcessorWorkspace => ({
   offset: 0,
+  textStartOffset: 0,
   collected: "",
   tagBuffer: "",
   propKey: "",
@@ -56,7 +57,7 @@ const generateMessageId = (workspace: ProcessorWorkspace): string => {
 };
 
 /**
- * Process markup into message stream using boundary detection
+ * Process markup into message stream
  */
 export const processMarkup = (
   input: string
@@ -70,7 +71,6 @@ export const processMarkup = (
     while (cursor < totalLen) {
       ws.offset = cursor;
       const currentChar = input[cursor];
-      const lookahead1 = input[cursor + 1];
       const segment2 = input.substring(cursor, cursor + 2);
       const segment3 = input.substring(cursor, cursor + 3);
       const segment4 = input.substring(cursor, cursor + 4);
@@ -84,7 +84,7 @@ export const processMarkup = (
               messages.push(
                 new ContentChunk({
                   messageId: generateMessageId(ws),
-                  byteOffset: ws.offset,
+                  byteOffset: ws.textStartOffset,
                   payload: ws.collected,
                 })
               );
@@ -111,6 +111,9 @@ export const processMarkup = (
               ws.phase = "OPENING_BRACKET";
             }
           } else {
+            if (ws.collected.length === 0) {
+              ws.textStartOffset = cursor;
+            }
             ws.collected += currentChar;
           }
           break;
@@ -280,13 +283,19 @@ export const processMarkup = (
 
         case "META_MODE": {
           if (segment2 === "?>") {
-            const fragments = ws.collected.split(/\s+/, 2);
+            const firstSpaceIdx = ws.collected.indexOf(" ");
+            const instructionTag = firstSpaceIdx === -1 
+              ? ws.collected 
+              : ws.collected.substring(0, firstSpaceIdx);
+            const instructionPayload = firstSpaceIdx === -1 
+              ? "" 
+              : ws.collected.substring(firstSpaceIdx + 1);
             messages.push(
               new MetaInstruction({
                 messageId: generateMessageId(ws),
                 byteOffset: ws.offset,
-                instructionTag: fragments[0] || "",
-                instructionPayload: fragments.slice(1).join(" "),
+                instructionTag,
+                instructionPayload,
               })
             );
             ws.collected = "";
@@ -324,7 +333,7 @@ export const processMarkup = (
       messages.push(
         new ContentChunk({
           messageId: generateMessageId(ws),
-          byteOffset: ws.offset,
+          byteOffset: ws.textStartOffset,
           payload: ws.collected,
         })
       );

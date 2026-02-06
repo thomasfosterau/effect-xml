@@ -91,6 +91,9 @@ const example3 = Effect.gen(function* (_) {
 });
 
 // Example 4: Stream processing with multiple chunks
+// Note: Each chunk must be well-formed XML. This example treats each chunk
+// as an independent document. For true streaming of large files split across
+// arbitrary boundaries, use Effect's file streaming capabilities.
 const example4 = Effect.gen(function* (_) {
   console.log("\n=== Example 4: Chunked Processing ===");
 
