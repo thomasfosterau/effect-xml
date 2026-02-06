@@ -1,18 +1,19 @@
 # effect-sax
 
-Type-safe streaming XML parser built with the Effect ecosystem and powered by Bun.
+Message-based reactive XML processing built with Effect ecosystem and Bun runtime.
 
-## Overview
+## Philosophy
 
-effect-sax provides a fully type-safe, streaming XML parser that leverages Effect's powerful Stream and Schema capabilities. Parse XML documents efficiently with composable, functional operations.
+effect-sax uses a unique **message-passing architecture** where XML parsing generates typed messages that flow through Effect Streams. This reactive approach enables efficient processing of large documents with full type safety.
 
-## Key Features
+## Features
 
-- 🎯 **Type Safety**: Full TypeScript types using Effect Schema classes
-- 🌊 **Streaming**: Memory-efficient processing with Effect Streams
-- ⚡ **Fast**: Optimized for Bun runtime
-- 🔧 **Composable**: Functional API built on Effect primitives
-- 🎨 **Flexible**: Filter, transform, and extract data with ease
+- 🎯 **Message-Based**: XML elements become strongly-typed messages
+- 🌊 **Reactive Streams**: Built on Effect's powerful Stream API
+- 🔒 **Type-Safe**: Effect Schema classes for compile-time and runtime safety
+- ⚡ **Bun-Powered**: Optimized for Bun runtime
+- 📍 **Position Tracking**: Every message includes byte offset and unique ID
+- 🎨 **Composable**: Functional reactive operations
 
 ## Installation
 
@@ -22,164 +23,131 @@ bun add effect-sax effect @effect/schema @effect/platform
 
 ## Quick Start
 
-### Basic Parsing
-
 ```typescript
-import * as Eff from "effect/Effect";
-import { gatherSignals, TagOpened } from "effect-sax";
+import * as Effect from "effect/Effect";
+import { collectMessages, ElementStart } from "effect-sax";
 
-const xmlDoc = `
+const markup = `
   <catalog>
-    <product id="123">
-      <name>Laptop</name>
-      <price>999</price>
+    <product sku="123">
+      <itemName>Laptop</itemName>
+      <retailPrice>999</retailPrice>
     </product>
   </catalog>
 `;
 
-const program = Eff.gen(function* (_) {
-  const signals = yield* _(gatherSignals(xmlDoc));
+const program = Effect.gen(function* (_) {
+  const messages = yield* _(collectMessages(markup));
   
-  for (const sig of signals) {
-    if (sig instanceof TagOpened) {
-      console.log(`Element: ${sig.elementName}`, sig.attrs);
+  for (const msg of messages) {
+    if (msg instanceof ElementStart) {
+      console.log(`Element: ${msg.tagIdentifier}`, msg.propertyBag);
     }
   }
 });
 
-Eff.runPromise(program);
+Effect.runPromise(program);
 ```
 
-### Streaming Operations
+## Message Types
+
+All messages are Effect Schema classes:
+
+- **`ElementStart`** - Opening tag with `tagIdentifier`, `propertyBag`, and `standalone` flag
+- **`ElementEnd`** - Closing tag with `tagIdentifier`
+- **`ContentChunk`** - Text content with `payload`
+- **`MarkupNote`** - XML comment with `noteText`
+- **`RawDataSection`** - CDATA with `rawContent`
+- **`MetaInstruction`** - Processing instruction with `instructionTag` and `instructionPayload`
+- **`TypeDeclaration`** - DOCTYPE with `declarationBody`
+
+Each message includes:
+- `messageId` - Unique identifier
+- `byteOffset` - Position in input stream
+
+## Reactive Operations
+
+### Create Message Streams
 
 ```typescript
-import * as Eff from "effect/Effect";
-import * as Str from "effect/Stream";
-import { generateSignalStream, captureElementText } from "effect-sax";
+import { createMessageStream } from "effect-sax";
 
-const program = Eff.gen(function* (_) {
-  const flow = generateSignalStream(xmlDoc);
-  const productNames = captureElementText(flow, "name");
-  
-  yield* _(
-    productNames,
-    Str.runForEach((name) =>
-      Eff.sync(() => console.log("Product:", name))
-    )
-  );
+const msgFlow = createMessageStream(markup, {
+  collapseWhitespace: true,
+  preserveEmptyText: false
 });
 ```
 
-### Filtering Signals
+### Isolate Message Types
 
 ```typescript
-import { generateSignalStream, keepOpenings } from "effect-sax";
+import { isolateStarts, isolateContent } from "effect-sax";
 
-const flow = generateSignalStream(xmlDoc);
-const openTags = keepOpenings(flow);
+const openings = isolateStarts(msgFlow);
+const textContent = isolateContent(msgFlow);
+```
 
-// Process only opening tags
-Str.runForEach(openTags, (tag) =>
-  Eff.sync(() => console.log(`<${tag.elementName}>`, tag.attrs))
-);
+### Harvest Content
+
+```typescript
+import { harvestTagContent } from "effect-sax";
+
+const program = Effect.gen(function* (_) {
+  const msgFlow = createMessageStream(markup);
+  const productNames = harvestTagContent(msgFlow, "itemName");
+  
+  yield* _(
+    productNames,
+    Stream.runForEach((name) =>
+      Effect.sync(() => console.log("Product:", name))
+    )
+  );
+});
 ```
 
 ## API Reference
 
 ### Core Functions
 
-#### `generateSignalStream(xmlInput, config?)`
-Create a stream of XML signals from a string.
+- `createMessageStream(markup, config?)` - Generate reactive message stream
+- `collectMessages(markup, config?)` - Parse and collect all messages
+- `processMarkup(input)` - Low-level processor returning Chunk
 
-```typescript
-const flow = generateSignalStream(xmlDoc, {
-  trimWhitespace: true,
-  normalizeSpaces: true
-});
-```
+### Stream Isolators
 
-#### `gatherSignals(xmlInput, config?)`
-Parse XML and collect all signals into an array.
+- `isolateStarts(stream)` - Filter to ElementStart messages
+- `isolateEnds(stream)` - Filter to ElementEnd messages
+- `isolateContent(stream)` - Filter to ContentChunk messages
 
-```typescript
-const signals = await Eff.runPromise(gatherSignals(xmlDoc));
-```
+### Stream Selectors
 
-### Stream Filters
+- `selectByTag(stream, tagId)` - Select messages matching tag identifier
+- `harvestTagContent(stream, tagId)` - Extract text between matching tags
 
-- **`keepOpenings(flow)`** - Filter to only tag opening signals
-- **`keepClosings(flow)`** - Filter to only tag closing signals
-- **`keepCharData(flow)`** - Filter to only character data signals
-- **`selectByElement(flow, elemId)`** - Select signals matching element name
-- **`captureElementText(flow, elemId)`** - Extract text content from elements
+### Aggregators
 
-### Utility Functions
+- `quantifyTag(stream, tagId)` - Count occurrences of tag
+- `aggregateProperties(stream, tagId)` - Collect property bags
 
-- **`countElement(flow, elemId)`** - Count occurrences of an element
-- **`gatherElementAttrs(flow, elemId)`** - Collect attributes from matching elements
+### Utilities
 
-## Signal Types
-
-All signals are Effect Schema classes for full type safety:
-
-- **`TagOpened`** - Element opening with name, attributes, and self-closing flag
-- **`TagClosed`** - Element closing with name
-- **`CharData`** - Text content
-- **`Annotation`** - XML comment
-- **`CDataBlock`** - CDATA section
-- **`Directive`** - Processing instruction (e.g., `<?xml ... ?>`)
-- **`DocumentTypeDecl`** - DOCTYPE declaration
-
-## Configuration
-
-```typescript
-interface StreamConfig {
-  trimWhitespace?: boolean;    // Remove leading/trailing spaces (default: true)
-  normalizeSpaces?: boolean;   // Collapse multiple spaces (default: true)
-  enforceStrict?: boolean;     // Strict XML validation (default: false)
-}
-```
+- `transformStream(stream, mapper)` - Apply custom transformation
+- `foldMessages(stream, initial, reducer)` - Fold/reduce messages
+- `applyValidation(schema)` - Validate with custom Schema
 
 ## Examples
 
-Check the `demo/` directory for complete examples:
+Run the included example:
 
 ```bash
-bun run demo
+bun run example
 ```
 
 ## Testing
 
-Run the test suite:
-
 ```bash
 bun test
 ```
-
-## Development
-
-Built with Bun and Effect:
-
-```bash
-# Install dependencies
-bun install
-
-# Run demonstrations
-bun run demo/showcase.ts
-
-# Run tests
-bun test spec/
-```
-
-## Architecture
-
-effect-sax uses a scanner-based architecture:
-
-1. **Scanner** - Tokenizes raw XML into signal chunks
-2. **Streaming** - Processes signals through Effect Streams
-3. **Schema** - Validates and types signals with Effect Schema
-
-This design enables efficient memory usage for large XML documents through streaming, while maintaining full type safety.
 
 ## License
 
