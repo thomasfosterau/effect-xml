@@ -1,0 +1,34 @@
+{
+  "name": "effect-sax",
+  "version": "0.1.0",
+  "description": "Type-safe streaming XML parser using Effect",
+  "module": "lib/mod.ts",
+  "type": "module",
+  "main": "lib/mod.ts",
+  "scripts": {
+    "test": "bun test spec/",
+    "demo": "bun run demo/showcase.ts"
+  },
+  "dependencies": {
+    "effect": "^3.0.0",
+    "@effect/schema": "^0.64.0",
+    "@effect/platform": "^0.54.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "xml",
+    "parser",
+    "streaming",
+    "effect",
+    "effect-ts",
+    "schema",
+    "type-safe"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thomasfosterau/effect-sax.git"
+  },
+  "license": "MIT"
+}
