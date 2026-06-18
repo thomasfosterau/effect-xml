@@ -674,6 +674,14 @@ class HtmlTreeBuilder {
       if (data.length === 0) return
     }
 
+    // Text whose current node is a raw-text/rcdata element (script, style,
+    // title, textarea, noframes, …) is that element's content regardless of mode.
+    const open = this.current
+    if (open !== null && (rawTextElements.has(open.name) || rcdataElements.has(open.name))) {
+      this.insertText(data)
+      return
+    }
+
     // Non-whitespace character data makes the document no longer frameset-ok.
     if (/[^\t\n\f\r ]/.test(data)) this.framesetOk = false
 
