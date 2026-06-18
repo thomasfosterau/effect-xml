@@ -685,6 +685,14 @@ class HtmlTreeBuilder {
       return
     }
 
+    // After </body>/</html>, non-whitespace content switches back to "in body".
+    if (
+      (this.mode === "afterBody" || this.mode === "afterAfterBody") &&
+      /[^\t\n\f\r ]/.test(data)
+    ) {
+      this.mode = "inBody"
+    }
+
     const cur = this.current
     // Text inside an open content element (e.g. <title>, <p>, <b>) belongs there
     // regardless of insertion mode. Only text directly in the structural spine
@@ -693,6 +701,9 @@ class HtmlTreeBuilder {
     if (structural) {
       if (/^\s*$/.test(data)) {
         if (cur !== null && cur.name === "head") {
+          this.insert({ _t: "text", data, parent: null })
+        } else if (this.mode === "afterHead") {
+          // Inter-section whitespace after </head> is kept in <html>.
           this.insert({ _t: "text", data, parent: null })
         } else if (this.bodyEl !== null && (this.mode === "afterBody" || this.mode === "afterAfterBody")) {
           appendChild(this.bodyEl, { _t: "text", data, parent: null })
@@ -1375,6 +1386,15 @@ class HtmlTreeBuilder {
 
   private onEnd(name: string): void {
     this.ignoreLeadingNewline = false
+    // A matching raw-text/rcdata element (e.g. </noframes>) is always popped,
+    // even in frameset modes where other end tags are ignored.
+    if (
+      (rawTextElements.has(name) || rcdataElements.has(name)) &&
+      this.current?.name === name
+    ) {
+      this.open.pop()
+      return
+    }
     if (name === "template") {
       // Processed via the "in head" rules in every insertion mode.
       if (!this.open.some((e) => e.name === "template")) return
