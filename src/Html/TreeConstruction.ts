@@ -849,7 +849,19 @@ class HtmlTreeBuilder {
         }
         // Handled identically in every insertion mode (via the "in head" rules).
         if (this.bodyEl === null) this.ensureHead()
-        this.insertElement("template", attrs)
+        // After </head>, the template still belongs in <head>.
+        {
+          const reopenHead =
+            this.mode === "afterHead" &&
+            this.headEl !== null &&
+            !this.open.includes(this.headEl)
+          if (reopenHead) this.open.push(this.headEl!)
+          this.insertElement("template", attrs)
+          if (reopenHead) {
+            const hi = this.open.indexOf(this.headEl!)
+            if (hi !== -1) this.open.splice(hi, 1)
+          }
+        }
         this.afe.push(MARKER)
         this.templateModes.push("inTemplate")
         this.mode = "inTemplate"
