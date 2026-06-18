@@ -180,6 +180,15 @@ const BLOCK_END = new Set([
   "summary", "ul",
 ])
 
+// Block start tags that insert without reconstructing the active formatting
+// elements (their <p>/list-item/heading closing has already run by this point).
+const BLOCK_INSERT = new Set([
+  "address", "article", "aside", "blockquote", "center", "details", "dialog",
+  "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header",
+  "hgroup", "main", "menu", "nav", "ol", "p", "section", "summary", "ul", "pre",
+  "listing", "h1", "h2", "h3", "h4", "h5", "h6", "li", "dd", "dt",
+])
+
 // Scope stop sets.
 const DEFAULT_SCOPE = new Set([
   "applet", "caption", "html", "table", "td", "th", "marquee", "object", "template",
@@ -1296,6 +1305,12 @@ class HtmlTreeBuilder {
     }
     if (name === "rp" || name === "rt") {
       this.generateImpliedEndTags("rtc")
+      this.insertElement(name, attrs)
+      return
+    }
+
+    // Block elements are inserted without reconstructing active formatting.
+    if (BLOCK_INSERT.has(name)) {
       this.insertElement(name, attrs)
       return
     }
