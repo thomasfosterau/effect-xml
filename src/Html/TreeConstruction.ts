@@ -629,7 +629,9 @@ class HtmlTreeBuilder {
       }
       idx--
       if (this.open[idx]!.ns === HTML_NS) {
-        // The next element up is HTML: process the end tag with HTML rules.
+        // The next element up is HTML: pop the foreign subtree and process the
+        // end tag with HTML rules.
+        while (this.open.length > idx + 1) this.open.pop()
         this.onEnd(name)
         return
       }
@@ -1318,6 +1320,17 @@ class HtmlTreeBuilder {
       this.ignoreLeadingNewline = true
     }
 
+    if (name === "button") {
+      // A <button> in scope is closed first.
+      if (this.hasInScope("button", DEFAULT_SCOPE)) {
+        this.generateImpliedEndTags()
+        this.popUntilIncluding("button")
+      }
+      this.reconstructFormatting()
+      this.insertElement("button", attrs)
+      return
+    }
+
     if (name === "table") {
       this.insertElement("table", attrs)
       this.mode = "inTable"
@@ -1775,7 +1788,7 @@ class HtmlTreeBuilder {
         }
         return true
       default:
-        return true // other end tags are ignored in select
+        return false // other end tags use the in-body rules
     }
   }
 
