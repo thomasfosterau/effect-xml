@@ -953,13 +953,6 @@ class HtmlTreeBuilder {
 
   private inSelectStart(name: string, attrs: Array<MAttr>): void {
     switch (name) {
-      case "svg":
-      case "math": {
-        const ns = name === "svg" ? SVG_NS : MATHML_NS
-        this.insertElement(name, adjustForeignAttrs(attrs, ns), ns)
-        if (this.selfClosing) this.open.pop()
-        return
-      }
       case "option":
         if (this.current?.name === "option") this.open.pop()
         this.insertElement("option", attrs)
@@ -991,12 +984,9 @@ class HtmlTreeBuilder {
           this.dispatchStart(name, attrs)
         }
         return
-      case "script":
-      case "template":
-        this.insertElement(name, attrs)
-        return
       default:
-        return // anything else is ignored in select
+        // Other content is parsed with the in-body rules (it nests in the select).
+        return this.inBodyStart(name, attrs)
     }
   }
 
