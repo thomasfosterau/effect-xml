@@ -224,6 +224,8 @@ const DEFAULT_SCOPE = new Set([
 ])
 const BUTTON_SCOPE = new Set([...DEFAULT_SCOPE, "button"])
 const LIST_ITEM_SCOPE = new Set([...DEFAULT_SCOPE, "ol", "ul"])
+// Adoption-agency scope: a <select> ancestor bounds formatting-element adoption.
+const AAA_SCOPE = new Set([...DEFAULT_SCOPE, "select"])
 
 // Tags whose end tags trigger generate-implied-end-tags.
 const IMPLIED_END = new Set([
@@ -1964,9 +1966,7 @@ class HtmlTreeBuilder {
         }
         return true
       default:
-        // Formatting end tags are ignored in a select; others use in-body rules.
-        if (FORMATTING.has(name)) return true
-        return false
+        return false // other end tags use the in-body rules
     }
   }
 
@@ -2071,8 +2071,9 @@ class HtmlTreeBuilder {
         this.removeFromAfe(formattingElement)
         return
       }
-      // Step 4.5
-      if (!this.hasInScope(formattingElement.name, DEFAULT_SCOPE)) {
+      // Step 4.5 (a <select> ancestor also bounds the scope, so a formatting
+      // element outside an open select is not adopted across it).
+      if (!this.hasInScope(formattingElement.name, AAA_SCOPE)) {
         return
       }
       // Step 4.7: furthest block
@@ -2154,6 +2155,53 @@ class HtmlTreeBuilder {
 
   // --- finishing -----------------------------------------------------------
 
+  /**
+   * Fill each `<selectedcontent>` with a deep clone of its select's currently
+   * selected option (the first `<option selected>`, else the first option).
+   */
+  private populateSelectedContent(): void {
+    const findSelected = (select: MElement): MElement | null => {
+      let first: MElement | null = null
+      let selected: MElement | null = null
+      const walk = (el: MElement): void => {
+        for (const c of el.children) {
+          if (c._t !== "element") continue
+          if (c.name === "select" && c !== select) continue // not nested selects
+          if (c.name === "option" && c.ns === HTML_NS) {
+            if (first === null) first = c
+            if (selected === null && c.attrs.some((a) => a.name === "selected")) selected = c
+          }
+          walk(c)
+        }
+      }
+      walk(select)
+      return selected ?? first
+    }
+    const fill = (select: MElement, opt: MElement): void => {
+      const walk = (el: MElement): void => {
+        for (const c of el.children) {
+          if (c._t !== "element") continue
+          if (c.name === "select" && c !== select) continue
+          if (c.name === "selectedcontent" && c.ns === HTML_NS) {
+            c.children = opt.children.map(cloneMNode)
+            for (const cc of c.children) cc.parent = c
+          } else {
+            walk(c)
+          }
+        }
+      }
+      walk(select)
+    }
+    const visit = (el: MElement): void => {
+      if (el.name === "select" && el.ns === HTML_NS) {
+        const opt = findSelected(el)
+        if (opt !== null) fill(el, opt)
+      }
+      for (const c of el.children) if (c._t === "element") visit(c)
+    }
+    for (const node of this.topLevel) if (node._t === "element") visit(node)
+  }
+
   finish(): XmlDocument {
     // Close any templates still open at EOF (the "in template" EOF rule) so a
     // synthesized body never lands inside template contents. Only HTML templates
@@ -2186,6 +2234,8 @@ class HtmlTreeBuilder {
       this.mode === "afterAfterFrameset"
     if (this.bodyEl === null && !isFrameset) this.ensureBody()
 
+    this.populateSelectedContent()
+
     const children: Array<XmlNode> = this.topLevel.map(toXmlNode)
     return new XmlDocument({
       declaration: null,
@@ -2211,6 +2261,25 @@ const sameAttrs = (a: ReadonlyArray<MAttr>, b: ReadonlyArray<MAttr>): boolean =>
 const mergeAttrs = (el: MElement, attrs: ReadonlyArray<MAttr>): void => {
   for (const a of attrs) {
     if (!el.attrs.some((x) => x.name === a.name)) el.attrs.push({ ...a })
+  }
+}
+
+const cloneMNode = (node: MNode): MNode => {
+  switch (node._t) {
+    case "text":
+      return { _t: "text", data: node.data, parent: null }
+    case "comment":
+      return { _t: "comment", data: node.data, parent: null }
+    case "cdata":
+      return { _t: "cdata", data: node.data, parent: null }
+    case "pi":
+      return { _t: "pi", target: node.target, data: node.data, parent: null }
+    case "element": {
+      const el = mkElement(node.name, node.attrs.map((a) => ({ ...a })), node.ns)
+      el.children = node.children.map(cloneMNode)
+      for (const c of el.children) c.parent = el
+      return el
+    }
   }
 }
 
