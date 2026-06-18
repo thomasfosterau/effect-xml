@@ -1626,12 +1626,10 @@ class HtmlTreeBuilder {
       } else if (this.mode === "afterFrameset" || this.mode === "afterAfterFrameset") {
         this.mode = "afterAfterFrameset"
         return
-      } else if (this.bodyEl) {
-        // In body, </html> switches to "after body" then reprocesses (→ after
-        // after body); from "after body" it goes straight to "after after body".
-        this.mode = "afterAfterBody"
-        return
       } else {
+        // </html> cascades through head/body creation to "after after body".
+        this.ensureBody()
+        this.mode = "afterAfterBody"
         return
       }
     }
