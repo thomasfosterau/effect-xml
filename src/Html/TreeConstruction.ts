@@ -474,9 +474,15 @@ class HtmlTreeBuilder {
         }
         return
       case "Comment":
-        // After </html> a comment belongs at the document level, not inside <html>.
         if (this.mode === "afterAfterBody" || this.mode === "afterAfterFrameset") {
+          // After </html>: a comment belongs at the document level.
           this.topLevel.push({ _t: "comment", data: ev.data, parent: null })
+        } else if (
+          (this.mode === "afterBody" || this.mode === "afterFrameset") &&
+          this.htmlEl !== null
+        ) {
+          // After </body>/frameset: a comment is the html element's last child.
+          appendChild(this.htmlEl, { _t: "comment", data: ev.data, parent: null })
         } else {
           this.insert({ _t: "comment", data: ev.data, parent: null })
         }
@@ -1334,8 +1340,13 @@ class HtmlTreeBuilder {
       return
     }
     if (name === "html") {
-      if (this.mode === "afterFrameset") this.mode = "afterAfterFrameset"
-      else if (this.bodyEl) this.mode = "afterBody"
+      if (this.mode === "afterFrameset" || this.mode === "afterAfterFrameset") {
+        this.mode = "afterAfterFrameset"
+      } else if (this.bodyEl) {
+        // In body, </html> switches to "after body" then reprocesses (→ after
+        // after body); from "after body" it goes straight to "after after body".
+        this.mode = "afterAfterBody"
+      }
       return
     }
     if (name === "frameset" && this.mode === "inFrameset") {
