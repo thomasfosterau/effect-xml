@@ -154,6 +154,8 @@ export class Lexer {
   private rawTarget = ""
   private rawMatch = 0
   private rawPending = ""
+  /** Script-data escape level: 0 = data, 1 = escaped (<!--), 2 = double-escaped. */
+  private sLevel = 0
 
   constructor(private readonly options: LexerOptions) {}
 
@@ -278,6 +280,7 @@ export class Lexer {
     this.rawPending = ""
     this.text = ""
     this.textStart = this.pos
+    this.sLevel = 0
     this.state = state
   }
 
@@ -644,7 +647,8 @@ export class Lexer {
       }
 
       case S.RawText:
-        this.feedRaw(c, at, false)
+        if (this.rawName === "script") this.feedScript(c, at)
+        else this.feedRaw(c, at, false)
         return
 
       case S.RcData:
@@ -660,6 +664,82 @@ export class Lexer {
   /** Position immediately after the char at `at` (its half-open span end). */
   private afterPos(at: Position): Position {
     return { offset: at.offset + 1, line: at.line, column: at.column + 1 }
+  }
+
+  // --- script data (with escaped / double-escaped handling) ---------------
+
+  /** Append raw script text, tracking the `<!-- ... <script> ... </script>` escape level. */
+  private appendScriptText(s: string): void {
+    for (const ch of s) {
+      if (this.text.length === 0) this.textStart = this.pos
+      this.text += ch
+      const t = this.text
+      if (this.sLevel === 0 && t.endsWith("<!--")) {
+        this.sLevel = 1
+      } else if (this.sLevel > 0 && t.endsWith("-->")) {
+        this.sLevel = this.sLevel === 2 ? 1 : 0
+      } else if (
+        this.sLevel === 1 &&
+        (isWhitespace(ch) || ch === "/" || ch === ">") &&
+        /<script$/i.test(t.slice(0, -1))
+      ) {
+        this.sLevel = 2
+      }
+    }
+  }
+
+  private feedScript(c: string, at: Position): void {
+    // Tentatively match the literal "</script" end tag.
+    if (this.rawMatch < this.rawTarget.length) {
+      if (c.toLowerCase() === this.rawTarget[this.rawMatch]) {
+        this.rawMatch++
+        this.rawPending += c
+        return
+      }
+      this.appendScriptText(this.rawPending)
+      this.rawPending = ""
+      if (c.toLowerCase() === this.rawTarget[0]) {
+        this.rawMatch = 1
+        this.rawPending = c
+      } else {
+        this.rawMatch = 0
+        this.appendScriptText(c)
+      }
+      return
+    }
+    // We matched "</script"; the next char decides.
+    if (isWhitespace(c) || c === ">" || c === "/") {
+      if (this.sLevel >= 2) {
+        // Double-escaped: this is not the script's end tag; drop one level.
+        this.appendScriptText(this.rawPending)
+        this.rawPending = ""
+        this.rawMatch = 0
+        this.sLevel = 1
+        this.appendScriptText(c)
+        return
+      }
+      if (this.text.length > 0) {
+        this.emit({ _tag: "Text", data: this.text, span: { start: this.textStart, end: this.tagStart } })
+      }
+      this.text = ""
+      this.tagName = this.rawName
+      this.tagStart = at
+      this.rawMatch = 0
+      this.rawPending = ""
+      this.sLevel = 0
+      if (c === ">") {
+        this.emitEndElement(this.afterPos(at))
+      } else if (c === "/") {
+        this.state = S.SelfClosing
+      } else {
+        this.state = S.EndTagAfter
+      }
+      return
+    }
+    // e.g. `</scriptish` — not the end tag.
+    this.appendScriptText(this.rawPending + c)
+    this.rawPending = ""
+    this.rawMatch = 0
   }
 
   // --- raw text / rcdata ---------------------------------------------------
