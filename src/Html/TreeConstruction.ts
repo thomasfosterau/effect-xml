@@ -668,6 +668,13 @@ class HtmlTreeBuilder {
     this.insertForeignElement(name, attrs, this.current!.ns)
   }
 
+  /** Whether an element is in the "special" category (namespace-aware). */
+  private isSpecialElement(el: MElement): boolean {
+    if (el.ns === HTML_NS) return SPECIAL.has(el.name)
+    // Foreign elements are special only at the integration points.
+    return this.isHTMLIntegrationPoint(el) || this.isMathMLTextIP(el)
+  }
+
   private hasIntegrationPointAbove(idx: number): boolean {
     for (let i = idx + 1; i < this.open.length; i++) {
       const el = this.open[i]!
@@ -1803,7 +1810,7 @@ class HtmlTreeBuilder {
         while (this.open.length > i) this.open.pop()
         return
       }
-      if (SPECIAL.has(el.name)) return // ignore the end tag
+      if (this.isSpecialElement(el)) return // ignore the end tag
     }
   }
 
@@ -2070,7 +2077,7 @@ class HtmlTreeBuilder {
       // Step 4.7: furthest block
       let furthestBlock: MElement | null = null
       for (let i = feOpenIdx + 1; i < this.open.length; i++) {
-        if (SPECIAL.has(this.open[i]!.name)) {
+        if (this.isSpecialElement(this.open[i]!)) {
           furthestBlock = this.open[i]!
           break
         }
