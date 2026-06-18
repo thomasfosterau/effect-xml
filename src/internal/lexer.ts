@@ -150,6 +150,10 @@ export class Lexer {
   private dtBuf = ""
   private dtQuote: string | null = null
   private dtBracket = 0
+  /** In bogus DOCTYPE: `>` terminates and quotes/brackets are ignored. */
+  private dtBogus = false
+  /** A PUBLIC/SYSTEM quoted id just closed (the next unexpected char is bogus). */
+  private dtJustClosed = false
   // raw text / rcdata end-tag matcher
   private rawName = ""
   private rawTarget = ""
@@ -551,6 +555,8 @@ export class Lexer {
           this.dtBuf = ""
           this.dtQuote = null
           this.dtBracket = 0
+          this.dtBogus = false
+          this.dtJustClosed = false
           return
         }
         const upper = this.markupBuf.toUpperCase()
@@ -626,12 +632,45 @@ export class Lexer {
       }
 
       case S.Doctype: {
+        const emitDoctype = (): void => {
+          this.emit(this.parseDoctype(this.dtBuf, this.afterPos(at)))
+          this.dtBuf = ""
+          this.state = S.Data
+        }
+        if (this.dtBogus) {
+          // Bogus DOCTYPE: consume everything until the next `>`.
+          if (c === ">") emitDoctype()
+          else this.dtBuf += c
+          return
+        }
         if (this.dtQuote !== null) {
           this.dtBuf += c
-          if (c === this.dtQuote) this.dtQuote = null
+          if (c === this.dtQuote) {
+            this.dtQuote = null
+            this.dtJustClosed = true
+          }
+          return
+        }
+        // After a closed PUBLIC/SYSTEM id, an unexpected non-quote token makes
+        // the DOCTYPE bogus.
+        if (this.dtJustClosed && !isWhitespace(c)) {
+          this.dtJustClosed = false
+          if (c === ">") {
+            emitDoctype()
+            return
+          }
+          if (c !== '"' && c !== "'") {
+            this.dtBogus = true
+            this.dtBuf += c
+            return
+          }
+        }
+        // In HTML an internal-subset `[` makes the DOCTYPE bogus; XML tracks it.
+        if (c === "[" && this.options.mode === "html") {
+          this.dtBogus = true
+          this.dtBuf += c
         } else if ((c === '"' || c === "'") && /PUBLIC|SYSTEM/i.test(this.dtBuf)) {
-          // Quotes are only significant after a PUBLIC/SYSTEM keyword; otherwise
-          // the DOCTYPE is bogus and `>` terminates it (text follows in body).
+          // Quotes are only significant after a PUBLIC/SYSTEM keyword.
           this.dtQuote = c
           this.dtBuf += c
         } else if (c === "[") {
@@ -641,9 +680,7 @@ export class Lexer {
           this.dtBracket--
           this.dtBuf += c
         } else if (c === ">" && this.dtBracket <= 0) {
-          this.emit(this.parseDoctype(this.dtBuf, this.afterPos(at)))
-          this.dtBuf = ""
-          this.state = S.Data
+          emitDoctype()
         } else {
           this.dtBuf += c
         }
