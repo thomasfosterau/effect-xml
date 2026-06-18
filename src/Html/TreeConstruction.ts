@@ -1964,7 +1964,9 @@ class HtmlTreeBuilder {
         }
         return true
       default:
-        return false // other end tags use the in-body rules
+        // Formatting end tags are ignored in a select; others use in-body rules.
+        if (FORMATTING.has(name)) return true
+        return false
     }
   }
 
