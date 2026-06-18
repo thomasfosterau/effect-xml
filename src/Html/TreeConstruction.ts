@@ -725,6 +725,13 @@ class HtmlTreeBuilder {
 
   private inSelectStart(name: string, attrs: Array<MAttr>): void {
     switch (name) {
+      case "svg":
+      case "math": {
+        const ns = name === "svg" ? SVG_NS : MATHML_NS
+        this.insertElement(name, adjustForeignAttrs(attrs, ns), ns)
+        if (this.selfClosing) this.open.pop()
+        return
+      }
       case "option":
         if (this.current?.name === "option") this.open.pop()
         this.insertElement("option", attrs)

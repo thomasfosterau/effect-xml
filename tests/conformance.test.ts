@@ -23,7 +23,7 @@ const FILES = readdirSync(FIXTURES_DIR)
   .sort()
 
 // Observed pass count over the runnable (supported-feature) subset.
-const BASELINE = 768
+const BASELINE = 772
 const RUNNABLE = 1256
 
 const loadTests = (file: string) =>
