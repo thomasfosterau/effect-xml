@@ -165,7 +165,7 @@ const CLOSES_P = new Set([
   "address", "article", "aside", "blockquote", "center", "details", "dialog",
   "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header",
   "hgroup", "main", "menu", "nav", "ol", "p", "section", "summary", "ul",
-  "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "form", "hr", "table",
+  "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "hr", "table",
   "plaintext", "xmp",
 ])
 
@@ -281,6 +281,8 @@ class HtmlTreeBuilder {
   private framesetOk = true
   /** Set after <pre>/<listing>/<textarea>: a single leading newline is dropped. */
   private ignoreLeadingNewline = false
+  /** The form element pointer (at most one open form outside templates). */
+  private formEl: MElement | null = null
 
   // --- stack helpers -------------------------------------------------------
 
@@ -629,9 +631,12 @@ class HtmlTreeBuilder {
       }
       idx--
       if (this.open[idx]!.ns === HTML_NS) {
-        // The next element up is HTML: pop the foreign subtree and process the
-        // end tag with HTML rules.
-        while (this.open.length > idx + 1) this.open.pop()
+        // The next element up is HTML: process the end tag with HTML rules. For
+        // an HTML breakout tag (e.g. </p>) the intervening foreign subtree is
+        // abandoned first; a non-matching foreign end tag (e.g. </svg>) is not.
+        if (FOREIGN_BREAKOUT.has(name)) {
+          while (this.open.length > idx + 1) this.open.pop()
+        }
         this.onEnd(name)
         return
       }
@@ -1190,6 +1195,12 @@ class HtmlTreeBuilder {
       case "script":
         this.insertElement(name, attrs)
         return
+      case "form":
+        // In table: insert the form, set the pointer, and pop it immediately.
+        if (this.formEl !== null || this.templateModes.length > 0) return
+        this.formEl = this.insertElement("form", attrs)
+        this.open.pop()
+        return
       case "input":
         // <input type=hidden> is inserted into the table; others foster out.
         if (attrs.some((a) => a.name === "type" && a.value.toLowerCase() === "hidden")) {
@@ -1350,6 +1361,15 @@ class HtmlTreeBuilder {
     // <pre>/<listing>/<textarea> swallow an immediately-following newline.
     if (name === "pre" || name === "listing" || name === "textarea") {
       this.ignoreLeadingNewline = true
+    }
+
+    if (name === "form") {
+      // Only one open form outside templates (the form element pointer).
+      if (this.formEl !== null && this.templateModes.length === 0) return
+      if (this.hasInScope("p", BUTTON_SCOPE)) this.closeP()
+      const el = this.insertElement("form", attrs)
+      if (this.templateModes.length === 0) this.formEl = el
+      return
     }
 
     if (name === "button") {
@@ -1611,6 +1631,16 @@ class HtmlTreeBuilder {
     if (FORMATTING.has(name)) {
       if (noBodyYet) return
       this.adoptionAgency(name)
+      return
+    }
+
+    if (name === "form" && this.templateModes.length === 0) {
+      const node = this.formEl
+      this.formEl = null
+      const i = node ? this.open.indexOf(node) : -1
+      if (i === -1) return
+      this.generateImpliedEndTags()
+      this.open.splice(i, 1)
       return
     }
 
