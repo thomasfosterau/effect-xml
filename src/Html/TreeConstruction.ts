@@ -192,6 +192,8 @@ const BLOCK_INSERT = new Set([
 // Scope stop sets.
 const DEFAULT_SCOPE = new Set([
   "applet", "caption", "html", "table", "td", "th", "marquee", "object", "template",
+  // Foreign scope markers (MathML text integration points + SVG integration points).
+  "mi", "mo", "mn", "ms", "mtext", "annotation-xml", "foreignObject", "desc", "title",
 ])
 const BUTTON_SCOPE = new Set([...DEFAULT_SCOPE, "button"])
 const LIST_ITEM_SCOPE = new Set([...DEFAULT_SCOPE, "ol", "ul"])
