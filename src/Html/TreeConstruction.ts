@@ -745,6 +745,21 @@ class HtmlTreeBuilder {
       }
       this.ensureBody()
     }
+    // In column group: whitespace stays; anything else closes the colgroup and
+    // is reprocessed (or is ignored when there is no colgroup, e.g. in template).
+    if (this.mode === "inColumnGroup") {
+      const ws = /^[\t\n\f\r ]*/.exec(data)![0]
+      if (ws.length > 0) this.insertText(ws)
+      const rest = data.slice(ws.length)
+      if (rest.length === 0) return
+      if (this.current?.name === "colgroup") {
+        this.open.pop()
+        this.mode = "inTable"
+        this.onText(rest)
+      }
+      return
+    }
+
     // In select, character data is inserted as-is (no formatting reconstruction).
     if (this.mode === "inSelect" || this.mode === "inSelectInTable") {
       this.insertText(data)
