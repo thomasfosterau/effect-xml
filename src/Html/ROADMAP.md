@@ -67,9 +67,9 @@ Still handled leniently (as generic flow content) rather than per-spec:
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
 fixtures (`tests/fixtures/html5lib/`). The current baseline is **849/1368**
-runnable cases (template and fragment/scripted cases are excluded until
-implemented); the test fails on any regression, so the items above are tracked as
-the pass count climbs toward 100%.
+runnable cases (only fragment-context and scripted cases are excluded); the test
+fails on any regression, so the items above are tracked as the pass count climbs
+toward 100%.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 
