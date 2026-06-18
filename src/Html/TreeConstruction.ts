@@ -731,7 +731,7 @@ class HtmlTreeBuilder {
     // (document / <html> / <head>) drives the section transitions.
     const structural = cur === null || cur.name === "html" || cur.name === "head"
     if (structural) {
-      if (/^\s*$/.test(data)) {
+      if (/^[\t\n\f\r ]*$/.test(data)) {
         if (cur !== null && cur.name === "head") {
           this.insert({ _t: "text", data, parent: null })
         } else if (this.mode === "afterHead") {
