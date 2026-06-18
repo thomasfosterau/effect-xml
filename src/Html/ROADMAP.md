@@ -65,25 +65,20 @@ Still handled leniently (as generic flow content) rather than per-spec:
    semicolon-less** references (e.g. `&copy`), the **ambiguous-ampersand** rule in
    attributes, semicolon-less numeric references, and the numeric Windows-1252
    remap.
-6. ~~**Markers** in the active-formatting list~~ ✅ done — applet/object/marquee (and table/cell/caption) push a marker; the end tags clear back to it.
-   `applet`/`object`/`marquee`/table scopes) — the type is already threaded
-   through; the insert/clear-to-marker steps land with the table modes.
+6. ~~**Markers** in the active-formatting list~~ ✅ done — applet/object/marquee
+   and table cell/caption push a marker; the end tags clear back to it.
+7. ~~**Foreign raw-text coupling**~~ ✅ done — `Html.parseDocument` drives the
+   tokenizer and tree builder in lockstep so raw-text/rcdata elements
+   (`<title>`/`<style>`/`<script>`/`<textarea>`/`<plaintext>`) inside SVG/MathML
+   are parsed as ordinary foreign elements.
+8. ~~**`<selectedcontent>`**, bogus DOCTYPE state, and the deep adoption-agency /
+   foster interactions~~ ✅ done.
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **1368/1368 (100%)**
-(~92%) runnable cases (only fragment-context and scripted cases are excluded);
-the test fails on any regression, so the items above are tracked as the pass
-count climbs toward 100%.
-
-The remaining ~25 failures cluster around: **tokenizer/tree-builder coupling**
-for raw-text/rcdata elements (`<title>`/`<style>`/`<script>`/`<textarea>`/
-`<plaintext>`) *inside* foreign content — the streaming tokenizer eagerly
-tokenizes a whole chunk before the tree builder runs, so it can't consult the
-adjusted current node to suppress the raw-text switch; the very new
-**`<selectedcontent>`** select feature; a handful of intricate
-**adoption-agency** cases (nested select with formatting); and a few DOCTYPE
-bogus-state and `</html>`-in-head recovery edges.
+fixtures (`tests/fixtures/html5lib/`). The baseline is **1368/1368 (100%)** of the
+runnable cases (only `#document-fragment` and `#script-on` cases are excluded);
+the test fails on any regression.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 
