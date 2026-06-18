@@ -1,226 +1,87 @@
-# Quick Reference Guide
+# Quick reference
 
-## Installation
+## Sax (streaming events)
 
-```bash
-bun add effect-sax effect @effect/schema @effect/platform
+```ts
+import { Sax } from "effect-sax"
+
+Sax.tokenize(options?)              // (Stream<string>) => Stream<SaxEvent, SaxError>
+Sax.tokenizeString(input, options?)// Stream<SaxEvent, SaxError>
+Sax.collect(input, options?)       // Effect<ReadonlyArray<SaxEvent>, SaxError>
+
+// guards
+Sax.isStartElement / isEndElement / isText / isComment / isCData
+Sax.isProcessingInstruction / isDoctype / isXmlDeclaration
+
+// selectors (pipeable)
+Sax.startElements / endElements / texts
+Sax.named("item")                  // start/end events with that name
+
+// attributes
+Sax.getAttribute(startEvent, "id") // Option<string>
+
+// constructors / matcher
+Sax.SaxEvent.StartElement({ ... })
+Sax.SaxEvent.$match(ev, { StartElement: ..., ... })
 ```
 
-## Import
+`SaxEvent` variants: `StartElement` · `EndElement` · `Text` · `CData` ·
+`Comment` · `ProcessingInstruction` · `Doctype` · `XmlDeclaration`.
 
-```typescript
-import * as Effect from "effect/Effect";
-import * as Stream from "effect/Stream";
-import {
-  // Core
-  createMessageStream,
-  collectMessages,
-  
-  // Message types
-  ElementStart,
-  ElementEnd,
-  ContentChunk,
-  MarkupNote,
-  RawDataSection,
-  MetaInstruction,
-  TypeDeclaration,
-  
-  // Operations
-  isolateStarts,
-  isolateEnds,
-  isolateContent,
-  selectByTag,
-  harvestTagContent,
-  quantifyTag,
-  aggregateProperties,
-  transformStream,
-  foldMessages,
-} from "effect-sax";
+## Xml (typed DOM)
+
+```ts
+import { Xml } from "effect-sax"
+
+Xml.parse(input, options?)               // Effect<XmlDocument, SaxError>
+Xml.parseStream(options?)                // (Stream<string>) => Effect<XmlDocument>
+Xml.events(input, options?)              // Stream<SaxEvent, SaxError>
+
+doc.root                                 // XmlElement
+el.elements                              // child elements
+el.attribute("name")                     // string | undefined
+el.textContent                           // string
+
+Xml.serialize(node)                      // string
+Xml.serializeDocument(doc)               // string
+Xml.element(name, attrs?, children?)     // builders
+Xml.attr(name, value); Xml.text(data)
+
+// Schema classes: XmlDocument, XmlElement, XmlText, XmlCData, XmlComment,
+// XmlProcessingInstruction, XmlAttribute, XmlDeclaration, XmlDoctype, XmlNode
 ```
 
-## Basic Usage
+## Html (lenient)
 
-```typescript
-// Parse to array
-const program = Effect.gen(function* (_) {
-  const messages = yield* _(collectMessages(markup));
-  for (const msg of messages) {
-    console.log(msg);
-  }
-});
+```ts
+import { Html } from "effect-sax"
 
-Effect.runPromise(program);
+Html.tokenize(options?) / tokenizeString(input, options?)
+Html.parseFragment(input, options?)      // Effect<ReadonlyArray<XmlNode>, SaxError>
+Html.parseFragmentStream(options?)
+Html.voidElements / rawTextElements / rcdataElements / formattingElements
 ```
 
-## Streaming Usage
+## Names & errors
 
-```typescript
-// Create stream
-const msgFlow = createMessageStream(markup, {
-  collapseWhitespace: true,
-  preserveEmptyText: false
-});
+```ts
+import { QName, TagName, AttrName, Namespaces } from "effect-sax"
 
-// Process stream
-yield* _(
-  msgFlow,
-  Stream.runForEach((msg) => Effect.sync(() => console.log(msg)))
-);
+QName.simple("div"); QName.fromRaw("svg:rect")
+qname.qualified / .local / .prefix / .namespace / .clark
+
+// SaxError union (all Data.TaggedError, each with .position & .message):
+// UnexpectedCharacter, UnexpectedEndOfInput, InvalidEntity, MismatchedEndTag,
+// UnexpectedEndTag, DuplicateAttribute, InvalidDocumentStructure,
+// UnboundNamespacePrefix
 ```
 
-## Common Patterns
+## Options
 
-### Extract all opening tags
-
-```typescript
-const openings = isolateStarts(msgFlow);
-```
-
-### Extract text content from specific tags
-
-```typescript
-const titles = harvestTagContent(msgFlow, "title");
-yield* _(
-  titles,
-  Stream.runForEach((title) => Effect.sync(() => console.log(title)))
-);
-```
-
-### Count elements
-
-```typescript
-const count = yield* _(quantifyTag(msgFlow, "product"));
-```
-
-### Get all attributes from tags
-
-```typescript
-const attrs = yield* _(aggregateProperties(msgFlow, "product"));
-// Returns: Array<Record<string, string>>
-```
-
-### Filter by tag
-
-```typescript
-const productMsgs = selectByTag(msgFlow, "product");
-```
-
-### Transform messages
-
-```typescript
-const transformed = transformStream(msgFlow, (msg) => {
-  if (msg instanceof ElementStart) {
-    return { name: msg.tagIdentifier, attrs: msg.propertyBag };
-  }
-  return null;
-});
-```
-
-### Fold/reduce messages
-
-```typescript
-const result = yield* _(
-  foldMessages(
-    msgFlow,
-    { count: 0 },
-    (state, msg) => {
-      if (msg instanceof ElementStart) {
-        return { count: state.count + 1 };
-      }
-      return state;
-    }
-  )
-);
-```
-
-## Message Types
-
-All messages extend base with `messageId` and `byteOffset`.
-
-### ElementStart
-```typescript
-{
-  messageId: string,
-  byteOffset: number,
-  tagIdentifier: string,
-  propertyBag: Record<string, string>,
-  standalone: boolean
-}
-```
-
-### ElementEnd
-```typescript
-{
-  messageId: string,
-  byteOffset: number,
-  tagIdentifier: string
-}
-```
-
-### ContentChunk
-```typescript
-{
-  messageId: string,
-  byteOffset: number,
-  payload: string
-}
-```
-
-### MarkupNote (Comment)
-```typescript
-{
-  messageId: string,
-  byteOffset: number,
-  noteText: string
-}
-```
-
-### RawDataSection (CDATA)
-```typescript
-{
-  messageId: string,
-  byteOffset: number,
-  rawContent: string
-}
-```
-
-### MetaInstruction (Processing Instruction)
-```typescript
-{
-  messageId: string,
-  byteOffset: number,
-  instructionTag: string,
-  instructionPayload: string
-}
-```
-
-### TypeDeclaration (DOCTYPE)
-```typescript
-{
-  messageId: string,
-  byteOffset: number,
-  declarationBody: string
-}
-```
-
-## Configuration
-
-```typescript
-interface ProcessorConfig {
-  collapseWhitespace?: boolean;    // Trim & normalize (default: true)
-  preserveEmptyText?: boolean;     // Keep empty chunks (default: false)
-  strictValidation?: boolean;      // Strict mode (default: false)
-}
-```
-
-## Running Examples
-
-```bash
-bun run example
-```
-
-## Running Tests
-
-```bash
-bun test
-```
+| Option | Where | Default | Meaning |
+| ------ | ----- | ------- | ------- |
+| `mode` | Sax | `"xml"` | `"xml"` strict / `"html"` lenient |
+| `entities` | Sax/Xml | XML set | named-entity table |
+| `whitespace` | Sax/Xml | `"preserve"` | or `"collapse"` |
+| `dropWhitespaceOnlyText` | Sax/Xml | `false` | drop blank text nodes |
+| `namespaces` | Xml | `true` | resolve prefixes to URIs |

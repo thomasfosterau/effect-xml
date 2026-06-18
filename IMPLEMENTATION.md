@@ -1,127 +1,69 @@
-# Implementation Summary
+# Architecture
 
-## Project: effect-sax
+effect-sax is layered so each level is independently usable and the higher
+levels are thin compositions of the lower ones.
 
-A type-safe, message-based reactive XML processor built with Effect ecosystem and Bun.
-
-## Unique Architecture
-
-### Message-Passing Design
-Unlike traditional event-based parsers, effect-sax uses a **message-passing architecture**:
-- XML elements are transformed into strongly-typed messages
-- Messages flow through Effect Streams for reactive processing
-- Each message includes position tracking (`messageId`, `byteOffset`)
-
-### Key Components
-
-#### 1. Messages (`source/messages.ts`)
-Effect Schema class definitions for all message types:
-- `ElementStart` - Opening tags with `tagIdentifier`, `propertyBag`, `standalone`
-- `ElementEnd` - Closing tags
-- `ContentChunk` - Text content with `payload`
-- `MarkupNote` - Comments with `noteText`
-- `RawDataSection` - CDATA with `rawContent`
-- `MetaInstruction` - Processing instructions
-- `TypeDeclaration` - DOCTYPE declarations
-
-#### 2. Processor (`source/processor.ts`)
-Chunk-boundary-aware XML processor:
-- Uses a workspace-based state machine
-- Processes markup character-by-character
-- Generates messages with unique IDs and byte offsets
-- Handles all XML constructs (tags, attributes, comments, CDATA, etc.)
-
-#### 3. Reactive (`source/reactive.ts`)
-Composable reactive operations on message streams:
-- **Isolators**: `isolateStarts`, `isolateEnds`, `isolateContent`
-- **Selectors**: `selectByTag`, `harvestTagContent`
-- **Aggregators**: `quantifyTag`, `aggregateProperties`
-- **Transformers**: `transformStream`, `foldMessages`
-
-## Implementation Statistics
-
-- **Total Lines**: ~1,091 lines of TypeScript
-- **Source Files**: 4 modules
-- **Test Files**: 2 test suites with 23 tests
-- **Example Files**: 1 comprehensive usage demonstration
-
-## Key Features
-
-1. **Type Safety**: Full compile-time and runtime type checking with Effect Schema
-2. **Reactive Streams**: Memory-efficient processing using Effect Streams
-3. **Position Tracking**: Every message includes location information
-4. **Composability**: Functional API for chaining operations
-5. **Bun-Optimized**: Built specifically for Bun runtime
-
-## Differences from Traditional Parsers
-
-| Traditional SAX | effect-sax |
-|-----------------|------------|
-| Event callbacks | Reactive message streams |
-| String-based events | Typed Schema classes |
-| No position tracking | Built-in `messageId` and `byteOffset` |
-| Imperative API | Functional reactive API |
-| Manual error handling | Effect-based error management |
-
-## Usage Patterns
-
-### Basic: Collect all messages
-```typescript
-const messages = yield* _(collectMessages(markup));
+```
+input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuilder ──▶ XmlDocument
+   string/Stream  (internal)   public streaming API      (per-layer)      typed DOM
 ```
 
-### Reactive: Stream processing
-```typescript
-const msgFlow = createMessageStream(markup);
-const names = harvestTagContent(msgFlow, "itemName");
-```
+## Modules
 
-### Advanced: Custom transformations
-```typescript
-const transformed = transformStream(msgFlow, customMapper);
-const result = yield* _(foldMessages(msgFlow, initial, reducer));
-```
+| File | Responsibility |
+| ---- | -------------- |
+| `src/Position.ts` | `Position`/`Span` value types and offset/line/column arithmetic. |
+| `src/Error.ts` | `Data.TaggedError` classes unified under `SaxError`. |
+| `src/Name.ts` | Branded `TagName`/`AttrName`, the `QName` `Schema.Class`, namespace constants. |
+| `src/internal/entities.ts` | Entity decoding (XML predefined, numeric dec/hex, common HTML subset) and escaping. |
+| `src/internal/lexer.ts` | The incremental character state machine. The engine of everything. |
+| `src/Sax.ts` | Public streaming SAX: `SaxEvent` tagged enum + `Stream` combinators. |
+| `src/Xml/Node.ts` | The typed, `Schema`-backed DOM + serialization. |
+| `src/Xml/TreeBuilder.ts` | SAX events → `XmlDocument`, with well-formedness checks and namespace resolution. |
+| `src/Xml/Xml.ts` | One-call `parse` / `parseStream` / `events`. |
+| `src/Html/*` | html5ever-style tokenization + a lenient fragment builder + roadmap. |
+
+## The incremental lexer
+
+The previous implementation required the whole document up front and treated
+each stream chunk as an *independent* document. The new lexer is a real
+character-by-character state machine (`src/internal/lexer.ts`):
+
+- **Chunk-boundary safe.** All multi-character delimiters (`<!--`, `<![CDATA[`,
+  `-->`, `]]>`, `?>`, `/>`, `</name`) are recognized via persistent state +
+  small buffers, never via lookahead, so a split at *any* offset is safe. The
+  test suite verifies that parsing is byte-for-byte identical for every chunk
+  size from 1 to the full length.
+- **Position tracking** with CR/CRLF/LF newline normalization.
+- **Two modes.** `xml` is strict (unknown entities and malformed markup become
+  typed faults); `html` recovers (bare `<`, unquoted/boolean attributes, bogus
+  comments) and switches into raw-text/rcdata inside `script`/`style`/`title`/
+  `textarea`.
+- **No exceptions.** Faults are emitted as data; `Sax.ts` lifts them into the
+  `Stream` error channel.
+
+The lexer is mutable for throughput, but `Sax.tokenize` wraps construction in
+`Stream.suspend`, so a fresh instance is created per materialization and the
+mutability is never observable.
+
+## Type-safety choices
+
+- **Branded names.** A validated element name is a `TagName`, not a `string`, so
+  the two can't be confused. Parser-internal code uses `unsafe*` casts to skip
+  re-validation on the hot path.
+- **Tagged unions everywhere.** `SaxEvent` is a `Data.TaggedEnum` (free `$is`,
+  `$match`, value equality); DOM nodes are `Schema.TaggedClass`es; errors are
+  `Data.TaggedError`s. Consumers narrow exhaustively and the compiler enforces
+  totality.
+- **Schema-backed DOM.** Nodes are simultaneously classes (with equality and
+  query methods), runtime validators, and serializable encodings. The recursive
+  `children` relation uses `Schema.suspend` with an explicit encoded type.
+- **Namespaces resolved into `QName`.** Each name carries `prefix`, `local`, and
+  resolved `namespace`; the builder maintains a scoped binding stack.
 
 ## Testing
 
-- Core processing tests: Element parsing, attributes, special constructs
-- Reactive operation tests: Filtering, harvesting, quantifying, aggregating
-- All tests use Bun's test runner
-
-## Configuration Options
-
-```typescript
-interface ProcessorConfig {
-  collapseWhitespace?: boolean;    // Default: true
-  preserveEmptyText?: boolean;     // Default: false
-  strictValidation?: boolean;      // Default: false
-}
-```
-
-## Files Overview
-
-### Source (`source/`)
-- `index.ts` - Public API exports
-- `messages.ts` - Message type definitions (Schema classes)
-- `processor.ts` - Core XML processing logic
-- `reactive.ts` - Reactive stream operations
-
-### Tests (`tests/`)
-- `processing.test.ts` - Core processor tests
-- `reactive.test.ts` - Reactive operation tests
-
-### Examples (`examples/`)
-- `usage.ts` - Comprehensive usage demonstrations
-
-## Future Enhancements
-
-Potential additions (not implemented):
-- Streaming from files using `@effect/platform`
-- XML validation against DTD/XSD
-- Namespace handling
-- Entity resolution
-- Custom message types via extension
-
-## License
-
-MIT
+`bun test` covers: SAX structure/attributes/specials/whitespace/spans;
+exhaustive chunk-boundary equivalence; entity decoding and strict-vs-lenient
+behaviour; XML tree building, namespaces, serialization round-trips, and Schema
+integration; every typed error; and HTML tokenization + lenient building.
