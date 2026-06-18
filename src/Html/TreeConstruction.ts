@@ -831,8 +831,9 @@ class HtmlTreeBuilder {
       return
     }
 
-    // In select, character data is inserted as-is (no formatting reconstruction).
+    // Select content uses the in-body rules, so reconstruct formatting too.
     if (this.mode === "inSelect" || this.mode === "inSelectInTable") {
+      this.reconstructFormatting()
       this.insertText(data)
       return
     }
