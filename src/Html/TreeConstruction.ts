@@ -1124,7 +1124,6 @@ class HtmlTreeBuilder {
         }
         return
       case "input":
-      case "keygen":
       case "textarea":
         if (this.hasSelectInScope()) {
           this.popUntilIncluding("select")
