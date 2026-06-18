@@ -258,6 +258,8 @@ class HtmlTreeBuilder {
   private selfClosing = false
   /** The frameset-ok flag: whether a <frameset> may still replace the body. */
   private framesetOk = true
+  /** Set after <pre>/<listing>/<textarea>: a single leading newline is dropped. */
+  private ignoreLeadingNewline = false
 
   // --- stack helpers -------------------------------------------------------
 
@@ -630,6 +632,13 @@ class HtmlTreeBuilder {
   }
 
   private onText(data: string): void {
+    // A single newline immediately after <pre>/<listing>/<textarea> is dropped.
+    if (this.ignoreLeadingNewline) {
+      this.ignoreLeadingNewline = false
+      if (data.startsWith("\n")) data = data.slice(1)
+      if (data.length === 0) return
+    }
+
     // Non-whitespace character data makes the document no longer frameset-ok.
     if (/[^\t\n\f\r ]/.test(data)) this.framesetOk = false
 
@@ -701,6 +710,9 @@ class HtmlTreeBuilder {
   // --- start tags ----------------------------------------------------------
 
   private onStart(name: string, attrs: Array<MAttr>): void {
+    // The "ignore next newline" flag only applies to the immediately following
+    // character token; any tag clears it (it is re-armed below for pre/listing).
+    this.ignoreLeadingNewline = false
     switch (name) {
       case "html":
         this.ensureHtml()
@@ -759,12 +771,12 @@ class HtmlTreeBuilder {
         if (this.bodyEl === null) {
           this.ensureHead()
         }
-        // After </head>, a stray metadata element re-opens <head> just for itself.
+        // After </head>, a stray head element is processed in <head> (which is
+        // pushed back on, then removed); void ones are popped immediately.
         const isVoidHead =
           voidElements.has(name) || name === "meta" || name === "link" ||
           name === "base" || name === "basefont" || name === "bgsound"
         const reopenHead =
-          isVoidHead &&
           this.mode === "afterHead" &&
           this.headEl !== null &&
           !this.open.includes(this.headEl)
@@ -1199,6 +1211,11 @@ class HtmlTreeBuilder {
       this.closeP()
     }
 
+    // <pre>/<listing>/<textarea> swallow an immediately-following newline.
+    if (name === "pre" || name === "listing" || name === "textarea") {
+      this.ignoreLeadingNewline = true
+    }
+
     if (name === "table") {
       this.insertElement("table", attrs)
       this.mode = "inTable"
@@ -1315,6 +1332,7 @@ class HtmlTreeBuilder {
   // --- end tags ------------------------------------------------------------
 
   private onEnd(name: string): void {
+    this.ignoreLeadingNewline = false
     if (name === "template") {
       // Processed via the "in head" rules in every insertion mode.
       if (!this.open.some((e) => e.name === "template")) return
