@@ -1668,8 +1668,11 @@ class HtmlTreeBuilder {
       return
     }
     if (name === "head") {
+      if (this.bodyEl !== null) return // ignored once in the body
+      // Cascade: ensure a head, pop it, and move to "after head".
+      this.ensureHead()
       if (this.current?.name === "head") this.open.pop()
-      if (this.mode === "inHead") this.mode = "afterHead"
+      this.mode = "afterHead"
       return
     }
 
