@@ -706,11 +706,16 @@ class HtmlTreeBuilder {
       return
     }
     this.reconstructFormatting()
-    // In table modes, character data is foster-parented out of the table.
+    // In table modes, only non-whitespace character data is foster-parented out
+    // of the table; whitespace-only runs stay inside it.
     if (this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow") {
-      this.foster = true
-      this.insertText(data)
-      this.foster = false
+      if (/[^\t\n\f\r ]/.test(data)) {
+        this.foster = true
+        this.insertText(data)
+        this.foster = false
+      } else {
+        this.insertText(data)
+      }
       return
     }
     this.insertText(data)
@@ -1082,6 +1087,15 @@ class HtmlTreeBuilder {
       case "style":
       case "script":
         this.insertElement(name, attrs)
+        return
+      case "input":
+        // <input type=hidden> is inserted into the table; others foster out.
+        if (attrs.some((a) => a.name === "type" && a.value.toLowerCase() === "hidden")) {
+          this.insertElement("input", attrs)
+          this.open.pop()
+          return
+        }
+        this.fosterInBody(name, attrs)
         return
       default:
         this.fosterInBody(name, attrs)
