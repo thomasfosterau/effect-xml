@@ -116,6 +116,7 @@ const enum S {
   PiBody,
   RawText,
   RcData,
+  Plaintext,
 }
 
 /** Compute the position `relOffset` UTF-16 units into `raw`, starting from `from`. */
@@ -257,6 +258,13 @@ export class Lexer {
       }
       if (HTML_RCDATA.has(lower)) {
         this.enterRaw(lower, S.RcData)
+        return
+      }
+      if (lower === "plaintext") {
+        // Everything to EOF becomes text; there is no escape from PLAINTEXT.
+        this.text = ""
+        this.textStart = this.pos
+        this.state = S.Plaintext
         return
       }
     }
@@ -642,6 +650,10 @@ export class Lexer {
       case S.RcData:
         this.feedRaw(c, at, true)
         return
+
+      case S.Plaintext:
+        this.text += c
+        return
     }
   }
 
@@ -770,6 +782,11 @@ export class Lexer {
       case S.RawText:
       case S.RcData:
         this.text += this.rawPending
+        if (this.text.length > 0) {
+          this.emit({ _tag: "Text", data: this.text, span: { start: this.textStart, end: this.pos } })
+        }
+        return
+      case S.Plaintext:
         if (this.text.length > 0) {
           this.emit({ _tag: "Text", data: this.text, span: { start: this.textStart, end: this.pos } })
         }
