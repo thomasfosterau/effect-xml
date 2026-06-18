@@ -1423,6 +1423,14 @@ class HtmlTreeBuilder {
       return
     }
 
+    if (name === "applet" || name === "marquee" || name === "object") {
+      this.reconstructFormatting()
+      this.insertElement(name, attrs)
+      this.afe.push(MARKER)
+      this.framesetOk = false
+      return
+    }
+
     if (name === "button") {
       // A <button> in scope is closed first.
       if (this.hasInScope("button", DEFAULT_SCOPE)) {
@@ -1692,6 +1700,15 @@ class HtmlTreeBuilder {
       if (i === -1) return
       this.generateImpliedEndTags()
       this.open.splice(i, 1)
+      return
+    }
+
+    if (name === "applet" || name === "marquee" || name === "object") {
+      if (this.hasInScope(name, DEFAULT_SCOPE)) {
+        this.generateImpliedEndTags()
+        this.popUntilIncluding(name)
+        this.clearFormattingToMarker()
+      }
       return
     }
 

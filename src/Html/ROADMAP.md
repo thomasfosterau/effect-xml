@@ -65,13 +65,13 @@ Still handled leniently (as generic flow content) rather than per-spec:
    semicolon-less** references (e.g. `&copy`), the **ambiguous-ampersand** rule in
    attributes, semicolon-less numeric references, and the numeric Windows-1252
    remap.
-6. **Markers** in the active-formatting list (inserted by
+6. ~~**Markers** in the active-formatting list~~ ✅ done — applet/object/marquee (and table/cell/caption) push a marker; the end tags clear back to it.
    `applet`/`object`/`marquee`/table scopes) — the type is already threaded
    through; the insert/clear-to-marker steps land with the table modes.
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **1337/1368**
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **1339/1368**
 (~92%) runnable cases (only fragment-context and scripted cases are excluded);
 the test fails on any regression, so the items above are tracked as the pass
 count climbs toward 100%.
