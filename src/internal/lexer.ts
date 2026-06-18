@@ -834,12 +834,12 @@ export class Lexer {
     const name = nameMatch ? nameMatch[1]! : ""
     let publicId: string | null = null
     let systemId: string | null = null
-    const pub = /PUBLIC\s+("([^"]*)"|'([^']*)')\s*("([^"]*)"|'([^']*)')?/i.exec(trimmed)
+    const pub = /PUBLIC\s*("([^"]*)"|'([^']*)')\s*("([^"]*)"|'([^']*)')?/i.exec(trimmed)
     if (pub) {
       publicId = pub[2] ?? pub[3] ?? null
       systemId = pub[5] ?? pub[6] ?? null
     } else {
-      const sys = /SYSTEM\s+("([^"]*)"|'([^']*)')/i.exec(trimmed)
+      const sys = /SYSTEM\s*("([^"]*)"|'([^']*)')/i.exec(trimmed)
       if (sys) systemId = sys[2] ?? sys[3] ?? null
     }
     return {
@@ -871,6 +871,13 @@ export class Lexer {
           this.emit({ _tag: "Text", data: this.text, span: { start: this.textStart, end: this.pos } })
         }
         return
+      case S.Doctype:
+        // Unterminated DOCTYPE at EOF (HTML) still emits what was parsed.
+        if (this.options.mode === "html") {
+          this.emit(this.parseDoctype(this.dtBuf, this.pos))
+          return
+        }
+        break
       case S.CData:
         // Unterminated CDATA at EOF: in HTML the accumulated content (including
         // any trailing `]]`) is emitted as-is; XML falls through to a fault.
