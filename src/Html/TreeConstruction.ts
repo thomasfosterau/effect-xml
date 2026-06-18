@@ -528,9 +528,20 @@ class HtmlTreeBuilder {
         if (this.bodyEl === null) {
           this.ensureHead()
         }
+        // After </head>, a stray metadata element re-opens <head> just for itself.
+        const isVoidHead =
+          voidElements.has(name) || name === "meta" || name === "link" || name === "base"
+        const reopenHead =
+          isVoidHead &&
+          this.mode === "afterHead" &&
+          this.headEl !== null &&
+          !this.open.includes(this.headEl)
+        if (reopenHead) this.open.push(this.headEl!)
         const el = this.insertElement(name, attrs)
-        if (voidElements.has(name) || name === "meta" || name === "link" || name === "base") {
-          this.open.pop()
+        if (isVoidHead) this.open.pop()
+        if (reopenHead) {
+          const hi = this.open.indexOf(this.headEl!)
+          if (hi !== -1) this.open.splice(hi, 1)
         }
         // For title/style/script/noframes the tokenizer already delivered text +
         // end tag (raw/rcdata), so nothing special to do here.
@@ -824,6 +835,9 @@ class HtmlTreeBuilder {
   }
 
   private inBodyStart(name: string, attrs: Array<MAttr>): void {
+    // <image> is a willful violation: it is treated as <img>.
+    if (name === "image") name = "img"
+
     // Stray table-section start tags are ignored in the body.
     if (STRAY_TABLE_TAGS.has(name)) return
 

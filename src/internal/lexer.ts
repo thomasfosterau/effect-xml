@@ -784,6 +784,22 @@ export class Lexer {
       default:
         break
     }
+    // HTML EOF recovery: an unfinished `<` / `</` becomes literal text and an
+    // unfinished `<!` becomes an (empty) bogus comment.
+    if (this.options.mode === "html") {
+      if (this.state === S.TagOpen) {
+        this.emit({ _tag: "Text", data: "<", span: { start: this.tagStart, end: this.pos } })
+        return
+      }
+      if (this.state === S.EndTagOpen) {
+        this.emit({ _tag: "Text", data: "</", span: { start: this.tagStart, end: this.pos } })
+        return
+      }
+      if (this.state === S.MarkupDecl) {
+        this.emit({ _tag: "Comment", data: this.markupBuf, span: { start: this.tagStart, end: this.pos } })
+        return
+      }
+    }
     if (this.strict) {
       this.fault(
         new UnexpectedEndOfInput({ position: this.pos, context: "parsing markup" })
