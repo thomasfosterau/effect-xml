@@ -304,9 +304,13 @@ class HtmlTreeBuilder {
         cur.name === "thead" || cur.name === "tr")
     if (fosterHere) {
       for (let i = this.open.length - 1; i >= 0; i--) {
-        if (this.open[i]!.name === "table") {
-          const table = this.open[i]!
-          if (table.parent !== null) return { parent: table.parent, before: table }
+        const el = this.open[i]!
+        if (el.name === "template" && el.ns === HTML_NS) {
+          // A template lower than any table: foster into its contents.
+          return { parent: el, before: null }
+        }
+        if (el.name === "table") {
+          if (el.parent !== null) return { parent: el.parent, before: el }
           return { parent: this.open[i - 1] ?? null, before: null }
         }
       }
@@ -2012,9 +2016,13 @@ class HtmlTreeBuilder {
 
   finish(): XmlDocument {
     // Close any templates still open at EOF (the "in template" EOF rule) so a
-    // synthesized body never lands inside template contents.
+    // synthesized body never lands inside template contents. Only HTML templates
+    // carry a template insertion mode (a foreign <svg template> does not).
     while (this.templateModes.length > 0) {
-      this.popUntilIncluding("template")
+      while (this.open.length > 0) {
+        const el = this.open.pop()!
+        if (el.name === "template" && el.ns === HTML_NS) break
+      }
       this.templateModes.pop()
     }
 
