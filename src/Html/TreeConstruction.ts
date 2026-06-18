@@ -166,7 +166,7 @@ const CLOSES_P = new Set([
   "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header",
   "hgroup", "main", "menu", "nav", "ol", "p", "section", "summary", "ul",
   "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "hr", "table",
-  "plaintext", "xmp",
+  "plaintext", "xmp", "li", "dd", "dt",
 ])
 
 const HEADINGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"])

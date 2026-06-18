@@ -898,7 +898,12 @@ export class Lexer {
       case S.Comment:
       case S.BogusComment:
         if (!this.strict) {
-          this.emit({ _tag: "Comment", data: this.text, span: { start: this.tagStart, end: this.pos } })
+          // Strip a trailing incomplete "--"/"--!" (an unfinished "-->").
+          let data = this.text
+          if (this.state === S.Comment && this.commentDashes >= 2) {
+            data = data.slice(0, data.length - (this.commentBang ? 3 : 2))
+          }
+          this.emit({ _tag: "Comment", data, span: { start: this.tagStart, end: this.pos } })
           return
         }
         break
