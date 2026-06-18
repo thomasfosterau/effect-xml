@@ -13,27 +13,38 @@ XML5 tree construction, in the spirit of Servo's `html5ever`/`xml5ever`.
   (`src/Html/Tokenizer.ts`).
 - ✅ The `InsertionMode` vocabulary that tree construction switches over.
 - ✅ A lenient, pragmatic fragment builder (`Html.parseFragment`) for use today.
+- ✅ **HTML tree construction** (`Html.parseDocument`, `src/Html/TreeConstruction.ts`):
+  implicit `html`/`head`/`body`; the `initial`→`beforeHtml`→`beforeHead`→
+  `inHead`→`afterHead`→`inBody`→`afterBody` spine; the stack of open elements;
+  the **list of active formatting elements** with reconstruction and the Noah's
+  Ark clause; generate-implied-end-tags, `</p>` and list-item auto-closing,
+  heading nesting; void-element handling; head-content routing
+  (`title`/`style`/`script`/`meta`/`link`/`base`); and the full
+  **adoption agency algorithm** for misnested formatting elements
+  (`<b>1<i>2</b>3</i>` → `<b>1<i>2</i></b><i>3</i>`, `<b>1<p>2</b>3` →
+  `<b>1</b><p><b>2</b>3</p>`). Elements are placed in the HTML namespace; output
+  is the typed `XmlNode` DOM.
 
-## Next: HTML tree construction (`Html.parseDocument`)
+## Next: complete the WHATWG algorithm
 
-Implement the WHATWG algorithm on top of the existing tokenizer:
+Still handled leniently (as generic flow content) rather than per-spec:
 
-1. **The stack of open elements** + **active formatting elements** list.
-2. **Insertion modes** — a switch over `InsertionMode` driving the 20+ states
-   already enumerated in `Tokenizer.ts`.
-3. **Implied tags & scoping**: implicit `html`/`head`/`body`, `</p>` auto-close,
-   table foster-parenting, generate-implied-end-tags.
-4. **The adoption agency algorithm** for misnested formatting elements.
-5. **Tokenizer/tree-builder feedback**: the tree builder selects the tokenizer's
-   raw-text/rcdata/plaintext state and CDATA-in-foreign-content handling.
-6. **The full named character-reference table** (~2,200 entries) replacing the
-   common subset in `internal/entities.ts`, plus the HTML-specific ambiguous
-   ampersand / missing-semicolon rules.
-7. **Foreign content** (SVG/MathML) namespace adjustments and the integration
-   points.
+1. **Table insertion modes** (`in table`/`in table body`/`in row`/`in cell`/
+   `in caption`/`in column group`) with **foster parenting** and the table
+   character-pending buffer.
+2. **`select`** insertion modes and **`template`** with its insertion-mode stack.
+3. **Foreign content** (SVG/MathML): namespace + attribute-name adjustments,
+   integration points, self-closing handling, CDATA-in-foreign-content.
+4. **Quirks-mode detection** from the DOCTYPE.
+5. **The full named character-reference table** (~2,200 entries) replacing the
+   common subset in `internal/entities.ts`, plus ambiguous-ampersand and
+   missing-semicolon rules.
+6. **Markers** in the active-formatting list (inserted by
+   `applet`/`object`/`marquee`/table scopes) — the type is already threaded
+   through; the insert/clear-to-marker steps land with the table modes.
 
-The output continues to be the typed `XmlNode` DOM, so downstream queries,
-serialization, and Schema validation keep working unchanged.
+Validation target: run the **html5lib-tests** `tree-construction` suite as the
+conformance gate for the items above.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 

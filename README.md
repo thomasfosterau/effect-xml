@@ -94,14 +94,24 @@ available; the latter builds the tree without ever holding the whole input.
 ```ts
 import { Html } from "effect-sax"
 
-// Auto-closes void/implied tags, keeps <script>/<style> raw, never throws.
+// Full document parse: implicit html/head/body, insertion modes, adoption agency.
+const doc = yield* Html.parseDocument(`<title>Hi</title><p>1<p>2<b>x<i>y</b>z`)
+doc.root // <html> with <head>/<body>, misnested formatting repaired
+
+// Or just a lenient fragment (forest of nodes), never throwing.
 const nodes = yield* Html.parseFragment(`<p>Hi <b>there<br>!</p><script>if (a<b){}</script>`)
 ```
 
-> **Status:** HTML *tokenization* is solid. The fragment builder is a pragmatic
-> interim; full WHATWG tree construction (insertion modes, the adoption agency
-> algorithm, implicit `html`/`head`/`body`) is the next milestone — see
-> [`src/Html/ROADMAP.md`](src/Html/ROADMAP.md).
+`Html.parseDocument` runs the WHATWG tree-construction algorithm: implicit
+`html`/`head`/`body`, the insertion-mode spine, the active-formatting-elements
+list with reconstruction, and the **adoption agency algorithm** — so
+`<b>1<i>2</b>3</i>` becomes `<b>1<i>2</i></b><i>3</i>`.
+
+> **Status:** tokenization and the core tree-construction spine (including
+> formatting/adoption agency) are implemented. Tables, `select`/`template`, and
+> foreign (SVG/MathML) content are currently handled leniently rather than
+> per-spec; see [`src/Html/ROADMAP.md`](src/Html/ROADMAP.md) for the plan and the
+> html5lib-tests conformance gate.
 
 ## Typed errors
 

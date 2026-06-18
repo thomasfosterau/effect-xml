@@ -4,4 +4,5 @@
  */
 export * from "./Tokenizer.ts"
 export * from "./TreeBuilder.ts"
+export * from "./TreeConstruction.ts"
 export * from "./Html.ts"

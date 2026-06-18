@@ -39,13 +39,16 @@ const xmlDemo = Effect.gen(function* () {
   yield* Console.log("  round-trip: " + Xml.serialize(doc.root.elements[0]!))
 })
 
-// 3. Lenient HTML fragment parsing.
+// 3. HTML: full document (WHATWG tree construction) and lenient fragment.
 const htmlDemo = Effect.gen(function* () {
-  yield* Console.log("\n# 3. Lenient HTML")
+  yield* Console.log("\n# 3. HTML")
+  const doc = yield* Html.parseDocument(`<title>Hi</title><p>1<p>2<b>x<i>y</b>z`)
+  yield* Console.log("  parseDocument: " + Xml.serialize(doc.root))
+
   const nodes = yield* Html.parseFragment(`<p>Hello <b>world<br>!</p><script>if (a<b) {}</script>`)
   for (const n of nodes) {
     if (n._tag === "XmlElement") {
-      yield* Console.log(`  <${n.name.qualified}> => ${JSON.stringify(n.textContent)}`)
+      yield* Console.log(`  fragment <${n.name.qualified}> => ${JSON.stringify(n.textContent)}`)
     }
   }
 })

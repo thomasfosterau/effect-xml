@@ -57,8 +57,11 @@ Xml.attr(name, value); Xml.text(data)
 import { Html } from "effect-sax"
 
 Html.tokenize(options?) / tokenizeString(input, options?)
-Html.parseFragment(input, options?)      // Effect<ReadonlyArray<XmlNode>, SaxError>
+Html.parseDocument(input, options?)      // Effect<XmlDocument> — WHATWG tree construction
+Html.parseDocumentStream(options?)
+Html.parseFragment(input, options?)      // Effect<ReadonlyArray<XmlNode>> — lenient forest
 Html.parseFragmentStream(options?)
+Html.HTML_NS                             // "http://www.w3.org/1999/xhtml"
 Html.voidElements / rawTextElements / rcdataElements / formattingElements
 ```
 
