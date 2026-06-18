@@ -139,6 +139,52 @@ describe("Html.parseDocument — select", () => {
   })
 })
 
+describe("Html.parseDocument — foreign content", () => {
+  const find = (root: any, local: string): any => {
+    if (root.name?.local === local) return root
+    for (const c of root.elements ?? []) {
+      const r = find(c, local)
+      if (r) return r
+    }
+    return null
+  }
+
+  test("svg/math elements land in their own namespace", async () => {
+    const d = await doc(`<svg><circle></circle></svg><math><mi>x</mi></math>`)
+    const svg = find(d.root, "svg")
+    const math = find(d.root, "math")
+    expect(svg.name.namespace).toBe(Html.SVG_NS)
+    expect(svg.elements[0]!.name.namespace).toBe(Html.SVG_NS)
+    expect(math.name.namespace).toBe(Html.MATHML_NS)
+  })
+
+  test("SVG tag and attribute names are case-corrected", async () => {
+    const d = await doc(`<svg viewbox="0 0 1 1"><foreignobject></foreignobject></svg>`)
+    const svg = find(d.root, "svg")
+    expect(svg.attributes[0]!.name.local).toBe("viewBox")
+    expect(svg.elements[0]!.name.local).toBe("foreignObject")
+  })
+
+  test("xlink/xml attributes get their foreign namespaces", async () => {
+    const d = await doc(`<svg><a xlink:href="u" xml:lang="en"></a></svg>`)
+    const a = find(d.root, "a")
+    const xlink = a.attributes.find((x: any) => x.name.local === "href")
+    const xml = a.attributes.find((x: any) => x.name.local === "lang")
+    expect(xlink.name.namespace).toBe(Html.XLINK_NS)
+    expect(xlink.name.prefix).toBe("xlink")
+    expect(xml.name.namespace).toBe(Html.XML_NS)
+  })
+
+  test("breakout tags return to HTML content", async () => {
+    // <p> is a breakout tag: it closes the SVG subtree.
+    const d = await doc(`<svg><p>after`)
+    const body = d.root.elements.find((e) => e.name.local === "body")!
+    const names = body.elements.map((e) => e.name.local)
+    expect(names).toEqual(["svg", "p"])
+    expect(body.elements[1]!.name.namespace).toBe(Html.HTML_NS)
+  })
+})
+
 describe("Html.parseDocument — robustness", () => {
   test("never throws on garbage", async () => {
     const d = await doc(`<<>></p></div><b><b><b>x`)

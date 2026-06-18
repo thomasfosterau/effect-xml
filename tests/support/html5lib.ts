@@ -70,10 +70,16 @@ const serializeNode = (node: XmlNode, depth: number, lines: Array<string>): void
   switch (node._tag) {
     case "XmlElement": {
       lines.push(`| ${indent(depth)}<${nsPrefix(node.name.namespace)}${node.name.local}>`)
-      const attrs = [...node.attributes].sort((a, b) =>
-        a.name.local < b.name.local ? -1 : a.name.local > b.name.local ? 1 : 0
-      )
-      for (const a of attrs) lines.push(`| ${indent(depth + 1)}${a.name.local}="${a.value}"`)
+      // Namespaced (foreign) attributes serialize as "prefix local"; html5lib
+      // sorts attributes by that displayed name.
+      const attrName = (a: { name: { prefix: string | null; local: string } }): string =>
+        a.name.prefix !== null ? `${a.name.prefix} ${a.name.local}` : a.name.local
+      const attrs = [...node.attributes].sort((x, y) => {
+        const a = attrName(x)
+        const b = attrName(y)
+        return a < b ? -1 : a > b ? 1 : 0
+      })
+      for (const a of attrs) lines.push(`| ${indent(depth + 1)}${attrName(a)}="${a.value}"`)
       for (const c of node.children) serializeNode(c, depth + 1, lines)
       break
     }
@@ -110,5 +116,4 @@ export const serialize = (doc: XmlDocument): string => {
 export const isUnsupported = (t: Html5libTest): boolean =>
   t.fragmentContext !== null ||
   t.scriptMode === "on" ||
-  /^\| +content$/m.test(t.document) || // <template> contents
-  /<(svg|math)[ >]/.test(t.document) // foreign content
+  /^\| +content$/m.test(t.document) // <template> contents

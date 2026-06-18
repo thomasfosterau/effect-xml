@@ -33,6 +33,14 @@ import {
   type XmlNode,
 } from "../Xml/Node.ts"
 import { voidElements } from "./Tokenizer.ts"
+import {
+  adjustForeignAttrs,
+  FOREIGN_BREAKOUT,
+  MATHML_NS,
+  MATHML_TEXT_IP,
+  SVG_NS,
+  svgTagName,
+} from "./foreign.ts"
 
 /** The HTML namespace, assigned to every element produced by document parsing. */
 export const HTML_NS = "http://www.w3.org/1999/xhtml"
@@ -44,11 +52,15 @@ export const HTML_NS = "http://www.w3.org/1999/xhtml"
 interface MAttr {
   name: string
   value: string
+  prefix?: string | null
+  ns?: string | null
 }
 
 interface MElement {
   readonly _t: "element"
   name: string
+  /** Element namespace (HTML by default; SVG/MathML for foreign content). */
+  ns: string
   attrs: Array<MAttr>
   children: Array<MNode>
   parent: MElement | null
@@ -81,9 +93,10 @@ interface MPi {
 
 type MNode = MElement | MText | MComment | MCData | MPi
 
-const mkElement = (name: string, attrs: Array<MAttr>): MElement => ({
+const mkElement = (name: string, attrs: Array<MAttr>, ns: string = HTML_NS): MElement => ({
   _t: "element",
   name,
+  ns,
   attrs,
   children: [],
   parent: null,
@@ -222,6 +235,8 @@ class HtmlTreeBuilder {
   private bodyEl: MElement | null = null
   /** When set, insertions are foster-parented out of an open table. */
   private foster = false
+  /** Self-closing flag of the start tag currently being processed. */
+  private selfClosing = false
 
   // --- stack helpers -------------------------------------------------------
 
@@ -231,7 +246,17 @@ class HtmlTreeBuilder {
 
   /** The "appropriate place for inserting a node", honouring foster parenting. */
   private appropriatePlace(): { parent: MElement | null; before: MNode | null } {
-    if (this.foster) {
+    // Foster parenting only applies when the current node is itself a table
+    // section element; content nested in (e.g. fostered foreign) elements is
+    // inserted normally even while foster parenting is enabled.
+    const cur = this.current
+    const fosterHere =
+      this.foster &&
+      cur !== null &&
+      cur.ns === HTML_NS &&
+      (cur.name === "table" || cur.name === "tbody" || cur.name === "tfoot" ||
+        cur.name === "thead" || cur.name === "tr")
+    if (fosterHere) {
       for (let i = this.open.length - 1; i >= 0; i--) {
         if (this.open[i]!.name === "table") {
           const table = this.open[i]!
@@ -301,8 +326,8 @@ class HtmlTreeBuilder {
     this.mode = "inBody"
   }
 
-  private insertElement(name: string, attrs: Array<MAttr>): MElement {
-    const el = mkElement(name, attrs)
+  private insertElement(name: string, attrs: Array<MAttr>, ns: string = HTML_NS): MElement {
+    const el = mkElement(name, attrs, ns)
     this.insert(el)
     this.open.push(el)
     return el
@@ -402,17 +427,113 @@ class HtmlTreeBuilder {
         this.insert({ _t: "cdata", data: ev.data, parent: null })
         return
       case "Text":
-        this.onText(ev.data)
+        if (this.usesForeignRules("char")) this.foreignText(ev.data)
+        else this.onText(ev.data)
         return
-      case "StartElement":
-        this.onStart((ev.name as string).toLowerCase(), ev.attributes.map((a) => ({
+      case "StartElement": {
+        const name = (ev.name as string).toLowerCase()
+        const attrs = ev.attributes.map((a) => ({
           name: (a.name as string).toLowerCase(),
           value: a.value,
-        })))
+        }))
+        this.selfClosing = ev.selfClosing
+        if (this.usesForeignRules("start", name)) this.foreignStart(name, attrs)
+        else this.onStart(name, attrs)
         return
-      case "EndElement":
-        this.onEnd((ev.name as string).toLowerCase())
+      }
+      case "EndElement": {
+        const name = (ev.name as string).toLowerCase()
+        if (this.usesForeignRules("end", name)) this.foreignEnd(name)
+        else this.onEnd(name)
         return
+      }
+    }
+  }
+
+  // --- foreign content (SVG / MathML) -------------------------------------
+
+  private isMathMLTextIP(el: MElement): boolean {
+    return el.ns === MATHML_NS && MATHML_TEXT_IP.has(el.name)
+  }
+
+  private isHTMLIntegrationPoint(el: MElement): boolean {
+    if (el.ns === MATHML_NS && el.name === "annotation-xml") {
+      const enc = el.attrs.find((a) => a.name === "encoding")?.value.toLowerCase()
+      return enc === "text/html" || enc === "application/xhtml+xml"
+    }
+    return el.ns === SVG_NS && (el.name === "foreignobject" || el.name === "desc" || el.name === "title")
+  }
+
+  /**
+   * Whether the current token should be processed with foreign-content rules
+   * rather than the current insertion mode (per the WHATWG tree-construction
+   * dispatcher).
+   */
+  private usesForeignRules(kind: "start" | "end" | "char", startName?: string): boolean {
+    const node = this.current // adjusted current node (no fragment context here)
+    if (node === null || node.ns === HTML_NS) return false
+    if (this.isMathMLTextIP(node)) {
+      if (kind === "char") return false
+      if (kind === "start" && startName !== "mglyph" && startName !== "malignmark") return false
+    }
+    if (node.ns === MATHML_NS && node.name === "annotation-xml" && kind === "start" && startName === "svg") {
+      return false
+    }
+    if (this.isHTMLIntegrationPoint(node)) {
+      if (kind === "char" || kind === "start") return false
+    }
+    return true
+  }
+
+  /** Insert a foreign (SVG/MathML) element in the namespace of the current node. */
+  private insertForeignElement(name: string, attrs: Array<MAttr>, ns: string): void {
+    const tag = ns === SVG_NS ? svgTagName(name) : name
+    this.insertElement(tag, adjustForeignAttrs(attrs, ns), ns)
+    if (this.selfClosing) this.open.pop()
+  }
+
+  private foreignText(data: string): void {
+    // U+0000 in foreign content becomes U+FFFD.
+    this.insertText(data.replace(/\u0000/g, "\uFFFD"))
+  }
+
+  private foreignStart(name: string, attrs: Array<MAttr>): void {
+    const isFontBreakout =
+      name === "font" &&
+      attrs.some((a) => a.name === "color" || a.name === "face" || a.name === "size")
+    if (FOREIGN_BREAKOUT.has(name) || isFontBreakout) {
+      // Pop foreign elements until we're back at an HTML element or an
+      // integration point, then reprocess the token with HTML rules.
+      while (
+        this.current !== null &&
+        this.current.ns !== HTML_NS &&
+        !this.isMathMLTextIP(this.current) &&
+        !this.isHTMLIntegrationPoint(this.current)
+      ) {
+        this.open.pop()
+      }
+      this.onStart(name, attrs)
+      return
+    }
+    this.insertForeignElement(name, attrs, this.current!.ns)
+  }
+
+  private foreignEnd(name: string): void {
+    // Walk up the stack of open elements (bottommost first).
+    let idx = this.open.length - 1
+    while (idx >= 0) {
+      const node = this.open[idx]!
+      if (idx === 0) return // reached the topmost element without a match
+      if (node.name.toLowerCase() === name) {
+        while (this.open.length > idx) this.open.pop()
+        return
+      }
+      idx--
+      if (this.open[idx]!.ns === HTML_NS) {
+        // The next element up is HTML: process the end tag with HTML rules.
+        this.onEnd(name)
+        return
+      }
     }
   }
 
@@ -855,6 +976,14 @@ class HtmlTreeBuilder {
       this.reconstructFormatting()
       this.insertElement("select", attrs)
       this.mode = this.inTableContext() ? "inSelectInTable" : "inSelect"
+      return
+    }
+
+    if (name === "svg" || name === "math") {
+      this.reconstructFormatting()
+      const ns = name === "svg" ? SVG_NS : MATHML_NS
+      this.insertElement(name, adjustForeignAttrs(attrs, ns), ns)
+      if (this.selfClosing) this.open.pop()
       return
     }
 
@@ -1375,11 +1504,15 @@ const toXmlNode = (node: MNode): XmlNode => {
       return new XmlProcessingInstruction({ target: node.target, data: node.data })
     case "element":
       return new XmlElement({
-        name: new QName({ prefix: null, local: node.name, namespace: HTML_NS }),
+        name: new QName({ prefix: null, local: node.name, namespace: node.ns }),
         attributes: node.attrs.map(
           (a) =>
             new XmlAttribute({
-              name: new QName({ prefix: null, local: a.name, namespace: null }),
+              name: new QName({
+                prefix: a.prefix ?? null,
+                local: a.name,
+                namespace: a.ns ?? null,
+              }),
               value: a.value,
             })
         ),

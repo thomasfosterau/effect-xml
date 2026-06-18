@@ -40,8 +40,13 @@ Still handled leniently (as generic flow content) rather than per-spec:
    option/optgroup auto-closing, nested-select handling, and dropping out of
    select on table tags. Still to do: **`template`** with its insertion-mode
    stack.
-3. **Foreign content** (SVG/MathML): namespace + attribute-name adjustments,
-   integration points, self-closing handling, CDATA-in-foreign-content.
+3. ~~**Foreign content** (SVG/MathML)~~ ✅ done — elements are placed in the SVG
+   / MathML namespaces, SVG tag and attribute names are case-corrected, the
+   XLink/XML/XMLNS foreign attributes get their namespaces, integration points
+   (`annotation-xml`, `foreignObject`/`desc`/`title`, the MathML text points) and
+   HTML breakout tags are handled, and self-closing foreign tags are honoured.
+   Still to do: CDATA-in-foreign-content (the tokenizer is decoupled from the
+   tree, so `<![CDATA[` is not yet switched on inside foreign elements).
 4. **Quirks-mode detection** from the DOCTYPE.
 5. ~~The full named character-reference table~~ ✅ done — all ~2,125 WHATWG named
    references ship in `internal/htmlEntities.generated.ts`, and html-mode
@@ -55,7 +60,7 @@ Still handled leniently (as generic flow content) rather than per-spec:
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **643/1086**
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **768/1256**
 runnable cases (template/foreign cases are excluded until implemented); the test
 fails on any regression, so the items above are tracked as the pass count climbs
 toward 100%.
