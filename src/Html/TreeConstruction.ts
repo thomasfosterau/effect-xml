@@ -181,6 +181,11 @@ const LIST_ITEM_SCOPE = new Set([...DEFAULT_SCOPE, "ol", "ul"])
 const IMPLIED_END = new Set([
   "dd", "dt", "li", "optgroup", "option", "p", "rb", "rp", "rt", "rtc",
 ])
+// The "thoroughly" variant additionally pops table-section and caption elements.
+const IMPLIED_END_THOROUGH = new Set([
+  ...IMPLIED_END,
+  "caption", "colgroup", "tbody", "td", "tfoot", "th", "thead", "tr",
+])
 
 // Table scoping / context sets.
 const TABLE_SCOPE = new Set(["html", "table", "template"])
@@ -221,6 +226,7 @@ type Mode =
   | "inColumnGroup"
   | "inSelect"
   | "inSelectInTable"
+  | "inTemplate"
   | "afterBody"
   | "afterAfterBody"
 
@@ -228,6 +234,8 @@ class HtmlTreeBuilder {
   private mode: Mode = "initial"
   private readonly open: Array<MElement> = []
   private readonly afe: Array<MElement | Marker> = []
+  /** The stack of template insertion modes (one entry per open <template>). */
+  private readonly templateModes: Array<Mode> = []
   private readonly topLevel: Array<MNode> = []
   private doctype: XmlDoctype | null = null
   private htmlEl: MElement | null = null
@@ -289,6 +297,20 @@ class HtmlTreeBuilder {
     for (let i = this.open.length - 1; i >= 0; i--) {
       const name = this.open[i]!.name
       const last = i === 0
+      if (name === "select") {
+        if (!last) {
+          for (let j = i - 1; j >= 0; j--) {
+            const n2 = this.open[j]!.name
+            if (n2 === "template") break
+            if (n2 === "table") {
+              this.mode = "inSelectInTable"
+              return
+            }
+          }
+        }
+        this.mode = "inSelect"
+        return
+      }
       if ((name === "td" || name === "th") && !last) {
         this.mode = "inCell"
         return
@@ -313,7 +335,15 @@ class HtmlTreeBuilder {
         this.mode = "inTable"
         return
       }
-      if (name === "body" || name === "head") {
+      if (name === "template") {
+        this.mode = this.templateModes[this.templateModes.length - 1] ?? "inBody"
+        return
+      }
+      if (name === "head" && !last) {
+        this.mode = "inHead"
+        return
+      }
+      if (name === "body") {
         this.mode = "inBody"
         return
       }
@@ -354,6 +384,20 @@ class HtmlTreeBuilder {
       const c = this.current!
       if (c.name === except || !IMPLIED_END.has(c.name)) break
       this.open.pop()
+    }
+  }
+
+  private generateImpliedEndTagsThoroughly(): void {
+    while (this.open.length > 0) {
+      if (!IMPLIED_END_THOROUGH.has(this.current!.name)) break
+      this.open.pop()
+    }
+  }
+
+  private clearAfeToMarker(): void {
+    while (this.afe.length > 0) {
+      const e = this.afe.pop()!
+      if ("marker" in e) break
     }
   }
 
@@ -626,15 +670,25 @@ class HtmlTreeBuilder {
     switch (name) {
       case "html":
         this.ensureHtml()
-        // Merge attributes onto the existing html element.
-        if (this.htmlEl) mergeAttrs(this.htmlEl, attrs)
+        // With a template open the attributes are ignored; otherwise merge.
+        if (this.htmlEl && this.templateModes.length === 0) mergeAttrs(this.htmlEl, attrs)
         return
       case "head":
         this.ensureHead()
         return
       case "body":
+        // Inside an open template a stray <body> start tag is ignored.
+        if (this.templateModes.length > 0) return
         this.ensureBody()
         if (this.bodyEl) mergeAttrs(this.bodyEl, attrs)
+        return
+      case "template":
+        // Handled identically in every insertion mode (via the "in head" rules).
+        if (this.bodyEl === null) this.ensureHead()
+        this.insertElement("template", attrs)
+        this.afe.push(MARKER)
+        this.templateModes.push("inTemplate")
+        this.mode = "inTemplate"
         return
       case "base":
       case "basefont":
@@ -674,7 +728,10 @@ class HtmlTreeBuilder {
     }
 
     // Everything else implies we have a body, then dispatch by insertion mode.
-    this.ensureBody()
+    // Inside an open <template>, content lands in the template's contents — never
+    // synthesize the document <body>.
+    if (this.templateModes.length === 0) this.ensureBody()
+    else this.ensureHtml()
     this.dispatchStart(name, attrs)
   }
 
@@ -696,8 +753,43 @@ class HtmlTreeBuilder {
         return this.inSelectStart(name, attrs)
       case "inSelectInTable":
         return this.inSelectInTableStart(name, attrs)
+      case "inTemplate":
+        return this.inTemplateStart(name, attrs)
       default:
         return this.inBodyStart(name, attrs)
+    }
+  }
+
+  private switchTemplateMode(m: Mode): void {
+    this.templateModes.pop()
+    this.templateModes.push(m)
+    this.mode = m
+  }
+
+  private inTemplateStart(name: string, attrs: Array<MAttr>): void {
+    // Head-content tags (base/link/meta/script/style/title/...) are handled
+    // earlier in onStart before dispatch, so they never reach here.
+    switch (name) {
+      case "caption":
+      case "colgroup":
+      case "tbody":
+      case "tfoot":
+      case "thead":
+        this.switchTemplateMode("inTable")
+        return this.dispatchStart(name, attrs)
+      case "col":
+        this.switchTemplateMode("inColumnGroup")
+        return this.dispatchStart(name, attrs)
+      case "tr":
+        this.switchTemplateMode("inTableBody")
+        return this.dispatchStart(name, attrs)
+      case "td":
+      case "th":
+        this.switchTemplateMode("inRow")
+        return this.dispatchStart(name, attrs)
+      default:
+        this.switchTemplateMode("inBody")
+        return this.dispatchStart(name, attrs)
     }
   }
 
@@ -1077,6 +1169,16 @@ class HtmlTreeBuilder {
   // --- end tags ------------------------------------------------------------
 
   private onEnd(name: string): void {
+    if (name === "template") {
+      // Processed via the "in head" rules in every insertion mode.
+      if (!this.open.some((e) => e.name === "template")) return
+      this.generateImpliedEndTagsThoroughly()
+      this.popUntilIncluding("template")
+      this.clearAfeToMarker()
+      this.templateModes.pop()
+      this.resetInsertionMode()
+      return
+    }
     if (name === "html") {
       if (this.bodyEl) this.mode = "afterBody"
       return
@@ -1118,6 +1220,9 @@ class HtmlTreeBuilder {
       case "inSelectInTable":
         if (this.inSelectInTableEnd(name)) return
         break
+      case "inTemplate":
+        // Only </template> (handled above) is meaningful; ignore other end tags.
+        return
       default:
         break
     }

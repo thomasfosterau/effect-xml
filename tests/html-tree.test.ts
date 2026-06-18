@@ -185,6 +185,45 @@ describe("Html.parseDocument — foreign content", () => {
   })
 })
 
+describe("Html.parseDocument — template", () => {
+  const tpl = (root: any): any => {
+    if (root.name?.local === "template") return root
+    for (const c of root.elements ?? []) {
+      const r = tpl(c)
+      if (r) return r
+    }
+    return null
+  }
+
+  test("a bare <template> lands in <head> and holds its contents", async () => {
+    const d = await doc(`<template><div>x</div></template>`)
+    const head = d.root.elements.find((e: any) => e.name.local === "head")!
+    const t = tpl(head)
+    expect(t).not.toBeNull()
+    expect(t.elements.map((e: any) => e.name.local)).toEqual(["div"])
+    expect(t.elements[0].textContent).toBe("x")
+  })
+
+  test("content is not wrapped in a synthesized <body>", async () => {
+    const d = await doc(`<head><template><div></div></template></head>`)
+    const t = tpl(d.root)
+    expect(t.elements.map((e: any) => e.name.local)).toEqual(["div"])
+  })
+
+  test("table sections are allowed directly inside template content", async () => {
+    const d = await doc(`<template><tr><td>c</td></tr></template>`)
+    const t = tpl(d.root)
+    // tr is kept (no enclosing <table> is synthesized for template contents)
+    expect(t.elements.map((e: any) => e.name.local)).toContain("tr")
+  })
+
+  test("</template> closes the template and restores the prior mode", async () => {
+    const d = await doc(`<body><template><div></div></template><p>after`)
+    const body = d.root.elements.find((e: any) => e.name.local === "body")!
+    expect(body.elements.map((e: any) => e.name.local)).toEqual(["template", "p"])
+  })
+})
+
 describe("Html.parseDocument — robustness", () => {
   test("never throws on garbage", async () => {
     const d = await doc(`<<>></p></div><b><b><b>x`)

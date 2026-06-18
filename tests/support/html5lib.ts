@@ -58,6 +58,7 @@ export const parseDat = (content: string): ReadonlyArray<Html5libTest> => {
   })
 }
 
+const HTML_NS = "http://www.w3.org/1999/xhtml"
 const SVG_NS = "http://www.w3.org/2000/svg"
 const MATHML_NS = "http://www.w3.org/1998/Math/MathML"
 
@@ -80,6 +81,12 @@ const serializeNode = (node: XmlNode, depth: number, lines: Array<string>): void
         return a < b ? -1 : a > b ? 1 : 0
       })
       for (const a of attrs) lines.push(`| ${indent(depth + 1)}${attrName(a)}="${a.value}"`)
+      // html5lib wraps a template's children in a synthetic "content" fragment.
+      if (node.name.local === "template" && node.name.namespace === HTML_NS) {
+        lines.push(`| ${indent(depth + 1)}content`)
+        for (const c of node.children) serializeNode(c, depth + 2, lines)
+        break
+      }
       for (const c of node.children) serializeNode(c, depth + 1, lines)
       break
     }
@@ -115,5 +122,4 @@ export const serialize = (doc: XmlDocument): string => {
 /** Whether a test exercises features we don't yet implement (so it's excluded from the gate). */
 export const isUnsupported = (t: Html5libTest): boolean =>
   t.fragmentContext !== null ||
-  t.scriptMode === "on" ||
-  /^\| +content$/m.test(t.document) // <template> contents
+  t.scriptMode === "on"

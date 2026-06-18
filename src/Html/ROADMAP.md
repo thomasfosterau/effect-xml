@@ -38,8 +38,14 @@ Still handled leniently (as generic flow content) rather than per-spec:
    cases.
 2. ~~`select` insertion modes~~ ✅ done — `in select` and `in select in table`,
    option/optgroup auto-closing, nested-select handling, and dropping out of
-   select on table tags. Still to do: **`template`** with its insertion-mode
-   stack.
+   select on table tags.
+2b. ~~**`template`**~~ ✅ done — the `in template` mode and the stack of template
+   insertion modes, the `content`-fragment contents (children are the template's
+   own children in the output DOM), the active-formatting marker, generate-all-
+   implied-end-tags-thoroughly and clear-to-marker on `</template>`, the
+   reset-the-insertion-mode `template`/`select`/`head` cases, and the
+   no-synthetic-`body`-inside-template rule. Remaining: the table-without-table
+   foster edges inside template content.
 3. ~~**Foreign content** (SVG/MathML)~~ ✅ done — elements are placed in the SVG
    / MathML namespaces, SVG tag and attribute names are case-corrected, the
    XLink/XML/XMLNS foreign attributes get their namespaces, integration points
@@ -60,7 +66,7 @@ Still handled leniently (as generic flow content) rather than per-spec:
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **772/1256**
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **849/1368**
 runnable cases (template and fragment/scripted cases are excluded until
 implemented); the test fails on any regression, so the items above are tracked as
 the pass count climbs toward 100%.
