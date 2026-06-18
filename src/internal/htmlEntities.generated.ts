@@ -1,12 +1,15 @@
 /**
- * The complete WHATWG named character reference set (~2125 entries).
+ * The complete WHATWG named character reference set.
  *
  * AUTO-GENERATED — do not edit by hand. Sourced from the WHATWG HTML standard
- * named character references, via the public-domain \`character-entities\` data
- * set (https://github.com/wooorm/character-entities). Keys are entity names
- * without the leading \`&\` or trailing \`;\`; values are the replacement text
- * (which may be more than one code point).
+ * named character references, via the public-domain \`character-entities\` and
+ * \`character-entities-legacy\` data sets
+ * (https://github.com/wooorm/character-entities). Keys are entity names without
+ * the leading \`&\` or trailing \`;\`; values are the replacement text (which may
+ * be more than one code point).
  */
+
+/** Every named reference (the \`&name;\` semicolon-terminated form). ~2125 entries. */
 export const htmlNamedEntities: Record<string, string> = {
   "AElig": "Æ",
   "AMP": "&",
@@ -2133,4 +2136,117 @@ export const htmlNamedEntities: Record<string, string> = {
   "zscr": "𝓏",
   "zwj": "‍",
   "zwnj": "‌",
+}
+
+/**
+ * The legacy subset (~106 entries) that may also appear WITHOUT a
+ * trailing semicolon, e.g. \`&copy\`. Used for maximal-munch decoding in html mode.
+ */
+export const htmlLegacyEntities: Record<string, string> = {
+  "AElig": "Æ",
+  "AMP": "&",
+  "Aacute": "Á",
+  "Acirc": "Â",
+  "Agrave": "À",
+  "Aring": "Å",
+  "Atilde": "Ã",
+  "Auml": "Ä",
+  "COPY": "©",
+  "Ccedil": "Ç",
+  "ETH": "Ð",
+  "Eacute": "É",
+  "Ecirc": "Ê",
+  "Egrave": "È",
+  "Euml": "Ë",
+  "GT": ">",
+  "Iacute": "Í",
+  "Icirc": "Î",
+  "Igrave": "Ì",
+  "Iuml": "Ï",
+  "LT": "<",
+  "Ntilde": "Ñ",
+  "Oacute": "Ó",
+  "Ocirc": "Ô",
+  "Ograve": "Ò",
+  "Oslash": "Ø",
+  "Otilde": "Õ",
+  "Ouml": "Ö",
+  "QUOT": "\"",
+  "REG": "®",
+  "THORN": "Þ",
+  "Uacute": "Ú",
+  "Ucirc": "Û",
+  "Ugrave": "Ù",
+  "Uuml": "Ü",
+  "Yacute": "Ý",
+  "aacute": "á",
+  "acirc": "â",
+  "acute": "´",
+  "aelig": "æ",
+  "agrave": "à",
+  "amp": "&",
+  "aring": "å",
+  "atilde": "ã",
+  "auml": "ä",
+  "brvbar": "¦",
+  "ccedil": "ç",
+  "cedil": "¸",
+  "cent": "¢",
+  "copy": "©",
+  "curren": "¤",
+  "deg": "°",
+  "divide": "÷",
+  "eacute": "é",
+  "ecirc": "ê",
+  "egrave": "è",
+  "eth": "ð",
+  "euml": "ë",
+  "frac12": "½",
+  "frac14": "¼",
+  "frac34": "¾",
+  "gt": ">",
+  "iacute": "í",
+  "icirc": "î",
+  "iexcl": "¡",
+  "igrave": "ì",
+  "iquest": "¿",
+  "iuml": "ï",
+  "laquo": "«",
+  "lt": "<",
+  "macr": "¯",
+  "micro": "µ",
+  "middot": "·",
+  "nbsp": " ",
+  "not": "¬",
+  "ntilde": "ñ",
+  "oacute": "ó",
+  "ocirc": "ô",
+  "ograve": "ò",
+  "ordf": "ª",
+  "ordm": "º",
+  "oslash": "ø",
+  "otilde": "õ",
+  "ouml": "ö",
+  "para": "¶",
+  "plusmn": "±",
+  "pound": "£",
+  "quot": "\"",
+  "raquo": "»",
+  "reg": "®",
+  "sect": "§",
+  "shy": "­",
+  "sup1": "¹",
+  "sup2": "²",
+  "sup3": "³",
+  "szlig": "ß",
+  "thorn": "þ",
+  "times": "×",
+  "uacute": "ú",
+  "ucirc": "û",
+  "ugrave": "ù",
+  "uml": "¨",
+  "uuml": "ü",
+  "yacute": "ý",
+  "yen": "¥",
+  "yuml": "ÿ",
 }

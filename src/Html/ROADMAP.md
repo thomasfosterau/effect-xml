@@ -37,10 +37,11 @@ Still handled leniently (as generic flow content) rather than per-spec:
    integration points, self-closing handling, CDATA-in-foreign-content.
 4. **Quirks-mode detection** from the DOCTYPE.
 5. ~~The full named character-reference table~~ ✅ done — all ~2,125 WHATWG named
-   references ship in `internal/htmlEntities.generated.ts`. Remaining: legacy
-   **semicolon-less** references (e.g. `&copy`) and the ambiguous-ampersand rule,
-   which need longest-match decoding inside the tokenizer rather than the current
-   `&name;` post-pass.
+   references ship in `internal/htmlEntities.generated.ts`, and html-mode
+   decoding is now spec-compliant: maximal-munch, the ~106 **legacy
+   semicolon-less** references (e.g. `&copy`), the **ambiguous-ampersand** rule in
+   attributes, semicolon-less numeric references, and the numeric Windows-1252
+   remap.
 6. **Markers** in the active-formatting list (inserted by
    `applet`/`object`/`marquee`/table scopes) — the type is already threaded
    through; the insert/clear-to-marker steps land with the table modes.

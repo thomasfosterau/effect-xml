@@ -55,3 +55,37 @@ describe("entities", () => {
     }
   })
 })
+
+const attrValue = async (input: string) => {
+  const evs = await Effect.runPromise(Sax.collect(input, { mode: "html" }))
+  const start = evs.find(Sax.isStartElement)!
+  return (start as any).attributes[0]?.value
+}
+
+describe("entities — WHATWG lenient (html mode)", () => {
+  test("legacy references decode without a trailing semicolon", async () => {
+    expect(await text("<a>x&copy y</a>", { mode: "html" })).toBe("x© y")
+    expect(await text("<a>&AMP&LT&GT</a>", { mode: "html" })).toBe("&<>")
+  })
+
+  test("maximal munch leaves the unmatched remainder (&notit; => ¬it;)", async () => {
+    expect(await text("<a>&notit;</a>", { mode: "html" })).toBe("¬it;")
+  })
+
+  test("numeric references decode without a trailing semicolon", async () => {
+    expect(await text("<a>&#65 &#x42</a>", { mode: "html" })).toBe("A B")
+  })
+
+  test("numeric references apply the Windows-1252 remap", async () => {
+    // 0x80 -> EURO SIGN, 0x99 -> TRADE MARK
+    expect(await text("<a>&#x80;&#x99;</a>", { mode: "html" })).toBe("€™")
+  })
+
+  test("ambiguous ampersand: legacy ref is literal in attributes before '=' or alnum", async () => {
+    expect(await attrValue(`<a t="q&copy=x"/>`)).toBe("q&copy=x")
+    // but the semicolon form always expands, even in attributes
+    expect(await attrValue(`<a t="q&copy;x"/>`)).toBe("q©x")
+    // and in text content the legacy ref expands regardless
+    expect(await text("<a>&copy=x</a>", { mode: "html" })).toBe("©=x")
+  })
+})

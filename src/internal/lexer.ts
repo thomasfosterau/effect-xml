@@ -21,7 +21,7 @@ import {
   type LexError,
 } from "../Error.ts"
 import { advance, type Position, type Span } from "../Position.ts"
-import { decode } from "./entities.ts"
+import { decode, htmlLegacyEntities } from "./entities.ts"
 
 // -----------------------------------------------------------------------------
 // Output model
@@ -205,15 +205,20 @@ export class Lexer {
 
   private emitText(end: Position): void {
     if (this.text.length === 0) return
-    const decoded = this.decodeValue(this.text, this.textStart)
+    const decoded = this.decodeValue(this.text, this.textStart, false)
     if (decoded !== null) {
       this.emit({ _tag: "Text", data: decoded, span: { start: this.textStart, end } })
     }
     this.text = ""
   }
 
-  private decodeValue(raw: string, start: Position): string | null {
-    const res = decode(raw, { entities: this.options.entities, strict: this.strict })
+  private decodeValue(raw: string, start: Position, inAttribute: boolean): string | null {
+    const res = decode(raw, {
+      entities: this.options.entities,
+      ...(this.options.mode === "html" ? { legacy: htmlLegacyEntities } : {}),
+      strict: this.strict,
+      inAttribute,
+    })
     if (res._tag === "Ok") return res.value
     this.fault(
       new InvalidEntity({
@@ -226,7 +231,7 @@ export class Lexer {
   }
 
   private finishAttribute(end: Position): void {
-    const value = this.decodeValue(this.attrValue, this.attrStart) ?? ""
+    const value = this.decodeValue(this.attrValue, this.attrStart, true) ?? ""
     this.attrs.push({ name: this.attrName, value, span: { start: this.attrStart, end } })
     this.attrName = ""
     this.attrValue = ""
@@ -662,7 +667,7 @@ export class Lexer {
     if (isWhitespace(c) || c === ">" || c === "/") {
       // Flush the accumulated raw text.
       if (this.text.length > 0) {
-        const data = decodeEntities ? this.decodeValue(this.text, this.textStart) : this.text
+        const data = decodeEntities ? this.decodeValue(this.text, this.textStart, false) : this.text
         if (data !== null) {
           this.emit({ _tag: "Text", data, span: { start: this.textStart, end: this.tagStart } })
         }
