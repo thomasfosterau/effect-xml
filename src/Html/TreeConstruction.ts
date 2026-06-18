@@ -1907,6 +1907,35 @@ class HtmlTreeBuilder {
 
   // --- the adoption agency algorithm --------------------------------------
 
+  /** Insert a node into a target, foster-parenting if the target is a table section. */
+  private fosterOrAppend(target: MElement, node: MNode): void {
+    const isTableSection =
+      target.ns === HTML_NS &&
+      (target.name === "table" || target.name === "tbody" || target.name === "tfoot" ||
+        target.name === "thead" || target.name === "tr")
+    if (!isTableSection) {
+      appendChild(target, node)
+      return
+    }
+    for (let i = this.open.length - 1; i >= 0; i--) {
+      const el = this.open[i]!
+      if (el.name === "template" && el.ns === HTML_NS) {
+        appendChild(el, node)
+        return
+      }
+      if (el.name === "table") {
+        if (el.parent !== null) {
+          insertBefore(el.parent, node, el)
+        } else {
+          const prev = this.open[i - 1]
+          if (prev) appendChild(prev, node)
+        }
+        return
+      }
+    }
+    appendChild(target, node)
+  }
+
   private adoptionAgency(subject: string): void {
     // Step 1
     const cur = this.current
@@ -1985,8 +2014,9 @@ class HtmlTreeBuilder {
         appendChild(node, lastNode)
         lastNode = node
       }
-      // Step 4.12: place lastNode under common ancestor
-      appendChild(commonAncestor, lastNode)
+      // Step 4.12: place lastNode at the appropriate place in the common
+      // ancestor (foster-parented when the ancestor is a table section).
+      this.fosterOrAppend(commonAncestor, lastNode)
       // Step 4.13: clone formatting element
       const feClone = mkElement(
         formattingElement.name,
