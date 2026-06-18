@@ -15,7 +15,7 @@ import { isUnsupported, parseDat, serialize } from "./support/html5lib.ts"
 const FILES = ["tests1", "adoption01"] as const
 
 // Observed pass count over the runnable (supported-feature) subset.
-const BASELINE = 94
+const BASELINE = 99
 const RUNNABLE = 128
 
 describe("html5lib tree-construction conformance", () => {

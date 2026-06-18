@@ -118,6 +118,20 @@ describe("Html.parseDocument — robustness", () => {
     expect(d.root.name.local).toBe("html")
   })
 
+  test("abruptly-closed comments are empty (<!-->)", async () => {
+    const d = await doc(`<!--><p>x`)
+    // The comment is empty and lives before <html>.
+    const comment = d.children.find((c) => c._tag === "XmlComment")
+    expect(comment).toBeDefined()
+    expect((comment as any).data).toBe("")
+  })
+
+  test("<? opens a bogus comment in HTML", async () => {
+    const d = await doc(`<?php echo 1?>`)
+    const comment = d.children.find((c) => c._tag === "XmlComment")
+    expect((comment as any)?.data).toBe("?php echo 1?")
+  })
+
   test("stray end tags are ignored", async () => {
     const out = await html(`<div>a</span>b</div>`)
     expect(out).toContain("<div>ab</div>")

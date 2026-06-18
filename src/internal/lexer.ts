@@ -302,9 +302,16 @@ export class Lexer {
           this.state = S.MarkupDecl
           this.markupBuf = ""
         } else if (c === "?") {
-          this.state = S.PiBody
-          this.piBuf = ""
-          this.piQ = false
+          if (this.options.mode === "html") {
+            // HTML has no processing instructions: `<?` opens a bogus comment
+            // whose data starts at the '?'.
+            this.state = S.BogusComment
+            this.text = "?"
+          } else {
+            this.state = S.PiBody
+            this.piBuf = ""
+            this.piQ = false
+          }
         } else if (isNameStart(c)) {
           this.tagName = c
           this.attrs = []
@@ -510,7 +517,9 @@ export class Lexer {
         if (this.markupBuf === "--") {
           this.state = S.Comment
           this.text = ""
-          this.commentDashes = 0
+          // Seed the dash counter so an immediate `>` / `->` abruptly closes the
+          // comment as empty (`<!-->` and `<!--->` are empty comments per spec).
+          this.commentDashes = 2
           return
         }
         if (this.markupBuf === "[CDATA[") {
