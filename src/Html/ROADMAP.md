@@ -76,11 +76,14 @@ fixtures (`tests/fixtures/html5lib/`). The current baseline is **1343/1368**
 the test fails on any regression, so the items above are tracked as the pass
 count climbs toward 100%.
 
-The remaining ~104 failures cluster around: the `in head noscript` insertion
-mode; tokenizer/tree-builder coupling for `<plaintext>` and `<![CDATA[` *inside*
-foreign content (the tokenizer can't currently see the adjusted current node);
-the table-without-table foster edges inside `<template>`; column-group character
-handling; and a handful of intricate adoption-agency cases.
+The remaining ~25 failures cluster around: **tokenizer/tree-builder coupling**
+for raw-text/rcdata elements (`<title>`/`<style>`/`<script>`/`<textarea>`/
+`<plaintext>`) *inside* foreign content — the streaming tokenizer eagerly
+tokenizes a whole chunk before the tree builder runs, so it can't consult the
+adjusted current node to suppress the raw-text switch; the very new
+**`<selectedcontent>`** select feature; a handful of intricate
+**adoption-agency** cases (nested select with formatting); and a few DOCTYPE
+bogus-state and `</html>`-in-head recovery edges.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 
