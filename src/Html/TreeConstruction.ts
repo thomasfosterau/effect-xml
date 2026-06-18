@@ -668,6 +668,14 @@ class HtmlTreeBuilder {
     this.insertForeignElement(name, attrs, this.current!.ns)
   }
 
+  private hasIntegrationPointAbove(idx: number): boolean {
+    for (let i = idx + 1; i < this.open.length; i++) {
+      const el = this.open[i]!
+      if (this.isHTMLIntegrationPoint(el) || this.isMathMLTextIP(el)) return true
+    }
+    return false
+  }
+
   private foreignEnd(name: string): void {
     // Walk up the stack of open elements (bottommost first).
     let idx = this.open.length - 1
@@ -680,10 +688,10 @@ class HtmlTreeBuilder {
       }
       idx--
       if (this.open[idx]!.ns === HTML_NS) {
-        // The next element up is HTML: process the end tag with HTML rules. For
-        // an HTML breakout tag (e.g. </p>) the intervening foreign subtree is
-        // abandoned first; a non-matching foreign end tag (e.g. </svg>) is not.
-        if (FOREIGN_BREAKOUT.has(name)) {
+        // The next element up is HTML: process the end tag with HTML rules. An
+        // HTML breakout tag (e.g. </p>) abandons the intervening foreign subtree
+        // first, unless an integration point intervenes (then scope handles it).
+        if (FOREIGN_BREAKOUT.has(name) && !this.hasIntegrationPointAbove(idx)) {
           while (this.open.length > idx + 1) this.open.pop()
         }
         this.onEnd(name)
