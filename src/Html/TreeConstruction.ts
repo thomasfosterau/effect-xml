@@ -200,6 +200,12 @@ const STRAY_TABLE_TAGS = new Set([
 const SELECT_TABLE_TAGS = new Set([
   "caption", "table", "tbody", "tfoot", "thead", "tr", "td", "th",
 ])
+// "in body" start tags that clear the frameset-ok flag (input is conditional).
+const FRAMESET_NOT_OK = new Set([
+  "area", "br", "embed", "img", "keygen", "wbr", "hr", "textarea", "xmp",
+  "iframe", "noembed", "select", "table", "applet", "marquee", "object", "pre",
+  "listing", "button", "li", "dd", "dt", "plaintext",
+])
 
 // Markers in the active-formatting list are introduced by table/applet/object/
 // marquee/template scoping, which is handled leniently for now; the type is kept
@@ -227,6 +233,9 @@ type Mode =
   | "inSelect"
   | "inSelectInTable"
   | "inTemplate"
+  | "inFrameset"
+  | "afterFrameset"
+  | "afterAfterFrameset"
   | "afterBody"
   | "afterAfterBody"
 
@@ -245,6 +254,8 @@ class HtmlTreeBuilder {
   private foster = false
   /** Self-closing flag of the start tag currently being processed. */
   private selfClosing = false
+  /** The frameset-ok flag: whether a <frameset> may still replace the body. */
+  private framesetOk = true
 
   // --- stack helpers -------------------------------------------------------
 
@@ -458,7 +469,12 @@ class HtmlTreeBuilder {
         }
         return
       case "Comment":
-        this.insert({ _t: "comment", data: ev.data, parent: null })
+        // After </html> a comment belongs at the document level, not inside <html>.
+        if (this.mode === "afterAfterBody" || this.mode === "afterAfterFrameset") {
+          this.topLevel.push({ _t: "comment", data: ev.data, parent: null })
+        } else {
+          this.insert({ _t: "comment", data: ev.data, parent: null })
+        }
         return
       case "ProcessingInstruction":
         this.insert({ _t: "pi", target: ev.target, data: ev.data, parent: null })
@@ -537,6 +553,7 @@ class HtmlTreeBuilder {
   }
 
   private foreignText(data: string): void {
+    if (/[^\t\n\f\r ]/.test(data)) this.framesetOk = false
     // U+0000 in foreign content becomes U+FFFD.
     this.insertText(data.replace(/\u0000/g, "\uFFFD"))
   }
@@ -610,6 +627,20 @@ class HtmlTreeBuilder {
   }
 
   private onText(data: string): void {
+    // Non-whitespace character data makes the document no longer frameset-ok.
+    if (/[^\t\n\f\r ]/.test(data)) this.framesetOk = false
+
+    // Frameset modes keep only whitespace characters.
+    if (
+      this.mode === "inFrameset" ||
+      this.mode === "afterFrameset" ||
+      this.mode === "afterAfterFrameset"
+    ) {
+      const ws = data.replace(/[^\t\n\f\r ]/g, "")
+      if (ws.length > 0) this.insertText(ws)
+      return
+    }
+
     const cur = this.current
     // Text inside an open content element (e.g. <title>, <p>, <b>) belongs there
     // regardless of insertion mode. Only text directly in the structural spine
@@ -681,6 +712,8 @@ class HtmlTreeBuilder {
         if (this.templateModes.length > 0) return
         this.ensureBody()
         if (this.bodyEl) mergeAttrs(this.bodyEl, attrs)
+        // An explicit <body> tag makes the document no longer frameset-ok.
+        this.framesetOk = false
         return
       case "template":
         // Handled identically in every insertion mode (via the "in head" rules).
@@ -689,6 +722,9 @@ class HtmlTreeBuilder {
         this.afe.push(MARKER)
         this.templateModes.push("inTemplate")
         this.mode = "inTemplate"
+        return
+      case "frameset":
+        this.startFrameset(attrs)
         return
       case "base":
       case "basefont":
@@ -705,7 +741,8 @@ class HtmlTreeBuilder {
         }
         // After </head>, a stray metadata element re-opens <head> just for itself.
         const isVoidHead =
-          voidElements.has(name) || name === "meta" || name === "link" || name === "base"
+          voidElements.has(name) || name === "meta" || name === "link" ||
+          name === "base" || name === "basefont" || name === "bgsound"
         const reopenHead =
           isVoidHead &&
           this.mode === "afterHead" &&
@@ -727,6 +764,15 @@ class HtmlTreeBuilder {
         break
     }
 
+    // Frameset modes never have (or synthesize) a body.
+    if (
+      this.mode === "inFrameset" ||
+      this.mode === "afterFrameset" ||
+      this.mode === "afterAfterFrameset"
+    ) {
+      this.dispatchStart(name, attrs)
+      return
+    }
     // Everything else implies we have a body, then dispatch by insertion mode.
     // Inside an open <template>, content lands in the template's contents — never
     // synthesize the document <body>.
@@ -755,6 +801,11 @@ class HtmlTreeBuilder {
         return this.inSelectInTableStart(name, attrs)
       case "inTemplate":
         return this.inTemplateStart(name, attrs)
+      case "inFrameset":
+        return this.inFramesetStart(name, attrs)
+      case "afterFrameset":
+      case "afterAfterFrameset":
+        return this.afterFramesetStart(name, attrs)
       default:
         return this.inBodyStart(name, attrs)
     }
@@ -791,6 +842,59 @@ class HtmlTreeBuilder {
         this.switchTemplateMode("inBody")
         return this.dispatchStart(name, attrs)
     }
+  }
+
+  // --- frameset ------------------------------------------------------------
+
+  private startFrameset(attrs: Array<MAttr>): void {
+    // Before/after head with no body yet: this is a frameset document.
+    if (
+      this.bodyEl === null &&
+      (this.mode === "initial" || this.mode === "beforeHtml" ||
+        this.mode === "beforeHead" || this.mode === "inHead" || this.mode === "afterHead")
+    ) {
+      this.ensureHead()
+      if (this.current?.name === "head") this.open.pop()
+      this.insertElement("frameset", attrs)
+      this.mode = "inFrameset"
+      return
+    }
+    // In body: only a frameset-ok document with a real <body> as the second
+    // open element may be replaced; otherwise ignore the token.
+    if (this.mode === "inFrameset") {
+      this.insertElement("frameset", attrs)
+      return
+    }
+    if (this.framesetOk && this.open.length >= 2 && this.open[1]!.name === "body") {
+      const body = this.open[1]!
+      detach(body)
+      while (this.open.length > 1) this.open.pop()
+      this.bodyEl = null
+      this.insertElement("frameset", attrs)
+      this.mode = "inFrameset"
+    }
+    // else: ignore the token.
+  }
+
+  private inFramesetStart(name: string, attrs: Array<MAttr>): void {
+    switch (name) {
+      case "frameset":
+        this.insertElement("frameset", attrs)
+        return
+      case "frame":
+        this.insertElement("frame", attrs)
+        this.open.pop()
+        return
+      // noframes is routed through the in-head handling earlier in onStart.
+      default:
+        return // ignore
+    }
+  }
+
+  private afterFramesetStart(name: string, attrs: Array<MAttr>): void {
+    // html and noframes are handled earlier in onStart; ignore everything else.
+    void name
+    void attrs
   }
 
   private inTableContext(): boolean {
@@ -1058,6 +1162,16 @@ class HtmlTreeBuilder {
     // <image> is a willful violation: it is treated as <img>.
     if (name === "image") name = "img"
 
+    // Certain start tags make the document no longer frameset-ok, so a later
+    // <frameset> can no longer replace the body.
+    if (
+      FRAMESET_NOT_OK.has(name) ||
+      (name === "input" &&
+        !attrs.some((a) => a.name === "type" && a.value.toLowerCase() === "hidden"))
+    ) {
+      this.framesetOk = false
+    }
+
     // Stray table-section start tags are ignored in the body.
     if (STRAY_TABLE_TAGS.has(name)) return
 
@@ -1180,12 +1294,28 @@ class HtmlTreeBuilder {
       return
     }
     if (name === "html") {
-      if (this.bodyEl) this.mode = "afterBody"
+      if (this.mode === "afterFrameset") this.mode = "afterAfterFrameset"
+      else if (this.bodyEl) this.mode = "afterBody"
+      return
+    }
+    if (name === "frameset" && this.mode === "inFrameset") {
+      if (this.current?.name === "html") return // fragment edge: ignore
+      this.open.pop()
+      if (this.current?.name !== "frameset") this.mode = "afterFrameset"
       return
     }
     if (name === "body") {
+      if (this.mode === "inFrameset" || this.mode === "afterFrameset") return
       this.ensureBody()
       this.mode = "afterBody"
+      return
+    }
+    // In frameset modes all other end tags are ignored.
+    if (
+      this.mode === "inFrameset" ||
+      this.mode === "afterFrameset" ||
+      this.mode === "afterAfterFrameset"
+    ) {
       return
     }
     if (name === "head") {
@@ -1571,10 +1701,15 @@ class HtmlTreeBuilder {
   // --- finishing -----------------------------------------------------------
 
   finish(): XmlDocument {
-    // Ensure a minimal valid document exists.
+    // Ensure a minimal valid document exists (but never add a <body> to a
+    // frameset document).
     this.ensureHtml()
     if (this.headEl === null) this.ensureHead()
-    if (this.bodyEl === null) this.ensureBody()
+    const isFrameset =
+      this.mode === "inFrameset" ||
+      this.mode === "afterFrameset" ||
+      this.mode === "afterAfterFrameset"
+    if (this.bodyEl === null && !isFrameset) this.ensureBody()
 
     const children: Array<XmlNode> = this.topLevel.map(toXmlNode)
     return new XmlDocument({

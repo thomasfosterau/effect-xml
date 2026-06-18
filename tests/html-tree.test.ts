@@ -224,6 +224,41 @@ describe("Html.parseDocument — template", () => {
   })
 })
 
+describe("Html.parseDocument — frameset", () => {
+  test("a frameset document has no body", async () => {
+    const d = await doc(`<frameset><frame><frame></frameset>`)
+    const names = d.root.elements.map((e: any) => e.name.local)
+    expect(names).toEqual(["head", "frameset"])
+    const fs = d.root.elements.find((e: any) => e.name.local === "frameset")!
+    expect(fs.elements.map((e: any) => e.name.local)).toEqual(["frame", "frame"])
+  })
+
+  test("an explicit <body> makes the document no longer frameset-ok", async () => {
+    // <body> clears frameset-ok, so the later <frameset> is ignored.
+    const d = await doc(`<body><frameset></frameset>`)
+    expect(d.root.elements.map((e: any) => e.name.local)).toEqual(["head", "body"])
+  })
+
+  test("a frameset right after </head> replaces the (absent) body", async () => {
+    const d = await doc(`<head></head><frameset></frameset>`)
+    expect(d.root.elements.map((e: any) => e.name.local)).toEqual(["head", "frameset"])
+  })
+
+  test("real content makes the document no longer frameset-ok", async () => {
+    const d = await doc(`<body><p>x<frameset></frameset>`)
+    const names = d.root.elements.map((e: any) => e.name.local)
+    expect(names).toEqual(["head", "body"])
+  })
+
+  test("nested framesets and after-frameset comments", async () => {
+    const d = await doc(`<frameset><frameset></frameset></frameset></html><!--c-->`)
+    // the trailing comment lands at the document level, after <html>
+    const comment = d.children.find((c: any) => c._tag === "XmlComment")
+    expect(comment).toBeDefined()
+    expect((comment as any).data).toBe("c")
+  })
+})
+
 describe("Html.parseDocument — robustness", () => {
   test("never throws on garbage", async () => {
     const d = await doc(`<<>></p></div><b><b><b>x`)

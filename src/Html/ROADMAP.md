@@ -53,6 +53,11 @@ Still handled leniently (as generic flow content) rather than per-spec:
    HTML breakout tags are handled, and self-closing foreign tags are honoured.
    Still to do: CDATA-in-foreign-content (the tokenizer is decoupled from the
    tree, so `<![CDATA[` is not yet switched on inside foreign elements).
+3b. ~~**Frameset**~~ ✅ done — the `in frameset` / `after frameset` /
+   `after after frameset` modes, the **frameset-ok** flag (cleared by body flow
+   content, non-whitespace characters and an explicit `<body>`), `<frameset>`
+   replacing an eligible body, `<frame>`/`<noframes>` handling, frameset
+   documents carrying no `<body>`, and document-level comments after `</html>`.
 4. **Quirks-mode detection** from the DOCTYPE.
 5. ~~The full named character-reference table~~ ✅ done — all ~2,125 WHATWG named
    references ship in `internal/htmlEntities.generated.ts`, and html-mode
@@ -66,7 +71,7 @@ Still handled leniently (as generic flow content) rather than per-spec:
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **849/1368**
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **926/1368**
 runnable cases (only fragment-context and scripted cases are excluded); the test
 fails on any regression, so the items above are tracked as the pass count climbs
 toward 100%.
