@@ -32,7 +32,7 @@ import {
   XmlAttribute,
   type XmlNode,
 } from "../Xml/Node.ts"
-import { voidElements } from "./Tokenizer.ts"
+import { rawTextElements, rcdataElements, voidElements } from "./Tokenizer.ts"
 import {
   adjustForeignAttrs,
   FOREIGN_BREAKOUT,
@@ -1701,6 +1701,16 @@ class HtmlTreeBuilder {
   // --- finishing -----------------------------------------------------------
 
   finish(): XmlDocument {
+    // An unclosed raw-text/rcdata element (e.g. <script> with no </script>) is
+    // popped at EOF (the "text" insertion mode's EOF rule) so that nothing nests
+    // inside it.
+    while (
+      this.current !== null &&
+      (rawTextElements.has(this.current.name) || rcdataElements.has(this.current.name))
+    ) {
+      this.open.pop()
+    }
+
     // Ensure a minimal valid document exists (but never add a <body> to a
     // frameset document).
     this.ensureHtml()
