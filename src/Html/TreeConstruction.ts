@@ -1599,15 +1599,25 @@ class HtmlTreeBuilder {
         return
       }
     }
+    // In table-structural modes, </html> and </body> are ignored (the table
+    // insertion modes handle their own end tags below).
+    const tableMode =
+      this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow" ||
+      this.mode === "inCell" || this.mode === "inCaption" || this.mode === "inColumnGroup"
     if (name === "html") {
-      if (this.mode === "afterFrameset" || this.mode === "afterAfterFrameset") {
+      if (tableMode) {
+        // fall through to the table mode dispatch (ignored there)
+      } else if (this.mode === "afterFrameset" || this.mode === "afterAfterFrameset") {
         this.mode = "afterAfterFrameset"
+        return
       } else if (this.bodyEl) {
         // In body, </html> switches to "after body" then reprocesses (→ after
         // after body); from "after body" it goes straight to "after after body".
         this.mode = "afterAfterBody"
+        return
+      } else {
+        return
       }
-      return
     }
     if (name === "frameset" && this.mode === "inFrameset") {
       if (this.current?.name === "html") return // fragment edge: ignore
@@ -1615,7 +1625,7 @@ class HtmlTreeBuilder {
       if (this.current?.name !== "frameset") this.mode = "afterFrameset"
       return
     }
-    if (name === "body") {
+    if (name === "body" && !tableMode) {
       if (this.mode === "inFrameset" || this.mode === "afterFrameset") return
       this.ensureBody()
       this.mode = "afterBody"
