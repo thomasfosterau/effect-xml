@@ -22,6 +22,7 @@ export const voidElements: ReadonlySet<string> = new Set([
   "hr",
   "img",
   "input",
+  "keygen",
   "link",
   "meta",
   "param",
