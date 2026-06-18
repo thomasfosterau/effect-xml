@@ -1842,6 +1842,13 @@ class HtmlTreeBuilder {
   // --- finishing -----------------------------------------------------------
 
   finish(): XmlDocument {
+    // Close any templates still open at EOF (the "in template" EOF rule) so a
+    // synthesized body never lands inside template contents.
+    while (this.templateModes.length > 0) {
+      this.popUntilIncluding("template")
+      this.templateModes.pop()
+    }
+
     // An unclosed raw-text/rcdata element (e.g. <script> with no </script>) is
     // popped at EOF (the "text" insertion mode's EOF rule) so that nothing nests
     // inside it.
