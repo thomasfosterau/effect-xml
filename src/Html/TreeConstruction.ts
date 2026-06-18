@@ -103,6 +103,14 @@ const appendChild = (parent: MElement, node: MNode): void => {
   parent.children.push(node)
 }
 
+const insertBefore = (parent: MElement, node: MNode, ref: MNode): void => {
+  detach(node)
+  const idx = parent.children.indexOf(ref)
+  if (idx === -1) parent.children.push(node)
+  else parent.children.splice(idx, 0, node)
+  node.parent = parent
+}
+
 // -----------------------------------------------------------------------------
 // Element categories
 // -----------------------------------------------------------------------------
@@ -161,10 +169,21 @@ const IMPLIED_END = new Set([
   "dd", "dt", "li", "optgroup", "option", "p", "rb", "rp", "rt", "rtc",
 ])
 
+// Table scoping / context sets.
+const TABLE_SCOPE = new Set(["html", "table", "template"])
+const TABLE_CONTEXT = new Set(["table", "template", "html"])
+const TABLE_BODY_CONTEXT = new Set(["tbody", "tfoot", "thead", "template", "html"])
+const TABLE_ROW_CONTEXT = new Set(["tr", "template", "html"])
+// Table-section tags that are simply ignored when seen directly in the body.
+const STRAY_TABLE_TAGS = new Set([
+  "caption", "col", "colgroup", "tbody", "td", "tfoot", "th", "thead", "tr",
+])
+
 // Markers in the active-formatting list are introduced by table/applet/object/
 // marquee/template scoping, which is handled leniently for now; the type is kept
 // so the reconstruct/push logic already accounts for them.
 type Marker = { readonly marker: true }
+const MARKER: Marker = { marker: true }
 
 // -----------------------------------------------------------------------------
 // The tree builder
@@ -177,6 +196,12 @@ type Mode =
   | "inHead"
   | "afterHead"
   | "inBody"
+  | "inTable"
+  | "inTableBody"
+  | "inRow"
+  | "inCell"
+  | "inCaption"
+  | "inColumnGroup"
   | "afterBody"
   | "afterAfterBody"
 
@@ -189,6 +214,8 @@ class HtmlTreeBuilder {
   private htmlEl: MElement | null = null
   private headEl: MElement | null = null
   private bodyEl: MElement | null = null
+  /** When set, insertions are foster-parented out of an open table. */
+  private foster = false
 
   // --- stack helpers -------------------------------------------------------
 
@@ -196,15 +223,76 @@ class HtmlTreeBuilder {
     return this.open.length > 0 ? this.open[this.open.length - 1]! : null
   }
 
+  /** The "appropriate place for inserting a node", honouring foster parenting. */
+  private appropriatePlace(): { parent: MElement | null; before: MNode | null } {
+    if (this.foster) {
+      for (let i = this.open.length - 1; i >= 0; i--) {
+        if (this.open[i]!.name === "table") {
+          const table = this.open[i]!
+          if (table.parent !== null) return { parent: table.parent, before: table }
+          return { parent: this.open[i - 1] ?? null, before: null }
+        }
+      }
+    }
+    return { parent: this.current, before: null }
+  }
+
   private insert(node: MNode): void {
-    const target = this.current
-    if (target === null) {
+    const { parent, before } = this.appropriatePlace()
+    if (parent === null) {
       detach(node)
       node.parent = null
       this.topLevel.push(node)
+    } else if (before === null) {
+      appendChild(parent, node)
     } else {
-      appendChild(target, node)
+      insertBefore(parent, node, before)
     }
+  }
+
+  private clearStackBackTo(context: ReadonlySet<string>): void {
+    while (this.current !== null && !context.has(this.current.name)) this.open.pop()
+  }
+
+  private resetInsertionMode(): void {
+    for (let i = this.open.length - 1; i >= 0; i--) {
+      const name = this.open[i]!.name
+      const last = i === 0
+      if ((name === "td" || name === "th") && !last) {
+        this.mode = "inCell"
+        return
+      }
+      if (name === "tr") {
+        this.mode = "inRow"
+        return
+      }
+      if (name === "tbody" || name === "tfoot" || name === "thead") {
+        this.mode = "inTableBody"
+        return
+      }
+      if (name === "caption") {
+        this.mode = "inCaption"
+        return
+      }
+      if (name === "colgroup") {
+        this.mode = "inColumnGroup"
+        return
+      }
+      if (name === "table") {
+        this.mode = "inTable"
+        return
+      }
+      if (name === "body" || name === "head") {
+        this.mode = "inBody"
+        return
+      }
+      if (name === "html") {
+        this.mode = this.headEl ? "afterHead" : "beforeHead"
+        return
+      }
+      if (last) break
+    }
+    this.mode = "inBody"
   }
 
   private insertElement(name: string, attrs: Array<MAttr>): MElement {
@@ -369,19 +457,35 @@ class HtmlTreeBuilder {
       this.ensureBody()
     }
     this.reconstructFormatting()
+    // In table modes, character data is foster-parented out of the table.
+    if (this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow") {
+      this.foster = true
+      this.insertText(data)
+      this.foster = false
+      return
+    }
     this.insertText(data)
   }
 
-  /** Insert character data, merging with a preceding text node (DOM coalescing). */
+  /** Insert character data, merging with the adjacent preceding text node (DOM coalescing). */
   private insertText(data: string): void {
-    const target = this.current
-    const siblings = target !== null ? target.children : this.topLevel
-    const last = siblings[siblings.length - 1]
-    if (last !== undefined && last._t === "text") {
-      last.data += data
+    const { parent, before } = this.appropriatePlace()
+    if (parent === null) {
+      const last = this.topLevel[this.topLevel.length - 1]
+      if (last !== undefined && last._t === "text") last.data += data
+      else this.topLevel.push({ _t: "text", data, parent: null })
       return
     }
-    this.insert({ _t: "text", data, parent: null })
+    if (before === null) {
+      const last = parent.children[parent.children.length - 1]
+      if (last !== undefined && last._t === "text") last.data += data
+      else appendChild(parent, { _t: "text", data, parent: null })
+      return
+    }
+    const idx = parent.children.indexOf(before)
+    const prev = idx > 0 ? parent.children[idx - 1] : undefined
+    if (prev !== undefined && prev._t === "text") prev.data += data
+    else insertBefore(parent, { _t: "text", data, parent: null }, before)
   }
 
   // --- start tags ----------------------------------------------------------
@@ -426,14 +530,222 @@ class HtmlTreeBuilder {
         break
     }
 
-    // Everything else implies we are in the body.
+    // Everything else implies we have a body, then dispatch by insertion mode.
     this.ensureBody()
+    this.dispatchStart(name, attrs)
+  }
+
+  private dispatchStart(name: string, attrs: Array<MAttr>): void {
+    switch (this.mode) {
+      case "inTable":
+        return this.inTableStart(name, attrs)
+      case "inTableBody":
+        return this.inTableBodyStart(name, attrs)
+      case "inRow":
+        return this.inRowStart(name, attrs)
+      case "inCell":
+        return this.inCellStart(name, attrs)
+      case "inCaption":
+        return this.inCaptionStart(name, attrs)
+      case "inColumnGroup":
+        return this.inColumnGroupStart(name, attrs)
+      default:
+        return this.inBodyStart(name, attrs)
+    }
+  }
+
+  /** Process a start tag with the in-body rules but foster-parented (the "anything else in table" case). */
+  private fosterInBody(name: string, attrs: Array<MAttr>): void {
+    this.foster = true
     this.inBodyStart(name, attrs)
+    this.foster = false
+  }
+
+  private inTableStart(name: string, attrs: Array<MAttr>): void {
+    switch (name) {
+      case "caption":
+        this.clearStackBackTo(TABLE_CONTEXT)
+        this.afe.push(MARKER)
+        this.insertElement("caption", attrs)
+        this.mode = "inCaption"
+        return
+      case "colgroup":
+        this.clearStackBackTo(TABLE_CONTEXT)
+        this.insertElement("colgroup", attrs)
+        this.mode = "inColumnGroup"
+        return
+      case "col":
+        this.clearStackBackTo(TABLE_CONTEXT)
+        this.insertElement("colgroup", [])
+        this.mode = "inColumnGroup"
+        this.inColumnGroupStart("col", attrs)
+        return
+      case "tbody":
+      case "tfoot":
+      case "thead":
+        this.clearStackBackTo(TABLE_CONTEXT)
+        this.insertElement(name, attrs)
+        this.mode = "inTableBody"
+        return
+      case "td":
+      case "th":
+      case "tr":
+        this.clearStackBackTo(TABLE_CONTEXT)
+        this.insertElement("tbody", [])
+        this.mode = "inTableBody"
+        this.inTableBodyStart(name, attrs)
+        return
+      case "table":
+        // Nested <table>: act as if </table> then reprocess.
+        if (this.hasInScope("table", TABLE_SCOPE)) {
+          this.popUntilIncluding("table")
+          this.resetInsertionMode()
+          this.dispatchStart("table", attrs)
+        }
+        return
+      case "style":
+      case "script":
+        this.insertElement(name, attrs)
+        return
+      default:
+        this.fosterInBody(name, attrs)
+        return
+    }
+  }
+
+  private inTableBodyStart(name: string, attrs: Array<MAttr>): void {
+    switch (name) {
+      case "tr":
+        this.clearStackBackTo(TABLE_BODY_CONTEXT)
+        this.insertElement("tr", attrs)
+        this.mode = "inRow"
+        return
+      case "td":
+      case "th":
+        this.clearStackBackTo(TABLE_BODY_CONTEXT)
+        this.insertElement("tr", [])
+        this.mode = "inRow"
+        this.inRowStart(name, attrs)
+        return
+      case "caption":
+      case "col":
+      case "colgroup":
+      case "tbody":
+      case "tfoot":
+      case "thead":
+        if (this.hasAnyTableSection()) {
+          this.clearStackBackTo(TABLE_BODY_CONTEXT)
+          this.open.pop()
+          this.mode = "inTable"
+          this.dispatchStart(name, attrs)
+        }
+        return
+      default:
+        return this.inTableStart(name, attrs)
+    }
+  }
+
+  private inRowStart(name: string, attrs: Array<MAttr>): void {
+    switch (name) {
+      case "td":
+      case "th":
+        this.clearStackBackTo(TABLE_ROW_CONTEXT)
+        this.insertElement(name, attrs)
+        this.mode = "inCell"
+        this.afe.push(MARKER)
+        return
+      case "caption":
+      case "col":
+      case "colgroup":
+      case "tbody":
+      case "tfoot":
+      case "thead":
+      case "tr":
+        if (this.hasInScope("tr", TABLE_SCOPE)) {
+          this.clearStackBackTo(TABLE_ROW_CONTEXT)
+          this.open.pop()
+          this.mode = "inTableBody"
+          this.dispatchStart(name, attrs)
+        }
+        return
+      default:
+        return this.inTableStart(name, attrs)
+    }
+  }
+
+  private inCellStart(name: string, attrs: Array<MAttr>): void {
+    if (STRAY_TABLE_TAGS.has(name)) {
+      if (this.hasInScope("td", TABLE_SCOPE) || this.hasInScope("th", TABLE_SCOPE)) {
+        this.closeCell()
+        this.dispatchStart(name, attrs)
+      }
+      return
+    }
+    return this.inBodyStart(name, attrs)
+  }
+
+  private inCaptionStart(name: string, attrs: Array<MAttr>): void {
+    if (STRAY_TABLE_TAGS.has(name) || name === "table") {
+      if (this.hasInScope("caption", TABLE_SCOPE)) {
+        this.generateImpliedEndTags()
+        this.popUntilIncluding("caption")
+        this.clearFormattingToMarker()
+        this.mode = "inTable"
+        this.dispatchStart(name, attrs)
+      }
+      return
+    }
+    return this.inBodyStart(name, attrs)
+  }
+
+  private inColumnGroupStart(name: string, attrs: Array<MAttr>): void {
+    if (name === "col") {
+      this.insertElement("col", attrs)
+      this.open.pop()
+      return
+    }
+    if (this.current?.name === "colgroup") {
+      this.open.pop()
+      this.mode = "inTable"
+      this.dispatchStart(name, attrs)
+    }
+  }
+
+  private hasAnyTableSection(): boolean {
+    return (
+      this.hasInScope("tbody", TABLE_SCOPE) ||
+      this.hasInScope("tfoot", TABLE_SCOPE) ||
+      this.hasInScope("thead", TABLE_SCOPE)
+    )
+  }
+
+  private closeCell(): void {
+    const cell = this.hasInScope("td", TABLE_SCOPE) ? "td" : "th"
+    this.generateImpliedEndTags()
+    this.popUntilIncluding(cell)
+    this.clearFormattingToMarker()
+    this.mode = "inRow"
+  }
+
+  private clearFormattingToMarker(): void {
+    while (this.afe.length > 0) {
+      const e = this.afe.pop()!
+      if ("marker" in e) break
+    }
   }
 
   private inBodyStart(name: string, attrs: Array<MAttr>): void {
+    // Stray table-section start tags are ignored in the body.
+    if (STRAY_TABLE_TAGS.has(name)) return
+
     if (CLOSES_P.has(name) && this.hasInScope("p", BUTTON_SCOPE)) {
       this.closeP()
+    }
+
+    if (name === "table") {
+      this.insertElement("table", attrs)
+      this.mode = "inTable"
+      return
     }
 
     if (name === "li") {
@@ -519,6 +831,30 @@ class HtmlTreeBuilder {
       return
     }
 
+    // Table insertion modes handle their own end tags.
+    switch (this.mode) {
+      case "inTable":
+        if (this.inTableEnd(name)) return
+        break
+      case "inTableBody":
+        if (this.inTableBodyEnd(name)) return
+        break
+      case "inRow":
+        if (this.inRowEnd(name)) return
+        break
+      case "inCell":
+        if (this.inCellEnd(name)) return
+        break
+      case "inCaption":
+        if (this.inCaptionEnd(name)) return
+        break
+      case "inColumnGroup":
+        if (this.inColumnGroupEnd(name)) return
+        break
+      default:
+        break
+    }
+
     if (name === "p") {
       this.ensureBody()
       if (!this.hasInScope("p", BUTTON_SCOPE)) {
@@ -551,6 +887,154 @@ class HtmlTreeBuilder {
       }
       if (SPECIAL.has(el.name)) return // ignore the end tag
     }
+  }
+
+  // --- table-mode end tags (return true if handled) -----------------------
+
+  private inTableEnd(name: string): boolean {
+    if (name === "table") {
+      if (this.hasInScope("table", TABLE_SCOPE)) {
+        this.popUntilIncluding("table")
+        this.resetInsertionMode()
+      }
+      return true
+    }
+    // body/caption/col/colgroup/html/tbody/td/tfoot/th/thead/tr: ignored here.
+    return (
+      name === "body" ||
+      name === "caption" ||
+      name === "col" ||
+      name === "colgroup" ||
+      name === "html" ||
+      STRAY_TABLE_TAGS.has(name)
+    )
+  }
+
+  private inTableBodyEnd(name: string): boolean {
+    if (name === "tbody" || name === "tfoot" || name === "thead") {
+      if (this.hasInScope(name, TABLE_SCOPE)) {
+        this.clearStackBackTo(TABLE_BODY_CONTEXT)
+        this.open.pop()
+        this.mode = "inTable"
+      }
+      return true
+    }
+    if (name === "table") {
+      if (this.hasAnyTableSection()) {
+        this.clearStackBackTo(TABLE_BODY_CONTEXT)
+        this.open.pop()
+        this.mode = "inTable"
+        this.onEnd("table")
+      }
+      return true
+    }
+    if (
+      name === "body" || name === "caption" || name === "col" ||
+      name === "colgroup" || name === "html" || name === "td" ||
+      name === "th" || name === "tr"
+    ) {
+      return true
+    }
+    return this.inTableEnd(name)
+  }
+
+  private inRowEnd(name: string): boolean {
+    if (name === "tr") {
+      if (this.hasInScope("tr", TABLE_SCOPE)) {
+        this.clearStackBackTo(TABLE_ROW_CONTEXT)
+        this.open.pop()
+        this.mode = "inTableBody"
+      }
+      return true
+    }
+    if (name === "table") {
+      if (this.hasInScope("tr", TABLE_SCOPE)) {
+        this.clearStackBackTo(TABLE_ROW_CONTEXT)
+        this.open.pop()
+        this.mode = "inTableBody"
+        this.onEnd("table")
+      }
+      return true
+    }
+    if (name === "tbody" || name === "tfoot" || name === "thead") {
+      if (this.hasInScope(name, TABLE_SCOPE)) {
+        if (this.hasInScope("tr", TABLE_SCOPE)) {
+          this.clearStackBackTo(TABLE_ROW_CONTEXT)
+          this.open.pop()
+          this.mode = "inTableBody"
+        }
+        this.onEnd(name)
+      }
+      return true
+    }
+    if (
+      name === "body" || name === "caption" || name === "col" ||
+      name === "colgroup" || name === "html" || name === "td" || name === "th"
+    ) {
+      return true
+    }
+    return this.inTableEnd(name)
+  }
+
+  private inCellEnd(name: string): boolean {
+    if (name === "td" || name === "th") {
+      if (this.hasInScope(name, TABLE_SCOPE)) {
+        this.generateImpliedEndTags()
+        this.popUntilIncluding(name)
+        this.clearFormattingToMarker()
+        this.mode = "inRow"
+      }
+      return true
+    }
+    if (name === "table" || name === "tbody" || name === "tfoot" || name === "thead" || name === "tr") {
+      if (this.hasInScope(name, TABLE_SCOPE)) {
+        this.closeCell()
+        this.onEnd(name)
+      }
+      return true
+    }
+    if (name === "body" || name === "caption" || name === "col" || name === "colgroup" || name === "html") {
+      return true
+    }
+    return false // anything else uses the in-body rules
+  }
+
+  private inCaptionEnd(name: string): boolean {
+    if (name === "caption" || name === "table") {
+      if (this.hasInScope("caption", TABLE_SCOPE)) {
+        this.generateImpliedEndTags()
+        this.popUntilIncluding("caption")
+        this.clearFormattingToMarker()
+        this.mode = "inTable"
+        if (name === "table") this.onEnd("table")
+      }
+      return true
+    }
+    if (
+      name === "body" || name === "col" || name === "colgroup" || name === "html" ||
+      STRAY_TABLE_TAGS.has(name)
+    ) {
+      return true
+    }
+    return false // anything else uses the in-body rules
+  }
+
+  private inColumnGroupEnd(name: string): boolean {
+    if (name === "colgroup") {
+      if (this.current?.name === "colgroup") {
+        this.open.pop()
+        this.mode = "inTable"
+      }
+      return true
+    }
+    if (name === "col") return true
+    if (this.current?.name === "colgroup") {
+      this.open.pop()
+      this.mode = "inTable"
+      this.onEnd(name)
+      return true
+    }
+    return true
   }
 
   // --- active formatting helpers ------------------------------------------

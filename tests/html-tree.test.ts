@@ -87,6 +87,31 @@ describe("Html.parseDocument — adoption agency", () => {
   })
 })
 
+describe("Html.parseDocument — tables", () => {
+  test("synthesizes tbody/tr around bare cells", async () => {
+    const out = await html(`<table><td>x</td></table>`)
+    expect(out).toContain("<table><tbody><tr><td>x</td></tr></tbody></table>")
+  })
+
+  test("foster-parents non-table content before the table", async () => {
+    // <b><table><td><i></table> => the <b> wraps a table whose cell holds <i>.
+    const d = await doc(`<b><table><td><i></table>`)
+    const body = d.root.elements.find((e) => e.name.local === "body")!
+    const b = body.elements.find((e) => e.name.local === "b")!
+    const table = b.elements.find((e) => e.name.local === "table")!
+    const td = table.elements[0]!.elements[0]!.elements[0]! // tbody>tr>td
+    expect(td.name.local).toBe("td")
+    expect(td.elements[0]!.name.local).toBe("i")
+  })
+
+  test("captions and column groups nest correctly", async () => {
+    const out = await html(`<table><caption>C</caption><colgroup><col></colgroup><tr><td>x</table>`)
+    expect(out).toContain("<caption>C</caption>")
+    expect(out).toContain("<colgroup><col/></colgroup>")
+    expect(out).toContain("<tbody><tr><td>x</td></tr></tbody>")
+  })
+})
+
 describe("Html.parseDocument — robustness", () => {
   test("never throws on garbage", async () => {
     const d = await doc(`<<>></p></div><b><b><b>x`)

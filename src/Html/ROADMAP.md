@@ -29,9 +29,13 @@ XML5 tree construction, in the spirit of Servo's `html5ever`/`xml5ever`.
 
 Still handled leniently (as generic flow content) rather than per-spec:
 
-1. **Table insertion modes** (`in table`/`in table body`/`in row`/`in cell`/
-   `in caption`/`in column group`) with **foster parenting** and the table
-   character-pending buffer.
+1. ~~Table insertion modes~~ ✅ done — `in table`/`in table body`/`in row`/
+   `in cell`/`in caption`/`in column group`, implicit `tbody`/`tr` synthesis,
+   reset-the-insertion-mode-appropriately, the active-formatting markers for
+   cells/captions, and **foster parenting** (non-table content and character data
+   are relocated before the table). Remaining table nuances: the pending
+   table-character whitespace buffer and `<input type=hidden>`/`<form>` special
+   cases.
 2. **`select`** insertion modes and **`template`** with its insertion-mode stack.
 3. **Foreign content** (SVG/MathML): namespace + attribute-name adjustments,
    integration points, self-closing handling, CDATA-in-foreign-content.
@@ -48,10 +52,10 @@ Still handled leniently (as generic flow content) rather than per-spec:
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **82/128** runnable
-cases (table/select/template/foreign cases are excluded until implemented); the
-test fails on any regression, so the items above are tracked as the pass count
-climbs toward 100%.
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **94/128** runnable
+cases (template/foreign cases are excluded until implemented); the test fails on
+any regression, so the items above are tracked as the pass count climbs toward
+100%.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 
