@@ -110,5 +110,5 @@ export const serialize = (doc: XmlDocument): string => {
 export const isUnsupported = (t: Html5libTest): boolean =>
   t.fragmentContext !== null ||
   t.scriptMode === "on" ||
-  /^\| {6}content$/m.test(t.document) || // <template> contents
-  /<(svg|math) /.test(t.document) // foreign content
+  /^\| +content$/m.test(t.document) || // <template> contents
+  /<(svg|math)[ >]/.test(t.document) // foreign content
