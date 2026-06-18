@@ -196,6 +196,7 @@ const TABLE_ROW_CONTEXT = new Set(["tr", "template", "html"])
 // Table-section tags that are simply ignored when seen directly in the body.
 const STRAY_TABLE_TAGS = new Set([
   "caption", "col", "colgroup", "tbody", "td", "tfoot", "th", "thead", "tr",
+  "frame", "head",
 ])
 // Table tags that drop the parser out of "in select in table".
 const SELECT_TABLE_TAGS = new Set([
@@ -717,6 +718,14 @@ class HtmlTreeBuilder {
         this.framesetOk = false
         return
       case "template":
+        // Not allowed in frameset modes — fall through to be ignored there.
+        if (
+          this.mode === "inFrameset" ||
+          this.mode === "afterFrameset" ||
+          this.mode === "afterAfterFrameset"
+        ) {
+          break
+        }
         // Handled identically in every insertion mode (via the "in head" rules).
         if (this.bodyEl === null) this.ensureHead()
         this.insertElement("template", attrs)
@@ -736,6 +745,15 @@ class HtmlTreeBuilder {
       case "noframes":
       case "style":
       case "script": {
+        // In table modes only script/style/template use in-head rules; other
+        // metadata tags are foster-parented out of the table (handled below).
+        if (
+          (this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow") &&
+          name !== "script" &&
+          name !== "style"
+        ) {
+          break
+        }
         // Head content. If we're still before/around the head, route it there.
         if (this.bodyEl === null) {
           this.ensureHead()
