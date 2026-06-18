@@ -72,9 +72,15 @@ Still handled leniently (as generic flow content) rather than per-spec:
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
 fixtures (`tests/fixtures/html5lib/`). The current baseline is **1264/1368**
-runnable cases (only fragment-context and scripted cases are excluded); the test
-fails on any regression, so the items above are tracked as the pass count climbs
-toward 100%.
+(~92%) runnable cases (only fragment-context and scripted cases are excluded);
+the test fails on any regression, so the items above are tracked as the pass
+count climbs toward 100%.
+
+The remaining ~104 failures cluster around: the `in head noscript` insertion
+mode; tokenizer/tree-builder coupling for `<plaintext>` and `<![CDATA[` *inside*
+foreign content (the tokenizer can't currently see the adjusted current node);
+the table-without-table foster edges inside `<template>`; column-group character
+handling; and a handful of intricate adoption-agency cases.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 
