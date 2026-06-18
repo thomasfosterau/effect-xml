@@ -556,7 +556,7 @@ class HtmlTreeBuilder {
       const enc = el.attrs.find((a) => a.name === "encoding")?.value.toLowerCase()
       return enc === "text/html" || enc === "application/xhtml+xml"
     }
-    return el.ns === SVG_NS && (el.name === "foreignobject" || el.name === "desc" || el.name === "title")
+    return el.ns === SVG_NS && (el.name === "foreignObject" || el.name === "desc" || el.name === "title")
   }
 
   /**
