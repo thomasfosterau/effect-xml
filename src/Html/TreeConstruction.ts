@@ -843,12 +843,15 @@ class HtmlTreeBuilder {
     // elements are relocated before the table rather than left inside it.
     if (this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow") {
       if (/[^\t\n\f\r ]/.test(data)) {
+        // Non-whitespace: reconstruct formatting and foster the text (and any
+        // reconstructed formatting) out of the table.
         this.foster = true
         this.reconstructFormatting()
         this.insertText(data)
         this.foster = false
       } else {
-        this.reconstructFormatting()
+        // Whitespace stays in the current node (table/section/fostered element)
+        // without reconstructing or fostering.
         this.insertText(data)
       }
       return
