@@ -726,6 +726,15 @@ class HtmlTreeBuilder {
         // Otherwise leading inter-section whitespace is dropped.
         return
       }
+      // Peel leading whitespace: kept in <head>/<html> around the head, dropped
+      // before the head; the rest opens the body.
+      const lead = /^[\t\n\f\r ]+/.exec(data)
+      if (lead) {
+        if ((cur !== null && cur.name === "head") || this.mode === "afterHead") {
+          this.insert({ _t: "text", data: lead[0], parent: null })
+        }
+        data = data.slice(lead[0].length)
+      }
       this.ensureBody()
     }
     // In select, character data is inserted as-is (no formatting reconstruction).
