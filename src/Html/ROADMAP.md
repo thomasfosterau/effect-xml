@@ -46,8 +46,12 @@ Still handled leniently (as generic flow content) rather than per-spec:
    `applet`/`object`/`marquee`/table scopes) — the type is already threaded
    through; the insert/clear-to-marker steps land with the table modes.
 
-Validation target: run the **html5lib-tests** `tree-construction` suite as the
-conformance gate for the items above.
+**Conformance gate (in place):** the official **html5lib-tests**
+`tree-construction` suite runs in `tests/conformance.test.ts` against vendored
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **82/128** runnable
+cases (table/select/template/foreign cases are excluded until implemented); the
+test fails on any regression, so the items above are tracked as the pass count
+climbs toward 100%.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 

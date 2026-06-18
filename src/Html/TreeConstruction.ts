@@ -369,6 +369,18 @@ class HtmlTreeBuilder {
       this.ensureBody()
     }
     this.reconstructFormatting()
+    this.insertText(data)
+  }
+
+  /** Insert character data, merging with a preceding text node (DOM coalescing). */
+  private insertText(data: string): void {
+    const target = this.current
+    const siblings = target !== null ? target.children : this.topLevel
+    const last = siblings[siblings.length - 1]
+    if (last !== undefined && last._t === "text") {
+      last.data += data
+      return
+    }
     this.insert({ _t: "text", data, parent: null })
   }
 
