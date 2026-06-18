@@ -774,19 +774,23 @@ class HtmlTreeBuilder {
       this.insertText(data)
       return
     }
-    this.reconstructFormatting()
     // In table modes, only non-whitespace character data is foster-parented out
-    // of the table; whitespace-only runs stay inside it.
+    // of the table; whitespace-only runs stay inside it. Foster parenting must be
+    // enabled around the formatting reconstruction too, so cloned formatting
+    // elements are relocated before the table rather than left inside it.
     if (this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow") {
       if (/[^\t\n\f\r ]/.test(data)) {
         this.foster = true
+        this.reconstructFormatting()
         this.insertText(data)
         this.foster = false
       } else {
+        this.reconstructFormatting()
         this.insertText(data)
       }
       return
     }
+    this.reconstructFormatting()
     this.insertText(data)
   }
 
