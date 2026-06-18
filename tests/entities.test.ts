@@ -35,6 +35,17 @@ describe("entities", () => {
     expect(await text("<a>&nope; &copy;</a>", { mode: "html" })).toBe("&nope; ©")
   })
 
+  test("the full WHATWG named entity set is available in html mode", async () => {
+    // A spread of names beyond any hand-written subset.
+    expect(await text("<a>&hearts;&spades;&Hat;&af;</a>", { mode: "html" })).toBe(
+      "\u2665\u2660\u005E\u2061"
+    )
+    // Multi-code-point reference (U+2242 U+0338).
+    expect(await text("<a>&NotEqualTilde;</a>", { mode: "html" })).toBe("\u2242\u0338")
+    // Non-breaking space is a real NBSP (U+00A0), not a plain space.
+    expect(await text("<a>&nbsp;</a>", { mode: "html" })).toBe("\u00A0")
+  })
+
   test("entity error reports a sensible position", async () => {
     const result = await Effect.runPromise(Sax.collect("<a>\n  &bad;</a>").pipe(Effect.either))
     if (result._tag === "Left" && result.left._tag === "InvalidEntity") {

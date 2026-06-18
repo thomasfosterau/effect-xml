@@ -36,9 +36,11 @@ Still handled leniently (as generic flow content) rather than per-spec:
 3. **Foreign content** (SVG/MathML): namespace + attribute-name adjustments,
    integration points, self-closing handling, CDATA-in-foreign-content.
 4. **Quirks-mode detection** from the DOCTYPE.
-5. **The full named character-reference table** (~2,200 entries) replacing the
-   common subset in `internal/entities.ts`, plus ambiguous-ampersand and
-   missing-semicolon rules.
+5. ~~The full named character-reference table~~ ✅ done — all ~2,125 WHATWG named
+   references ship in `internal/htmlEntities.generated.ts`. Remaining: legacy
+   **semicolon-less** references (e.g. `&copy`) and the ambiguous-ampersand rule,
+   which need longest-match decoding inside the tokenizer rather than the current
+   `&name;` post-pass.
 6. **Markers** in the active-formatting list (inserted by
    `applet`/`object`/`marquee`/table scopes) — the type is already threaded
    through; the insert/clear-to-marker steps land with the table modes.

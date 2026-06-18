@@ -5,11 +5,8 @@
  * values rather than inside the character state machine. This keeps the lexer
  * simple and lets the same routine serve both XML (strict: unknown named
  * entities are an error) and HTML (lenient: unknown references pass through).
- *
- * The full HTML named-entity table is ~2200 entries; we ship the predefined XML
- * set plus a broad common subset here. The complete table is reserved for the
- * html5ever tree-building phase (see Html/ROADMAP).
  */
+import { htmlNamedEntities } from "./htmlEntities.generated.ts"
 
 /** The five predefined XML entities. */
 export const xmlEntities: Record<string, string> = {
@@ -20,65 +17,15 @@ export const xmlEntities: Record<string, string> = {
   apos: "'",
 }
 
-/** XML predefined entities plus a common HTML subset. */
+/**
+ * XML predefined entities plus the complete WHATWG named character reference set
+ * (~2,125 entries). This handles the `&name;` (semicolon-terminated) form;
+ * legacy semicolon-less references (e.g. `&copy`) need longest-match handling in
+ * the tokenizer and are tracked in `Html/ROADMAP.md`.
+ */
 export const htmlEntities: Record<string, string> = {
+  ...htmlNamedEntities,
   ...xmlEntities,
-  nbsp: " ",
-  copy: "©",
-  reg: "®",
-  trade: "™",
-  hellip: "…",
-  mdash: "—",
-  ndash: "–",
-  lsquo: "‘",
-  rsquo: "’",
-  ldquo: "“",
-  rdquo: "”",
-  laquo: "«",
-  raquo: "»",
-  deg: "°",
-  plusmn: "±",
-  times: "×",
-  divide: "÷",
-  micro: "µ",
-  para: "¶",
-  middot: "·",
-  bull: "•",
-  dagger: "†",
-  Dagger: "‡",
-  euro: "€",
-  pound: "£",
-  yen: "¥",
-  cent: "¢",
-  sect: "§",
-  frac12: "½",
-  frac14: "¼",
-  frac34: "¾",
-  larr: "←",
-  uarr: "↑",
-  rarr: "→",
-  darr: "↓",
-  harr: "↔",
-  spades: "♠",
-  clubs: "♣",
-  hearts: "♥",
-  diams: "♦",
-  alpha: "α",
-  beta: "β",
-  gamma: "γ",
-  delta: "δ",
-  pi: "π",
-  sigma: "σ",
-  omega: "ω",
-  infin: "∞",
-  ne: "≠",
-  le: "≤",
-  ge: "≥",
-  sum: "∑",
-  prod: "∏",
-  radic: "√",
-  prop: "∝",
-  int: "∫",
 }
 
 /** Options governing how references are resolved. */
