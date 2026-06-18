@@ -623,7 +623,9 @@ export class Lexer {
         if (this.dtQuote !== null) {
           this.dtBuf += c
           if (c === this.dtQuote) this.dtQuote = null
-        } else if (c === '"' || c === "'") {
+        } else if ((c === '"' || c === "'") && /PUBLIC|SYSTEM/i.test(this.dtBuf)) {
+          // Quotes are only significant after a PUBLIC/SYSTEM keyword; otherwise
+          // the DOCTYPE is bogus and `>` terminates it (text follows in body).
           this.dtQuote = c
           this.dtBuf += c
         } else if (c === "[") {
