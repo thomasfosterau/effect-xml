@@ -244,6 +244,7 @@ type Mode =
   | "beforeHtml"
   | "beforeHead"
   | "inHead"
+  | "inHeadNoscript"
   | "afterHead"
   | "inBody"
   | "inTable"
@@ -693,6 +694,18 @@ class HtmlTreeBuilder {
       this.mode = "inBody"
     }
 
+    // In head noscript: whitespace stays; anything else pops noscript and
+    // reprocesses in "in head".
+    if (this.mode === "inHeadNoscript") {
+      if (/[^\t\n\f\r ]/.test(data)) {
+        this.open.pop() // noscript
+        this.mode = "inHead"
+      } else {
+        this.insertText(data)
+        return
+      }
+    }
+
     const cur = this.current
     // Text inside an open content element (e.g. <title>, <p>, <b>) belongs there
     // regardless of insertion mode. Only text directly in the structural spine
@@ -797,6 +810,15 @@ class HtmlTreeBuilder {
       case "frameset":
         this.startFrameset(attrs)
         return
+      case "noscript":
+        // In head (scripting disabled), <noscript> opens "in head noscript".
+        if (this.bodyEl === null && this.mode !== "afterHead") this.ensureHead()
+        if (this.mode === "inHead") {
+          this.insertElement("noscript", attrs)
+          this.mode = "inHeadNoscript"
+          return
+        }
+        break // in body: a generic element
       case "base":
       case "basefont":
       case "bgsound":
@@ -844,11 +866,12 @@ class HtmlTreeBuilder {
         break
     }
 
-    // Frameset modes never have (or synthesize) a body.
+    // Frameset / in-head-noscript modes never synthesize a body before dispatch.
     if (
       this.mode === "inFrameset" ||
       this.mode === "afterFrameset" ||
-      this.mode === "afterAfterFrameset"
+      this.mode === "afterAfterFrameset" ||
+      this.mode === "inHeadNoscript"
     ) {
       this.dispatchStart(name, attrs)
       return
@@ -881,6 +904,8 @@ class HtmlTreeBuilder {
         return this.inSelectInTableStart(name, attrs)
       case "inTemplate":
         return this.inTemplateStart(name, attrs)
+      case "inHeadNoscript":
+        return this.inHeadNoscriptStart(name, attrs)
       case "inFrameset":
         return this.inFramesetStart(name, attrs)
       case "afterFrameset":
@@ -921,6 +946,36 @@ class HtmlTreeBuilder {
       default:
         this.switchTemplateMode("inBody")
         return this.dispatchStart(name, attrs)
+    }
+  }
+
+  private inHeadNoscriptStart(name: string, attrs: Array<MAttr>): void {
+    switch (name) {
+      case "basefont":
+      case "bgsound":
+      case "link":
+      case "meta":
+      case "noframes":
+      case "style":
+        this.insertElement(name, attrs)
+        if (
+          voidElements.has(name) || name === "meta" || name === "link" ||
+          name === "basefont" || name === "bgsound"
+        ) {
+          this.open.pop()
+        }
+        return
+      case "html":
+        return this.inBodyStart(name, attrs)
+      case "head":
+      case "noscript":
+        return // ignore
+      default:
+        // Pop the noscript element and reprocess the token in "in head".
+        this.open.pop()
+        this.mode = "inHead"
+        this.onStart(name, attrs)
+        return
     }
   }
 
@@ -1404,6 +1459,21 @@ class HtmlTreeBuilder {
       this.templateModes.pop()
       this.resetInsertionMode()
       return
+    }
+    if (this.mode === "inHeadNoscript") {
+      // </noscript> returns to "in head"; </br> reprocesses; others are ignored.
+      if (name === "noscript") {
+        this.open.pop()
+        this.mode = "inHead"
+        return
+      }
+      if (name === "br") {
+        this.open.pop()
+        this.mode = "inHead"
+        // fall through to the </br> handling below
+      } else {
+        return
+      }
     }
     if (name === "html") {
       if (this.mode === "afterFrameset" || this.mode === "afterAfterFrameset") {
