@@ -871,6 +871,14 @@ export class Lexer {
           this.emit({ _tag: "Text", data: this.text, span: { start: this.textStart, end: this.pos } })
         }
         return
+      case S.CData:
+        // Unterminated CDATA at EOF: in HTML the accumulated content (including
+        // any trailing `]]`) is emitted as-is; XML falls through to a fault.
+        if (this.options.mode === "html") {
+          this.emit({ _tag: "CData", data: this.text, span: { start: this.tagStart, end: this.pos } })
+          return
+        }
+        break
       case S.Comment:
       case S.BogusComment:
         if (!this.strict) {

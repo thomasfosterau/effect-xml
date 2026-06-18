@@ -492,11 +492,17 @@ class HtmlTreeBuilder {
         return
       case "XmlDeclaration":
         return
-      case "CData":
-        this.ensureBody()
-        this.reconstructFormatting()
-        this.insert({ _t: "cdata", data: ev.data, parent: null })
+      case "CData": {
+        const cur = this.current
+        if (cur !== null && cur.ns !== HTML_NS) {
+          // Foreign content: a real CDATA section is character data.
+          if (ev.data.length > 0) this.insertText(ev.data)
+        } else {
+          // HTML content: `<![CDATA[…]]>` is a bogus comment.
+          this.insert({ _t: "comment", data: "[CDATA[" + ev.data + "]]", parent: null })
+        }
         return
+      }
       case "Text":
         if (this.usesForeignRules("char")) this.foreignText(ev.data)
         else this.onText(ev.data)
