@@ -157,6 +157,11 @@ export class Lexer {
   private rawPending = ""
   /** Script-data escape level: 0 = data, 1 = escaped (<!--), 2 = double-escaped. */
   private sLevel = 0
+  /**
+   * When set by a coupled tree builder, raw-text/rcdata/plaintext elements are
+   * NOT switched into their raw tokenizer state (used inside foreign content).
+   */
+  suppressRawText = false
 
   constructor(private readonly options: LexerOptions) {}
 
@@ -252,8 +257,9 @@ export class Lexer {
     })
     this.attrs = []
     this.tagName = ""
-    // In HTML, certain elements switch the tokenizer into a raw mode.
-    if (!selfClosing && this.options.mode === "html") {
+    // In HTML, certain elements switch the tokenizer into a raw mode — unless we
+    // are inside foreign (SVG/MathML) content, where they are ordinary elements.
+    if (!selfClosing && this.options.mode === "html" && !this.suppressRawText) {
       const lower = name.toLowerCase()
       if (HTML_RAWTEXT.has(lower)) {
         this.enterRaw(lower, S.RawText)

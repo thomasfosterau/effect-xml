@@ -20,7 +20,8 @@
 import { Effect, Stream } from "effect"
 import type { SaxError } from "../Error.ts"
 import { QName } from "../Name.ts"
-import type { SaxEvent } from "../Sax.ts"
+import { convertLexEvent, resolveSaxOptions, type SaxEvent } from "../Sax.ts"
+import { Lexer, type LexOutput } from "../internal/lexer.ts"
 import {
   XmlCData,
   XmlComment,
@@ -595,6 +596,21 @@ class HtmlTreeBuilder {
       return enc === "text/html" || enc === "application/xhtml+xml"
     }
     return el.ns === SVG_NS && (el.name === "foreignObject" || el.name === "desc" || el.name === "title")
+  }
+
+  /**
+   * Whether the current node is in foreign content where HTML raw-text/rcdata
+   * elements should NOT trigger their raw tokenizer state (i.e. a foreign
+   * element that is not an integration point). Used by the coupled driver.
+   */
+  currentIsForeignContent(): boolean {
+    const c = this.current
+    return (
+      c !== null &&
+      c.ns !== HTML_NS &&
+      !this.isHTMLIntegrationPoint(c) &&
+      !this.isMathMLTextIP(c)
+    )
   }
 
   /**
@@ -2216,5 +2232,34 @@ export const buildDocument = <E, R>(
   Effect.gen(function* () {
     const builder = new HtmlTreeBuilder()
     yield* Stream.runForEach(events, (ev) => Effect.sync(() => builder.accept(ev)))
+    return builder.finish()
+  })
+
+/**
+ * Build an HTML document from a string with the tokenizer and tree builder
+ * coupled: after each event the builder tells the tokenizer whether it is inside
+ * foreign content, so raw-text/rcdata elements (title/style/script/textarea/
+ * plaintext) inside SVG/MathML are parsed as ordinary elements.
+ */
+export const buildDocumentString = (
+  input: string,
+  options?: { readonly entities?: Record<string, string> }
+): Effect.Effect<XmlDocument, SaxError> =>
+  Effect.sync(() => {
+    const opts = resolveSaxOptions(
+      options?.entities ? { mode: "html", entities: options.entities } : { mode: "html" }
+    )
+    const lexer = new Lexer({ mode: "html", entities: opts.entities })
+    const builder = new HtmlTreeBuilder()
+    const feed = (outs: ReadonlyArray<LexOutput>): void => {
+      for (const o of outs) {
+        if (o._tag === "Fault") continue // HTML mode never faults
+        const ev = convertLexEvent(o, opts)
+        if (ev !== null) builder.accept(ev)
+        lexer.suppressRawText = builder.currentIsForeignContent()
+      }
+    }
+    for (let i = 0; i < input.length; i++) feed(lexer.write(input[i]!))
+    feed(lexer.end())
     return builder.finish()
   })

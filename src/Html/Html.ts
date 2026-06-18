@@ -5,7 +5,7 @@ import { Effect, Stream } from "effect"
 import type { SaxError } from "../Error.ts"
 import type { XmlDocument, XmlNode } from "../Xml/Node.ts"
 import { buildFragment } from "./TreeBuilder.ts"
-import { buildDocument } from "./TreeConstruction.ts"
+import { buildDocument, buildDocumentString } from "./TreeConstruction.ts"
 import { tokenize, tokenizeString, type HtmlOptions } from "./Tokenizer.ts"
 import type { SaxEvent } from "../Sax.ts"
 
@@ -31,7 +31,7 @@ export const parseFragmentStream =
 export const parseDocument = (
   input: string,
   options?: HtmlOptions
-): Effect.Effect<XmlDocument, SaxError> => buildDocument(tokenizeString(input, options))
+): Effect.Effect<XmlDocument, SaxError> => buildDocumentString(input, options)
 
 /** Parse a stream of HTML chunks into a full document. */
 export const parseDocumentStream =

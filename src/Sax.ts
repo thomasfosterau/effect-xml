@@ -102,14 +102,16 @@ export interface SaxOptions {
   readonly dropWhitespaceOnlyText?: boolean
 }
 
-interface ResolvedOptions {
+/** @internal */
+export interface ResolvedOptions {
   readonly mode: "xml" | "html"
   readonly entities: Record<string, string>
   readonly whitespace: "preserve" | "collapse"
   readonly dropWhitespaceOnlyText: boolean
 }
 
-const resolve = (options: SaxOptions | undefined): ResolvedOptions => {
+/** @internal */
+export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOptions => {
   const mode = options?.mode ?? "xml"
   return {
     mode,
@@ -126,7 +128,8 @@ const resolve = (options: SaxOptions | undefined): ResolvedOptions => {
 const isWhitespaceOnly = (s: string): boolean => /^\s*$/.test(s)
 
 /** Convert a lexer event to a public event, applying whitespace policy. Returns null to drop. */
-const convert = (ev: LexEvent, opts: ResolvedOptions): SaxEvent | null => {
+/** @internal Convert a raw lexer event into a SAX event (used by coupled drivers). */
+export const convertLexEvent = (ev: LexEvent, opts: ResolvedOptions): SaxEvent | null => {
   switch (ev._tag) {
     case "StartElement":
       return SaxEvent.StartElement({
@@ -193,7 +196,7 @@ const convert = (ev: LexEvent, opts: ResolvedOptions): SaxEvent | null => {
 export const tokenize =
   (options?: SaxOptions) =>
   <E, R>(input: Stream.Stream<string, E, R>): Stream.Stream<SaxEvent, SaxError | E, R> => {
-    const opts = resolve(options)
+    const opts = resolveSaxOptions(options)
     return Stream.suspend(() => {
       const lexer = new Lexer({ mode: opts.mode, entities: opts.entities })
       const body = input.pipe(Stream.mapConcat((chunk) => lexer.write(chunk)))
@@ -201,7 +204,7 @@ export const tokenize =
       return Stream.concat(body, tail).pipe(
         Stream.flatMap((o) => {
           if (o._tag === "Fault") return Stream.fail(o.error)
-          const ev = convert(o, opts)
+          const ev = convertLexEvent(o, opts)
           return ev === null ? Stream.empty : Stream.succeed(ev)
         })
       )
