@@ -62,7 +62,7 @@ export interface LexerOptions {
   readonly entities: Record<string, string>
 }
 
-const HTML_RAWTEXT = new Set(["script", "style"])
+const HTML_RAWTEXT = new Set(["script", "style", "noframes", "noembed", "iframe", "xmp"])
 const HTML_RCDATA = new Set(["title", "textarea"])
 
 // -----------------------------------------------------------------------------

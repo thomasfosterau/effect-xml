@@ -31,7 +31,9 @@ export const voidElements: ReadonlySet<string> = new Set([
 ])
 
 /** Elements whose content is raw text (no entity decoding, no nested markup). */
-export const rawTextElements: ReadonlySet<string> = new Set(["script", "style"])
+export const rawTextElements: ReadonlySet<string> = new Set([
+  "script", "style", "noframes", "noembed", "iframe", "xmp",
+])
 
 /** Elements whose content is rcdata (entity decoding, but no nested markup). */
 export const rcdataElements: ReadonlySet<string> = new Set(["title", "textarea"])
