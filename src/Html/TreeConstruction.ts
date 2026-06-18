@@ -1165,12 +1165,7 @@ class HtmlTreeBuilder {
   }
 
   private hasSelectInScope(): boolean {
-    for (let i = this.open.length - 1; i >= 0; i--) {
-      const name = this.open[i]!.name
-      if (name === "select") return true
-      if (name !== "optgroup" && name !== "option") return false
-    }
-    return false
+    return this.hasInScope("select", DEFAULT_SCOPE)
   }
 
   private inSelectStart(name: string, attrs: Array<MAttr>): void {
