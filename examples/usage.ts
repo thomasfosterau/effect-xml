@@ -1,140 +1,69 @@
 /**
- * Example usage of effect-sax message-based XML processing
+ * effect-sax — a tour of the three layers. Run with: `bun run example`
  */
-import * as Effect from "effect/Effect";
-import * as Stream from "effect/Stream";
-import {
-  createMessageStream,
-  collectMessages,
-  isolateStarts,
-  harvestTagContent,
-  quantifyTag,
-  ElementStart,
-  ContentChunk,
-} from "../source/index";
+import { Console, Effect, Stream } from "effect"
+import { Html, Sax, Xml } from "../src/index.ts"
 
-const sampleMarkup = `<?xml version="1.0"?>
-<warehouse>
-  <product sku="A001" dept="tech">
-    <itemName>Mechanical Keyboard</itemName>
-    <vendor>KeyboardCo</vendor>
-    <releaseYear>2024</releaseYear>
-    <retailPrice>89.99</retailPrice>
-  </product>
-  <product sku="A002" dept="books">
-    <itemName>TypeScript Handbook</itemName>
-    <vendor>TechBooks</vendor>
-    <releaseYear>2023</releaseYear>
-    <retailPrice>34.99</retailPrice>
-  </product>
-  <!-- Seasonal inventory -->
-  <product sku="A003" dept="tech">
-    <itemName>USB-C Hub</itemName>
-    <vendor>KeyboardCo</vendor>
-    <releaseYear>2024</releaseYear>
-    <retailPrice>24.99</retailPrice>
-  </product>
-</warehouse>`;
+// 1. Streaming SAX: feed arbitrary chunks; events come out fully typed.
+const saxDemo = Effect.gen(function* () {
+  yield* Console.log("\n# 1. Streaming SAX (chunk boundaries don't matter)")
+  const chunks = Stream.fromIterable(["<order id=", '"7"><item>Wid', "get</item></order>"])
+  yield* chunks.pipe(
+    Sax.tokenize(),
+    Stream.runForEach((ev) =>
+      Console.log(
+        `  ${ev._tag}` +
+          (Sax.isStartElement(ev) ? ` <${ev.name}> ${JSON.stringify(ev.attributes.map((a) => [a.name, a.value]))}` : "") +
+          (Sax.isText(ev) ? ` ${JSON.stringify(ev.data)}` : "") +
+          (Sax.isEndElement(ev) ? ` </${ev.name}>` : "")
+      )
+    )
+  )
+})
 
-// Example 1: Display all messages
-const example1 = Effect.gen(function* (_) {
-  console.log("=== Example 1: All Messages ===");
-  const allMessages = yield* _(collectMessages(sampleMarkup));
+// 2. Typed DOM with namespace resolution and queries.
+const xmlDemo = Effect.gen(function* () {
+  yield* Console.log("\n# 2. Typed XML DOM + namespaces")
+  const doc = yield* Xml.parse(
+    `<catalog xmlns:p="urn:products">
+       <p:product sku="A1">Widget</p:product>
+       <p:product sku="A2">Gadget</p:product>
+     </catalog>`,
+    { dropWhitespaceOnlyText: true }
+  )
+  for (const product of doc.root.elements) {
+    yield* Console.log(
+      `  ${product.name.qualified} (ns=${product.name.namespace}) sku=${product.attribute("sku")} -> ${product.textContent}`
+    )
+  }
+  yield* Console.log("  round-trip: " + Xml.serialize(doc.root.elements[0]!))
+})
 
-  for (const msg of allMessages) {
-    if (msg instanceof ElementStart) {
-      console.log(
-        `Start <${msg.tagIdentifier}>`,
-        "props:",
-        msg.propertyBag,
-        "standalone:",
-        msg.standalone
-      );
-    } else if (msg instanceof ContentChunk) {
-      console.log(`Content:`, msg.payload);
-    } else {
-      console.log(`Message:`, msg._tag);
+// 3. HTML: full document (WHATWG tree construction) and lenient fragment.
+const htmlDemo = Effect.gen(function* () {
+  yield* Console.log("\n# 3. HTML")
+  const doc = yield* Html.parseDocument(`<title>Hi</title><p>1<p>2<b>x<i>y</b>z`)
+  yield* Console.log("  parseDocument: " + Xml.serialize(doc.root))
+
+  const nodes = yield* Html.parseFragment(`<p>Hello <b>world<br>!</p><script>if (a<b) {}</script>`)
+  for (const n of nodes) {
+    if (n._tag === "XmlElement") {
+      yield* Console.log(`  fragment <${n.name.qualified}> => ${JSON.stringify(n.textContent)}`)
     }
   }
-});
+})
 
-// Example 2: Isolate element starts
-const example2 = Effect.gen(function* (_) {
-  console.log("\n=== Example 2: Element Starts ===");
-  const msgFlow = createMessageStream(sampleMarkup);
-  const starts = isolateStarts(msgFlow);
+// 4. Errors are typed and exhaustively narrowable.
+const errorDemo = Effect.gen(function* () {
+  yield* Console.log("\n# 4. Typed errors")
+  yield* Xml.parse(`<a></b>`).pipe(
+    Effect.catchTag("MismatchedEndTag", (e) => Console.log(`  caught: ${e.message}`))
+  )
+})
 
-  yield* _(
-    starts,
-    Stream.runForEach((elem) =>
-      Effect.sync(() => {
-        console.log(`Element: <${elem.tagIdentifier}>`, elem.propertyBag);
-      })
-    )
-  );
-});
-
-// Example 3: Harvest product names
-const example3 = Effect.gen(function* (_) {
-  console.log("\n=== Example 3: Product Names ===");
-  const msgFlow = createMessageStream(sampleMarkup);
-  const names = harvestTagContent(msgFlow, "itemName");
-
-  yield* _(
-    names,
-    Stream.runForEach((productName) =>
-      Effect.sync(() => {
-        console.log("Product:", productName);
-      })
-    )
-  );
-});
-
-// Example 4: Stream processing with multiple chunks
-// Note: Each chunk must be well-formed XML. This example treats each chunk
-// as an independent document. For true streaming of large files split across
-// arbitrary boundaries, use Effect's file streaming capabilities.
-const example4 = Effect.gen(function* (_) {
-  console.log("\n=== Example 4: Chunked Processing ===");
-
-  const markupChunks = Stream.fromIterable([
-    "<stockList>",
-    "<stock><code>XYZ</code></stock>",
-    "<stock><code>ABC</code></stock>",
-    "</stockList>",
-  ]);
-
-  yield* _(
-    markupChunks,
-    Stream.flatMap((chunk) => createMessageStream(chunk)),
-    Stream.filter((msg) => msg instanceof ContentChunk && msg.payload.length > 0),
-    Stream.runForEach((msg) =>
-      Effect.sync(() => {
-        if (msg instanceof ContentChunk) {
-          console.log("Stock code:", msg.payload);
-        }
-      })
-    )
-  );
-});
-
-// Example 5: Count specific elements
-const example5 = Effect.gen(function* (_) {
-  console.log("\n=== Example 5: Quantify Products ===");
-  const msgFlow = createMessageStream(sampleMarkup);
-
-  const productQty = yield* _(quantifyTag(msgFlow, "product"));
-
-  console.log(`Total products: ${productQty}`);
-});
-
-// Execute all examples
-const mainExample = Effect.gen(function* (_) {
-  yield* _(example1);
-  yield* _(example2);
-  yield* _(example3);
-  yield* _(example4);
-  yield* _(example5);
-});
-
-Effect.runPromise(mainExample).catch(console.error);
+Effect.runPromise(
+  Effect.all([saxDemo, xmlDemo, htmlDemo, errorDemo], { discard: true })
+).catch((e) => {
+  console.error(e)
+  process.exit(1)
+})

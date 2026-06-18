@@ -1,30 +1,40 @@
 {
   "name": "effect-sax",
-  "version": "0.1.0",
-  "description": "Message-based reactive XML processing with Effect",
-  "module": "source/index.ts",
+  "version": "0.2.0",
+  "description": "Type-safe, streaming XML & HTML parsing for the Effect ecosystem: an incremental SAX interface plus xml5ever/html5ever-style parsers.",
   "type": "module",
-  "main": "source/index.ts",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./Sax": "./src/Sax.ts",
+    "./Xml": "./src/Xml/index.ts",
+    "./Html": "./src/Html/index.ts"
+  },
   "scripts": {
     "test": "bun test tests/",
+    "typecheck": "tsc --noEmit",
     "example": "bun run examples/usage.ts"
   },
   "dependencies": {
-    "effect": "^3.0.0",
-    "@effect/schema": "^0.64.0",
-    "@effect/platform": "^0.54.0"
+    "effect": "^3.21.0"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.6.0"
   },
   "keywords": [
     "xml",
+    "html",
     "parser",
+    "sax",
     "streaming",
     "effect",
-    "reactive",
     "schema",
     "type-safe",
+    "html5ever",
+    "xml5ever",
     "bun"
   ],
   "repository": {
