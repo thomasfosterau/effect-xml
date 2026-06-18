@@ -186,8 +186,34 @@ const BLOCK_INSERT = new Set([
   "address", "article", "aside", "blockquote", "center", "details", "dialog",
   "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header",
   "hgroup", "main", "menu", "nav", "ol", "p", "section", "summary", "ul", "pre",
-  "listing", "h1", "h2", "h3", "h4", "h5", "h6", "li", "dd", "dt",
+  "listing", "h1", "h2", "h3", "h4", "h5", "h6", "li", "dd", "dt", "plaintext",
 ])
+
+/** Whether a DOCTYPE puts the document into (full) quirks mode. */
+const computeQuirks = (name: string, publicId: string | null, systemId: string | null): boolean => {
+  if (name.toLowerCase() !== "html") return true
+  const p = publicId === null ? null : publicId.toLowerCase()
+  const s = systemId === null ? null : systemId.toLowerCase()
+  if (p === "-//w3o//dtd w3 html strict 3.0//en//" || p === "-/w3c/dtd html 4.0 transitional/en" ||
+    p === "html") {
+    return true
+  }
+  if (s === "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd") return true
+  const quirkyPrefixes = [
+    "+//silmaril//dtd html pro v0r11 19970101//", "-//as//dtd html 3.0 aswedit + extensions//",
+    "-//ietf//dtd html 2.0", "-//ietf//dtd html 3.0", "-//w3c//dtd html 3 1995-03-24//",
+    "-//w3c//dtd html 3.2", "-//w3c//dtd html 4.0", "-//w3c//dtd html experimental",
+    "-//w3o//dtd w3 html 3.0", "-//webtechs//dtd mozilla html",
+  ]
+  if (p !== null) {
+    for (const prefix of quirkyPrefixes) if (p.startsWith(prefix)) return true
+    if (s === null && (p.startsWith("-//w3c//dtd html 4.01 frameset//") ||
+      p.startsWith("-//w3c//dtd html 4.01 transitional//"))) {
+      return true
+    }
+  }
+  return false
+}
 
 // Scope stop sets.
 const DEFAULT_SCOPE = new Set([
@@ -283,6 +309,8 @@ class HtmlTreeBuilder {
   private ignoreLeadingNewline = false
   /** The form element pointer (at most one open form outside templates). */
   private formEl: MElement | null = null
+  /** Quirks mode (no DOCTYPE, or a quirky one): affects e.g. <table> closing <p>. */
+  private quirks = true
 
   // --- stack helpers -------------------------------------------------------
 
@@ -490,6 +518,7 @@ class HtmlTreeBuilder {
     switch (ev._tag) {
       case "Doctype":
         if (this.mode === "initial") {
+          this.quirks = computeQuirks(ev.name, ev.publicId, ev.systemId)
           this.doctype = new XmlDoctype({
             // The HTML parser lowercases the DOCTYPE name.
             name: ev.name.toLowerCase(),
@@ -1376,7 +1405,8 @@ class HtmlTreeBuilder {
     if (STRAY_TABLE_TAGS.has(name)) return
 
     if (CLOSES_P.has(name) && this.hasInScope("p", BUTTON_SCOPE)) {
-      this.closeP()
+      // In quirks mode <table> does not close an open <p>.
+      if (name !== "table" || !this.quirks) this.closeP()
     }
 
     // <pre>/<listing>/<textarea> swallow an immediately-following newline.

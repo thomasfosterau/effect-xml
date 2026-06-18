@@ -58,7 +58,7 @@ Still handled leniently (as generic flow content) rather than per-spec:
    content, non-whitespace characters and an explicit `<body>`), `<frameset>`
    replacing an eligible body, `<frame>`/`<noframes>` handling, frameset
    documents carrying no `<body>`, and document-level comments after `</html>`.
-4. **Quirks-mode detection** from the DOCTYPE.
+4. ~~**Quirks-mode detection** from the DOCTYPE~~ ✅ basic detection: no DOCTYPE or a quirky one sets quirks mode (e.g. <table> no longer closes <p>).
 5. ~~The full named character-reference table~~ ✅ done — all ~2,125 WHATWG named
    references ship in `internal/htmlEntities.generated.ts`, and html-mode
    decoding is now spec-compliant: maximal-munch, the ~106 **legacy
@@ -71,7 +71,7 @@ Still handled leniently (as generic flow content) rather than per-spec:
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **1335/1368**
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **1337/1368**
 (~92%) runnable cases (only fragment-context and scripted cases are excluded);
 the test fails on any regression, so the items above are tracked as the pass
 count climbs toward 100%.
