@@ -1606,10 +1606,14 @@ class HtmlTreeBuilder {
       return
     }
     if (name === "template") {
-      // Processed via the "in head" rules in every insertion mode.
-      if (!this.open.some((e) => e.name === "template")) return
+      // Processed via the "in head" rules; targets the HTML <template> (a foreign
+      // <svg template> is a different element).
+      if (!this.open.some((e) => e.name === "template" && e.ns === HTML_NS)) return
       this.generateImpliedEndTagsThoroughly()
-      this.popUntilIncluding("template")
+      while (this.open.length > 0) {
+        const el = this.open.pop()!
+        if (el.name === "template" && el.ns === HTML_NS) break
+      }
       this.clearAfeToMarker()
       this.templateModes.pop()
       this.resetInsertionMode()
