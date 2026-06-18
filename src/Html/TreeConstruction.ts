@@ -178,6 +178,10 @@ const TABLE_ROW_CONTEXT = new Set(["tr", "template", "html"])
 const STRAY_TABLE_TAGS = new Set([
   "caption", "col", "colgroup", "tbody", "td", "tfoot", "th", "thead", "tr",
 ])
+// Table tags that drop the parser out of "in select in table".
+const SELECT_TABLE_TAGS = new Set([
+  "caption", "table", "tbody", "tfoot", "thead", "tr", "td", "th",
+])
 
 // Markers in the active-formatting list are introduced by table/applet/object/
 // marquee/template scoping, which is handled leniently for now; the type is kept
@@ -202,6 +206,8 @@ type Mode =
   | "inCell"
   | "inCaption"
   | "inColumnGroup"
+  | "inSelect"
+  | "inSelectInTable"
   | "afterBody"
   | "afterAfterBody"
 
@@ -456,6 +462,11 @@ class HtmlTreeBuilder {
       }
       this.ensureBody()
     }
+    // In select, character data is inserted as-is (no formatting reconstruction).
+    if (this.mode === "inSelect" || this.mode === "inSelectInTable") {
+      this.insertText(data)
+      return
+    }
     this.reconstructFormatting()
     // In table modes, character data is foster-parented out of the table.
     if (this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow") {
@@ -549,9 +560,87 @@ class HtmlTreeBuilder {
         return this.inCaptionStart(name, attrs)
       case "inColumnGroup":
         return this.inColumnGroupStart(name, attrs)
+      case "inSelect":
+        return this.inSelectStart(name, attrs)
+      case "inSelectInTable":
+        return this.inSelectInTableStart(name, attrs)
       default:
         return this.inBodyStart(name, attrs)
     }
+  }
+
+  private inTableContext(): boolean {
+    for (const el of this.open) {
+      if (
+        el.name === "table" || el.name === "tbody" || el.name === "tfoot" ||
+        el.name === "thead" || el.name === "tr" || el.name === "td" ||
+        el.name === "th" || el.name === "caption"
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private hasSelectInScope(): boolean {
+    for (let i = this.open.length - 1; i >= 0; i--) {
+      const name = this.open[i]!.name
+      if (name === "select") return true
+      if (name !== "optgroup" && name !== "option") return false
+    }
+    return false
+  }
+
+  private inSelectStart(name: string, attrs: Array<MAttr>): void {
+    switch (name) {
+      case "option":
+        if (this.current?.name === "option") this.open.pop()
+        this.insertElement("option", attrs)
+        return
+      case "optgroup":
+        if (this.current?.name === "option") this.open.pop()
+        if (this.current?.name === "optgroup") this.open.pop()
+        this.insertElement("optgroup", attrs)
+        return
+      case "hr":
+        if (this.current?.name === "option") this.open.pop()
+        if (this.current?.name === "optgroup") this.open.pop()
+        this.insertElement("hr", attrs)
+        this.open.pop()
+        return
+      case "select":
+        // A nested <select> acts as </select>.
+        if (this.hasSelectInScope()) {
+          this.popUntilIncluding("select")
+          this.resetInsertionMode()
+        }
+        return
+      case "input":
+      case "keygen":
+      case "textarea":
+        if (this.hasSelectInScope()) {
+          this.popUntilIncluding("select")
+          this.resetInsertionMode()
+          this.dispatchStart(name, attrs)
+        }
+        return
+      case "script":
+      case "template":
+        this.insertElement(name, attrs)
+        return
+      default:
+        return // anything else is ignored in select
+    }
+  }
+
+  private inSelectInTableStart(name: string, attrs: Array<MAttr>): void {
+    if (SELECT_TABLE_TAGS.has(name)) {
+      this.popUntilIncluding("select")
+      this.resetInsertionMode()
+      this.dispatchStart(name, attrs)
+      return
+    }
+    return this.inSelectStart(name, attrs)
   }
 
   /** Process a start tag with the in-body rules but foster-parented (the "anything else in table" case). */
@@ -748,6 +837,28 @@ class HtmlTreeBuilder {
       return
     }
 
+    if (name === "select") {
+      this.reconstructFormatting()
+      this.insertElement("select", attrs)
+      this.mode = this.inTableContext() ? "inSelectInTable" : "inSelect"
+      return
+    }
+
+    if (name === "optgroup") {
+      if (this.current?.name === "option") this.open.pop()
+      if (this.current?.name === "optgroup") this.open.pop()
+      this.reconstructFormatting()
+      this.insertElement("optgroup", attrs)
+      return
+    }
+
+    if (name === "option") {
+      if (this.current?.name === "option") this.open.pop()
+      this.reconstructFormatting()
+      this.insertElement("option", attrs)
+      return
+    }
+
     if (name === "li") {
       this.closeListItem("li", LIST_ITEM_SCOPE)
     } else if (name === "dd" || name === "dt") {
@@ -850,6 +961,12 @@ class HtmlTreeBuilder {
         break
       case "inColumnGroup":
         if (this.inColumnGroupEnd(name)) return
+        break
+      case "inSelect":
+        if (this.inSelectEnd(name)) return
+        break
+      case "inSelectInTable":
+        if (this.inSelectInTableEnd(name)) return
         break
       default:
         break
@@ -1017,6 +1134,43 @@ class HtmlTreeBuilder {
       return true
     }
     return false // anything else uses the in-body rules
+  }
+
+  private inSelectEnd(name: string): boolean {
+    switch (name) {
+      case "optgroup":
+        if (
+          this.current?.name === "option" &&
+          this.open[this.open.length - 2]?.name === "optgroup"
+        ) {
+          this.open.pop()
+        }
+        if (this.current?.name === "optgroup") this.open.pop()
+        return true
+      case "option":
+        if (this.current?.name === "option") this.open.pop()
+        return true
+      case "select":
+        if (this.hasSelectInScope()) {
+          this.popUntilIncluding("select")
+          this.resetInsertionMode()
+        }
+        return true
+      default:
+        return true // other end tags are ignored in select
+    }
+  }
+
+  private inSelectInTableEnd(name: string): boolean {
+    if (SELECT_TABLE_TAGS.has(name)) {
+      if (this.hasInScope(name, TABLE_SCOPE)) {
+        this.popUntilIncluding("select")
+        this.resetInsertionMode()
+        this.onEnd(name)
+      }
+      return true
+    }
+    return this.inSelectEnd(name)
   }
 
   private inColumnGroupEnd(name: string): boolean {

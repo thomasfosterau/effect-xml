@@ -112,6 +112,33 @@ describe("Html.parseDocument — tables", () => {
   })
 })
 
+describe("Html.parseDocument — select", () => {
+  test("options auto-close their previous sibling", async () => {
+    const out = await html(`<select><option>a<option>b</select>`)
+    expect(out).toContain("<select><option>a</option><option>b</option></select>")
+  })
+
+  test("optgroup closes a previous option and optgroup", async () => {
+    const out = await html(`<select><optgroup><option>a<optgroup><option>b</select>`)
+    expect(out).toContain(
+      "<select><optgroup><option>a</option></optgroup><optgroup><option>b</option></optgroup></select>"
+    )
+  })
+
+  test("a nested <select> closes the open select", async () => {
+    const d = await doc(`<select><option>a<select><option>b`)
+    const body = d.root.elements.find((e) => e.name.local === "body")!
+    // second option is a sibling of select, not nested.
+    expect(body.elements.map((e) => e.name.local)).toEqual(["select", "option"])
+  })
+
+  test("select inside a table drops out on </table>", async () => {
+    const out = await html(`<table><select><option>x</table>y`)
+    expect(out).toContain("<select><option>x</option></select>")
+    expect(out).toContain("<table/>")
+  })
+})
+
 describe("Html.parseDocument — robustness", () => {
   test("never throws on garbage", async () => {
     const d = await doc(`<<>></p></div><b><b><b>x`)

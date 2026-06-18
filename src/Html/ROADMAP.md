@@ -36,7 +36,10 @@ Still handled leniently (as generic flow content) rather than per-spec:
    are relocated before the table). Remaining table nuances: the pending
    table-character whitespace buffer and `<input type=hidden>`/`<form>` special
    cases.
-2. **`select`** insertion modes and **`template`** with its insertion-mode stack.
+2. ~~`select` insertion modes~~ ✅ done — `in select` and `in select in table`,
+   option/optgroup auto-closing, nested-select handling, and dropping out of
+   select on table tags. Still to do: **`template`** with its insertion-mode
+   stack.
 3. **Foreign content** (SVG/MathML): namespace + attribute-name adjustments,
    integration points, self-closing handling, CDATA-in-foreign-content.
 4. **Quirks-mode detection** from the DOCTYPE.
@@ -52,10 +55,10 @@ Still handled leniently (as generic flow content) rather than per-spec:
 
 **Conformance gate (in place):** the official **html5lib-tests**
 `tree-construction` suite runs in `tests/conformance.test.ts` against vendored
-fixtures (`tests/fixtures/html5lib/`). The current baseline is **94/128** runnable
-cases (template/foreign cases are excluded until implemented); the test fails on
-any regression, so the items above are tracked as the pass count climbs toward
-100%.
+fixtures (`tests/fixtures/html5lib/`). The current baseline is **100/128**
+runnable cases (template/foreign cases are excluded until implemented); the test
+fails on any regression, so the items above are tracked as the pass count climbs
+toward 100%.
 
 ## Next: XML5 tree construction (`Xml.parseWell` → `Xml.parse5`)
 
