@@ -1704,8 +1704,13 @@ class HtmlTreeBuilder {
     if (name === "p") {
       if (noBodyYet) return
       if (!this.hasInScope("p", BUTTON_SCOPE)) {
-        // Act as if <p></p> — insert an empty paragraph.
+        // Act as if <p></p> — insert an empty paragraph (foster-parented out of
+        // a table when in a table insertion mode).
+        const tableMode =
+          this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow"
+        if (tableMode) this.foster = true
         this.insertElement("p", [])
+        this.foster = false
       }
       this.closeP()
       return
