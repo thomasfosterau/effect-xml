@@ -171,6 +171,15 @@ const CLOSES_P = new Set([
 
 const HEADINGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"])
 
+// "in body" end tags that close a block element in scope (generate implied end
+// tags, then pop up to and including the named element).
+const BLOCK_END = new Set([
+  "address", "article", "aside", "blockquote", "button", "center", "details",
+  "dialog", "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer",
+  "header", "hgroup", "listing", "main", "menu", "nav", "ol", "pre", "section",
+  "summary", "ul",
+])
+
 // Scope stop sets.
 const DEFAULT_SCOPE = new Set([
   "applet", "caption", "html", "table", "td", "th", "marquee", "object", "template",
@@ -1436,6 +1445,43 @@ class HtmlTreeBuilder {
     if (FORMATTING.has(name)) {
       if (noBodyYet) return
       this.adoptionAgency(name)
+      return
+    }
+
+    // Block elements: close to and including the named element if it's in scope.
+    if (BLOCK_END.has(name)) {
+      if (this.hasInScope(name, DEFAULT_SCOPE)) {
+        this.generateImpliedEndTags()
+        this.popUntilIncluding(name)
+      }
+      return
+    }
+
+    if (name === "li") {
+      if (this.hasInScope("li", LIST_ITEM_SCOPE)) {
+        this.generateImpliedEndTags("li")
+        this.popUntilIncluding("li")
+      }
+      return
+    }
+
+    if (name === "dd" || name === "dt") {
+      if (this.hasInScope(name, DEFAULT_SCOPE)) {
+        this.generateImpliedEndTags(name)
+        this.popUntilIncluding(name)
+      }
+      return
+    }
+
+    if (HEADINGS.has(name)) {
+      // Close the nearest heading of any level if one is in scope.
+      const inScope = [...HEADINGS].some((h) => this.hasInScope(h, DEFAULT_SCOPE))
+      if (inScope) {
+        this.generateImpliedEndTags()
+        while (this.open.length > 0) {
+          if (HEADINGS.has(this.open.pop()!.name)) break
+        }
+      }
       return
     }
 
