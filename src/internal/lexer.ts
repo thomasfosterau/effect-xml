@@ -143,6 +143,7 @@ export class Lexer {
   private attrStart: Position = this.pos
   private markupBuf = ""
   private commentDashes = 0
+  private commentBang = false
   private cdataBrackets = 0
   private piBuf = ""
   private piQ = false
@@ -565,14 +566,22 @@ export class Lexer {
 
       case S.Comment: {
         if (c === ">" && this.commentDashes >= 2) {
+          // Strip the trailing "--" (or "--!" for the comment-end-bang state).
+          const strip = this.commentBang ? 3 : 2
           this.emit({
             _tag: "Comment",
-            data: this.text.slice(0, this.text.length - 2),
+            data: this.text.slice(0, this.text.length - strip),
             span: { start: this.tagStart, end: this.afterPos(at) },
           })
           this.text = ""
+          this.commentBang = false
           this.state = S.Data
+        } else if (c === "!" && this.commentDashes >= 2) {
+          // `--!`: comment-end-bang — a following `>` still closes the comment.
+          this.commentBang = true
+          this.text += c
         } else {
+          this.commentBang = false
           this.commentDashes = c === "-" ? this.commentDashes + 1 : 0
           this.text += c
         }

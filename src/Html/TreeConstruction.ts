@@ -1097,11 +1097,13 @@ class HtmlTreeBuilder {
     switch (name) {
       case "option":
         if (this.current?.name === "option") this.open.pop()
+        this.reconstructFormatting()
         this.insertElement("option", attrs)
         return
       case "optgroup":
         if (this.current?.name === "option") this.open.pop()
         if (this.current?.name === "optgroup") this.open.pop()
+        this.reconstructFormatting()
         this.insertElement("optgroup", attrs)
         return
       case "hr":
