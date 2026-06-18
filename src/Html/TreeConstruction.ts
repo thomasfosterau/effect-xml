@@ -462,7 +462,8 @@ class HtmlTreeBuilder {
       case "Doctype":
         if (this.mode === "initial") {
           this.doctype = new XmlDoctype({
-            name: ev.name,
+            // The HTML parser lowercases the DOCTYPE name.
+            name: ev.name.toLowerCase(),
             publicId: ev.publicId,
             systemId: ev.systemId,
             internalSubset: ev.internalSubset,
