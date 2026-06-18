@@ -1241,6 +1241,18 @@ class HtmlTreeBuilder {
       this.adoptionAgency("nobr")
     }
 
+    // Ruby annotation tags close open ruby sub-parts (generate implied end tags).
+    if (name === "rb" || name === "rtc") {
+      this.generateImpliedEndTags()
+      this.insertElement(name, attrs)
+      return
+    }
+    if (name === "rp" || name === "rt") {
+      this.generateImpliedEndTags("rtc")
+      this.insertElement(name, attrs)
+      return
+    }
+
     if (FORMATTING.has(name)) {
       this.reconstructFormatting()
       const el = this.insertElement(name, attrs)
@@ -1319,6 +1331,12 @@ class HtmlTreeBuilder {
     ) {
       return
     }
+
+    // A </br> end tag is treated as a <br> start tag.
+    if (name === "br") {
+      this.onStart("br", [])
+      return
+    }
     if (name === "head") {
       if (this.current?.name === "head") this.open.pop()
       if (this.mode === "inHead") this.mode = "afterHead"
@@ -1358,8 +1376,11 @@ class HtmlTreeBuilder {
         break
     }
 
+    // Before a body exists these end tags don't open one — they're ignored.
+    const noBodyYet = this.bodyEl === null && this.templateModes.length === 0
+
     if (name === "p") {
-      this.ensureBody()
+      if (noBodyYet) return
       if (!this.hasInScope("p", BUTTON_SCOPE)) {
         // Act as if <p></p> — insert an empty paragraph.
         this.insertElement("p", [])
@@ -1369,7 +1390,7 @@ class HtmlTreeBuilder {
     }
 
     if (FORMATTING.has(name)) {
-      this.ensureBody()
+      if (noBodyYet) return
       this.adoptionAgency(name)
       return
     }
