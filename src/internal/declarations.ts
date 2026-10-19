@@ -1,18 +1,18 @@
 /**
- * Grammars for the XML declaration, processing instructions and DOCTYPE.
+ * Grammars for the XML declaration, processing instructions and DOCTYPE, as
+ * used by the lexer in XML mode.
  *
- * The lexer's state machine finds where these constructs start and end (it has
- * to, to stay chunk-boundary safe); once it has a complete body it hands the
- * text to one of these parsers. They follow the productions of XML 1.0 (5th
- * ed.) §2.6 and §2.8, and on failure report what was expected and where, which
- * the lexer turns into a positioned {@link MalformedDeclaration}.
+ * They follow the productions of XML 1.0 (5th ed.) §2.6 and §2.8 and include
+ * their closing delimiters, so the token grammar can embed them directly.
+ * Each is labelled with {@link Parser.context}; the lexer turns a failure
+ * under one of those labels into a positioned {@link MalformedDeclaration}
+ * saying what was expected.
  *
- * Only XML mode uses these. HTML has no processing instructions, and its
- * DOCTYPE handling is WHATWG error recovery rather than a grammar.
+ * HTML has no processing instructions, and its DOCTYPE is WHATWG error
+ * recovery rather than a grammar (see `tokens.ts`).
  */
-import { Parser, ParseError, Token } from "@thomasfosterau/effect-parse"
-import { Result } from "effect"
-import { isNameChar, isValidName } from "../Name.ts"
+import { Parser, Token } from "@thomasfosterau/effect-parse"
+import { QName } from "./names.ts"
 
 // -----------------------------------------------------------------------------
 // Shared productions
@@ -29,8 +29,8 @@ const S0 = Token.takeWhile(whitespace)
 /** `Eq ::= S? '=' S?` */
 const Eq = Parser.delimited(S0, Token.literal("="), S0)
 
-/** `Name ::= NameStartChar (NameChar)*` */
-const Name = Token.takeWhile(isNameChar, { min: 1 }).pipe(Parser.filter(isValidName))
+/** A name: a `QName` (Namespaces in XML 1.0 §3), so at most one colon. */
+const Name = QName
 
 /** `value` between matching single or double quotes; `inner` gets the quote. */
 const quoted = <A>(inner: (quote: "\"" | "'") => Parser.Parser<A>): Parser.Parser<A> =>
@@ -78,12 +78,13 @@ export interface XmlDeclarationBody {
   readonly standalone: boolean | null
 }
 
-/** What follows the `xml` target: `VersionInfo EncodingDecl? SDDecl? S?` */
+/** What follows the `xml` target: `VersionInfo EncodingDecl? SDDecl? S? '?>'` */
 const XmlDeclarationRest: Parser.Parser<XmlDeclarationBody> = Parser.gen(function* () {
   const version = yield* Parser.cut(VersionInfo)
   const encoding = yield* Parser.optional(EncodingDecl)
   const standalone = yield* Parser.optional(SDDecl)
   yield* S0
+  yield* Parser.cut(Token.literal("?>"))
   return { _tag: "XmlDeclaration" as const, version, encoding: encoding ?? null, standalone: standalone ?? null }
 })
 
@@ -98,25 +99,36 @@ export interface ProcessingInstructionBody {
 }
 
 /**
+ * The context labels of these grammars. A failure under one of them is a
+ * malformed declaration, named by the label.
+ */
+export const declarationContexts: ReadonlySet<string> = new Set(["processing instruction", "DOCTYPE"])
+
+/**
  * `PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))`. The exact name
  * `xml` is let through here: it starts the XML declaration instead.
  */
-const PITarget = Name.pipe(
-  Parser.filter((name) => name === "xml" || name.toLowerCase() !== "xml"),
-  Parser.expected("processing instruction target")
+const PITarget = Parser.flatMap(Parser.peek(Name), (name) =>
+  // A message, so the failure is reported here rather than at a deeper hint.
+  name === "xml" || name.toLowerCase() !== "xml" ? Name : Parser.failMessage("processing instruction target")
+).pipe(Parser.expected("processing instruction target"))
+
+/** `(S (Char* - (Char* '?>' Char*)))? '?>'` */
+const PIRest = Parser.terminated(
+  Parser.alt(Parser.preceded(S, Token.takeUntil("?>")), Parser.succeed("")),
+  Parser.cut(Token.literal("?>"))
 )
 
 /**
- * The body of `<?…?>` (without the delimiters): either the XML declaration or
- * `PITarget (S Char*)?`.
+ * What follows `<?`: the XML declaration, or `PITarget (S Char*)? '?>'`.
  */
 export const processingInstruction: Parser.Parser<XmlDeclarationBody | ProcessingInstructionBody> =
   Parser.gen(function* () {
     const target = yield* PITarget
     if (target === "xml") return yield* XmlDeclarationRest
-    const data = yield* Parser.alt(Parser.preceded(S, Token.rest), Parser.as(Parser.eof, ""))
+    const data = yield* PIRest
     return { _tag: "ProcessingInstruction" as const, target, data }
-  })
+  }).pipe(Parser.context("processing instruction"))
 
 // -----------------------------------------------------------------------------
 // DOCTYPE (§2.8)
@@ -155,18 +167,24 @@ const ExternalID: Parser.Parser<ExternalId> = Parser.alt(
   )
 )
 
+/** A string literal, comment or PI inside the internal subset, kept as text. */
+const subsetItem = Parser.alt(
+  Parser.seq(Token.literal("\""), Token.takeTill("\""), Token.literal("\"")),
+  Parser.seq(Token.literal("'"), Token.takeTill("'"), Token.literal("'")),
+  Parser.seq(Token.literal("<!--"), Token.takeUntil("-->"), Token.literal("-->")),
+  Parser.seq(Token.literal("<?"), Token.takeUntil("?>"), Token.literal("?>")),
+  Token.takeTill("]\"'<", { min: 1 }),
+  Token.literal("<")
+)
+
 /**
- * `'[' intSubset ']' S?`. The lexer has already balanced the brackets, so the
- * subset is everything up to the final `]`; its markup declarations are kept
- * as text.
+ * `'[' intSubset ']' S?`. The markup declarations are not interpreted, only
+ * skipped over (literals, comments and PIs may contain `]`), and kept as text.
  */
-const subsetEnd = Parser.seq(Token.literal("]"), S0, Parser.eof)
-const InternalSubset = Parser.preceded(
+const InternalSubset = Parser.delimited(
   Token.literal("["),
-  Parser.terminated(
-    Parser.taken(Parser.repeat(Parser.preceded(Parser.not(subsetEnd), Token.any).pipe(Parser.expected("\"]\"")))),
-    Parser.cut(subsetEnd)
-  )
+  Parser.taken(Parser.repeat(subsetItem)),
+  Parser.cut(Parser.seq(Token.literal("]"), S0))
 )
 
 export interface DoctypeBody {
@@ -177,8 +195,8 @@ export interface DoctypeBody {
 }
 
 /**
- * The body of `<!…>`, from the keyword on:
- * `'DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)?`
+ * What follows `<!`:
+ * `'DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'`
  */
 export const doctype: Parser.Parser<DoctypeBody> = Parser.gen(function* () {
   yield* Token.literal("DOCTYPE")
@@ -187,44 +205,11 @@ export const doctype: Parser.Parser<DoctypeBody> = Parser.gen(function* () {
   const externalId = yield* Parser.optional(Parser.preceded(S, ExternalID))
   yield* S0
   const subset = yield* Parser.optional(InternalSubset)
+  yield* Parser.cut(Token.literal(">"))
   return {
     name,
     publicId: externalId?.publicId ?? null,
     systemId: externalId?.systemId ?? null,
     internalSubset: subset === undefined ? null : subset.trim() || null,
   }
-})
-
-// -----------------------------------------------------------------------------
-// Running
-// -----------------------------------------------------------------------------
-
-/** Why a body did not parse, relative to the start of the body. */
-export interface DeclarationFailure {
-  readonly offset: number
-  readonly expected: string
-  readonly found: string
-}
-
-/**
- * Parse a complete body, consuming all of it. The body's end is reported as
- * `closer` (the delimiter the lexer stripped, e.g. `?>`).
- */
-export const run = <A>(
-  grammar: Parser.Parser<A>,
-  body: string,
-  closer: string
-): Result.Result<A, DeclarationFailure> =>
-  Parser.parse(grammar, body).pipe(
-    Result.mapError((error) => {
-      const cp = body.codePointAt(error.offset)
-      const end = JSON.stringify(closer)
-      return {
-        offset: error.offset,
-        expected: error.expected.length > 0
-          ? ParseError.formatExpected(error.expected.map((e) => (e === "end of input" ? end : e)))
-          : (error.description ?? "valid syntax"),
-        found: cp === undefined ? end : JSON.stringify(String.fromCodePoint(cp)),
-      }
-    })
-  )
+}).pipe(Parser.context("DOCTYPE"))

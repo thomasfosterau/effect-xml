@@ -15,8 +15,11 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuil
 | `src/Position.ts` | `Position`/`Span` value types and offset/line/column arithmetic. |
 | `src/Error.ts` | `Data.TaggedError` classes unified under `SaxError`. |
 | `src/Name.ts` | Branded `TagName`/`AttrName`, the `QName` `Schema.Class`, namespace constants. |
-| `src/internal/entities.ts` | Entity decoding (XML predefined, numeric dec/hex, common HTML subset) and escaping. |
-| `src/internal/lexer.ts` | The incremental character state machine. The engine of everything. |
+| `src/internal/entities.ts` | Entity decoding (XML predefined, numeric dec/hex, the WHATWG named set) as a grammar, and escaping. |
+| `src/internal/names.ts` | The `NCName`/`QName` productions, for validation and the declaration grammars. |
+| `src/internal/tokens.ts` | The token grammars (effect-parse): one per tokenizer state, XML and HTML. |
+| `src/internal/declarations.ts` | XML declaration, processing instruction and DOCTYPE grammars (XML 1.0 §2.6, §2.8). |
+| `src/internal/lexer.ts` | The incremental driver: buffering, positions, partial parsing, tokenizer states. The engine of everything. |
 | `src/Sax.ts` | Public streaming SAX: `SaxEvent` tagged enum + `Stream` combinators. |
 | `src/Xml/Node.ts` | The typed, `Schema`-backed DOM + serialization. |
 | `src/Xml/TreeBuilder.ts` | SAX events → `XmlDocument`, with well-formedness checks and namespace resolution. |
@@ -25,20 +28,31 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuil
 
 ## The incremental lexer
 
-The previous implementation required the whole document up front and treated
-each stream chunk as an *independent* document. The new lexer is a real
-character-by-character state machine (`src/internal/lexer.ts`):
+Tokens are read by parser-combinator grammars written with
+[effect-parse](https://github.com/thomasfosterau/effect-parse)
+(`src/internal/tokens.ts`, `src/internal/declarations.ts`). The lexer
+(`src/internal/lexer.ts`) drives them:
 
-- **Chunk-boundary safe.** All multi-character delimiters (`<!--`, `<![CDATA[`,
-  `-->`, `]]>`, `?>`, `/>`, `</name`) are recognized via persistent state +
-  small buffers, never via lookahead, so a split at *any* offset is safe. The
-  test suite verifies that parsing is byte-for-byte identical for every chunk
-  size from 1 to the full length.
-- **Position tracking** with CR/CRLF/LF newline normalization.
-- **Two modes.** `xml` is strict (unknown entities and malformed markup become
-  typed faults); `html` recovers (bare `<`, unquoted/boolean attributes, bogus
-  comments) and switches into raw-text/rcdata inside `script`/`style`/`title`/
-  `textarea`.
+- **Chunk-boundary safe.** The lexer buffers unconsumed input and runs the
+  grammar for the current tokenizer state at its cursor in *partial* mode:
+  a grammar that runs out of input reports "Incomplete" instead of failing,
+  and is tried again when more input arrives. Retries wait until the pending
+  input has grown by half, so a token split over many chunks is still read in
+  linear time. The test suite verifies that parsing is identical for every
+  chunk size from 1 to the full length.
+- **Pull-based.** `write`/`end` return every token available. The HTML tree
+  builder instead `pull`s one token at a time, so it can tell the lexer
+  whether it is inside foreign content (where `<script>`, `<title>` etc. are
+  not raw text) before the next token is read.
+- **Position tracking** with CR/CRLF/LF newline normalization; offsets count
+  raw UTF-16 units.
+- **Two modes.** `xml` is strict: a grammar fails with a cut where the input
+  breaks the rules, and the lexer turns the failure into a typed fault
+  (`UnexpectedCharacter`, `InvalidEntity`, `MalformedDeclaration`, or
+  `UnexpectedEndOfInput`). `html` follows WHATWG tokenization and recovers
+  everywhere (bare `<`, unquoted/boolean attributes, bogus comments, the
+  DOCTYPE states, script data escapes), switching into raw text inside
+  `script`/`style`/`title`/`textarea`.
 - **No exceptions.** Faults are emitted as data; `Sax.ts` lifts them into the
   `Stream` error channel.
 

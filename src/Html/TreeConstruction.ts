@@ -21,7 +21,7 @@ import { Effect, Stream } from "effect"
 import type { SaxError } from "../Error.ts"
 import { QName } from "../Name.ts"
 import { convertLexEvent, resolveSaxOptions, type SaxEvent } from "../Sax.ts"
-import { Lexer, type LexOutput } from "../internal/lexer.ts"
+import { Lexer } from "../internal/lexer.ts"
 import {
   XmlCData,
   XmlComment,
@@ -2346,7 +2346,10 @@ export const buildDocumentString = (
     )
     const lexer = new Lexer({ mode: "html", entities: opts.entities })
     const builder = new HtmlTreeBuilder()
-    const feed = (outs: ReadonlyArray<LexOutput>): void => {
+    // One token at a time, so the builder can switch raw text off in between.
+    lexer.push(input)
+    lexer.close()
+    for (let outs = lexer.pull(); outs !== null; outs = lexer.pull()) {
       for (const o of outs) {
         if (o._tag === "Fault") continue // HTML mode never faults
         const ev = convertLexEvent(o, opts)
@@ -2354,7 +2357,5 @@ export const buildDocumentString = (
         lexer.suppressRawText = builder.currentIsForeignContent()
       }
     }
-    for (let i = 0; i < input.length; i++) feed(lexer.write(input[i]!))
-    feed(lexer.end())
     return builder.finish()
   })
