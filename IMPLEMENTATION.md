@@ -15,7 +15,8 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuil
 | `src/Position.ts` | `Position`/`Span` value types and offset/line/column arithmetic. |
 | `src/Error.ts` | `Data.TaggedError` classes unified under `SaxError`. |
 | `src/Name.ts` | Branded `TagName`/`AttrName`, the `QName` `Schema.Class`, namespace constants. |
-| `src/internal/entities.ts` | Entity decoding (XML predefined, numeric dec/hex, common HTML subset) and escaping. |
+| `src/internal/entities.ts` | Entity decoding (XML predefined, numeric dec/hex, the WHATWG named set) as a grammar, and escaping. |
+| `src/internal/names.ts` | The `NCName`/`QName` productions, for validation and the declaration grammars. |
 | `src/internal/tokens.ts` | The token grammars (effect-parse): one per tokenizer state, XML and HTML. |
 | `src/internal/declarations.ts` | XML declaration, processing instruction and DOCTYPE grammars (XML 1.0 §2.6, §2.8). |
 | `src/internal/lexer.ts` | The incremental driver: buffering, positions, partial parsing, tokenizer states. The engine of everything. |

@@ -1,13 +1,15 @@
 /**
  * Entity (character reference) decoding.
  *
- * Decoding is performed as a discrete pass over already-lexed text/attribute
- * values rather than inside the character state machine. This keeps the lexer
- * simple and lets the same routine serve both XML (strict: unknown entities are
- * an error, semicolons required) and HTML (lenient: WHATWG maximal-munch with
- * legacy semicolon-less references, the ambiguous-ampersand attribute rule, and
- * the numeric-reference Windows-1252 remap).
+ * Decoding is a grammar run over already-lexed text/attribute values, rather
+ * than part of the token grammars. This keeps them simple and lets the same
+ * routine serve both XML (strict: unknown entities are an error, semicolons
+ * required) and HTML (lenient: WHATWG maximal-munch with legacy
+ * semicolon-less references, the ambiguous-ampersand attribute rule, and the
+ * numeric-reference Windows-1252 remap). Which named reference applies, and
+ * how long it is, is a table lookup.
  */
+import { Parser, Token } from "@thomasfosterau/effect-parse"
 import { htmlLegacyEntities, htmlNamedEntities } from "./htmlEntities.generated.ts"
 
 /** The five predefined XML entities. */
@@ -58,20 +60,8 @@ export type DecodeResult =
   | { readonly _tag: "Ok"; readonly value: string }
   | { readonly _tag: "Error"; readonly error: EntityError }
 
-const ok = (value: string): DecodeResult => ({ _tag: "Ok", value })
-const fail = (error: EntityError): DecodeResult => ({ _tag: "Error", error })
-
 const MAX_CODE_POINT = 0x10ffff
 const isSurrogate = (cp: number): boolean => cp >= 0xd800 && cp <= 0xdfff
-
-const isAsciiDigit = (c: string | undefined): boolean =>
-  c !== undefined && c >= "0" && c <= "9"
-const isHexDigit = (c: string | undefined): boolean =>
-  c !== undefined &&
-  ((c >= "0" && c <= "9") || (c >= "a" && c <= "f") || (c >= "A" && c <= "F"))
-const isAlnum = (c: string | undefined): boolean =>
-  c !== undefined &&
-  ((c >= "0" && c <= "9") || (c >= "A" && c <= "Z") || (c >= "a" && c <= "z"))
 
 // WHATWG numeric-reference replacements for the Windows-1252 range 0x80–0x9F.
 const WIN1252: Record<number, number> = {
@@ -83,85 +73,125 @@ const WIN1252: Record<number, number> = {
   0x9e: 0x017e, 0x9f: 0x0178,
 }
 
-type NumericResult =
-  | { readonly kind: "ok"; readonly value: string; readonly next: number }
-  | { readonly kind: "err"; readonly error: EntityError }
-  | { readonly kind: "none" }
+// -----------------------------------------------------------------------------
+// The grammar
+// -----------------------------------------------------------------------------
 
-/** Decode a numeric reference starting at `&` (with `#` at i+1). */
-const decodeNumeric = (
-  raw: string,
-  i: number,
-  strict: boolean,
-  lenient: boolean
-): NumericResult => {
-  let j = i + 2
-  let hex = false
-  if (raw[j] === "x" || raw[j] === "X") {
-    hex = true
-    j++
-  }
-  const start = j
-  while (j < raw.length && (hex ? isHexDigit(raw[j]) : isAsciiDigit(raw[j]))) j++
-  const digits = raw.slice(start, j)
-  if (digits.length === 0) return { kind: "none" }
+/** Decoded text, or (strict mode) the first reference that does not decode. */
+type Part = string | EntityError
 
-  let next = j
-  if (raw[j] === ";") next = j + 1
-  else if (!lenient) return { kind: "none" } // XML requires the semicolon
+const digits = Token.takeWhile(Token.range("0", "9"), { min: 1 })
+const hexDigits = Token.takeWhile([Token.range("0", "9"), Token.range("a", "f"), Token.range("A", "F")], { min: 1 })
+const alnum = [Token.range("0", "9"), Token.range("A", "Z"), Token.range("a", "z")]
+const isAlnum = (c: string): boolean => /^[0-9A-Za-z]$/.test(c)
+const semicolon = Token.literal(";")
+const ampersand = Token.literal("&")
 
-  let cp = parseInt(digits, hex ? 16 : 10)
-  if (lenient && cp in WIN1252) cp = WIN1252[cp]!
+/**
+ * A reference that does not decode. In strict mode it is an error (`what`
+ * reads the reference and says what is wrong), and decoding stops there; in
+ * lenient mode the `&` is literal text.
+ */
+const bad = (strict: boolean, what: Parser.Parser<readonly [string, string]>): Parser.Parser<Part> =>
+  strict
+    ? Parser.map(
+        Parser.seq(Parser.location, Parser.peek(Parser.preceded(Parser.peek(ampersand), what)), Token.rest),
+        ([relativeOffset, [reference, reason]]): Part => ({ reference, reason, relativeOffset })
+      )
+    : Parser.as(ampersand, "&")
 
-  if (Number.isNaN(cp) || cp > MAX_CODE_POINT || isSurrogate(cp) || cp === 0) {
-    if (strict) {
-      return {
-        kind: "err",
-        error: { reference: raw.slice(i, next), reason: "code point out of range", relativeOffset: i },
-      }
-    }
-    return { kind: "ok", value: "�", next }
-  }
-  return { kind: "ok", value: String.fromCodePoint(cp), next }
+/**
+ * `&#…;` / `&#x…;`. Without `legacy` (XML) the `;` is required; with it,
+ * WHATWG rules apply: the `;` is optional and 0x80–0x9F map as Windows-1252.
+ * An unrepresentable code point is an error in strict mode, U+FFFD otherwise.
+ */
+const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part> => {
+  const value = Parser.preceded(
+    Token.literal("&#"),
+    Parser.alt(
+      Parser.map(Parser.preceded(Token.oneOf("xX"), hexDigits), (d) => parseInt(d, 16)),
+      Parser.map(digits, (d) => parseInt(d, 10))
+    )
+  )
+  const reference = Parser.seq(Parser.location, Parser.withTaken(Parser.terminated(value, lenient ? Parser.optional(semicolon) : semicolon)))
+  return Parser.alt(
+      Parser.map(reference, ([relativeOffset, [n, reference]]): Part => {
+        const cp = lenient && n in WIN1252 ? WIN1252[n]! : n
+        if (!(Number.isNaN(cp) || cp > MAX_CODE_POINT || isSurrogate(cp) || cp === 0)) return String.fromCodePoint(cp)
+        return strict ? { reference, reason: "code point out of range", relativeOffset } : "\uFFFD"
+      }),
+      bad(strict, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const))
+    )
 }
 
-interface NamedMatch {
-  readonly value: string
-  readonly next: number
-}
-
-/** Maximal-munch a named reference starting at `&` (i points at `&`). */
-const matchNamed = (
-  raw: string,
-  i: number,
-  entities: Record<string, string>,
-  legacy: Record<string, string> | undefined,
-  inAttribute: boolean
-): NamedMatch | null => {
-  let j = i + 1
-  while (j < raw.length && isAlnum(raw[j])) j++
-  const run = raw.slice(i + 1, j)
-  if (run.length === 0) return null
-
-  // Semicolon-terminated form: only the full alnum run can be followed by ';'.
-  if (raw[j] === ";" && Object.prototype.hasOwnProperty.call(entities, run)) {
-    return { value: entities[run]!, next: j + 1 }
-  }
-
-  // Legacy (semicolon-less) form: longest matching prefix.
-  if (legacy !== undefined) {
-    for (let len = run.length; len >= 1; len--) {
-      const name = run.slice(0, len)
-      if (Object.prototype.hasOwnProperty.call(legacy, name)) {
-        const after = raw[i + 1 + len]
-        // Ambiguous ampersand: inside an attribute, `&legacy` followed by '=' or
-        // an alphanumeric is left as literal text for historical reasons.
-        if (inAttribute && (after === "=" || isAlnum(after))) return null
-        return { value: legacy[name]!, next: i + 1 + len }
+/**
+ * `&name;`. With `legacy` (HTML), a name in that table may also appear
+ * without its `;`, the longest one wins (maximal munch), and in an attribute
+ * value one followed by `=` or a letter or digit is left alone. The tables
+ * decide how long the reference is; the grammar then takes that much.
+ */
+const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
+  const { entities, legacy, strict } = options
+  const inAttribute = options.inAttribute ?? false
+  const has = (table: Record<string, string>, name: string) => Object.prototype.hasOwnProperty.call(table, name)
+  /** The length of the reference at `&name` + `next`, or 0 if none decodes. */
+  const lengthOf = ([name, next]: readonly [string, string]): number => {
+    if (next === ";" && has(entities, name)) return name.length + 2
+    if (legacy !== undefined) {
+      for (let len = name.length; len >= 1; len--) {
+        if (!has(legacy, name.slice(0, len))) continue
+        const after = len < name.length ? name[len]! : next
+        return inAttribute && (after === "=" || isAlnum(after)) ? 0 : len + 1
       }
     }
+    return 0
   }
-  return null
+  const valueOf = (reference: string): string =>
+    reference.endsWith(";") ? entities[reference.slice(1, -1)]! : legacy![reference.slice(1)]!
+  const length = Parser.map(
+    Parser.peek(
+      Parser.seq(Parser.preceded(ampersand, Token.takeWhile(alnum, { min: 1 })), Parser.alt(Token.any, Parser.succeed("")))
+    ),
+    lengthOf
+  )
+  const takes: Array<Parser.Parser<Part>> = []
+  const unknown = bad(
+    strict,
+    Parser.alt(
+      Parser.map(Parser.taken(Parser.seq(Token.takeUntil(";"), semicolon)), (r) => [r, "unknown entity"] as const),
+      Parser.map(Token.rest, (r) => [r, "unterminated entity reference"] as const)
+    )
+  )
+  return Parser.alt(
+    Parser.dispatch(length, (n) => (n === 0 ? unknown : (takes[n] ??= Parser.map(Token.take(n), valueOf)))),
+    unknown
+  )
+}
+
+const grammarFor = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> => {
+  const text = Token.takeTill("&", { min: 1 })
+  const numeric = numericReference(options.strict, options.legacy !== undefined)
+  const named = namedReference(options)
+  // `&#` starts a numeric reference, any other `&` a named one.
+  const afterAmpersand = Parser.peek(Parser.preceded(ampersand, Parser.alt(Token.any, Parser.succeed(""))))
+  const reference = Parser.dispatch(afterAmpersand, (c) => (c === "#" ? numeric : named))
+  return Parser.repeat(Parser.dispatch(Parser.peek(Token.any), (c) => (c === "&" ? reference : text)))
+}
+
+const byEntities = new WeakMap<Record<string, string>, Map<string, Parser.Parser<ReadonlyArray<Part>>>>()
+const byOptions = new WeakMap<EntityOptions, Parser.Parser<ReadonlyArray<Part>>>()
+
+/** The grammar for `options`, built once per combination (and cached per options object). */
+const grammar = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> => {
+  let g = byOptions.get(options)
+  if (g !== undefined) return g
+  let byKey = byEntities.get(options.entities)
+  if (byKey === undefined) byEntities.set(options.entities, (byKey = new Map()))
+  const key = `${options.strict}:${options.inAttribute ?? false}:${options.legacy === undefined ? "" : "legacy"}`
+  g = byKey.get(key)
+  if (g === undefined) byKey.set(key, (g = grammarFor(options)))
+  byOptions.set(options, g)
+  return g
 }
 
 /**
@@ -169,58 +199,15 @@ const matchNamed = (
  * first error encountered (in strict mode).
  */
 export const decode = (raw: string, options: EntityOptions): DecodeResult => {
-  if (raw.indexOf("&") === -1) return ok(raw)
-
-  const { entities, legacy, strict } = options
-  const inAttribute = options.inAttribute ?? false
-  const lenient = legacy !== undefined
-  let out = ""
-  let i = 0
-  const len = raw.length
-
-  while (i < len) {
-    const ch = raw[i]
-    if (ch !== "&") {
-      out += ch
-      i++
-      continue
-    }
-
-    if (raw[i + 1] === "#") {
-      const res = decodeNumeric(raw, i, strict, lenient)
-      if (res.kind === "ok") {
-        out += res.value
-        i = res.next
-        continue
-      }
-      if (res.kind === "err") return fail(res.error)
-      // "none": not a valid numeric reference
-      if (strict) {
-        return fail({ reference: raw.slice(i, i + 2), reason: "invalid numeric reference", relativeOffset: i })
-      }
-      out += "&"
-      i++
-      continue
-    }
-
-    const m = matchNamed(raw, i, entities, legacy, inAttribute)
-    if (m !== null) {
-      out += m.value
-      i = m.next
-      continue
-    }
-
-    if (strict) {
-      const semi = raw.indexOf(";", i + 1)
-      if (semi === -1) {
-        return fail({ reference: raw.slice(i), reason: "unterminated entity reference", relativeOffset: i })
-      }
-      return fail({ reference: raw.slice(i, semi + 1), reason: "unknown entity", relativeOffset: i })
-    }
-    out += "&"
-    i++
+  if (raw.indexOf("&") === -1) return { _tag: "Ok", value: raw }
+  // The grammar accepts any input: every `&` either decodes or is handled.
+  const parts = Parser.parseSync(grammar(options), raw)
+  let value = ""
+  for (const part of parts) {
+    if (typeof part !== "string") return { _tag: "Error", error: part }
+    value += part
   }
-  return ok(out)
+  return { _tag: "Ok", value }
 }
 
 /** Escape a string for safe inclusion in XML text content. */

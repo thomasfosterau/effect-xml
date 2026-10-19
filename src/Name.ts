@@ -8,32 +8,22 @@
  * `unsafe*` casts to avoid re-validation in the hot path; public construction
  * goes through the validating brand constructors which return rich errors.
  */
-import { Brand, Schema } from "effect"
+import { Parser } from "@thomasfosterau/effect-parse"
+import { Brand, Result, Schema } from "effect"
+import { NCName as NCNameGrammar, QName as QNameGrammar } from "./internal/names.ts"
 
 // -----------------------------------------------------------------------------
-// XML Name validation (subset of https://www.w3.org/TR/xml/#NT-Name)
+// XML Name validation (https://www.w3.org/TR/xml-names/#NT-QName)
 // -----------------------------------------------------------------------------
 
-// NameStartChar without ':' so we can validate prefix/local parts in isolation.
-const nameStartChar =
-  "A-Z_a-z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD"
-const nameChar = nameStartChar + "\\-.0-9\\u00B7\\u0300-\\u036F\\u203F-\\u2040"
-
-const ncNameRegex = new RegExp(`^[${nameStartChar}][${nameChar}]*$`)
-const qNameRegex = new RegExp(
-  `^[${nameStartChar}][${nameChar}]*(?::[${nameStartChar}][${nameChar}]*)?$`
-)
+const matches = (grammar: Parser.Parser<string>) => (s: string): boolean =>
+  Result.isSuccess(Parser.parse(grammar, s))
 
 /** Is `s` a valid XML `Name` (may contain a single colon for a prefix)? */
-export const isValidName = (s: string): boolean => qNameRegex.test(s)
-
-const nameCharRegex = new RegExp(`^[:${nameChar}]$`)
-
-/** Can the single character `c` appear somewhere in an XML `Name`? */
-export const isNameChar = (c: string): boolean => nameCharRegex.test(c)
+export const isValidName: (s: string) => boolean = matches(QNameGrammar)
 
 /** Is `s` a valid XML `NCName` (no colon)? */
-export const isValidNCName = (s: string): boolean => ncNameRegex.test(s)
+export const isValidNCName: (s: string) => boolean = matches(NCNameGrammar)
 
 // -----------------------------------------------------------------------------
 // Branded element / attribute names

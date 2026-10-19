@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { Sax } from "../src/index.ts"
+import { isValidName, isValidNCName, Sax } from "../src/index.ts"
 
 const html = (input: string) => Effect.runPromise(Sax.collect(input, { mode: "html" }))
 const xmlError = async (input: string) => {
@@ -93,5 +93,14 @@ describe("XML tokenization errors", () => {
       Sax.collect(`<!DOCTYPE r [<!-- ] > --><!ENTITY a "]>">]><r/>`)
     )
     expect(events.find(Sax.isDoctype)?.internalSubset).toBe(`<!-- ] > --><!ENTITY a "]>">`)
+  })
+})
+
+describe("names", () => {
+  test("XML names may use characters outside the BMP (#x10000-#xEFFFF)", () => {
+    expect(isValidName("x\u{10000}:\u{1F600}")).toBe(true)
+    expect(isValidNCName("\u{EFFFF}")).toBe(true)
+    expect(isValidNCName("\u{F0000}")).toBe(false)
+    expect(isValidName("a:b:c")).toBe(false)
   })
 })

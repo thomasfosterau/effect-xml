@@ -12,7 +12,7 @@
  * recovery rather than a grammar (see `tokens.ts`).
  */
 import { Parser, Token } from "@thomasfosterau/effect-parse"
-import { isNameChar, isValidName } from "../Name.ts"
+import { QName } from "./names.ts"
 
 // -----------------------------------------------------------------------------
 // Shared productions
@@ -29,8 +29,8 @@ const S0 = Token.takeWhile(whitespace)
 /** `Eq ::= S? '=' S?` */
 const Eq = Parser.delimited(S0, Token.literal("="), S0)
 
-/** `Name ::= NameStartChar (NameChar)*` */
-const Name = Token.takeWhile(isNameChar, { min: 1 }).pipe(Parser.filter(isValidName))
+/** A name: a `QName` (Namespaces in XML 1.0 §3), so at most one colon. */
+const Name = QName
 
 /** `value` between matching single or double quotes; `inner` gets the quote. */
 const quoted = <A>(inner: (quote: "\"" | "'") => Parser.Parser<A>): Parser.Parser<A> =>
@@ -108,10 +108,10 @@ export const declarationContexts: ReadonlySet<string> = new Set(["processing ins
  * `PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))`. The exact name
  * `xml` is let through here: it starts the XML declaration instead.
  */
-const PITarget = Name.pipe(
-  Parser.filter((name) => name === "xml" || name.toLowerCase() !== "xml"),
-  Parser.expected("processing instruction target")
-)
+const PITarget = Parser.flatMap(Parser.peek(Name), (name) =>
+  // A message, so the failure is reported here rather than at a deeper hint.
+  name === "xml" || name.toLowerCase() !== "xml" ? Name : Parser.failMessage("processing instruction target")
+).pipe(Parser.expected("processing instruction target"))
 
 /** `(S (Char* - (Char* '?>' Char*)))? '?>'` */
 const PIRest = Parser.terminated(
