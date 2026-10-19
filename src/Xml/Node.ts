@@ -70,7 +70,7 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
   name: QName,
   attributes: Schema.Array(XmlAttribute),
   children: Schema.Array(
-    Schema.suspend((): Schema.Schema<XmlNode, XmlNodeEncoded> => XmlNode)
+    Schema.suspend((): Schema.Codec<XmlNode, XmlNodeEncoded> => XmlNode)
   ),
 }) {
   /** First attribute value matching `name` (by qualified name). */
@@ -103,13 +103,13 @@ export type XmlNode =
   | XmlProcessingInstruction
 
 /** Schema for the {@link XmlNode} union. */
-export const XmlNode = Schema.Union(
+export const XmlNode = Schema.Union([
   XmlElement,
   XmlText,
   XmlCData,
   XmlComment,
-  XmlProcessingInstruction
-)
+  XmlProcessingInstruction,
+])
 
 /** The XML declaration (`<?xml ... ?>`). */
 export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration")({

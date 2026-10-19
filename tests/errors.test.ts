@@ -3,9 +3,9 @@ import { Effect } from "effect"
 import { Sax, Xml } from "../src/index.ts"
 
 const parseError = async (input: string, options?: Xml.ParseOptions) => {
-  const r = await Effect.runPromise(Xml.parse(input, options).pipe(Effect.either))
-  if (r._tag === "Right") throw new Error("expected failure, got " + JSON.stringify(r.right))
-  return r.left
+  const r = await Effect.runPromise(Xml.parse(input, options).pipe(Effect.result))
+  if (r._tag === "Success") throw new Error("expected failure, got " + JSON.stringify(r.success))
+  return r.failure
 }
 
 describe("typed errors", () => {
@@ -63,8 +63,8 @@ describe("typed errors", () => {
   })
 
   test("strict mode rejects a bare '<'", async () => {
-    const r = await Effect.runPromise(Sax.collect("<a>1 < 2</a>").pipe(Effect.either))
-    expect(r._tag).toBe("Left")
-    if (r._tag === "Left") expect(r.left._tag).toBe("UnexpectedCharacter")
+    const r = await Effect.runPromise(Sax.collect("<a>1 < 2</a>").pipe(Effect.result))
+    expect(r._tag).toBe("Failure")
+    if (r._tag === "Failure") expect(r.failure._tag).toBe("UnexpectedCharacter")
   })
 })

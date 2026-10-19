@@ -41,18 +41,16 @@ export type TagName = string & Brand.Brand<"TagName">
 export type AttrName = string & Brand.Brand<"AttrName">
 
 /**
- * Validating constructor for {@link TagName}. Throws `Brand.BrandErrors` on an
- * invalid name; use `.option` / `.either` for non-throwing variants.
+ * Validating constructor for {@link TagName}. Throws `Brand.BrandError` on an
+ * invalid name; use `.option` / `.result` for non-throwing variants.
  */
-export const TagName = Brand.refined<TagName>(
-  isValidName,
-  (s) => Brand.error(`"${s}" is not a valid XML tag name`)
+export const TagName = Brand.make<TagName>((s) =>
+  isValidName(s) || `"${s}" is not a valid XML tag name`
 )
 
 /** Validating constructor for {@link AttrName}. */
-export const AttrName = Brand.refined<AttrName>(
-  isValidName,
-  (s) => Brand.error(`"${s}" is not a valid XML attribute name`)
+export const AttrName = Brand.make<AttrName>((s) =>
+  isValidName(s) || `"${s}" is not a valid XML attribute name`
 )
 
 /**

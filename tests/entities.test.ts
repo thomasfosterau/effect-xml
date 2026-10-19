@@ -23,11 +23,11 @@ describe("entities", () => {
   })
 
   test("unknown entity is a typed error in strict (xml) mode", async () => {
-    const result = await Effect.runPromise(Sax.collect("<a>&nope;</a>").pipe(Effect.either))
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect(isSaxError(result.left)).toBe(true)
-      expect(result.left._tag).toBe("InvalidEntity")
+    const result = await Effect.runPromise(Sax.collect("<a>&nope;</a>").pipe(Effect.result))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      expect(isSaxError(result.failure)).toBe(true)
+      expect(result.failure._tag).toBe("InvalidEntity")
     }
   })
 
@@ -47,9 +47,9 @@ describe("entities", () => {
   })
 
   test("entity error reports a sensible position", async () => {
-    const result = await Effect.runPromise(Sax.collect("<a>\n  &bad;</a>").pipe(Effect.either))
-    if (result._tag === "Left" && result.left._tag === "InvalidEntity") {
-      expect(result.left.position).toEqual({ offset: 6, line: 2, column: 3 })
+    const result = await Effect.runPromise(Sax.collect("<a>\n  &bad;</a>").pipe(Effect.result))
+    if (result._tag === "Failure" && result.failure._tag === "InvalidEntity") {
+      expect(result.failure.position).toEqual({ offset: 6, line: 2, column: 3 })
     } else {
       throw new Error("expected InvalidEntity")
     }
