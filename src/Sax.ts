@@ -199,7 +199,7 @@ export const tokenize =
     const opts = resolveSaxOptions(options)
     return Stream.suspend(() => {
       const lexer = new Lexer({ mode: opts.mode, entities: opts.entities })
-      const body = input.pipe(Stream.mapConcat((chunk) => lexer.write(chunk)))
+      const body = input.pipe(Stream.map((chunk) => lexer.write(chunk)), Stream.flattenIterable)
       const tail = Stream.unwrap(Effect.sync(() => Stream.fromIterable(lexer.end())))
       return Stream.concat(body, tail).pipe(
         Stream.flatMap((o) => {

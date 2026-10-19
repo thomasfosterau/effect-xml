@@ -182,7 +182,7 @@ class Builder {
     }
     this.stack.push(provisional)
 
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const name = yield* this.resolve(ev.name as string, false, position)
       const seen = new Set<string>()
       const attributes: Array<XmlAttribute> = []

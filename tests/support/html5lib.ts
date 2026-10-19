@@ -9,6 +9,7 @@
  * parses those files and serializes our typed DOM into the same notation so the
  * two can be string-compared.
  */
+import { Parser, Token } from "@thomasfosterau/effect-parse"
 import type { XmlDocument, XmlNode } from "../../src/Xml/Node.ts"
 
 export interface Html5libTest {
@@ -18,45 +19,60 @@ export interface Html5libTest {
   readonly scriptMode: "on" | "off" | "both"
 }
 
-/** Parse a `.dat` file into individual test cases. */
-export const parseDat = (content: string): ReadonlyArray<Html5libTest> => {
-  const normalized = content.replace(/\r\n/g, "\n")
-  // Tests are separated by a blank line followed by the next `#data` header.
-  const chunks = normalized.split("\n\n#data\n")
-  if (chunks.length === 0) return []
-  chunks[0] = chunks[0]!.replace(/^#data\n/, "")
+// A `.dat` file is a sequence of tests; each test is a sequence of sections,
+// and each section is a `#header` line followed by the lines up to the next
+// header. A blank line separates tests and ends up at the end of the last
+// section's lines.
 
-  return chunks.map((chunk): Html5libTest => {
-    const errIdx = chunk.indexOf("\n#errors")
-    const data = errIdx === -1 ? chunk : chunk.slice(0, errIdx)
+const headers = new Set([
+  "data",
+  "errors",
+  "new-errors",
+  "document",
+  "document-fragment",
+  "script-on",
+  "script-off",
+])
 
-    const docMarker = "\n#document\n"
-    const dIdx = chunk.indexOf(docMarker)
-    let document = ""
-    if (dIdx !== -1) {
-      document = chunk.slice(dIdx + docMarker.length).replace(/\n+$/, "")
-    } else {
-      const empty = chunk.indexOf("\n#document")
-      if (empty !== -1) {
-        document = chunk.slice(empty + "\n#document".length).replace(/^\n/, "").replace(/\n+$/, "")
-      }
+const headerLine = Parser.delimited(
+  Token.literal("#"),
+  Token.takeWhile([Token.range("a", "z"), "-"], { min: 1 }).pipe(Parser.filter((h) => headers.has(h))),
+  Parser.alt(Token.literal("\n"), Parser.eof)
+).pipe(Parser.expected("section header"))
+
+/** One line without its `\n`; the last line of a file may lack one. */
+const line = Parser.alt(
+  Parser.terminated(Token.takeTill("\n"), Token.literal("\n")),
+  Parser.terminated(Token.takeTill("\n", { min: 1 }), Parser.eof)
+)
+
+const section = Parser.seq(
+  headerLine,
+  Parser.repeat(Parser.preceded(Parser.not(headerLine), line))
+).pipe(Parser.map(([name, lines]) => ({ name, lines })))
+
+const test = Parser.seq(
+  section.pipe(Parser.filter((s) => s.name === "data"), Parser.expected("#data")),
+  Parser.repeat(section.pipe(Parser.filter((s) => s.name !== "data")))
+).pipe(
+  Parser.map(([data, rest]): Html5libTest => {
+    const find = (name: string) => rest.find((s) => s.name === name)
+    const scriptOn = find("script-on") !== undefined
+    const scriptOff = find("script-off") !== undefined
+    return {
+      data: data.lines.join("\n"),
+      document: (find("document")?.lines ?? []).join("\n").replace(/\n+$/, ""),
+      fragmentContext: find("document-fragment")?.lines[0] ?? null,
+      scriptMode: scriptOn ? "on" : scriptOff ? "off" : "both",
     }
-
-    let fragmentContext: string | null = null
-    const fIdx = chunk.indexOf("\n#document-fragment\n")
-    if (fIdx !== -1) {
-      fragmentContext = chunk.slice(fIdx + "\n#document-fragment\n".length).split("\n")[0] ?? ""
-    }
-
-    const scriptMode = chunk.includes("\n#script-on")
-      ? "on"
-      : chunk.includes("\n#script-off")
-        ? "off"
-        : "both"
-
-    return { data, document, fragmentContext, scriptMode }
   })
-}
+)
+
+const datFile = Parser.repeat(test)
+
+/** Parse a `.dat` file into individual test cases. */
+export const parseDat = (content: string): ReadonlyArray<Html5libTest> =>
+  Parser.parseSync(datFile, content.replace(/\r\n/g, "\n"))
 
 const HTML_NS = "http://www.w3.org/1999/xhtml"
 const SVG_NS = "http://www.w3.org/2000/svg"

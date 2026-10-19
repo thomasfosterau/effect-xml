@@ -71,6 +71,23 @@ export class InvalidEntity extends Data.TaggedError("InvalidEntity")<{
   }
 }
 
+/**
+ * An XML declaration, processing instruction or DOCTYPE did not match its
+ * grammar. `expected` describes what the grammar wanted at `position`.
+ */
+export class MalformedDeclaration extends Data.TaggedError("MalformedDeclaration")<{
+  readonly construct: string
+  readonly expected: string
+  readonly found: string
+  readonly position: Position
+}> {
+  override get message(): string {
+    return `Malformed ${this.construct} at ${showPosition(this.position)}: expected ${
+      this.expected
+    }, found ${this.found}`
+  }
+}
+
 /** A duplicate attribute name was found on a single element (not well-formed). */
 export class DuplicateAttribute extends Data.TaggedError("DuplicateAttribute")<{
   readonly element: string
@@ -116,6 +133,7 @@ export type LexError =
   | UnexpectedCharacter
   | UnexpectedEndOfInput
   | InvalidEntity
+  | MalformedDeclaration
 
 /** The full union of errors any part of the library can raise. */
 export type SaxError =
@@ -138,6 +156,7 @@ const saxErrorTags = new Set<string>([
   "UnexpectedCharacter",
   "UnexpectedEndOfInput",
   "InvalidEntity",
+  "MalformedDeclaration",
   "MismatchedEndTag",
   "UnexpectedEndTag",
   "DuplicateAttribute",

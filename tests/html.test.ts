@@ -4,7 +4,7 @@ import { Html } from "../src/index.ts"
 
 const frag = (input: string) => Effect.runPromise(Html.parseFragment(input))
 const drain = (input: string) =>
-  Effect.runPromise(Html.events(input).pipe(Stream.runDrain, Effect.catchAll(() => Effect.void)))
+  Effect.runPromise(Html.events(input).pipe(Stream.runDrain, Effect.catch(() => Effect.void)))
 
 describe("Html tokenization (lenient)", () => {
   test("unquoted and boolean attributes", async () => {
