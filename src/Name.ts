@@ -27,6 +27,11 @@ const qNameRegex = new RegExp(
 /** Is `s` a valid XML `Name` (may contain a single colon for a prefix)? */
 export const isValidName = (s: string): boolean => qNameRegex.test(s)
 
+const nameCharRegex = new RegExp(`^[:${nameChar}]$`)
+
+/** Can the single character `c` appear somewhere in an XML `Name`? */
+export const isNameChar = (c: string): boolean => nameCharRegex.test(c)
+
 /** Is `s` a valid XML `NCName` (no colon)? */
 export const isValidNCName = (s: string): boolean => ncNameRegex.test(s)
 

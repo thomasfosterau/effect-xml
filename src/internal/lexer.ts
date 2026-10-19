@@ -14,13 +14,21 @@
  * per parse) for throughput; `Sax.ts` constructs a fresh instance per stream
  * materialization so this mutability is never observable.
  */
+import type { Parser } from "@thomasfosterau/effect-parse"
+import { Result } from "effect"
 import {
   InvalidEntity,
+  MalformedDeclaration,
   UnexpectedCharacter,
   UnexpectedEndOfInput,
   type LexError,
 } from "../Error.ts"
 import { advance, type Position, type Span } from "../Position.ts"
+import {
+  doctype as doctypeGrammar,
+  processingInstruction,
+  run as runDeclaration,
+} from "./declarations.ts"
 import { decode, htmlLegacyEntities } from "./entities.ts"
 
 // -----------------------------------------------------------------------------
@@ -633,7 +641,8 @@ export class Lexer {
 
       case S.Doctype: {
         const emitDoctype = (): void => {
-          this.emit(this.parseDoctype(this.dtBuf, this.afterPos(at)))
+          const dt = this.parseDoctype(this.dtBuf, this.afterPos(at))
+          if (dt !== null) this.emit(dt)
           this.dtBuf = ""
           this.state = S.Data
         }
@@ -652,14 +661,16 @@ export class Lexer {
           return
         }
         // After a closed PUBLIC/SYSTEM id, an unexpected non-quote token makes
-        // the DOCTYPE bogus.
+        // the DOCTYPE bogus. Inside an internal subset quotes close literals
+        // instead, and in XML a `[` after the id opens the subset.
         if (this.dtJustClosed && !isWhitespace(c)) {
           this.dtJustClosed = false
-          if (c === ">") {
+          const inSubset = this.dtBracket > 0 || (this.strict && c === "[")
+          if (!inSubset && c === ">") {
             emitDoctype()
             return
           }
-          if (c !== '"' && c !== "'") {
+          if (!inSubset && c !== '"' && c !== "'") {
             this.dtBogus = true
             this.dtBuf += c
             return
@@ -669,8 +680,12 @@ export class Lexer {
         if (c === "[" && this.options.mode === "html") {
           this.dtBogus = true
           this.dtBuf += c
-        } else if ((c === '"' || c === "'") && /PUBLIC|SYSTEM/i.test(this.dtBuf)) {
-          // Quotes are only significant after a PUBLIC/SYSTEM keyword.
+        } else if (
+          (c === '"' || c === "'") &&
+          (this.dtBracket > 0 || /PUBLIC|SYSTEM/i.test(this.dtBuf))
+        ) {
+          // Quotes are only significant after a PUBLIC/SYSTEM keyword or in an
+          // internal subset, where they hide `]` and `>` in entity values.
           this.dtQuote = c
           this.dtBuf += c
         } else if (c === "[") {
@@ -689,7 +704,8 @@ export class Lexer {
 
       case S.PiBody: {
         if (c === ">" && this.piQ) {
-          this.emit(this.parsePi(this.piBuf.slice(0, this.piBuf.length - 1), this.afterPos(at)))
+          const pi = this.parsePi(this.piBuf.slice(0, this.piBuf.length - 1), this.afterPos(at))
+          if (pi !== null) this.emit(pi)
           this.piBuf = ""
           this.piQ = false
           this.state = S.Data
@@ -849,34 +865,49 @@ export class Lexer {
 
   // --- declaration parsing -------------------------------------------------
 
-  private parsePi(body: string, end: Position): LexEvent {
-    const trimmed = body.replace(/^\s+/, "")
-    const m = /^(\S+)\s*([\s\S]*)$/.exec(trimmed)
-    const target = m ? m[1]! : trimmed
-    const data = m ? m[2]! : ""
-    if (target.toLowerCase() === "xml") {
-      return this.parseXmlDeclaration(data, end)
-    }
-    return { _tag: "ProcessingInstruction", target, data, span: { start: this.tagStart, end } }
+  /**
+   * Run a declaration grammar over a complete body. `prefix` is the markup the
+   * lexer consumed before the body (for positions) and `closer` what it
+   * consumed after it. A failure becomes a positioned fault.
+   */
+  private parseDeclaration<A>(
+    grammar: Parser.Parser<A>,
+    construct: string,
+    prefix: string,
+    body: string,
+    closer: string
+  ): A | null {
+    const result = runDeclaration(grammar, body, closer)
+    if (Result.isSuccess(result)) return result.success
+    const { offset, expected, found } = result.failure
+    this.fault(
+      new MalformedDeclaration({
+        construct,
+        expected,
+        found,
+        position: positionAt(this.tagStart, prefix + body, prefix.length + offset),
+      })
+    )
+    return null
   }
 
-  private parseXmlDeclaration(data: string, end: Position): LexEvent {
-    const pseudo = (name: string): string | null => {
-      const re = new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)')`)
-      const m = re.exec(data)
-      return m ? (m[2] ?? m[3] ?? "") : null
-    }
-    const standaloneRaw = pseudo("standalone")
-    return {
-      _tag: "XmlDeclaration",
-      version: pseudo("version") ?? "1.0",
-      encoding: pseudo("encoding"),
-      standalone: standaloneRaw === null ? null : standaloneRaw === "yes",
-      span: { start: this.tagStart, end },
-    }
+  /** `<?…?>` in XML mode: a processing instruction or the XML declaration. */
+  private parsePi(body: string, end: Position): LexEvent | null {
+    const pi = this.parseDeclaration(processingInstruction, "processing instruction", "<?", body, "?>")
+    return pi === null ? null : { ...pi, span: { start: this.tagStart, end } }
   }
 
-  private parseDoctype(body: string, end: Position): LexEvent {
+  private parseDoctype(body: string, end: Position): LexEvent | null {
+    if (this.strict) {
+      // The keyword is still in `markupBuf`: XML wants it upper-case.
+      const dt = this.parseDeclaration(doctypeGrammar, "DOCTYPE", "<!", this.markupBuf + body, ">")
+      return dt === null ? null : { _tag: "Doctype", ...dt, span: { start: this.tagStart, end } }
+    }
+    return this.recoverDoctype(body, end)
+  }
+
+  /** HTML DOCTYPE: pull out whatever name and identifiers are present. */
+  private recoverDoctype(body: string, end: Position): LexEvent {
     const bracketStart = body.indexOf("[")
     const internalSubset =
       bracketStart !== -1
@@ -928,7 +959,7 @@ export class Lexer {
       case S.Doctype:
         // Unterminated DOCTYPE at EOF (HTML) still emits what was parsed.
         if (this.options.mode === "html") {
-          this.emit(this.parseDoctype(this.dtBuf, this.pos))
+          this.emit(this.recoverDoctype(this.dtBuf, this.pos))
           return
         }
         break

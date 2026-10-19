@@ -62,6 +62,26 @@ describe("typed errors", () => {
     expect(e.message).toContain("2:")
   })
 
+  test("malformed declarations are positioned MalformedDeclaration errors", async () => {
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      [`<?xml version="1.0" standalone="maybe"?><a/>`, "1:33", `expected "yes" or "no", found "m"`],
+      [`<?xml encoding="UTF-8"?><a/>`, "1:7", `expected "version", found "e"`],
+      [`<?xml version="1.0"encoding="UTF-8"?><a/>`, "1:20", `expected whitespace or "?>", found "e"`],
+      [`<a><? pi?></a>`, "1:6", `expected processing instruction target, found " "`],
+      [`<a><?XML x?></a>`, "1:6", `expected processing instruction target, found "X"`],
+      [`<!doctype a><a/>`, "1:3", `expected "DOCTYPE", found "d"`],
+      [`<!DOCTYPE a PUBLIC "p"><a/>`, "1:23", `expected whitespace, found ">"`],
+      [`<!DOCTYPE\n  a junk><a/>`, "2:5", `expected "[" or ">", found "j"`],
+    ]
+    for (const [input, at, detail] of cases) {
+      const r = await Effect.runPromise(Sax.collect(input).pipe(Effect.result))
+      if (r._tag !== "Failure" || r.failure._tag !== "MalformedDeclaration") {
+        throw new Error(`expected MalformedDeclaration for ${input}`)
+      }
+      expect(r.failure.message).toContain(`at ${at}: ${detail}`)
+    }
+  })
+
   test("strict mode rejects a bare '<'", async () => {
     const r = await Effect.runPromise(Sax.collect("<a>1 < 2</a>").pipe(Effect.result))
     expect(r._tag).toBe("Failure")

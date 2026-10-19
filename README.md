@@ -17,8 +17,11 @@ Everything fails through typed errors (`Data.TaggedError`), names are branded
 ## Install
 
 ```bash
-bun add effect-sax effect
+bun add effect-sax effect @thomasfosterau/effect-parse
 ```
+
+`effect` (4.x) and `@thomasfosterau/effect-parse` are peer dependencies, so your
+application owns the single copy of each.
 
 ## Streaming SAX
 
@@ -124,6 +127,7 @@ Xml.parse(input).pipe(
     UnboundNamespacePrefix: (e) => ...,
     DuplicateAttribute: (e) => ...,
     InvalidEntity: (e) => ...,
+    MalformedDeclaration: (e) => ...,
     UnexpectedCharacter: (e) => ...,
     UnexpectedEndOfInput: (e) => ...,
     UnexpectedEndTag: (e) => ...,

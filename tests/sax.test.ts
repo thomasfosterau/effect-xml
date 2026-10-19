@@ -88,6 +88,33 @@ describe("Sax.tokenize — special constructs", () => {
       systemId: "x.dtd",
     })
   })
+
+  test("xml declaration defaults, single quotes and standalone=no", async () => {
+    const evs = await collect(`<?xml version='1.0' standalone='no' ?><a/>`)
+    const decl = evs.find(Sax.isXmlDeclaration)
+    expect(decl).toMatchObject({ version: "1.0", encoding: null, standalone: false })
+  })
+
+  test("targets that only start with xml are ordinary processing instructions", async () => {
+    const evs = await collect(`<?xml-stylesheet href="a.css"?><a/>`)
+    expect(evs.find(Sax.isXmlDeclaration)).toBeUndefined()
+    expect(evs.find(Sax.isProcessingInstruction)).toMatchObject({
+      target: "xml-stylesheet",
+      data: `href="a.css"`,
+    })
+  })
+
+  test("doctype with an external id and an internal subset", async () => {
+    const evs = await collect(`<!DOCTYPE r SYSTEM "r.dtd" [<!ENTITY a "]>">]><r/>`)
+    expect(evs.find(Sax.isDoctype)).toMatchObject({
+      name: "r",
+      publicId: null,
+      systemId: "r.dtd",
+      internalSubset: `<!ENTITY a "]>">`,
+    })
+    // Nothing after the DOCTYPE leaks out as text.
+    expect(evs.filter(Sax.isText)).toEqual([])
+  })
 })
 
 describe("Sax.tokenize — whitespace policy", () => {

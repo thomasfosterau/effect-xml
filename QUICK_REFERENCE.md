@@ -74,9 +74,9 @@ QName.simple("div"); QName.fromRaw("svg:rect")
 qname.qualified / .local / .prefix / .namespace / .clark
 
 // SaxError union (all Data.TaggedError, each with .position & .message):
-// UnexpectedCharacter, UnexpectedEndOfInput, InvalidEntity, MismatchedEndTag,
-// UnexpectedEndTag, DuplicateAttribute, InvalidDocumentStructure,
-// UnboundNamespacePrefix
+// UnexpectedCharacter, UnexpectedEndOfInput, InvalidEntity, MalformedDeclaration,
+// MismatchedEndTag, UnexpectedEndTag, DuplicateAttribute,
+// InvalidDocumentStructure, UnboundNamespacePrefix
 ```
 
 ## Options
