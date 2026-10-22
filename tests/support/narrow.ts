@@ -6,6 +6,7 @@
 import { assert } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Xml from "../../src/Xml/index.ts";
 
@@ -14,6 +15,24 @@ export const at = <T>(items: ReadonlyArray<T>, index: number): T => {
   const item = items[index];
   assert.isDefined(item, `expected an item at index ${index}`);
   return item;
+};
+
+/** The value of a `Some`, failing the test on `None`. */
+export const some = <A>(option: Option.Option<A>, message = "expected Some"): A => {
+  assert(Option.isSome(option), message);
+  return option.value;
+};
+
+/** The value of a `Success`, failing the test on a `Failure`. */
+export const success = <A, E>(result: Result.Result<A, E>, message = "expected Success"): A => {
+  assert(Result.isSuccess(result), message);
+  return result.success;
+};
+
+/** The error of a `Failure`, failing the test on a `Success`. */
+export const failure = <A, E>(result: Result.Result<A, E>, message = "expected Failure"): E => {
+  assert(Result.isFailure(result), message);
+  return result.failure;
 };
 
 /** The item at `index`, failing the test unless it is the expected variant. */

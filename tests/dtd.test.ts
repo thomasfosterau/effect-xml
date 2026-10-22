@@ -1,6 +1,15 @@
-import { describe, expect, test } from "vite-plus/test";
-import { Effect, Stream } from "effect";
+import { assert, describe, expect, test } from "vite-plus/test";
+import * as Arr from "effect/Array";
+import * as Effect from "effect/Effect";
+import * as Match from "effect/Match";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import * as Record from "effect/Record";
+import * as Result from "effect/Result";
+import * as Stream from "effect/Stream";
 import { Sax, Xml, type SaxError } from "../src/index.ts";
+import { splitEvery } from "./support/chunks.ts";
+import { at } from "./support/narrow.ts";
 
 // Ported from effect-rdfxml's entity tests (packages/rdfxml/test/Xml.test.ts).
 
@@ -11,16 +20,25 @@ const parseOk = (input: string, extra?: Xml.ParseOptions) =>
 
 const parseErr = (input: string, extra?: Xml.ParseOptions) => {
   const r = Effect.runSync(Effect.result(Xml.parse(input, { ...options, ...extra })));
-  if (r._tag === "Success") throw new Error("expected a parse error");
+  assert(Result.isFailure(r), "expected a parse error");
   return r.failure;
 };
 
-const shape = (nodes: ReadonlyArray<Xml.XmlNode>) =>
-  nodes.map((n) =>
-    n._tag === "XmlElement"
-      ? { element: n.name.local, namespace: n.name.namespace }
-      : { [n._tag]: "data" in n ? n.data : "" },
+/** Each node as a small object: an element's name, or the kind and data of the rest. */
+const outline = (nodes: ReadonlyArray<Xml.XmlNode>) =>
+  nodes.map(
+    Match.valueTags({
+      XmlElement: (e) => ({ element: e.name.local, namespace: e.name.namespace }),
+      XmlText: (t) => ({ XmlText: t.data }),
+      XmlCData: (t) => ({ XmlCData: t.data }),
+      XmlComment: (c) => ({ XmlComment: c.data }),
+      XmlProcessingInstruction: (pi) => ({ XmlProcessingInstruction: pi.data }),
+    }),
   );
+
+/** An element's attributes as a local name → value record. */
+const attributesOf = (element: Xml.XmlElement) =>
+  Record.fromEntries(element.attributes.map((a) => [a.name.local, a.value] as const));
 
 describe("dtd: internal", () => {
   test("internal entities, including markup", () => {
@@ -34,14 +52,14 @@ describe("dtd: internal", () => {
 ]>
 <r tok="  a  " a="&greeting;">&greeting;! &markup; &amp2;</r>`);
     expect(doc.doctype?.name).toBe("r");
-    const attrs = Object.fromEntries(doc.root.attributes.map((a) => [a.name.local, a.value]));
+    const attrs = attributesOf(doc.root);
     expect(attrs).toEqual({ tok: "a", a: "Hello World", kind: "default" });
-    expect(shape(doc.root.children)).toEqual([
+    expect(outline(doc.root.children)).toEqual([
       { XmlText: "Hello World! " },
       { element: "b", namespace: "urn:b" },
       { XmlText: " &" },
     ]);
-    expect(doc.root.elements[0]!.textContent).toBe("bold");
+    expect(at(doc.root.elements, 0).textContent).toBe("bold");
   });
 
   test("the default is to ignore the subset", () => {
@@ -64,7 +82,7 @@ describe("dtd: internal", () => {
       `<!DOCTYPE a [<!ATTLIST a c CDATA " x  y " t NMTOKENS " x  y " f CDATA #FIXED "fixed" r CDATA #REQUIRED>]>` +
         `<a t=" p   q "/>`,
     );
-    const attrs = Object.fromEntries(doc.root.attributes.map((a) => [a.name.local, a.value]));
+    const attrs = attributesOf(doc.root);
     expect(attrs).toEqual({ t: "p q", c: " x  y ", f: "fixed" });
   });
 
@@ -106,16 +124,15 @@ describe("dtd: internal", () => {
       );
     const whole = await run([input]);
     expect(whole).toBe(`<a><m k="val"/>-val</a>`);
-    for (let size = 1; size <= 12; size++) {
-      const chunks = input.match(new RegExp(`[\\s\\S]{1,${size}}`, "g"))!;
-      expect(await run(chunks)).toBe(whole);
-    }
+    const chunked = await Promise.all(Arr.range(1, 12).map((size) => run(splitEvery(input, size))));
+    expect(chunked).toEqual(Arr.replicate(whole, 12));
   });
 
   test("events from a markup entity carry the reference's span", () => {
     const evs = Effect.runSync(Sax.collect(`<!DOCTYPE a [<!ENTITY m "<m/>">]><a>&m;</a>`, options));
-    const m = evs.find((e) => Sax.isStartElement(e) && e.name === "m")!;
-    expect(m.span.start.offset).toBe(`<!DOCTYPE a [<!ENTITY m "<m/>">]><a>`.length);
+    const m = Arr.findFirst(evs, (e) => Sax.isStartElement(e) && e.name === "m");
+    assert(Option.isSome(m), "expected an <m> start tag");
+    expect(m.value.span.start.offset).toBe(`<!DOCTYPE a [<!ENTITY m "<m/>">]><a>`.length);
   });
 
   const rejects: ReadonlyArray<readonly [string, string, SaxError["_tag"]]> = [
@@ -159,9 +176,7 @@ describe("dtd: internal", () => {
     ["a malformed declaration", `<!DOCTYPE a [<!ENTITY>]><a/>`, "MalformedDeclaration"],
     ["garbage in the subset", `<!DOCTYPE a [ junk ]><a/>`, "MalformedDeclaration"],
   ];
-  for (const [what, input, tag] of rejects) {
-    test(`rejects ${what}`, () => expect(parseErr(input)._tag).toBe(tag));
-  }
+  test.each(rejects)("rejects %s", (_what, input, tag) => expect(parseErr(input)._tag).toBe(tag));
 
   test("external entities are reported as such", () => {
     const e = parseErr(`<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>`);
@@ -175,7 +190,8 @@ describe("dtd: internal", () => {
         (_, i) => `<!ENTITY l${i + 1} "${`&l${i};`.repeat(10)}">`,
       ).join("")}]><a>&l9;</a>`;
 
-    const limit = (e: SaxError): string => (e._tag === "LimitExceeded" ? e.limit : e._tag);
+    const limit = (e: SaxError): string =>
+      Predicate.isTagged(e, "LimitExceeded") ? e.limit : e._tag;
 
     test("billion laughs, as text and as markup", () => {
       expect(limit(parseErr(laughs("ha")))).toBe("maxEntityExpansion");

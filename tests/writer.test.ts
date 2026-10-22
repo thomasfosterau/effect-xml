@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Effect, Result, Stream } from "effect";
+import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
+import * as Stream from "effect/Stream";
 import { Html, QName, Xml } from "../src/index.ts";
+import { concatBytes } from "./support/chunks.ts";
+import { at, failure } from "./support/narrow.ts";
 
 const { Writer, C14n } = Xml;
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -11,8 +15,7 @@ const ok = (node: Xml.XmlNode | Xml.XmlDocument, options?: Xml.Writer.WriterOpti
 
 const err = (node: Xml.XmlNode | Xml.XmlDocument, options?: Xml.Writer.WriterOptions) => {
   const r = Writer.serializeSync(node, options);
-  if (Result.isSuccess(r)) throw new Error(`expected an error, got ${r.success}`);
-  return r.failure;
+  return failure(r, `expected an error, got ${Result.getOrElse(r, () => "")}`);
 };
 
 const q = (namespace: string | null, local: string, prefix: string | null = null) =>
@@ -92,7 +95,7 @@ describe("namespace management", () => {
     expect(out).toBe(`<w:body xmlns:w="${W}"><w:p w:val="1"/></w:body>`);
     const reparsed = parse(out);
     expect(reparsed.root.name.namespace).toBe(W);
-    expect(reparsed.root.elements[0]!.attributes[0]!.name.namespace).toBe(W);
+    expect(at(at(reparsed.root.elements, 0).attributes, 0).name.namespace).toBe(W);
   });
 
   test("unprefixed names use the default namespace, and undeclare it when needed", () => {
@@ -146,7 +149,7 @@ describe("namespace management", () => {
     const out = ok(tree);
     const doc = parse(out);
     expect(doc.root.name.namespace).toBe("urn:a");
-    expect(doc.root.attributes.find((a) => a.name.local === "y")!.name.namespace).toBe("urn:b");
+    expect(doc.root.attributes.find((a) => a.name.local === "y")?.name.namespace).toBe("urn:b");
   });
 
   test("two attributes with the same expanded name", () => {
@@ -265,18 +268,12 @@ describe("streaming", () => {
       sheet(2).pipe(
         Writer.writeBytes({ declaration: true, encoding: "utf-16" }),
         Stream.runCollect,
-        Effect.map((c) => {
-          const parts = Array.from(c);
-          const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-          let at = 0;
-          for (const p of parts) (out.set(p, at), (at += p.length));
-          return out;
-        }),
+        Effect.map((c) => concatBytes(Array.from(c))),
       ),
     );
     expect([bytes[0], bytes[1]]).toEqual([0xff, 0xfe]);
     const doc = Effect.runSync(Xml.parseBytes(bytes));
-    expect(doc.root.elements[0]!.elements.length).toBe(2);
+    expect(at(doc.root.elements, 0).elements.length).toBe(2);
   });
 
   test("unbalanced events fail", async () => {

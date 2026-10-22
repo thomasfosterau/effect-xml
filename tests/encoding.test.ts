@@ -1,20 +1,27 @@
-import { describe, expect, test } from "vite-plus/test";
-import { Effect, Stream } from "effect";
+import { assert, describe, expect, test } from "vite-plus/test";
+import * as Arr from "effect/Array";
+import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
+import * as Result from "effect/Result";
+import * as Stream from "effect/Stream";
 import { Encoding, Html, Sax, Xml } from "../src/index.ts";
+import { concatBytes, splitBytes } from "./support/chunks.ts";
 
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 const utf16 = (s: string, little: boolean, bom: boolean): Uint8Array => {
-  const out = new Uint8Array((s.length + (bom ? 1 : 0)) * 2);
+  // By UTF-16 code unit (iterating the string would give code points).
+  const units = Array.from({ length: s.length }, (_, k) => s.charCodeAt(k));
+  const all = bom ? [0xfeff, ...units] : units;
+  const out = new Uint8Array(all.length * 2);
   const view = new DataView(out.buffer);
-  let i = 0;
-  if (bom) view.setUint16(i++ * 2, 0xfeff, little);
-  for (let k = 0; k < s.length; k++) view.setUint16(i++ * 2, s.charCodeAt(k), little);
+  all.forEach((unit, i) => view.setUint16(i * 2, unit, little));
   return out;
 };
 
 const utf32 = (s: string, little: boolean, bom: boolean): Uint8Array => {
-  const cps = [...s].map((c) => c.codePointAt(0)!);
+  // Never `undefined`: each item of a string's iterator is one whole code point.
+  const cps = [...s].map((c) => c.codePointAt(0) ?? 0);
   if (bom) cps.unshift(0xfeff);
   const out = new Uint8Array(cps.length * 4);
   const view = new DataView(out.buffer);
@@ -24,31 +31,19 @@ const utf32 = (s: string, little: boolean, bom: boolean): Uint8Array => {
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0));
 
-const concat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-};
+const concat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => concatBytes(parts);
 
 const rootText = (bytes: Uint8Array, options?: Xml.ParseBytesOptions) =>
   Effect.runPromise(Xml.parseBytes(bytes, options).pipe(Effect.map((d) => d.root.textContent)));
 
 const failure = async <E>(effect: Effect.Effect<unknown, E>): Promise<E> => {
   const r = await Effect.runPromise(Effect.result(effect));
-  if (r._tag === "Success") throw new Error("expected failure");
+  assert(Result.isFailure(r), "expected failure");
   return r.failure;
 };
 
 /** Split bytes into chunks of `size`, to exercise chunk boundaries inside sequences. */
-const chunks = (bytes: Uint8Array, size: number): Array<Uint8Array> => {
-  const out: Array<Uint8Array> = [];
-  for (let i = 0; i < bytes.length; i += size) out.push(bytes.subarray(i, i + size));
-  return out;
-};
+const chunks = splitBytes;
 
 const text = "héllo wörld — 𝄞 ✓";
 
@@ -63,7 +58,7 @@ describe("XML encoding detection (Appendix F)", () => {
     );
   });
 
-  for (const little of [true, false]) {
+  [true, false].forEach((little) => {
     const name = little ? "LE" : "BE";
     test(`UTF-16${name} with BOM`, async () => {
       const doc = `<?xml version="1.0" encoding="UTF-16"?><a>${text}</a>`;
@@ -80,7 +75,7 @@ describe("XML encoding detection (Appendix F)", () => {
       expect(await rootText(utf32(doc, little, true))).toBe(text);
       expect(await rootText(utf32(doc, little, false))).toBe(text);
     });
-  }
+  });
 
   test("ISO-8859-1 from the declaration, decoded exactly (not as windows-1252)", async () => {
     const doc = latin1(`<?xml version="1.0" encoding="ISO-8859-1"?><a>caf\xe9 \x80</a>`);
@@ -115,8 +110,8 @@ describe("XML encoding detection (Appendix F)", () => {
     const e = await failure(
       Xml.parseBytes(latin1(`<?xml version="1.0" encoding="US-ASCII"?><a>\xe9</a>`)),
     );
-    expect(e._tag).toBe("InvalidByteSequence");
-    if (e._tag === "InvalidByteSequence") expect(e.offset).toBe(44);
+    assert(Predicate.isTagged(e, "InvalidByteSequence"), "expected InvalidByteSequence");
+    expect(e.offset).toBe(44);
   });
 
   test("an unknown encoding is UnsupportedEncoding", async () => {
@@ -187,21 +182,20 @@ describe("streaming byte input", () => {
     ["UTF-32LE", utf32(`<?xml version="1.0"?><a b="${text}">${text}</a>`, true, false)],
   ];
 
-  for (const [name, bytes] of cases) {
-    test(`${name}: every chunk size gives the same events`, async () => {
-      const run = (parts: ReadonlyArray<Uint8Array>) =>
-        Effect.runPromise(
-          Stream.fromIterable(parts).pipe(
-            Sax.tokenizeBytes(),
-            Stream.runCollect,
-            Effect.map((c) => JSON.stringify(Array.from(c))),
-          ),
-        );
-      const whole = await run([bytes]);
-      expect(whole).toContain(text);
-      for (let size = 1; size <= 9; size++) expect(await run(chunks(bytes, size))).toBe(whole);
-    });
-  }
+  test.each(cases)("%s: every chunk size gives the same events", async (_name, bytes) => {
+    const run = (parts: ReadonlyArray<Uint8Array>) =>
+      Effect.runPromise(
+        Stream.fromIterable(parts).pipe(
+          Sax.tokenizeBytes(),
+          Stream.runCollect,
+          Effect.map((c) => Arr.fromIterable(c)),
+        ),
+      );
+    const whole = await run([bytes]);
+    expect(whole).toContainEqual(expect.objectContaining({ _tag: "Text", data: text }));
+    const chunked = await Promise.all(Arr.range(1, 9).map((size) => run(chunks(bytes, size))));
+    expect(chunked).toStrictEqual(Arr.replicate(whole, 9));
+  });
 
   test("Xml.parseBytesStream", async () => {
     const doc = await Effect.runPromise(

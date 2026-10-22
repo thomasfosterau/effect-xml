@@ -9,118 +9,155 @@
  * gates, this asserts a pass-count baseline: raise it when a change improves
  * the count. Set `HTML5LIB_REPORT=1` to list the failing tests.
  */
+/// <reference types="vite-plus/client" />
 import { describe, expect, test } from "vite-plus/test";
-import { readdirSync, readFileSync } from "node:fs";
-import { isDeepStrictEqual } from "node:util";
-import { Effect } from "effect";
+import * as Arr from "effect/Array";
+import * as Console from "effect/Console";
+import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
+import * as Exit from "effect/Exit";
+import * as Match from "effect/Match";
+import * as Order from "effect/Order";
+import * as Predicate from "effect/Predicate";
+import * as Record from "effect/Record";
+import * as Schema from "effect/Schema";
 import { Sax } from "../src/index.ts";
 
-const FIXTURES = new URL("./fixtures/html5lib-tokenizer/", import.meta.url);
+/** Every `.test` fixture's text, keyed by its path relative to this file. */
+const SOURCES = import.meta.glob<string>("./fixtures/html5lib-tokenizer/*.test", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
 
 const BASELINE = 2349;
 
-type Token = ReadonlyArray<unknown>;
+type Token = ReadonlyArray<Schema.Json>;
 
-interface TokenizerTest {
-  readonly description: string;
-  readonly input: string;
-  readonly output: ReadonlyArray<Token>;
-  readonly initialStates?: ReadonlyArray<string>;
-  readonly doubleEscaped?: boolean;
-}
+const TokenizerTest = Schema.Struct({
+  description: Schema.String,
+  input: Schema.String,
+  output: Schema.Array(Schema.Array(Schema.Json)),
+  initialStates: Schema.optional(Schema.Array(Schema.String)),
+  doubleEscaped: Schema.optional(Schema.Boolean),
+});
+type TokenizerTest = typeof TokenizerTest.Type;
+
+/** A fixture file: its tests are under `tests`, or `xmlViolationTests`. */
+const Suite = Schema.fromJsonString(
+  Schema.Struct({
+    tests: Schema.optional(Schema.Array(TokenizerTest)),
+    xmlViolationTests: Schema.optional(Schema.Array(TokenizerTest)),
+  }),
+);
+type Suite = typeof Suite.Type;
+
+const decodeSuite = Schema.decodeUnknownSync(Suite);
+
+/** Tokens as JSON text, for failure reports. */
+const TokensJson = Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Json)));
+type TokensJson = typeof TokensJson.Type;
+const encodeTokens = Schema.encodeSync(TokensJson);
 
 const unescape = (s: string): string =>
   s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
 
-const unescapeDeep = (v: unknown): unknown =>
-  typeof v === "string"
+const isJsonArray = (v: Schema.Json): v is Schema.JsonArray => Arr.isArray(v);
+const isJsonObject = (v: Schema.Json): v is Schema.JsonObject => Predicate.isObject(v);
+
+const unescapeJson = (v: Schema.Json): Schema.Json =>
+  Predicate.isString(v)
     ? unescape(v)
-    : Array.isArray(v)
-      ? v.map(unescapeDeep)
-      : v !== null && typeof v === "object"
-        ? Object.fromEntries(Object.entries(v).map(([k, x]) => [unescape(k), unescapeDeep(x)]))
+    : isJsonArray(v)
+      ? v.map(unescapeJson)
+      : isJsonObject(v)
+        ? Record.fromEntries(Record.toEntries(v).map(([k, x]) => [unescape(k), unescapeJson(x)]))
         : v;
 
-/** Our events in html5lib's token format, with adjacent character tokens merged. */
-const tokens = (input: string): Array<Token> => {
-  const out: Array<Token> = [];
-  const push = (t: Token) => {
-    const last = out[out.length - 1];
-    if (t[0] === "Character" && last?.[0] === "Character")
-      out[out.length - 1] = ["Character", (last[1] as string) + (t[1] as string)];
+/** A `doubleEscaped` test with its `\uXXXX` escapes decoded. */
+const unescapeTest = (t: TokenizerTest): TokenizerTest => ({
+  ...t,
+  description: unescape(t.description),
+  input: unescape(t.input),
+  output: t.output.map((token) => token.map(unescapeJson)),
+});
+
+const isCharacter = (t: Token | undefined): t is readonly ["Character", string] =>
+  t?.[0] === "Character" && Predicate.isString(t[1]);
+
+/** Merge adjacent character tokens. */
+const mergeCharacters = (ts: ReadonlyArray<Token>): Array<Token> =>
+  ts.reduce<Array<Token>>((out, t) => {
+    const last = out.at(-1);
+    if (isCharacter(t) && isCharacter(last)) out[out.length - 1] = ["Character", last[1] + t[1]];
     else out.push(t);
-  };
-  for (const ev of Effect.runSync(Sax.collect(input, { mode: "html" }))) {
-    switch (ev._tag) {
-      case "StartElement": {
-        const attrs: Record<string, string> = {};
-        for (const a of ev.attributes) if (!(a.name in attrs)) attrs[a.name] = a.value;
-        push(ev.selfClosing ? ["StartTag", ev.name, attrs, true] : ["StartTag", ev.name, attrs]);
-        break;
-      }
-      case "EndElement":
-        push(["EndTag", ev.name]);
-        break;
-      case "Text":
-      case "CData":
-        push(["Character", ev.data]);
-        break;
-      case "Comment":
-        push(["Comment", ev.data]);
-        break;
-      case "Doctype":
-        push(["DOCTYPE", ev.name, ev.publicId, ev.systemId]);
-        break;
-      default:
-        break;
-    }
-  }
-  return out;
-};
+    return out;
+  }, []);
+
+/** The first value of each attribute name (html5lib drops repeats). */
+const attributesOf = (attributes: ReadonlyArray<Sax.Attribute>): Record<string, string> =>
+  Record.fromEntries(attributes.toReversed().map((a) => [a.name, a.value] as const));
+
+/** Our events in html5lib's token format, with adjacent character tokens merged. */
+const tokens = (input: string): Array<Token> =>
+  mergeCharacters(
+    Effect.runSync(Sax.collect(input, { mode: "html" })).flatMap(
+      Match.valueTags({
+        StartElement: (ev): ReadonlyArray<Token> => [
+          ev.selfClosing
+            ? ["StartTag", ev.name, attributesOf(ev.attributes), true]
+            : ["StartTag", ev.name, attributesOf(ev.attributes)],
+        ],
+        EndElement: (ev): ReadonlyArray<Token> => [["EndTag", ev.name]],
+        Text: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
+        CData: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
+        Comment: (ev): ReadonlyArray<Token> => [["Comment", ev.data]],
+        Doctype: (ev): ReadonlyArray<Token> => [["DOCTYPE", ev.name, ev.publicId, ev.systemId]],
+        ProcessingInstruction: (): ReadonlyArray<Token> => [],
+        XmlDeclaration: (): ReadonlyArray<Token> => [],
+      }),
+    ),
+  );
 
 /** html5lib's expected tokens, merged and without the force-quirks flag. */
-const expected = (output: ReadonlyArray<Token>): Array<Token> => {
-  const out: Array<Token> = [];
-  for (const t of output) {
-    const token = t[0] === "DOCTYPE" ? t.slice(0, 4) : t;
-    const last = out[out.length - 1];
-    if (token[0] === "Character" && last?.[0] === "Character")
-      out[out.length - 1] = ["Character", (last[1] as string) + (token[1] as string)];
-    else out.push(token);
-  }
-  return out;
+const expected = (output: ReadonlyArray<Token>): Array<Token> =>
+  mergeCharacters(output.map((t) => (t[0] === "DOCTYPE" ? t.slice(0, 4) : t)));
+
+/** The tests of each fixture file, in file-name order, that start in the data state. */
+const runnable: ReadonlyArray<readonly [file: string, test: TokenizerTest]> = Arr.sort(
+  Record.toEntries(SOURCES),
+  Order.mapInput(Order.String, ([path]: readonly [string, string]) => path),
+).flatMap(([path, content]) => {
+  const file = path.slice(path.lastIndexOf("/") + 1);
+  const suite: Suite = decodeSuite(content);
+  return (suite.tests ?? suite.xmlViolationTests ?? [])
+    .filter((t) => t.initialStates === undefined || t.initialStates.includes("Data state"))
+    .map((t) => [file, t.doubleEscaped === true ? unescapeTest(t) : t] as const);
+});
+
+/** Why a test fails, if it does. */
+const failure = (file: string, t: TokenizerTest): string | null => {
+  const want = expected(t.output);
+  const got = Effect.runSync(Effect.exit(Effect.sync(() => tokens(t.input))));
+  if (Exit.isFailure(got)) return `${file}: ${t.description}: threw ${String(got.cause)}`;
+  return Equal.equals(got.value, want)
+    ? null
+    : `${file}: ${t.description}: ${encodeTokens(got.value)} ≠ ${encodeTokens(want)}`;
 };
 
 describe("html5lib tokenizer conformance", () => {
   test("meets the pass-count baseline", async () => {
-    let runnable = 0;
-    let passed = 0;
-    const failures: Array<string> = [];
-    for (const file of readdirSync(FIXTURES)
-      .filter((f) => f.endsWith(".test"))
-      .sort()) {
-      const json = JSON.parse(readFileSync(new URL(file, FIXTURES), "utf8"));
-      const suite: ReadonlyArray<TokenizerTest> = json.tests ?? json.xmlViolationTests ?? [];
-      for (const raw of suite) {
-        if (raw.initialStates !== undefined && !raw.initialStates.includes("Data state")) continue;
-        const t = raw.doubleEscaped ? (unescapeDeep(raw) as TokenizerTest) : raw;
-        runnable++;
-        let got: Array<Token>;
-        try {
-          got = tokens(t.input);
-        } catch (e) {
-          failures.push(`${file}: ${t.description}: threw ${String(e)}`);
-          continue;
-        }
-        if (isDeepStrictEqual(got, expected(t.output))) passed++;
-        else
-          failures.push(
-            `${file}: ${t.description}: ${JSON.stringify(got)} ≠ ${JSON.stringify(expected(t.output))}`,
-          );
-      }
-    }
-    if (process.env.HTML5LIB_REPORT) console.log(failures.join("\n"));
-    console.log(`html5lib tokenizer: ${passed}/${runnable}`);
+    const failures = runnable.flatMap(([file, t]) => {
+      const why = failure(file, t);
+      return why === null ? [] : [why];
+    });
+    const passed = runnable.length - failures.length;
+    await Effect.runPromise(
+      Effect.all([
+        process.env.HTML5LIB_REPORT ? Console.log(failures.join("\n")) : Effect.void,
+        Console.log(`html5lib tokenizer: ${passed}/${runnable.length}`),
+      ]),
+    );
     expect(passed).toBeGreaterThanOrEqual(BASELINE);
   });
 });

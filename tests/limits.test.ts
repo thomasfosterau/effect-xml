@@ -1,18 +1,23 @@
-import { describe, expect, test } from "vite-plus/test";
-import { Effect, Stream } from "effect";
-import { Html, Limits, Sax, Xml } from "../src/index.ts";
+import { assert, describe, expect, test } from "vite-plus/test";
+import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
+import * as Result from "effect/Result";
+import * as Stream from "effect/Stream";
+import { Html, Limits, Sax, Xml, type LimitExceeded, type SaxError } from "../src/index.ts";
+import { splitEvery } from "./support/chunks.ts";
 
 /** Run an effect that must fail with LimitExceeded, within a time budget, and return the error. */
 const limitFailure = async (
-  effect: Effect.Effect<unknown, { readonly _tag: string }>,
+  effect: Effect.Effect<unknown, SaxError>,
   budgetMs = 5000,
-) => {
+): Promise<LimitExceeded> => {
   const start = performance.now();
   const r = await Effect.runPromise(Effect.result(effect));
   expect(performance.now() - start).toBeLessThan(budgetMs);
-  if (r._tag === "Success") throw new Error("expected failure");
+  assert(Result.isFailure(r), "expected failure");
   expect(r.failure._tag).toBe("LimitExceeded");
-  return r.failure as unknown as { limit: string; max: number; position: unknown };
+  assert(Predicate.isTagged(r.failure, "LimitExceeded"));
+  return r.failure;
 };
 
 const deep = (n: number) => "<a>".repeat(n) + "x" + "</a>".repeat(n);
@@ -26,7 +31,7 @@ describe("resource limits", () => {
   });
 
   test("100,000 levels while streaming", async () => {
-    const chunks = deep(100_000).match(/[\s\S]{1,4096}/g)!;
+    const chunks = splitEvery(deep(100_000), 4096);
     const e = await limitFailure(Stream.fromIterable(chunks).pipe(Xml.parseStream()));
     expect(e.limit).toBe("maxDepth");
   });
@@ -81,15 +86,18 @@ describe("resource limits", () => {
     // A comment that never ends, streamed: fail once it outgrows the limit
     // (give or take the stream's batching), instead of buffering forever.
     let pulled = 0;
-    const chunks = Stream.fromIterable({
-      *[Symbol.iterator]() {
-        yield "<a><!--";
-        for (;;) {
-          pulled++;
-          yield "x".repeat(1000);
-        }
-      },
-    });
+    const chunks = Stream.make("<a><!--").pipe(
+      Stream.concat(
+        Stream.forever(
+          Stream.fromEffect(
+            Effect.sync(() => {
+              pulled++;
+              return "x".repeat(1000);
+            }),
+          ),
+        ),
+      ),
+    );
     const e = await limitFailure(
       chunks.pipe(Xml.parseStream({ limits: { maxTextLength: 50_000 } })),
     );

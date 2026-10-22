@@ -24,6 +24,10 @@ catalog:
   # and a TypeScript JS API — the TS6 alias below satisfies its peer.
   "@effect/docgen": ^4.0.5
   "@effect/language-service": ^0.87.5
+  # Tests only: the conformance gates read their fixtures' bytes through the
+  # `FileSystem` service (`NodeFileSystem.layer`). Released in lockstep with
+  # `effect`, so it is pinned to the same version.
+  "@effect/platform-node": 4.0.5
   # Effect Language Service as a native (TypeScript-Go) binary — the TS7 side
   # of the 6/7 split. `effect-tsgo patch` overwrites the native `tsc` binary
   # with an Effect-patched build matched by gitHead, so this pins in lockstep

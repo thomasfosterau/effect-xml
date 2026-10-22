@@ -67,6 +67,7 @@
     "@changesets/cli": "catalog:",
     "@effect/docgen": "catalog:",
     "@effect/language-service": "catalog:",
+    "@effect/platform-node": "catalog:",
     "@effect/tsgo": "catalog:",
     "@mpsuesser/oxlint-plugin-effect": "catalog:",
     "@thomasfosterau/effect-parse": "catalog:",
