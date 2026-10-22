@@ -123,6 +123,21 @@ describe("XML encoding detection (Appendix F)", () => {
     expect((await failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding")
   })
 
+  test("a declaration contradicting the first bytes of big-endian UTF-16 is UnsupportedEncoding", async () => {
+    const doc = utf16(`<?xml version="1.0" encoding="UTF-8"?><a/>`, false, true)
+    expect((await failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding")
+    expect(Encoding.sniffXml(utf16(`<?xml version="1.0" encoding="UTF-16"?><a/>`, false, false), true)).toEqual({
+      encoding: "utf-16be",
+      bomLength: 0,
+      source: "declaration",
+    })
+  })
+
+  test("a UTF-8 byte order mark with another declared encoding is UnsupportedEncoding", async () => {
+    const doc = concat(new Uint8Array([0xef, 0xbb, 0xbf]), utf8(`<?xml version="1.0" encoding="ISO-8859-1"?><a/>`))
+    expect((await failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding")
+  })
+
   test("EBCDIC is reported as unsupported", async () => {
     expect((await failure(Xml.parseBytes(new Uint8Array([0x4c, 0x6f, 0xa7, 0x94, 0x40]))))._tag).toBe(
       "UnsupportedEncoding"

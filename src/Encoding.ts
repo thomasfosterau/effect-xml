@@ -94,7 +94,7 @@ const readAscii = (b: Uint8Array, family: Family, from: number): string => {
   let out = ""
   for (let i = from; i + size <= b.length; i += size) {
     let unit = 0
-    for (let k = 0; k < size; k++) unit |= b[i + (little ? k : size - 1 - k)]! << (8 * (little ? k : size - 1 - k))
+    for (let k = 0; k < size; k++) unit += b[i + k]! * 2 ** (8 * (little ? k : size - 1 - k))
     out += unit < 0x80 ? String.fromCharCode(unit) : "�"
   }
   return out
@@ -128,8 +128,10 @@ const ASCII_LABELS = new Set(["us-ascii", "ascii", "ansi_x3.4-1968", "iso-ir-6",
 const isUtf16 = (e: string): boolean => e === "utf-16" || e === "utf-16le" || e === "utf-16be"
 const isUtf32 = (e: string): boolean => e === "utf-32" || e === "utf-32le" || e === "utf-32be"
 
-/** Whether a declared encoding agrees with the family the bytes are in. */
-const agrees = (declared: string, family: Family): boolean => {
+/** Whether a declared encoding agrees with the family the bytes are in (and the byte order mark, if any). */
+const agrees = (declared: string, family: Family, bom: boolean): boolean => {
+  // A UTF-8 byte order mark means UTF-8, not just "ASCII-compatible".
+  if (bom && family === "utf-8") return declared === "utf-8"
   if (family.startsWith("utf-16")) return declared === "utf-16" || declared === family
   if (family.startsWith("utf-32")) return declared === "utf-32" || declared === family
   return !isUtf16(declared) && !isUtf32(declared)
@@ -178,7 +180,7 @@ export const sniffXml = (
   const label = match[2]!
   const declared = canonicalEncoding(label)
   if (declared === null) return unsupported(label, "unknown encoding label")
-  if (!agrees(declared, family)) {
+  if (!agrees(declared, family, bom !== null)) {
     const what = bom !== null ? "the byte order mark" : "the document's first bytes"
     return unsupported(label, `the declared encoding contradicts ${what}, which indicate ${family}`)
   }
