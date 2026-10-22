@@ -49,7 +49,7 @@ const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const doc = Effect.runSync(Xml.parse(`<order id="7"><item>Widget</item></order>`))
  * console.log(doc.root.attribute("id")) // "7"

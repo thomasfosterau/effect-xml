@@ -1,5 +1,5 @@
 /**
- * effect-sax — a tour of the three layers. Run with: `vp run example`
+ * A tour of the three layers of `@thomasfosterau/effect-xml`. Run with: `vp run example`
  */
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";

@@ -13,7 +13,7 @@ Releases are automated with [Changesets](https://github.com/changesets/changeset
 ## Maintainer setup (one-time)
 
 1. **Allow Actions to open the version PR.** **Settings → Actions → General → Workflow permissions** → enable **"Allow GitHub Actions to create and approve pull requests"**. Without it the built-in `GITHUB_TOKEN` cannot open pull requests and the workflow fails at that step.
-2. **Bootstrap the package on npm.** `effect-sax` has never been published, and a trusted publisher can only be configured on a package that exists, so the first version is published by hand from a clean checkout of `trunk` (`pnpm install --frozen-lockfile && vp run build && pnpm publish --access public`, logged in to npm with publish rights; no `--provenance`, which only CI can generate), or the first `Release` run is given a short-lived granular token via a `NODE_AUTH_TOKEN` step that is removed afterwards. Decide the package name before this step (see the note below).
+2. **Bootstrap the package on npm.** `@thomasfosterau/effect-xml` has never been published, and a trusted publisher can only be configured on a package that exists, so the first version is published by hand from a clean checkout of `trunk` (`pnpm install --frozen-lockfile && vp run build && pnpm publish --access public`, logged in to npm with publish rights; no `--provenance`, which only CI can generate), or the first `Release` run is given a short-lived granular token via a `NODE_AUTH_TOKEN` step that is removed afterwards.
 3. **Configure the trusted publisher** on npmjs.com for the package → **Settings → Trusted Publisher**:
    - Provider: **GitHub Actions**
    - Repository: `thomasfosterau/effect-xml`
@@ -25,4 +25,4 @@ Releases are automated with [Changesets](https://github.com/changesets/changeset
 4. **Protect the `release` environment.** **Settings → Environments → `release`** → enable **Required reviewers** (yourself) and restrict deployment to the `trunk` branch, so publishing pauses for manual approval.
 5. **Protect `trunk`.** Require pull requests and the `ci` check before merge, and disallow direct pushes, so a release can only be triggered by merging the reviewed version PR.
 
-**On the name:** the package is `effect-sax` (unscoped) while the repository is `effect-xml`. As of this writing `effect-sax` and `@thomasfosterau/effect-sax` are unpublished on npm, and `effect-xml` is taken by an unrelated package. Renaming before the first publish (e.g. to the `@thomasfosterau/` scope the rest of the family uses) means changing `name` in `package.json`, the docgen/README imports and the trusted-publisher entry.
+**On the name:** the package publishes as `@thomasfosterau/effect-xml`, under the scope the rest of the family uses (the unscoped `effect-xml` is taken by an unrelated package). It was developed as `effect-sax` and renamed before its first publish, so no `effect-sax` release exists to deprecate.

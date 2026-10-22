@@ -21,7 +21,7 @@
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Result from "effect/Result"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const DC = "http://purl.org/dc/elements/1.1/"
  * const doc = Effect.runSync(

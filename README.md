@@ -1,21 +1,21 @@
-# effect-sax
+# @thomasfosterau/effect-xml
 
 Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.website).
 
 | Layer | Import | What it gives you |
 | --- | --- | --- |
-| **`Sax`** | `effect-sax/Sax` | An incremental, chunk-boundary-safe tokenizer exposed as a `Stream` of typed events. |
-| **`Xml`** | `effect-sax/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
-| **`Html`** | `effect-sax/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, passing all 1368 runnable html5lib tree-construction cases) and a lenient fragment builder. |
+| **`Sax`** | `@thomasfosterau/effect-xml/Sax` | An incremental, chunk-boundary-safe tokenizer exposed as a `Stream` of typed events. |
+| **`Xml`** | `@thomasfosterau/effect-xml/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
+| **`Html`** | `@thomasfosterau/effect-xml/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, passing all 1368 runnable html5lib tree-construction cases) and a lenient fragment builder. |
 
-Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `effect-sax` re-exports all three layers as namespaces plus the shared errors, names and positions.
+Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `@thomasfosterau/effect-xml` re-exports all three layers as namespaces plus the shared errors, names and positions.
 
 > **Status:** pre-1.0; the API may change between minor versions.
 
 ## Install
 
 ```sh
-pnpm add effect-sax effect @thomasfosterau/effect-parse
+pnpm add @thomasfosterau/effect-xml effect @thomasfosterau/effect-parse
 ```
 
 `effect` (4.x, `^4.0.5`) and `@thomasfosterau/effect-parse` (`^0.1.0`) are peer dependencies, so your application owns the single copy of each. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node ≥ 22, browsers, workers).
@@ -24,7 +24,7 @@ pnpm add effect-sax effect @thomasfosterau/effect-parse
 
 ```ts
 import * as Effect from "effect/Effect";
-import { Xml } from "effect-sax";
+import { Xml } from "@thomasfosterau/effect-xml";
 
 const program = Effect.gen(function* () {
   const doc = yield* Xml.parse(
@@ -50,7 +50,7 @@ The tokenizer is genuinely incremental: feed it chunks of any size — even ones
 ```ts
 import * as Console from "effect/Console";
 import * as Stream from "effect/Stream";
-import { Sax } from "effect-sax";
+import { Sax } from "@thomasfosterau/effect-xml";
 
 Stream.fromIterable(["<order id=", '"7"><item>Wid', "get</item></order>"]).pipe(
   Sax.tokenize(), // Stream<SaxEvent, SaxError>
@@ -73,7 +73,7 @@ Stream.fromIterable(["<order id=", '"7"><item>Wid', "get</item></order>"]).pipe(
 `SaxEvent` is a `Data.TaggedEnum` with the variants `StartElement`, `EndElement`, `Text`, `CData`, `Comment`, `ProcessingInstruction`, `Doctype` and `XmlDeclaration`, so you get exhaustive matching:
 
 ```ts
-import { Sax } from "effect-sax";
+import { Sax } from "@thomasfosterau/effect-xml";
 
 const describe = (event: Sax.SaxEvent): string =>
   Sax.SaxEvent.$match(event, {
@@ -104,7 +104,7 @@ Every event carries a `span` (`start` / `end` positions with `offset`, `line` an
 
 ```ts
 import * as Schema from "effect/Schema";
-import { Xml } from "effect-sax";
+import { Xml } from "@thomasfosterau/effect-xml";
 
 const el = Xml.element("p", [Xml.attr("class", "note")], [Xml.text("hi")]);
 const encoded = Schema.encodeSync(Xml.XmlElement)(el); // plain data
@@ -120,7 +120,7 @@ Look elements and attributes up by namespace URI and local name, never by the pr
 ```ts
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { Xml } from "effect-sax";
+import { Xml } from "@thomasfosterau/effect-xml";
 
 const w = Xml.Ns.make("http://schemas.openxmlformats.org/wordprocessingml/2006/main");
 
@@ -157,7 +157,7 @@ for (const c of root.descendants(rdf("Description"))) {
 
 ```ts
 import * as Result from "effect/Result";
-import { Xml } from "effect-sax";
+import { Xml } from "@thomasfosterau/effect-xml";
 
 const title = Xml.XPath.compile("//dc:title[@xml:lang = 'en']", {
   namespaces: { dc: "http://purl.org/dc/elements/1.1/" },
@@ -176,7 +176,7 @@ if (Result.isSuccess(title)) {
 
 ```ts
 import * as Stream from "effect/Stream";
-import { Sax } from "effect-sax";
+import { Sax } from "@thomasfosterau/effect-xml";
 
 const SPREADSHEETML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
@@ -195,7 +195,7 @@ Streamable paths use child and descendant steps with element name tests, and pre
 
 ```ts
 import * as Effect from "effect/Effect";
-import { Html, Xml } from "effect-sax";
+import { Html, Xml } from "@thomasfosterau/effect-xml";
 
 // A full document: implicit html/head/body, insertion modes, tables,
 // templates, foreign (SVG/MathML) content and the adoption agency algorithm.
@@ -231,7 +231,7 @@ Documents usually arrive as bytes, and the bytes say how to decode them. The `*B
 UTF-8, UTF-16 and UTF-32 (either byte order, with or without a BOM), ISO-8859-1, US-ASCII and every encoding `TextDecoder` knows are supported. An `encoding` option (an HTTP `charset`, say) overrides the document's own declaration, but not a byte order mark:
 
 ```ts
-import { Xml } from "effect-sax";
+import { Xml } from "@thomasfosterau/effect-xml";
 
 Xml.parseBytes(bytes, { encoding: "iso-8859-1" });
 ```
@@ -253,7 +253,7 @@ Every parser enforces limits, so a hostile document fails with a typed `LimitExc
 | `maxEntityDepth` | 64 | entity references nested in replacement text |
 
 ```ts
-import { Limits, Xml } from "effect-sax";
+import { Limits, Xml } from "@thomasfosterau/effect-xml";
 
 Xml.parse(input, { limits: { maxDepth: 256 } }); // the rest keep their defaults
 Xml.parse(trusted, { limits: Limits.unlimited }); // or Infinity for any one
@@ -279,7 +279,7 @@ Xml.parse(input, { dtd: "internal" });
 `Xml.serialize(node)` writes a tree back as it was parsed, and is always well-formed. For new documents, `Xml.Writer` manages namespaces, checks what can't be escaped, and streams:
 
 ```ts
-import { Xml } from "effect-sax";
+import { Xml } from "@thomasfosterau/effect-xml";
 
 // A DOM: the namespaces it uses are declared where they are first needed.
 const xml = Xml.Writer.serialize(body, {
@@ -308,7 +308,7 @@ Every failure is a tagged class in the `SaxError` union, so it narrows exhaustiv
 
 ```ts
 import * as Effect from "effect/Effect";
-import { Xml } from "effect-sax";
+import { Xml } from "@thomasfosterau/effect-xml";
 
 const program = Xml.parse("<a></b>").pipe(
   Effect.catchTags({
@@ -346,7 +346,7 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 ## Names and positions
 
 ```ts
-import { QName } from "effect-sax";
+import { QName } from "@thomasfosterau/effect-xml";
 
 QName.fromRaw("svg:rect"); // prefix "svg", local "rect", namespace null
 QName.simple("div").clark; // "div"; "{uri}local" once a namespace is resolved

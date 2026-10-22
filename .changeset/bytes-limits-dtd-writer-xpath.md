@@ -1,5 +1,5 @@
 ---
-"effect-sax": minor
+"@thomasfosterau/effect-xml": minor
 ---
 
 Parse bytes with encoding detection (`Xml.parseBytes`, `Xml.parseBytesStream`, `Sax.tokenizeBytes`, `Html.parseDocumentBytes`, `Html.parseDocumentBytesStream`, and the `Encoding` sniffers and decoder), enforce resource limits on every parser (`Limits`, failing with `LimitExceeded`), and interpret a DOCTYPE's internal subset on request (`dtd: "internal"`, with bounded entity expansion).

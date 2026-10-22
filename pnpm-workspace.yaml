@@ -1,4 +1,4 @@
-# pnpm workspace — the single published package `effect-sax` at the root.
+# pnpm workspace — the single published package `@thomasfosterau/effect-xml` at the root.
 #
 # The `catalog:` protocol pins versions that MUST be singletons. Effect
 # especially: two copies of `effect` break Context / Layer / Schema identity
