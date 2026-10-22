@@ -20,7 +20,7 @@ import { Parser, Token } from "@thomasfosterau/effect-parse"
 import { Result } from "effect"
 import type { Limits } from "../Limits.ts"
 import type { EntityResolver, ExpansionFailure } from "./entities.ts"
-import { NCName, QName } from "./names.ts"
+import { Name, NCName } from "./names.ts"
 
 /** An attribute declared in an `<!ATTLIST>`. */
 export interface AttributeDecl {
@@ -107,7 +107,7 @@ const defaultDecl: Parser.Parser<string | null> = Parser.alt(
 
 const attDef: Parser.Parser<RawAttribute> = Parser.gen(function* () {
   yield* S
-  const name = yield* QName
+  const name = yield* Name
   yield* S
   const tokenized = yield* attType
   yield* S
@@ -118,7 +118,7 @@ const attDef: Parser.Parser<RawAttribute> = Parser.gen(function* () {
 const attlistDecl: Parser.Parser<Decl> = Parser.gen(function* () {
   yield* lit("<!ATTLIST")
   yield* S
-  const element = yield* QName.pipe(Parser.expected("an element name"))
+  const element = yield* Name.pipe(Parser.expected("an element name"))
   const attributes = yield* Parser.repeat(Parser.backtrack(attDef))
   yield* S0
   yield* lit(">")

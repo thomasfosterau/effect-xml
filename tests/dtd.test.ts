@@ -62,6 +62,14 @@ describe("dtd: internal", () => {
     expect(attrs).toEqual({ t: "p q", c: " x  y ", f: "fixed" })
   })
 
+  test("ATTLIST names may contain colons anywhere (XML 1.0 Name)", () => {
+    const doc = parseOk(`<!DOCTYPE a [<!ATTLIST a : CDATA "x" p:q CDATA "y">]><a/>`, { namespaces: false })
+    expect(doc.root.attributes.map((a) => [a.name.qualified, a.value])).toEqual([
+      [":", "x"],
+      ["p:q", "y"],
+    ])
+  })
+
   test("entities in attribute values are normalized", () => {
     // A character reference in an entity value is expanded when the entity is
     // declared, so its tab is literal by the time it is normalized (§3.3.3);

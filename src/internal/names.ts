@@ -41,3 +41,8 @@ export const NCName: Parser.Parser<string> = Parser.compile(
 export const QName: Parser.Parser<string> = Parser.compile(
   Parser.taken(Parser.seq(NCName, Parser.optional(Parser.seq(Token.literal(":"), NCName))))
 )
+
+/** `Name ::= NameStartChar (NameChar)*` (XML 1.0 §2.3): colons anywhere, as in DTDs. */
+export const Name: Parser.Parser<string> = Parser.compile(
+  Parser.taken(Parser.seq(Token.oneOf([...ncNameStartChar, ":"]), Token.takeWhile([...ncNameChar, ":"])))
+)
