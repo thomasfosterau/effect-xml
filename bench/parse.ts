@@ -1,5 +1,6 @@
 /**
- * Parsing benchmarks. Run with `bun bench/parse.ts [megabytes]`.
+ * Parsing benchmarks. Run with `vp run bench` (or `vp exec tsx bench/parse.ts
+ * [megabytes]`).
  *
  * The input is a generated SpreadsheetML worksheet (the shape of a large
  * XLSX `sheet1.xml`, about 8 MB by default). effect-sax is measured as a SAX
@@ -7,10 +8,14 @@
  * streaming selection of rows.
  *
  * Other parsers are compared when they are installed, without being
- * dependencies of this package: `bun add -d saxes sax fast-xml-parser`
- * (and remove them again) to include them.
+ * dependencies of this package: `pnpm add -D saxes sax fast-xml-parser`
+ * (and revert `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`
+ * afterwards) to include them.
  */
-import { Effect, Stream } from "effect";
+import * as Arr from "effect/Array";
+import * as Effect from "effect/Effect";
+import * as Order from "effect/Order";
+import * as Stream from "effect/Stream";
 import { Sax, Xml } from "../src/index.ts";
 
 const SML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -37,9 +42,9 @@ const sheet = (bytes: number): string => {
 
 const input = sheet(megabytes * 1024 * 1024);
 const bytes = new TextEncoder().encode(input);
-const chunks = input.match(/[\s\S]{1,65536}/g)!;
+const chunks = input.match(/[\s\S]{1,65536}/g) ?? [];
 
-const time = async (name: string, run: () => unknown | Promise<unknown>, runs = 5) => {
+const time = async (name: string, run: () => void | Promise<void>, runs = 5) => {
   await run(); // warm up
   const samples: Array<number> = [];
   for (let i = 0; i < runs; i++) {
@@ -47,8 +52,7 @@ const time = async (name: string, run: () => unknown | Promise<unknown>, runs = 
     await run();
     samples.push(performance.now() - start);
   }
-  samples.sort((a, b) => a - b);
-  const median = samples[Math.floor(samples.length / 2)]!;
+  const median = Arr.sort(samples, Order.Number)[Math.floor(samples.length / 2)] ?? 0;
   const mbps = input.length / 1024 / 1024 / (median / 1000);
   console.log(
     `${name.padEnd(36)} ${median.toFixed(0).padStart(6)} ms  ${mbps.toFixed(1).padStart(6)} MB/s`,
@@ -74,18 +78,16 @@ await time("effect-sax SAX (64 KiB chunks)", () =>
 await time("effect-sax SAX (bytes)", () =>
   Effect.runPromise(Stream.make(bytes).pipe(Sax.tokenizeBytes(), Stream.runDrain)),
 );
-await time("effect-sax DOM (Xml.parse)", () => Effect.runPromise(Xml.parse(input)));
-if ("select" in Sax) {
-  await time("effect-sax rows (Sax.select)", () =>
-    Effect.runPromise(
-      Stream.make(input).pipe(
-        Sax.tokenize(),
-        (Sax as any).select("//x:row", { namespaces: { x: SML } }),
-        Stream.runDrain,
-      ) as Effect.Effect<void>,
+await time("effect-sax DOM (Xml.parse)", () => Effect.runPromise(Effect.asVoid(Xml.parse(input))));
+await time("effect-sax rows (Sax.select)", () =>
+  Effect.runPromise(
+    Stream.make(input).pipe(
+      Sax.tokenize(),
+      Sax.select("//x:row", { namespaces: { x: SML } }),
+      Stream.runDrain,
     ),
-  );
-}
+  ),
+);
 
 const saxes = await optional("saxes");
 if (saxes) {

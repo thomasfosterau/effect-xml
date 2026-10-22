@@ -11,12 +11,12 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 
 | Entry | Source | What it is |
 | --- | --- | --- |
-| `effect-sax` | `src/index.ts` | `Sax`, `Xml`, `Html` namespaces plus the shared errors, names and positions |
-| `effect-sax/Sax` | `src/Sax.ts` | `SaxEvent` tagged enum and the `Stream` combinators over the lexer |
-| `effect-sax/Xml` | `src/Xml/index.ts` | the Schema-backed DOM (`Node.ts`), the strict tree builder with namespace resolution (`TreeBuilder.ts`), `parse` / `parseStream` (`Xml.ts`) |
-| `effect-sax/Html` | `src/Html/index.ts` | HTML-mode tokenizing, WHATWG tree construction (`TreeConstruction.ts`, `parseDocument`) and the lenient fragment builder (`TreeBuilder.ts`, `parseFragment`) |
+| `effect-sax` | `src/index.ts` | `Sax`, `Xml`, `Html`, `Encoding` (`Encoding.ts`: byte sniffing and decoding) and `Limits` (`Limits.ts`) namespaces plus the shared errors, names and positions |
+| `effect-sax/Sax` | `src/Sax.ts` | `SaxEvent` tagged enum and the `Stream` combinators over the lexer, including `tokenizeBytes` and `select` (`Xml/Select.ts`) |
+| `effect-sax/Xml` | `src/Xml/index.ts` | the Schema-backed DOM (`Node.ts`), cursors (`Cursor.ts`), the strict tree builder with namespace resolution (`TreeBuilder.ts`), `parse` / `parseStream` / `parseBytes` (`Xml.ts`), and the `Writer`, `C14n`, `Ns` and `XPath` namespaces |
+| `effect-sax/Html` | `src/Html/index.ts` | HTML-mode tokenizing, WHATWG tree construction (`TreeConstruction.ts`, `parseDocument`), the lenient fragment builder (`TreeBuilder.ts`, `parseFragment`) and serialization (`Serialize.ts`) |
 
-`src/internal/**` is never exported: the incremental lexer (`lexer.ts`), the effect-parse token grammars (`tokens.ts`), the declaration / PI / DOCTYPE grammars (`declarations.ts`), name productions (`names.ts`), entity decoding (`entities.ts`, `htmlEntities.generated.ts`) and the foreign-content (SVG / MathML) tables (`foreign.ts`). A new public entry is added to `pack.entry` in `vite.config.ts`, `exports` in `package.json`, `entry` in `.fallowrc.json` and the table above.
+`src/internal/**` is never exported: the incremental lexer (`lexer.ts`), the effect-parse token grammars (`tokens.ts`), the declaration / PI / DOCTYPE grammars (`declarations.ts`), name productions (`names.ts`), entity decoding (`entities.ts`, `htmlEntities.generated.ts`), the foreign-content (SVG / MathML) tables (`foreign.ts`), the DTD internal subset and entity expansion (`dtd.ts`, `expansion.ts`), limit enforcement (`guard.ts`, with the exception boundary for tree builders in `unwind.ts`) and small shared helpers: `tree.ts` (stack-safe preorder traversal; use it rather than recursion over a DOM), `drive.ts` (the lexer pull loop), `convert.ts` (lexer events to SAX events), `attributes.ts` (attribute resolution shared by the XML tree builder and `Sax.select`), `order.ts`, `tagSet.ts` and `quote.ts`. A new public entry is added to `pack.entry` in `vite.config.ts`, `exports` in `package.json`, `entry` in `.fallowrc.json` and the table above.
 
 ## Common pitfalls
 
@@ -25,10 +25,12 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 - **Positions count raw UTF-16 units.** CR and CRLF are normalized to LF before lexing; the lexer records where each CRLF was so `offset` still counts the raw input. Lines and columns are computed lazily from the buffer.
 - **The lexer is mutable for throughput, never observably.** `Sax.tokenize` builds it inside `Stream.suspend`, so each materialization gets a fresh one. Faults are data (`LexOutput.Fault`), lifted into the stream's error channel by `Sax.ts`; nothing in the pipeline throws.
 - **`Html.parseDocument` drives the lexer and the tree builder in lockstep** (`Lexer.pull`, one token at a time) so it can set `suppressRawText` inside foreign content before the next token is read. Don't reintroduce a decoupled event stream there.
-- **The html5lib conformance gate is exact.** `tests/conformance.test.ts` runs the vendored `tests/fixtures/html5lib/*.dat` tree-construction suite and asserts 1368 runnable cases and 1368 passing. Never lower the baseline; a change that fixes more cases raises it. The fixtures are upstream files: never reformat them (they are in `fmt.ignorePatterns`).
+- **The html5lib conformance gate is exact.** `tests/conformance.test.ts` runs the vendored `tests/fixtures/html5lib/*.dat` tree-construction suite and asserts 1368 runnable cases and 1368 passing. Never lower the baseline; a change that fixes more cases raises it. The fixtures are upstream files: never reformat them (`tests/fixtures/**` is in `fmt.ignorePatterns`).
+- **Two more gates assert pass-count baselines.** `tests/html5lib-tokenizer.test.ts` (html5lib tokenizer tests; `HTML5LIB_REPORT=1` lists failures) and `tests/xmlconf.test.ts` (the W3C XML Conformance Test Suite, read as bytes through the `FileSystem` service; `XMLCONF_REPORT=1`). Counts may only go up; raise a baseline when a change improves it.
+- **The hot path is measured.** `vp run bench` (`bench/parse.ts`) times the SAX (string, chunks, bytes), DOM and select paths on a generated worksheet. A refactor of the lexer → SAX path (per token: `pull`, `guard.event`, conversion) should leave it unchanged. `$match` / `$is` there cost a third of the throughput (each is one function shared program-wide, so V8's caches go megamorphic and nothing inlines), which is why `lexer.ts`, `guard.ts` and `convert.ts` dispatch with a `switch` under a scoped lint override; closures and `Option`s per token have cost tens of percent too.
 - **`src/internal/htmlEntities.generated.ts` is generated data** (the WHATWG named-reference table); don't hand-edit entries.
 - **`"sideEffects": false` is a claim about `dist/`.** Every emitted module must be pure declarations: no top-level statements with effects.
-- **`vp run docgen` executes your examples.** `@effect/docgen` compiles every JSDoc `@example` and runs it under `tsx`, importing `effect-sax` by name through `dist/` (`"runExamples": true` in `docgen.json`). An example must import everything it uses, must not use `declare const`, and must not throw.
+- **`vp run docgen` executes your examples.** `@effect/docgen` compiles every JSDoc `@example` and runs it under `tsx`, importing `effect-sax` by name through `dist/` (`"runExamples": true` in `docgen.json`). An example must be a fenced ` ```ts ` block inside `@example` (docgen silently skips bare code), must import everything it uses, must not use `declare const`, and must not throw.
 - **`effect` and `@thomasfosterau/effect-parse` are peers, never dependencies.** Two copies of `effect` break `Schema` / `Context` identity; the consumer owns the singleton.
 
 ## Conventions
@@ -51,6 +53,7 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 - `vp run docgen` — compiles and runs every `@example` against `dist/`, writes the (git-ignored) API reference to `docs/`.
 - `vp run test:coverage` — the suite under an Istanbul map at `coverage/coverage-final.json`, which `fallow audit` reads.
 - `vp run example` — the tour in `examples/usage.ts`.
+- `vp run bench` — the parsing benchmarks (`bench/parse.ts`; `vp exec tsx bench/parse.ts 32` for a 32 MB input).
 - `pnpm changeset` — add a changeset.
 
 Invoke everything through `vp` (`vp exec` instead of `npx`). The sanctioned non-`vp` invocations: `pnpm install` (`--frozen-lockfile` in CI), `pnpm changeset`, and `pnpm publish` on the release path. Single-check variants are in [CONTRIBUTING.md](CONTRIBUTING.md#running-individual-checks).
