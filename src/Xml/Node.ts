@@ -9,8 +9,29 @@
  * The recursive `children` relationship is expressed with `Schema.suspend`, the
  * idiomatic way to build self-referential schemas.
  */
-import { Schema } from "effect"
-import { QName } from "../Name.ts"
+import { Option, Schema } from "effect"
+import { Namespaces, QName } from "../Name.ts"
+
+/**
+ * A name to look elements and attributes up by: a namespace URI (`null` for
+ * none) and a local name. A {@link QName} is one; so is what an `Ns` handle
+ * returns. Matching ignores prefixes, which producers are free to choose.
+ */
+export interface NameLike {
+  readonly namespace: string | null
+  readonly local: string
+}
+
+/** The arguments of the lookup methods: a {@link NameLike}, or a namespace and a local name. */
+export type NameArgs = readonly [name: NameLike] | readonly [namespace: string | null, local: string]
+
+/** @internal */
+export const nameOf = (args: NameArgs): NameLike =>
+  args.length === 1 ? args[0] : { namespace: args[0], local: args[1] }
+
+/** @internal Whether a resolved name is `name`. */
+export const isNamed = (qname: QName, name: NameLike): boolean =>
+  qname.local === name.local && qname.namespace === name.namespace
 
 /** An attribute on an element. */
 export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
@@ -80,6 +101,54 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
   /** Direct child elements. */
   get elements(): ReadonlyArray<XmlElement> {
     return this.children.filter((c): c is XmlElement => c._tag === "XmlElement")
+  }
+
+  /**
+   * The value of the attribute with this namespace and local name. Attributes
+   * without a prefix are in no namespace (`null`), whatever the default
+   * namespace is.
+   */
+  attributeNS(...args: NameArgs): Option.Option<string> {
+    const name = nameOf(args)
+    const found = this.attributes.find(
+      (a) =>
+        isNamed(a.name, name) ||
+        // `xml:` attributes in a document parsed without namespace resolution.
+        (name.namespace === Namespaces.xml && a.name.prefix === "xml" && a.name.local === name.local)
+    )
+    return found === undefined ? Option.none() : Option.some(found.value)
+  }
+
+  /** The first child element with this name. */
+  child(...args: NameArgs): Option.Option<XmlElement> {
+    const name = nameOf(args)
+    for (const c of this.children) if (c._tag === "XmlElement" && isNamed(c.name, name)) return Option.some(c)
+    return Option.none()
+  }
+
+  /** The child elements with this name, in document order. */
+  childElements(...args: NameArgs): ReadonlyArray<XmlElement> {
+    const name = nameOf(args)
+    return this.children.filter((c): c is XmlElement => c._tag === "XmlElement" && isNamed(c.name, name))
+  }
+
+  /** The descendant elements with this name (not this element), in document order. */
+  descendants(...args: NameArgs): ReadonlyArray<XmlElement> {
+    const name = nameOf(args)
+    const out: Array<XmlElement> = []
+    // Iterative, so arbitrarily deep trees can't overflow the stack.
+    const stack: Array<XmlNode> = [...this.children].reverse()
+    for (let c = stack.pop(); c !== undefined; c = stack.pop()) {
+      if (c._tag !== "XmlElement") continue
+      if (isNamed(c.name, name)) out.push(c)
+      for (let i = c.children.length - 1; i >= 0; i--) stack.push(c.children[i]!)
+    }
+    return out
+  }
+
+  /** The text content of the first child element with this name. */
+  text(...args: NameArgs): Option.Option<string> {
+    return Option.map(this.child(...args), (c) => c.textContent)
   }
 
   /** Concatenated text of all descendant text / CDATA nodes. */

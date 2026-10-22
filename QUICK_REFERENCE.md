@@ -21,6 +21,9 @@ Sax.named("item")                  // start/end events with that name
 // attributes
 Sax.getAttribute(startEvent, "id") // Option<string>
 
+// streaming selection: subtrees matching a path, as XmlElements
+Sax.select("//x:row[@r > 1]", { namespaces: { x: uri } })  // (Stream<SaxEvent>) => Stream<XmlElement>
+
 // constructors / matcher
 Sax.SaxEvent.StartElement({ ... })
 Sax.SaxEvent.$match(ev, { StartElement: ..., ... })
@@ -44,6 +47,20 @@ doc.root                                 // XmlElement
 el.elements                              // child elements
 el.attribute("name")                     // string | undefined
 el.textContent                           // string
+
+// by namespace URI + local name (a NameLike such as Ns.make(uri)(local), or (ns, local))
+el.child(name) / el.childElements(name)  // Option<XmlElement> / ReadonlyArray
+el.descendants(name)                     // document order
+el.attributeNS(name)                     // Option<string>
+el.text(name)                            // Option<string>: text of the first such child
+Xml.Ns.make(uri)("local")                // a name in a namespace; Xml.Ns.none, Xml.Ns.xml
+
+Xml.cursor(el, { base? })                // Cursor: .lang .space .base .parent .ancestors
+cursor.child / childElements / descendants
+
+Xml.XPath.compile(expr, { namespaces?, defaultNamespace? })  // Result<Path, XPathError>
+Xml.XPath.select / elements / cursors / first / string (path, doc | el | cursor)
+
 
 Xml.serialize(node)                      // string, names as written, always well-formed
 Xml.Writer.serialize(node | doc, opts?)  // Effect<string, SerializationError>, namespaces managed
