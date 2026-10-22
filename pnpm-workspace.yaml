@@ -39,7 +39,7 @@ catalog:
   # on any other component version, failing `pnpm install` itself. Read the
   # `components` table in node_modules/@effect/tsgo/dist/effect-tsgo.cjs
   # before bumping any of the three.
-  "@effect/tsgo": 0.55.0
+  "@effect/tsgo": 0.56.0
   # 0.6.0 depends on `effect` 4.0.0 (exact) and runs on the workspace
   # singleton (the `effect` override below), so no scoped override is needed.
   # Its `vite.config.ts` load calls Effect APIs, so an `effect` bump re-runs
