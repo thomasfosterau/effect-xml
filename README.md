@@ -116,6 +116,59 @@ list with reconstruction, and the **adoption agency algorithm** — so
 > per-spec; see [`src/Html/ROADMAP.md`](src/Html/ROADMAP.md) for the plan and the
 > html5lib-tests conformance gate.
 
+## Bytes and encodings
+
+Documents usually arrive as bytes, and the bytes say how to decode them. The
+`*Bytes` entry points detect the encoding instead of assuming UTF-8:
+
+```ts
+import { Html, Sax, Xml } from "effect-sax"
+
+// XML 1.0 Appendix F: byte order mark, then the XML declaration, then UTF-8.
+// UTF-8, UTF-16 and UTF-32 (either byte order, with or without a BOM),
+// ISO-8859-1, US-ASCII, and every encoding TextDecoder knows.
+const doc = yield* Xml.parseBytes(bytes)
+const streamed = yield* byteStream.pipe(Xml.parseBytesStream())
+const events = byteStream.pipe(Sax.tokenizeBytes())
+
+// An external hint (e.g. an HTTP charset) overrides the declaration, not a BOM.
+Xml.parseBytes(bytes, { encoding: "iso-8859-1" })
+
+// HTML uses the WHATWG sniffing algorithm: BOM, transport hint,
+// <meta charset> in the first 1024 bytes, then windows-1252.
+const page = yield* Html.parseDocumentBytes(bytes)
+```
+
+XML decoding is strict: invalid bytes fail with `InvalidByteSequence`, and an
+unknown or contradictory encoding with `UnsupportedEncoding`. HTML decodes
+invalid bytes to U+FFFD, as browsers do. Chunks may split multi-byte sequences
+anywhere. The sniffers and the decoding stream stage are exported as
+`Encoding.sniffXml`, `Encoding.sniffHtml` and `Encoding.decode`.
+
+## Resource limits
+
+Every parser enforces limits, so a hostile document fails with a typed
+`LimitExceeded { limit, max, position }` instead of exhausting the stack or the
+heap:
+
+| Limit | Default | Bounds |
+| ----- | ------- | ------ |
+| `maxDepth` | 1,024 | element nesting (in HTML, the tree's depth) |
+| `maxAttributes` | 1,024 | attributes on one element |
+| `maxNameLength` | 10,000 | element and attribute names, PI targets |
+| `maxTextLength` | 10,000,000 | one text node, CDATA section, comment, attribute value, PI or internal subset; also how much of one unfinished token is buffered while streaming |
+| `maxTotalBytes` | 1 GiB | the whole input (bytes, or UTF-16 code units for strings) |
+
+```ts
+import { Limits, Xml } from "effect-sax"
+
+Xml.parse(input, { limits: { maxDepth: 256 } })   // the rest keep their defaults
+Xml.parse(trusted, { limits: Limits.unlimited })  // or Infinity for any one
+```
+
+Tree building, serialization and `textContent` are iterative, so even with the
+limits switched off a deep document can't overflow the stack.
+
 ## Typed errors
 
 All failures are tagged and unioned under `SaxError`, so they narrow exhaustively:
@@ -132,12 +185,17 @@ Xml.parse(input).pipe(
     UnexpectedEndOfInput: (e) => ...,
     UnexpectedEndTag: (e) => ...,
     InvalidDocumentStructure: (e) => ...,
+    LimitExceeded: (e) => ...,
+    UnsupportedEncoding: (e) => ...,
+    InvalidByteSequence: (e) => ...,
   })
 )
 ```
 
-Every error carries a `position` (`offset`/`line`/`column`) and a human-readable
-`message`.
+Every error carries a human-readable `message`, and a `position`
+(`offset`/`line`/`column`) when it has one: the decoding errors report a byte
+`offset` instead, and `LimitExceeded` has no position when it is hit while
+decoding bytes.
 
 ## Options
 
@@ -147,6 +205,7 @@ Sax.tokenize({
   entities: { ... },                     // named-entity table override
   whitespace: "preserve" | "collapse",   // default "preserve"
   dropWhitespaceOnlyText: false,         // drop blank text nodes
+  limits: { maxDepth: 1024, ... },       // see "Resource limits"
 })
 
 Xml.parse(input, {

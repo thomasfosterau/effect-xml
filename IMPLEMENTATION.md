@@ -12,6 +12,9 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuil
 
 | File | Responsibility |
 | ---- | -------------- |
+| `src/Encoding.ts` | Byte input: XML (Appendix F) and HTML (WHATWG) encoding sniffing, strict decoding, the `decode` stream stage. |
+| `src/Limits.ts` | The `Limits` record and its defaults. |
+| `src/internal/guard.ts` | Enforces `Limits` over the lexer's input and events. |
 | `src/Position.ts` | `Position`/`Span` value types and offset/line/column arithmetic. |
 | `src/Error.ts` | `Data.TaggedError` classes unified under `SaxError`. |
 | `src/Name.ts` | Branded `TagName`/`AttrName`, the `QName` `Schema.Class`, namespace constants. |
@@ -60,6 +63,24 @@ The lexer is mutable for throughput, but `Sax.tokenize` wraps construction in
 `Stream.suspend`, so a fresh instance is created per materialization and the
 mutability is never observable.
 
+## Bytes and limits
+
+Byte input is a stage in front of the string pipeline: `Encoding.decode`
+buffers the first bytes until the encoding is known (four for the byte order
+mark and family, up to the end of the XML declaration, or 1024 for the HTML
+`<meta>` prescan), then decodes chunk by chunk. `TextDecoder` with
+`stream: true` carries multi-byte sequences across chunks; ISO-8859-1, US-ASCII
+and UTF-32 have small decoders of their own, since `TextDecoder` folds the
+first two into windows-1252 and lacks the third.
+
+Limits are checked by a `Guard` between the lexer and the event stream. The SAX
+stream lexes one token at a time and stops at the first violation, so a
+100,000-deep document fails after about a thousand tokens. Depth is counted at
+the SAX level only for XML; the HTML builders check their stack of open
+elements, since end tags are optional there. While streaming, the guard also
+fails once the token still being buffered outgrows `maxTextLength`, so an
+unterminated comment can't buffer forever.
+
 ## Type-safety choices
 
 - **Branded names.** A validated element name is a `TagName`, not a `string`, so
@@ -80,4 +101,7 @@ mutability is never observable.
 `bun test` covers: SAX structure/attributes/specials/whitespace/spans;
 exhaustive chunk-boundary equivalence; entity decoding and strict-vs-lenient
 behaviour; XML tree building, namespaces, serialization round-trips, and Schema
-integration; every typed error; and HTML tokenization + lenient building.
+integration; every typed error; and HTML tokenization + lenient building;
+encoding detection and decoding for every supported encoding at every small
+chunk size; and each resource limit, including 100,000-deep nesting, 100,000
+attributes and megabyte names failing within a time budget.

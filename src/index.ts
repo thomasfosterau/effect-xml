@@ -21,6 +21,8 @@
 export * as Sax from "./Sax.ts"
 export * as Xml from "./Xml/index.ts"
 export * as Html from "./Html/index.ts"
+export * as Encoding from "./Encoding.ts"
+export * as Limits from "./Limits.ts"
 
 export * from "./Error.ts"
 export * from "./Name.ts"

@@ -50,6 +50,8 @@ interface Frame {
 class Builder {
   private readonly namespaces: boolean
   private readonly stack: Array<Frame> = []
+  /** The frames that declare namespaces, so lookups don't walk the whole stack. */
+  private readonly scopes: Array<Map<string, string>> = []
   private readonly top: Array<XmlNode> = []
   private declaration: XmlDeclaration | null = null
   private doctype: XmlDoctype | null = null
@@ -61,12 +63,9 @@ class Builder {
   private resolvePrefix(prefix: string | null): string | null {
     if (prefix === "xml") return Namespaces.xml
     if (prefix === "xmlns") return Namespaces.xmlns
-    for (let i = this.stack.length - 1; i >= 0; i--) {
-      const b = this.stack[i]!.bindings
-      if (b !== null) {
-        const found = b.get(prefix ?? "")
-        if (found !== undefined) return found
-      }
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      const found = this.scopes[i]!.get(prefix ?? "")
+      if (found !== undefined) return found
     }
     return null
   }
@@ -181,6 +180,7 @@ class Builder {
       rawName: ev.name as string,
     }
     this.stack.push(provisional)
+    if (bindings !== null) this.scopes.push(bindings)
 
     return Effect.gen({ self: this }, function* () {
       const name = yield* this.resolve(ev.name as string, false, position)
@@ -200,7 +200,7 @@ class Builder {
 
       if (ev.selfClosing) {
         // Pop the provisional frame and emit a complete, childless element.
-        this.stack.pop()
+        this.pop()
         const el = new XmlElement({ name, attributes, children: [] })
         return yield* this.appendChild(el, position)
       }
@@ -215,8 +215,14 @@ class Builder {
     })
   }
 
-  private endElement(rawName: string, position: Position): Effect.Effect<void, SaxError> {
+  private pop(): Frame | undefined {
     const frame = this.stack.pop()
+    if (frame !== undefined && frame.bindings !== null) this.scopes.pop()
+    return frame
+  }
+
+  private endElement(rawName: string, position: Position): Effect.Effect<void, SaxError> {
+    const frame = this.pop()
     if (frame === undefined) {
       return Effect.fail(new UnexpectedEndTag({ name: rawName, position }))
     }

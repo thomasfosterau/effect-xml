@@ -13,7 +13,8 @@
  */
 import { Data, Effect, Option, Stream } from "effect"
 import type { SaxError } from "./Error.ts"
-import { Lexer, type LexEvent } from "./internal/lexer.ts"
+import { Guard } from "./internal/guard.ts"
+import { Lexer, type LexEvent, type LexOutput } from "./internal/lexer.ts"
 import { xmlEntities, htmlEntities } from "./internal/entities.ts"
 import {
   unsafeAttrName,
@@ -22,6 +23,8 @@ import {
   type TagName,
 } from "./Name.ts"
 import type { Span } from "./Position.ts"
+import { resolveLimits, type Limits } from "./Limits.ts"
+import * as Encoding from "./Encoding.ts"
 
 // -----------------------------------------------------------------------------
 // Public event model
@@ -100,6 +103,8 @@ export interface SaxOptions {
   readonly whitespace?: "preserve" | "collapse"
   /** Drop `Text` events that contain only whitespace (after the whitespace policy). */
   readonly dropWhitespaceOnlyText?: boolean
+  /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
+  readonly limits?: Partial<Limits>
 }
 
 /** @internal */
@@ -108,6 +113,7 @@ export interface ResolvedOptions {
   readonly entities: Record<string, string>
   readonly whitespace: "preserve" | "collapse"
   readonly dropWhitespaceOnlyText: boolean
+  readonly limits: Limits
 }
 
 /** @internal */
@@ -118,6 +124,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     entities: options?.entities ?? (mode === "html" ? htmlEntities : xmlEntities),
     whitespace: options?.whitespace ?? "preserve",
     dropWhitespaceOnlyText: options?.dropWhitespaceOnlyText ?? false,
+    limits: resolveLimits(options?.limits),
   }
 }
 
@@ -199,8 +206,35 @@ export const tokenize =
     const opts = resolveSaxOptions(options)
     return Stream.suspend(() => {
       const lexer = new Lexer({ mode: opts.mode, entities: opts.entities })
-      const body = input.pipe(Stream.map((chunk) => lexer.write(chunk)), Stream.flattenIterable)
-      const tail = Stream.unwrap(Effect.sync(() => Stream.fromIterable(lexer.end())))
+      const guard = new Guard(opts.limits, opts.mode === "xml")
+      // Lex token by token, so a limit stops the lexer at the offending token
+      // rather than after the whole chunk.
+      const drain = (): ReadonlyArray<LexOutput> => {
+        const out: Array<LexOutput> = []
+        for (let outs = lexer.pull(); outs !== null; outs = lexer.pull()) {
+          for (const o of outs) {
+            const over = o._tag === "Fault" ? null : guard.event(o)
+            out.push(over === null ? o : { _tag: "Fault", error: over })
+            if (over !== null || o._tag === "Fault") return out
+          }
+        }
+        return out
+      }
+      const write = (chunk: string): ReadonlyArray<LexOutput> => {
+        const over = guard.input(chunk.length, lexer)
+        if (over !== null) return [{ _tag: "Fault", error: over }]
+        lexer.push(chunk)
+        const outs = drain()
+        const pending = guard.pending(lexer)
+        return pending === null ? outs : [...outs, { _tag: "Fault", error: pending }]
+      }
+      const body = input.pipe(Stream.map(write), Stream.flattenIterable)
+      const tail = Stream.unwrap(
+        Effect.sync(() => {
+          lexer.close()
+          return Stream.fromIterable(drain())
+        })
+      )
       return Stream.concat(body, tail).pipe(
         Stream.flatMap((o) => {
           if (o._tag === "Fault") return Stream.fail(o.error)
@@ -210,6 +244,33 @@ export const tokenize =
       )
     })
   }
+
+/** Options for byte input: the SAX options plus an external encoding hint. */
+export interface SaxBytesOptions extends SaxOptions {
+  /**
+   * An external encoding hint, such as the `charset` of a `Content-Type`. It
+   * overrides the document's own declaration (or `<meta charset>`), but not a
+   * byte order mark.
+   */
+  readonly encoding?: string
+}
+
+/** @internal The decoding options that match a set of SAX options. */
+export const decodeOptions = (options: SaxBytesOptions | undefined): Encoding.DecodeOptions => ({
+  mode: options?.mode ?? "xml",
+  maxTotalBytes: resolveLimits(options?.limits).maxTotalBytes,
+  ...(options?.encoding !== undefined ? { encoding: options.encoding } : {}),
+})
+
+/**
+ * Turn a stream of bytes into a stream of SAX events. The encoding is detected
+ * from the input (see {@link Encoding.sniffXml} and {@link Encoding.sniffHtml}),
+ * and chunks may split multi-byte sequences anywhere.
+ */
+export const tokenizeBytes =
+  (options?: SaxBytesOptions) =>
+  <E, R>(input: Stream.Stream<Uint8Array, E, R>): Stream.Stream<SaxEvent, SaxError | E, R> =>
+    input.pipe(Encoding.decode(decodeOptions(options)), tokenize(options))
 
 /** Tokenize a complete in-memory string into a stream of SAX events. */
 export const tokenizeString = (

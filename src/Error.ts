@@ -128,6 +128,57 @@ export class UnboundNamespacePrefix extends Data.TaggedError(
   }
 }
 
+/** The resource limits a document can exceed (see {@link Limits}). */
+export type LimitName =
+  | "maxDepth"
+  | "maxAttributes"
+  | "maxNameLength"
+  | "maxTextLength"
+  | "maxTotalBytes"
+
+/**
+ * The input exceeded one of the configured resource limits. `position` is where
+ * the offending construct starts, or `null` when the limit was hit while
+ * decoding bytes (before there are any positions).
+ */
+export class LimitExceeded extends Data.TaggedError("LimitExceeded")<{
+  readonly limit: LimitName
+  readonly max: number
+  readonly position: Position | null
+}> {
+  override get message(): string {
+    const at = this.position === null ? "" : ` at ${showPosition(this.position)}`
+    return `Resource limit ${this.limit} (${this.max}) exceeded${at}`
+  }
+}
+
+/** The document's encoding could not be determined, is unknown, or contradicts its byte order mark. */
+export class UnsupportedEncoding extends Data.TaggedError("UnsupportedEncoding")<{
+  readonly encoding: string
+  readonly reason: string
+}> {
+  override get message(): string {
+    return `Unsupported encoding ${JSON.stringify(this.encoding)}: ${this.reason}`
+  }
+}
+
+/**
+ * The input bytes are not valid in the document's encoding. `offset` counts
+ * bytes from the start of the input; for multi-byte encodings decoded in
+ * chunks it is where the chunk containing the invalid sequence starts.
+ */
+export class InvalidByteSequence extends Data.TaggedError("InvalidByteSequence")<{
+  readonly encoding: string
+  readonly offset: number
+}> {
+  override get message(): string {
+    return `Invalid ${this.encoding} byte sequence in the input from byte ${this.offset}`
+  }
+}
+
+/** Errors produced while turning bytes into text. */
+export type DecodeError = UnsupportedEncoding | InvalidByteSequence
+
 /** Errors that can be produced by the lexer / SAX layer. */
 export type LexError =
   | UnexpectedCharacter
@@ -143,6 +194,8 @@ export type SaxError =
   | DuplicateAttribute
   | InvalidDocumentStructure
   | UnboundNamespacePrefix
+  | LimitExceeded
+  | DecodeError
 
 /** Type guard: is this value one of the library's tagged errors? */
 export const isSaxError = (u: unknown): u is SaxError =>
@@ -162,4 +215,7 @@ const saxErrorTags = new Set<string>([
   "DuplicateAttribute",
   "InvalidDocumentStructure",
   "UnboundNamespacePrefix",
+  "LimitExceeded",
+  "UnsupportedEncoding",
+  "InvalidByteSequence",
 ])

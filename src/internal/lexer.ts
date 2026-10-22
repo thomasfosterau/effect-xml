@@ -24,6 +24,7 @@
 import { Input, ParseError } from "@thomasfosterau/effect-parse"
 import {
   InvalidEntity,
+  type LimitExceeded,
   MalformedDeclaration,
   UnexpectedCharacter,
   UnexpectedEndOfInput,
@@ -56,7 +57,7 @@ export type LexEvent =
 /** A fatal fault. The SAX stream turns these into typed failures. */
 export interface LexFault {
   readonly _tag: "Fault"
-  readonly error: LexError
+  readonly error: LexError | LimitExceeded
 }
 
 export type LexOutput = LexEvent | LexFault
@@ -125,10 +126,14 @@ class Positions {
     const { buf, base } = this.source
     let { line, column } = this.pos
     // Lines: count the newlines in between; the column restarts after the last.
+    // Only the characters in between are scanned (an `indexOf` would run on to
+    // the next newline, which may be the end of a long buffer, every time).
     let last = -1
-    for (let nl = buf.indexOf("\n", this.index - base); nl !== -1 && nl < index - base; nl = buf.indexOf("\n", nl + 1)) {
-      line++
-      last = nl
+    for (let i = this.index - base; i < index - base; i++) {
+      if (buf.charCodeAt(i) === 10) {
+        line++
+        last = i
+      }
     }
     column = last === -1 ? column + (index - this.index) : index - base - last
     // Offsets: one per character, plus one per collapsed CRLF.
@@ -200,6 +205,21 @@ export class Lexer {
   end(): ReadonlyArray<LexOutput> {
     this.ended = true
     return this.drain()
+  }
+
+  /** Length of the input buffered for a token that is not complete yet. */
+  get pendingLength(): number {
+    return this.buf.length - this.cursor
+  }
+
+  /** Where the pending (incomplete) token starts. */
+  pendingPosition(): Position {
+    return this.at(this.cursor)
+  }
+
+  /** The position just past all the input written so far. */
+  position(): Position {
+    return this.at(this.buf.length)
   }
 
   /** Add input without lexing it (see {@link pull}). */

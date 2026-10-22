@@ -19,8 +19,11 @@
  */
 import { Effect, Stream } from "effect"
 import type { SaxError } from "../Error.ts"
+import { defaultLimits, resolveLimits, type Limits } from "../Limits.ts"
 import { QName } from "../Name.ts"
+import { origin, type Position } from "../Position.ts"
 import { convertLexEvent, resolveSaxOptions, type SaxEvent } from "../Sax.ts"
+import { depthExceeded, Guard, tryAccept } from "../internal/guard.ts"
 import { Lexer } from "../internal/lexer.ts"
 import {
   XmlCData,
@@ -314,6 +317,10 @@ class HtmlTreeBuilder {
   private formEl: MElement | null = null
   /** Quirks mode (no DOCTYPE, or a quirky one): affects e.g. <table> closing <p>. */
   private quirks = true
+  /** Where the token being processed starts, for limit failures. */
+  private position: Position = origin
+
+  constructor(private readonly limits: Limits = defaultLimits) {}
 
   // --- stack helpers -------------------------------------------------------
 
@@ -432,8 +439,15 @@ class HtmlTreeBuilder {
   private insertElement(name: string, attrs: Array<MAttr>, ns: string = HTML_NS): MElement {
     const el = mkElement(name, attrs, ns)
     this.insert(el)
-    this.open.push(el)
+    this.pushOpen(el)
     return el
+  }
+
+  /** Push onto the stack of open elements, throwing {@link LimitExceeded} past `maxDepth`. */
+  private pushOpen(el: MElement): void {
+    const over = depthExceeded(this.limits, this.open.length + 1, this.position)
+    if (over !== null) throw over
+    this.open.push(el)
   }
 
   private popUntilIncluding(name: string): void {
@@ -510,7 +524,7 @@ class HtmlTreeBuilder {
       if ("marker" in entry) continue
       const clone = mkElement(entry.name, entry.attrs.map((a) => ({ ...a })))
       this.insert(clone)
-      this.open.push(clone)
+      this.pushOpen(clone)
       this.afe[i] = clone
     }
   }
@@ -518,6 +532,7 @@ class HtmlTreeBuilder {
   // --- entry point ---------------------------------------------------------
 
   accept(ev: SaxEvent): void {
+    this.position = ev.span.start
     switch (ev._tag) {
       case "Doctype":
         if (this.mode === "initial") {
@@ -2287,7 +2302,7 @@ const cloneMNode = (node: MNode): MNode => {
   }
 }
 
-const toXmlNode = (node: MNode): XmlNode => {
+const toXmlLeaf = (node: Exclude<MNode, MElement>): XmlNode => {
   switch (node._t) {
     case "text":
       return new XmlText({ data: node.data })
@@ -2297,22 +2312,46 @@ const toXmlNode = (node: MNode): XmlNode => {
       return new XmlCData({ data: node.data })
     case "pi":
       return new XmlProcessingInstruction({ target: node.target, data: node.data })
-    case "element":
-      return new XmlElement({
-        name: new QName({ prefix: null, local: node.name, namespace: node.ns }),
-        attributes: node.attrs.map(
-          (a) =>
-            new XmlAttribute({
-              name: new QName({
-                prefix: a.prefix ?? null,
-                local: a.name,
-                namespace: a.ns ?? null,
-              }),
-              value: a.value,
-            })
-        ),
-        children: node.children.map(toXmlNode),
-      })
+  }
+}
+
+const toXmlElement = (node: MElement, children: ReadonlyArray<XmlNode>): XmlElement =>
+  new XmlElement({
+    name: new QName({ prefix: null, local: node.name, namespace: node.ns }),
+    attributes: node.attrs.map(
+      (a) =>
+        new XmlAttribute({
+          name: new QName({
+            prefix: a.prefix ?? null,
+            local: a.name,
+            namespace: a.ns ?? null,
+          }),
+          value: a.value,
+        })
+    ),
+    children,
+  })
+
+/** Convert to the immutable DOM, iteratively so deep trees can't overflow the stack. */
+const toXmlNode = (root: MNode): XmlNode => {
+  if (root._t !== "element") return toXmlLeaf(root)
+  // Post-order: an element is built once all of its children have been.
+  const stack: Array<{ readonly node: MElement; readonly children: Array<XmlNode> }> = [
+    { node: root, children: [] },
+  ]
+  for (;;) {
+    const frame = stack[stack.length - 1]!
+    const next = frame.node.children[frame.children.length]
+    if (next === undefined) {
+      stack.pop()
+      const el = toXmlElement(frame.node, frame.children)
+      if (stack.length === 0) return el
+      stack[stack.length - 1]!.children.push(el)
+    } else if (next._t === "element") {
+      stack.push({ node: next, children: [] })
+    } else {
+      frame.children.push(toXmlLeaf(next))
+    }
   }
 }
 
@@ -2322,11 +2361,17 @@ const toXmlNode = (node: MNode): XmlNode => {
 
 /** Build a full HTML document (with implicit html/head/body) from a SAX stream. */
 export const buildDocument = <E, R>(
-  events: Stream.Stream<SaxEvent, E, R>
+  events: Stream.Stream<SaxEvent, E, R>,
+  options?: { readonly limits?: Partial<Limits> }
 ): Effect.Effect<XmlDocument, SaxError | E, R> =>
   Effect.gen(function* () {
-    const builder = new HtmlTreeBuilder()
-    yield* Stream.runForEach(events, (ev) => Effect.sync(() => builder.accept(ev)))
+    const builder = new HtmlTreeBuilder(resolveLimits(options?.limits))
+    yield* Stream.runForEach(events, (ev) =>
+      Effect.suspend(() => {
+        const over = tryAccept(() => builder.accept(ev))
+        return over === null ? Effect.void : Effect.fail(over)
+      })
+    )
     return builder.finish()
   })
 
@@ -2338,24 +2383,32 @@ export const buildDocument = <E, R>(
  */
 export const buildDocumentString = (
   input: string,
-  options?: { readonly entities?: Record<string, string> }
+  options?: { readonly entities?: Record<string, string>; readonly limits?: Partial<Limits> }
 ): Effect.Effect<XmlDocument, SaxError> =>
-  Effect.sync(() => {
-    const opts = resolveSaxOptions(
-      options?.entities ? { mode: "html", entities: options.entities } : { mode: "html" }
-    )
+  Effect.suspend(() => {
+    const opts = resolveSaxOptions({
+      mode: "html",
+      ...(options?.entities ? { entities: options.entities } : {}),
+      ...(options?.limits ? { limits: options.limits } : {}),
+    })
     const lexer = new Lexer({ mode: "html", entities: opts.entities })
-    const builder = new HtmlTreeBuilder()
+    const guard = new Guard(opts.limits, false)
+    const builder = new HtmlTreeBuilder(opts.limits)
+    const over = guard.input(input.length, lexer)
+    if (over !== null) return Effect.fail(over)
     // One token at a time, so the builder can switch raw text off in between.
     lexer.push(input)
     lexer.close()
     for (let outs = lexer.pull(); outs !== null; outs = lexer.pull()) {
       for (const o of outs) {
         if (o._tag === "Fault") continue // HTML mode never faults
+        const limit = guard.event(o)
+        if (limit !== null) return Effect.fail(limit)
         const ev = convertLexEvent(o, opts)
-        if (ev !== null) builder.accept(ev)
+        const failed = ev === null ? null : tryAccept(() => builder.accept(ev))
+        if (failed !== null) return Effect.fail(failed)
         lexer.suppressRawText = builder.currentIsForeignContent()
       }
     }
-    return builder.finish()
+    return Effect.succeed(builder.finish())
   })
