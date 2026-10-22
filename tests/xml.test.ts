@@ -88,6 +88,11 @@ describe("Xml — Schema integration", () => {
     expect(Equal.equals(decoded.name, doc.root.name)).toBe(true)
   })
 
+  test("attribute values are normalized: literal whitespace becomes spaces, references stay", async () => {
+    const doc = await Effect.runPromise(Xml.parse(`<a v="x\ty\r\nz&#10;&#9;!"/>`))
+    expect(doc.root.attribute("v")).toBe("x y z\n\t!")
+  })
+
   test("Schema rejects malformed node data", () => {
     expect(() => Schema.decodeUnknownSync(Xml.XmlText)({ _tag: "XmlText", data: 42 })).toThrow()
   })

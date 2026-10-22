@@ -273,20 +273,23 @@ export const tokenize =
         const pending = guard.pending(lexer)
         return pending === null ? outs : [...outs, { _tag: "Fault", error: pending }]
       }
-      const body = input.pipe(Stream.map(write), Stream.flattenIterable)
-      const tail = Stream.unwrap(
-        Effect.sync(() => {
-          lexer.close()
-          return Stream.fromIterable(drain())
-        })
-      )
-      return Stream.concat(body, tail).pipe(
-        Stream.flatMap((o) => {
-          if (o._tag === "Fault") return Stream.fail(o.error)
+      // One stream per input chunk, not per event: the events of a chunk are
+      // converted in a loop, followed by the failure if there was one.
+      const emit = (outs: ReadonlyArray<LexOutput>): Stream.Stream<SaxEvent, SaxError> => {
+        const events: Array<SaxEvent> = []
+        for (const o of outs) {
+          if (o._tag === "Fault") return Stream.concat(Stream.fromIterable(events), Stream.fail(o.error))
           const ev = convertLexEvent(o, opts)
-          return ev === null ? Stream.empty : Stream.succeed(ev)
-        })
-      )
+          if (ev !== null) events.push(ev)
+        }
+        return Stream.fromIterable(events)
+      }
+      const body = input.pipe(Stream.flatMap((chunk) => emit(write(chunk))))
+      const tail = Stream.suspend(() => {
+        lexer.close()
+        return emit(drain())
+      })
+      return Stream.concat(body, tail)
     })
   }
 

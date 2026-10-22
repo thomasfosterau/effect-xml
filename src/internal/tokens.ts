@@ -123,10 +123,13 @@ const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
     strict: cfg.strict,
     inAttribute,
   }
+  const normalizeWhitespace = cfg.strict && inAttribute
   return (p: Parser.Parser<string>): P<string> =>
     Parser.withSpan(p).pipe(
       Parser.tryMap(([raw, span]): Result.Result<string, Issue> => {
-        const res = decode(raw, options)
+        // XML attribute-value normalization (§3.3.3): literal whitespace
+        // characters become spaces; those from character references stay.
+        const res = decode(normalizeWhitespace ? raw.replace(/[\t\n\r]/g, " ") : raw, options)
         if (res._tag === "Ok") return Result.succeed(res.value)
         if (!cfg.strict) return Result.succeed(raw)
         const { reference, reason, relativeOffset, limit } = res.error

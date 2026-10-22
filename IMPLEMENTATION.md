@@ -119,3 +119,13 @@ integration; every typed error; and HTML tokenization + lenient building;
 encoding detection and decoding for every supported encoding at every small
 chunk size; and each resource limit, including 100,000-deep nesting, 100,000
 attributes and megabyte names failing within a time budget.
+
+Conformance is gated by pass-count baselines against vendored official
+suites: html5lib tree construction and tokenization, and a selection of the
+W3C XML Conformance Test Suite (`tests/fixtures/xmlconf/`, see its README).
+The xmlconf report doubles as the to-do list for the strict lexer's remaining
+well-formedness gaps.
+
+`bench/parse.ts` measures the SAX stream, byte input, the DOM and streaming
+selection on a generated worksheet, and compares with `saxes`, `sax` and
+`fast-xml-parser` when they happen to be installed.

@@ -241,7 +241,17 @@ Xml.parse(input, {
 bun test          # run the suite
 bun run typecheck # tsc --noEmit
 bun run example   # the tour in examples/usage.ts
+bun bench/parse.ts [MB]   # parsing benchmarks on a generated worksheet
 ```
+
+Three conformance gates run with the tests, each asserting a pass-count
+baseline that may only go up:
+- html5lib tree construction (`tests/conformance.test.ts`);
+- html5lib tokenizer (`tests/html5lib-tokenizer.test.ts`);
+- the W3C XML Conformance Test Suite (`tests/xmlconf.test.ts`): XML 1.0 5th
+  edition and Namespaces 1.0, with the not-wf, valid and invalid documents
+  that need no external entities, and James Clark's expected outputs.
+  `XMLCONF_REPORT=1 bun test tests/xmlconf.test.ts` lists what fails.
 
 ## Design
 
