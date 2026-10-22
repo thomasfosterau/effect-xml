@@ -9,6 +9,7 @@
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { showPosition } from "./Position.ts";
+import { quote } from "./internal/quote.ts";
 
 /** The `Position` every error carries, as a schema (the `Position` interface's shape). */
 const ErrorPosition = Schema.Struct({
@@ -16,9 +17,6 @@ const ErrorPosition = Schema.Struct({
   line: Schema.Number,
   column: Schema.Number,
 });
-
-/** Quote a source excerpt for a message: a JSON string literal, escapes and all. */
-const quote = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
 /**
  * A character appeared where the grammar did not allow it.

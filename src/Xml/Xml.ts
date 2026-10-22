@@ -12,7 +12,7 @@ import * as Sax from "../Sax.ts";
 import { build, type BuildOptions } from "./TreeBuilder.ts";
 import type { XmlDocument, XmlNode } from "./Node.ts";
 import { serializeSync } from "./Writer.ts";
-import { Result } from "effect";
+import * as Result from "effect/Result";
 import type { Limits } from "../Limits.ts";
 
 /**
@@ -47,12 +47,14 @@ const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
  * Parse a complete XML string into a typed document.
  *
  * @example
+ * ```ts
  * import * as Effect from "effect/Effect"
  * import { Xml } from "effect-sax"
  *
  * const doc = Effect.runSync(Xml.parse(`<order id="7"><item>Widget</item></order>`))
  * console.log(doc.root.attribute("id")) // "7"
  * console.log(doc.root.textContent) // "Widget"
+ * ```
  *
  * @since 0.2.0
  * @category parsing
@@ -75,24 +77,32 @@ export const parseStream =
   <E, R>(input: Stream.Stream<string, E, R>): Effect.Effect<XmlDocument, SaxError | E, R> =>
     input.pipe(Sax.tokenize(saxOptions(options)), build(options ?? {}));
 
-/** Options for byte input: the parse options plus an external encoding hint. */
+/**
+ * Options for byte input: the parse options plus an external encoding hint.
+ *
+ * @since 0.3.0
+ * @category options
+ */
 export interface ParseBytesOptions extends ParseOptions {
   /**
    * An external encoding hint, such as the `charset` of a `Content-Type`. It
    * overrides the XML declaration, but not a byte order mark.
    */
-  readonly encoding?: string;
+  readonly encoding?: string | undefined;
 }
 
 const bytesOptions = (options: ParseBytesOptions | undefined): Sax.SaxBytesOptions => ({
   ...saxOptions(options),
-  ...(options?.encoding !== undefined ? { encoding: options.encoding } : {}),
+  encoding: options?.encoding,
 });
 
 /**
  * Parse an XML document from bytes, detecting its encoding (byte order mark,
  * then the XML declaration, then UTF-8; XML 1.0 Appendix F). Bytes that are
  * invalid in that encoding fail with `InvalidByteSequence`.
+ *
+ * @since 0.3.0
+ * @category parsing
  */
 export const parseBytes = (
   input: Uint8Array,
@@ -100,7 +110,12 @@ export const parseBytes = (
 ): Effect.Effect<XmlDocument, SaxError> =>
   Stream.make(input).pipe(Sax.tokenizeBytes(bytesOptions(options)), build(options ?? {}));
 
-/** Parse a stream of XML bytes into a typed document, detecting the encoding. */
+/**
+ * Parse a stream of XML bytes into a typed document, detecting the encoding.
+ *
+ * @since 0.3.0
+ * @category parsing
+ */
 export const parseBytesStream =
   (options?: ParseBytesOptions) =>
   <E, R>(input: Stream.Stream<Uint8Array, E, R>): Effect.Effect<XmlDocument, SaxError | E, R> =>
@@ -125,10 +140,18 @@ export const events = (
  * that can't be written as they are are patched, and characters XML forbids
  * become U+FFFD. For namespace management, a choice of policy, pretty-printing
  * or streaming, use the `Writer` module.
+ *
+ * @since 0.3.0
+ * @category serialization
  */
 export const serialize = (node: XmlNode): string =>
   Result.getOrThrow(serializeSync(node, { namespaces: "asIs", invalid: "replace" }));
 
-/** Serialize a whole document, including its declaration and DOCTYPE (see {@link serialize}). */
+/**
+ * Serialize a whole document, including its declaration and DOCTYPE (see {@link serialize}).
+ *
+ * @since 0.3.0
+ * @category serialization
+ */
 export const serializeDocument = (doc: XmlDocument): string =>
   Result.getOrThrow(serializeSync(doc, { namespaces: "asIs", invalid: "replace" }));

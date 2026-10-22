@@ -25,8 +25,10 @@ import type { SaxError } from "../Error.ts";
 import { defaultLimits, resolveLimits, type Limits } from "../Limits.ts";
 import { QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
-import { convertLexEvent, resolveSaxOptions, SaxEvent } from "../Sax.ts";
-import { depthExceeded, Guard, tryAccept } from "../internal/guard.ts";
+import { resolveSaxOptions, SaxEvent } from "../Sax.ts";
+import { convert as convertLexEvent } from "../internal/convert.ts";
+import { depthExceeded, Guard } from "../internal/guard.ts";
+import { acceptAll, tryAccept } from "../internal/unwind.ts";
 import { isFault, Lexer } from "../internal/lexer.ts";
 import {
   XmlCData,
@@ -2606,12 +2608,7 @@ export const buildDocument = <E, R>(
 ): Effect.Effect<XmlDocument, SaxError | E, R> =>
   Effect.gen(function* () {
     const builder = new HtmlTreeBuilder(resolveLimits(options?.limits));
-    yield* Stream.runForEach(events, (ev) =>
-      Effect.suspend(() => {
-        const over = tryAccept(() => builder.accept(ev));
-        return over === null ? Effect.void : Effect.fail(over);
-      }),
-    );
+    yield* acceptAll(events, (ev) => builder.accept(ev));
     return builder.finish();
   });
 

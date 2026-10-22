@@ -18,7 +18,14 @@
  * input to detect the encoding, then decodes chunk by chunk, carrying
  * multi-byte sequences that straddle a chunk boundary over to the next chunk.
  */
-import { Effect, Stream } from "effect";
+import * as Arr from "effect/Array";
+import * as Effect from "effect/Effect";
+import * as HashMap from "effect/HashMap";
+import * as HashSet from "effect/HashSet";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import * as Stream from "effect/Stream";
+import * as Str from "effect/String";
 import {
   InvalidByteSequence,
   LimitExceeded,
@@ -26,20 +33,37 @@ import {
   type DecodeError,
 } from "./Error.ts";
 
+/** `f(0) … f(n - 1)`; unlike `Arr.makeBy`, which clamps `n` to at least 1, empty for `n = 0`. */
+const times = <A>(n: number, f: (i: number) => A): Array<A> =>
+  Array.from({ length: n }, (_, i) => f(i));
+
 // -----------------------------------------------------------------------------
 // Detection
 // -----------------------------------------------------------------------------
 
-/** A TextDecoder for any label; it throws a RangeError for labels it doesn't know. */
-const makeTextDecoder = (
+/** A TextDecoder for any label; `None` for a label it doesn't know (the constructor throws a RangeError). */
+const makeTextDecoder: (
   label: string,
   options?: ConstructorParameters<typeof TextDecoder>[1],
-): TextDecoder => new TextDecoder(label as ConstructorParameters<typeof TextDecoder>[0], options);
+) => Option.Option<TextDecoder> = Option.liftThrowable(
+  (label: string, options?: ConstructorParameters<typeof TextDecoder>[1]) =>
+    new TextDecoder(label, options),
+);
 
-/** How the encoding was determined. */
+/**
+ * How the encoding was determined.
+ *
+ * @since 0.3.0
+ * @category models
+ */
 export type EncodingSource = "bom" | "hint" | "declaration" | "meta" | "default";
 
-/** The result of sniffing: the encoding, and how many leading bytes are a byte order mark. */
+/**
+ * The result of sniffing: the encoding, and how many leading bytes are a byte order mark.
+ *
+ * @since 0.3.0
+ * @category models
+ */
 export interface Detected {
   /** A canonical encoding name (a WHATWG name, or `utf-32le`/`utf-32be`). */
   readonly encoding: string;
@@ -47,16 +71,33 @@ export interface Detected {
   readonly source: EncodingSource;
 }
 
-/** Sniffing needs more bytes than are available yet. */
+/**
+ * Sniffing needs more bytes than are available yet.
+ *
+ * @since 0.3.0
+ * @category models
+ */
 export const NeedMore = { _tag: "NeedMore" } as const;
+/**
+ * The {@link NeedMore} value's type.
+ *
+ * @since 0.3.0
+ * @category models
+ */
 export type NeedMore = typeof NeedMore;
 
+/**
+ * Options for {@link sniffXml} and {@link sniffHtml}.
+ *
+ * @since 0.3.0
+ * @category options
+ */
 export interface SniffOptions {
   /**
    * An external encoding hint, such as the `charset` of a `Content-Type`. It
    * overrides the document's own declaration, but not a byte order mark.
    */
-  readonly encoding?: string;
+  readonly encoding?: string | undefined;
 }
 
 const bomOf = (b: Uint8Array): Detected | null => {
@@ -97,13 +138,23 @@ const unitSize = (family: Family): number =>
 const readAscii = (b: Uint8Array, family: Family, from: number): string => {
   const size = unitSize(family);
   const little = family.endsWith("le");
-  let out = "";
-  for (let i = from; i + size <= b.length; i += size) {
-    let unit = 0;
-    for (let k = 0; k < size; k++) unit += b[i + k]! * 2 ** (8 * (little ? k : size - 1 - k));
-    out += unit < 0x80 ? String.fromCharCode(unit) : "�";
-  }
-  return out;
+  const count = Math.max(0, Math.floor((b.length - from) / size));
+  const byte = (i: number): number => b[i] ?? 0;
+  // The code unit at `i`, from `size` bytes in the family's byte order.
+  const unitAt = (i: number): number =>
+    size === 1
+      ? byte(i)
+      : size === 2
+        ? little
+          ? byte(i) + byte(i + 1) * 0x100
+          : byte(i) * 0x100 + byte(i + 1)
+        : little
+          ? byte(i) + byte(i + 1) * 0x100 + byte(i + 2) * 0x10000 + byte(i + 3) * 0x1000000
+          : byte(i) * 0x1000000 + byte(i + 1) * 0x10000 + byte(i + 2) * 0x100 + byte(i + 3);
+  return times(count, (n) => {
+    const unit = unitAt(from + n * size);
+    return unit < 0x80 ? String.fromCharCode(unit) : "\uFFFD";
+  }).join("");
 };
 
 /** How far into the input the XML declaration may run before we stop looking. */
@@ -112,25 +163,26 @@ const DECLARATION_WINDOW = 4096;
 const declarationEncoding =
   /^<\?xml[ \t\r\n][^?>]*?\bencoding[ \t\r\n]*=[ \t\r\n]*(["'])([A-Za-z][A-Za-z0-9._-]*)\1/;
 
-/** Canonical name of an encoding label, or null when it is not one we can decode. */
+/**
+ * Canonical name of an encoding label, or null when it is not one we can decode.
+ *
+ * @since 0.3.0
+ * @category sniffing
+ */
 export const canonicalEncoding = (label: string): string | null => {
   const l = label.trim().toLowerCase();
   if (l === "utf-32" || l === "ucs-4" || l === "iso-10646-ucs-4") return "utf-32";
   if (l === "utf-16" || l === "iso-10646-ucs-2" || l === "ucs-2" || l === "csunicode")
     return "utf-16";
   if (l === "utf-32le" || l === "utf-32be") return l;
-  if (LATIN1_LABELS.has(l)) return "iso-8859-1";
-  if (ASCII_LABELS.has(l)) return "us-ascii";
-  try {
-    return makeTextDecoder(l).encoding;
-  } catch {
-    return null;
-  }
+  if (HashSet.has(LATIN1_LABELS, l)) return "iso-8859-1";
+  if (HashSet.has(ASCII_LABELS, l)) return "us-ascii";
+  return Option.getOrNull(Option.map(makeTextDecoder(l), (d) => d.encoding));
 };
 
 // WHATWG folds these into windows-1252, which differs from them in 0x80-0x9F.
 // XML means what they say, so they are decoded exactly.
-const LATIN1_LABELS = new Set([
+const LATIN1_LABELS = HashSet.make(
   "iso-8859-1",
   "iso_8859-1",
   "iso8859-1",
@@ -141,8 +193,8 @@ const LATIN1_LABELS = new Set([
   "ibm819",
   "csisolatin1",
   "iso_8859-1:1987",
-]);
-const ASCII_LABELS = new Set([
+);
+const ASCII_LABELS = HashSet.make(
   "us-ascii",
   "ascii",
   "ansi_x3.4-1968",
@@ -152,7 +204,7 @@ const ASCII_LABELS = new Set([
   "ibm367",
   "cp367",
   "csascii",
-]);
+);
 
 const isUtf16 = (e: string): boolean => e === "utf-16" || e === "utf-16le" || e === "utf-16be";
 const isUtf32 = (e: string): boolean => e === "utf-32" || e === "utf-32le" || e === "utf-32be";
@@ -185,6 +237,9 @@ const resolveHint = (hint: string, family: Family): Detected | UnsupportedEncodi
  * Detect the encoding of an XML document from its first bytes (XML 1.0
  * Appendix F). Returns {@link NeedMore} until enough bytes are available;
  * pass `final` once `head` is the whole input.
+ *
+ * @since 0.3.0
+ * @category sniffing
  */
 export const sniffXml = (
   head: Uint8Array,
@@ -193,6 +248,7 @@ export const sniffXml = (
 ): Detected | NeedMore | UnsupportedEncoding => {
   if (head.length < 4 && !final) return NeedMore;
   const bom = bomOf(head);
+  // SAFETY: `bomOf` only ever reports one of the five `Family` encodings.
   const family: Family | "ebcdic" = bom !== null ? (bom.encoding as Family) : familyOf(head);
   if (family === "ebcdic") return unsupported("EBCDIC", "EBCDIC encodings are not supported");
   if (bom === null && options?.encoding !== undefined) return resolveHint(options.encoding, family);
@@ -209,7 +265,8 @@ export const sniffXml = (
     // No encoding declared: UTF-8, or UTF-16/32 recognised from the bytes.
     return bom ?? { encoding: family, bomLength: 0, source: "default" };
   }
-  const label = match[2]!;
+  // The pattern's second group is the label; it is always present on a match.
+  const [, , label = ""] = match;
   const declared = canonicalEncoding(label);
   if (declared === null) return unsupported(label, "unknown encoding label");
   if (!agrees(declared, family, bom !== null)) {
@@ -231,6 +288,9 @@ const PRESCAN_WINDOW = 1024;
  * Detect the encoding of an HTML document (the WHATWG encoding-sniffing
  * algorithm): byte order mark, transport hint, `<meta charset>` prescan of the
  * first 1024 bytes, then windows-1252.
+ *
+ * @since 0.3.0
+ * @category sniffing
  */
 export const sniffHtml = (
   head: Uint8Array,
@@ -255,13 +315,8 @@ export const sniffHtml = (
 };
 
 /** An encoding label as HTML resolves it (WHATWG "get an encoding"). */
-const htmlEncoding = (label: string): string | null => {
-  try {
-    return makeTextDecoder(label.trim()).encoding;
-  } catch {
-    return null;
-  }
-};
+const htmlEncoding = (label: string): string | null =>
+  Option.getOrNull(Option.map(makeTextDecoder(label.trim()), (d) => d.encoding));
 
 /**
  * The WHATWG `<meta>` prescan, simplified to a scan over the bytes as Latin-1:
@@ -269,31 +324,43 @@ const htmlEncoding = (label: string): string | null => {
  * `http-equiv="content-type"` with a `content` naming one, decides.
  */
 const prescan = (bytes: Uint8Array): string | null => {
-  let text = "";
-  for (const b of bytes) text += String.fromCharCode(b);
+  // At most PRESCAN_WINDOW bytes, so one `fromCharCode` call takes them all.
+  const text = String.fromCharCode(...bytes);
   const tag = /<!--[\s\S]*?-->|<meta(?=[\s/])([^>]*)>?/gi;
-  for (let m = tag.exec(text); m !== null; m = tag.exec(text)) {
-    if (m[1] === undefined) continue;
-    const attrs = new Map<string, string>();
-    const attr = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"?|'([^']*)'?|([^\s>]*)))?/g;
-    for (let a = attr.exec(m[1]); a !== null; a = attr.exec(m[1])) {
-      const name = a[1]!.toLowerCase();
-      if (!attrs.has(name)) attrs.set(name, a[2] ?? a[3] ?? a[4] ?? "");
-    }
-    let label: string | null = null;
-    if (attrs.has("charset")) label = attrs.get("charset")!;
-    else if (attrs.get("http-equiv")?.toLowerCase() === "content-type" && attrs.has("content")) {
-      label = charsetFromContent(attrs.get("content")!);
-    }
-    if (label === null) continue;
-    const encoding = htmlEncoding(label);
-    if (encoding === null) continue;
-    // A document that got this far in ASCII can't be UTF-16 (WHATWG prescan).
-    if (encoding === "utf-16le" || encoding === "utf-16be") return "utf-8";
-    if (encoding === "x-user-defined") return "windows-1252";
-    return encoding;
-  }
-  return null;
+  return Option.getOrNull(
+    Arr.findFirst(Arr.fromIterable(text.matchAll(tag)), (m) =>
+      m[1] === undefined ? Option.none() : Option.fromNullishOr(metaEncoding(m[1])),
+    ),
+  );
+};
+
+/** The encoding one `<meta>` tag's attributes declare, if it declares a usable one. */
+const metaEncoding = (attributes: string): string | null => {
+  const attr = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"?|'([^']*)'?|([^\s>]*)))?/g;
+  // The first occurrence of an attribute wins.
+  const attrs = Arr.reduce(
+    Arr.fromIterable(attributes.matchAll(attr)),
+    HashMap.empty<string, string>(),
+    (acc, a) => {
+      const name = (a[1] ?? "").toLowerCase();
+      return HashMap.has(acc, name) ? acc : HashMap.set(acc, name, a[2] ?? a[3] ?? a[4] ?? "");
+    },
+  );
+  const charset = HashMap.get(attrs, "charset");
+  const content = HashMap.get(attrs, "content");
+  const label = Option.isSome(charset)
+    ? charset.value
+    : Option.getOrUndefined(HashMap.get(attrs, "http-equiv"))?.toLowerCase() === "content-type" &&
+        Option.isSome(content)
+      ? charsetFromContent(content.value)
+      : null;
+  if (label === null) return null;
+  const encoding = htmlEncoding(label);
+  if (encoding === null) return null;
+  // A document that got this far in ASCII can't be UTF-16 (WHATWG prescan).
+  if (encoding === "utf-16le" || encoding === "utf-16be") return "utf-8";
+  if (encoding === "x-user-defined") return "windows-1252";
+  return encoding;
 };
 
 /** WHATWG "extracting a character encoding from a meta element". */
@@ -312,18 +379,21 @@ interface Decoder {
 }
 
 /** TextDecoder, with the failing chunk's starting offset as the error offset. */
-const textDecoder = (encoding: string, fatal: boolean): Decoder => {
-  const decoder = makeTextDecoder(encoding, { fatal, ignoreBOM: true });
+const textDecoder = (decoder: TextDecoder): Decoder => {
   let offset = 0;
+  // A fatal TextDecoder throws a TypeError on invalid input.
+  const decodeChunk = Option.liftThrowable((bytes: Uint8Array, final: boolean) =>
+    decoder.decode(bytes, { stream: !final }),
+  );
   return {
     decode(bytes, final) {
-      try {
-        const out = decoder.decode(bytes, { stream: !final });
-        offset += bytes.length;
-        return out;
-      } catch {
-        return offset;
-      }
+      return Option.match(decodeChunk(bytes, final), {
+        onNone: () => offset,
+        onSome: (out) => {
+          offset += bytes.length;
+          return out;
+        },
+      });
     },
   };
 };
@@ -333,13 +403,12 @@ const singleByte = (max: number): Decoder => {
   let offset = 0;
   return {
     decode(bytes) {
-      let out = "";
-      for (let i = 0; i < bytes.length; i += 8192) {
-        const slice = bytes.subarray(i, i + 8192);
-        const bad = slice.findIndex((b) => b > max);
-        if (bad !== -1) return offset + i + bad;
-        out += String.fromCharCode(...slice);
-      }
+      const bad = bytes.findIndex((b) => b > max);
+      if (bad !== -1) return offset + bad;
+      // `fromCharCode` in slices of 8192, under the engines' argument-count limit.
+      const out = times(Math.ceil(bytes.length / 8192), (n) =>
+        String.fromCharCode(...bytes.subarray(n * 8192, (n + 1) * 8192)),
+      ).join("");
       offset += bytes.length;
       return out;
     },
@@ -352,16 +421,17 @@ const utf32 = (little: boolean): Decoder => {
   let carry = new Uint8Array(0);
   return {
     decode(bytes, final) {
-      const all = carry.length === 0 ? bytes : concat(carry, bytes);
-      const whole = all.length - (all.length % 4);
-      if (final && whole !== all.length) return offset + whole;
+      const all = carry.byteLength === 0 ? bytes : concat(carry, bytes);
+      const whole = all.byteLength - (all.byteLength % 4);
+      if (final && whole !== all.byteLength) return offset + whole;
       const view = new DataView(all.buffer, all.byteOffset, whole);
-      let out = "";
-      for (let i = 0; i < whole; i += 4) {
-        const cp = view.getUint32(i, little);
-        if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return offset + i;
-        out += String.fromCodePoint(cp);
-      }
+      const codePoints = times(whole / 4, (n) => view.getUint32(n * 4, little));
+      const bad = codePoints.findIndex((cp) => cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff));
+      if (bad !== -1) return offset + bad * 4;
+      // `fromCodePoint` in slices of 8192, under the engines' argument-count limit.
+      const out = times(Math.ceil(codePoints.length / 8192), (n) =>
+        String.fromCodePoint(...codePoints.slice(n * 8192, (n + 1) * 8192)),
+      ).join("");
       offset += whole;
       carry = all.slice(whole);
       return out;
@@ -369,19 +439,28 @@ const utf32 = (little: boolean): Decoder => {
   };
 };
 
+/** The encodings decoded here rather than by TextDecoder. */
+interface OwnDecoders {
+  readonly [encoding: string]: () => Decoder;
+}
+const OWN_DECODERS: OwnDecoders = {
+  "iso-8859-1": () => singleByte(0xff),
+  "us-ascii": () => singleByte(0x7f),
+  "utf-32le": () => utf32(true),
+  "utf-32be": () => utf32(false),
+};
+
+/**
+ * The decoder for a canonical encoding name. Sniffing only reports names that
+ * `canonicalEncoding` / TextDecoder accept, so the TextDecoder always exists.
+ */
 const decoderFor = (encoding: string, fatal: boolean): Decoder => {
-  switch (encoding) {
-    case "iso-8859-1":
-      return singleByte(0xff);
-    case "us-ascii":
-      return singleByte(0x7f);
-    case "utf-32le":
-      return utf32(true);
-    case "utf-32be":
-      return utf32(false);
-    default:
-      return textDecoder(encoding, fatal);
-  }
+  const own = OWN_DECODERS[encoding];
+  if (own !== undefined) return own();
+  return Option.match(makeTextDecoder(encoding, { fatal, ignoreBOM: true }), {
+    onNone: (): Decoder => ({ decode: () => 0 }),
+    onSome: textDecoder,
+  });
 };
 
 const concat = (a: Uint8Array, b: Uint8Array): Uint8Array => {
@@ -395,11 +474,17 @@ const concat = (a: Uint8Array, b: Uint8Array): Uint8Array => {
 // Streaming
 // -----------------------------------------------------------------------------
 
+/**
+ * Options for {@link decode} and {@link decodeBytes}.
+ *
+ * @since 0.3.0
+ * @category options
+ */
 export interface DecodeOptions extends SniffOptions {
   /** `"xml"` (default) sniffs per XML 1.0 Appendix F and decodes strictly; `"html"` per WHATWG, leniently. */
-  readonly mode?: "xml" | "html";
+  readonly mode?: "xml" | "html" | undefined;
   /** Fail with {@link LimitExceeded} once the input is longer than this many bytes. */
-  readonly maxTotalBytes?: number;
+  readonly maxTotalBytes?: number | undefined;
 }
 
 /** @internal The decoding state machine behind {@link decode}. */
@@ -446,13 +531,19 @@ export class ByteDecoder {
     this.head = new Uint8Array(0);
     this.encoding = found.encoding;
     this.skipped = found.bomLength;
-    this.decoder = decoderFor(found.encoding, this.options.mode !== "html");
-    return this.run(head.subarray(found.bomLength), final);
+    const decoder = decoderFor(found.encoding, this.options.mode !== "html");
+    this.decoder = decoder;
+    return this.runWith(decoder, head.subarray(found.bomLength), final);
   }
 
   private run(bytes: Uint8Array, final: boolean): string | DecodeError {
-    const out = this.decoder!.decode(bytes, final);
-    return typeof out === "number"
+    // Only called once sniffing has chosen a decoder.
+    return this.decoder === null ? "" : this.runWith(this.decoder, bytes, final);
+  }
+
+  private runWith(decoder: Decoder, bytes: Uint8Array, final: boolean): string | DecodeError {
+    const out = decoder.decode(bytes, final);
+    return Predicate.isNumber(out)
       ? new InvalidByteSequence({ encoding: this.encoding, offset: out + this.skipped })
       : out;
   }
@@ -462,6 +553,9 @@ export class ByteDecoder {
  * Decode a stream of bytes into a stream of text, detecting the encoding from
  * the input (see {@link sniffXml} and {@link sniffHtml}). Chunks may split
  * multi-byte sequences anywhere.
+ *
+ * @since 0.3.0
+ * @category decoding
  */
 export const decode =
   (options?: DecodeOptions) =>
@@ -471,13 +565,18 @@ export const decode =
     Stream.suspend(() => {
       const decoder = new ByteDecoder(options);
       const lift = (out: string | DecodeError | LimitExceeded) =>
-        typeof out === "string" ? Effect.succeed(out) : Effect.fail(out);
+        Predicate.isString(out) ? Effect.succeed(out) : Effect.fail(out);
       const body = input.pipe(Stream.mapEffect((chunk) => lift(decoder.write(chunk))));
       const tail = Stream.fromEffect(Effect.suspend(() => lift(decoder.end())));
-      return Stream.concat(body, tail).pipe(Stream.filter((s) => s.length > 0));
+      return Stream.concat(body, tail).pipe(Stream.filter(Str.isNonEmpty));
     });
 
-/** Decode a complete byte array into text, detecting the encoding. */
+/**
+ * Decode a complete byte array into text, detecting the encoding.
+ *
+ * @since 0.3.0
+ * @category decoding
+ */
 export const decodeBytes = (
   bytes: Uint8Array,
   options?: DecodeOptions,
@@ -485,7 +584,7 @@ export const decodeBytes = (
   Effect.suspend(() => {
     const decoder = new ByteDecoder(options);
     const first = decoder.write(bytes);
-    if (typeof first !== "string") return Effect.fail(first);
+    if (!Predicate.isString(first)) return Effect.fail(first);
     const rest = decoder.end();
-    return typeof rest === "string" ? Effect.succeed(first + rest) : Effect.fail(rest);
+    return Predicate.isString(rest) ? Effect.succeed(first + rest) : Effect.fail(rest);
   });

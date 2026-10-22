@@ -7,6 +7,7 @@
     "src/Html/index.ts",
     "tests/**/*.test.ts",
     "examples/usage.ts",
+    "bench/parse.ts",
     "vite.config.ts"
   ],
   "ignorePatterns": ["**/dist/**", "**/docs/**", "**/coverage/**", "tests/fixtures/**"],
@@ -49,7 +50,11 @@
       },
       {
         "name": "public",
-        "patterns": ["src/{Error,Name,Position,Sax,index}.ts", "src/Xml/**", "src/Html/**"]
+        "patterns": [
+          "src/{Encoding,Error,Limits,Name,Position,Sax,index}.ts",
+          "src/Xml/**",
+          "src/Html/**"
+        ]
       },
       {
         "name": "tests",

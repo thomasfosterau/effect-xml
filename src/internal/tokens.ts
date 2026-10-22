@@ -32,7 +32,7 @@ import * as Option from "effect/Option";
 // Tokens
 // -----------------------------------------------------------------------------
 
-export interface TokAttribute {
+interface TokAttribute {
   readonly name: string;
   readonly value: string;
   readonly start: number;
@@ -75,9 +75,6 @@ export type Tok =
     } & Offsets)
   /** A reference to a DTD entity whose replacement text contains markup (expanded by the SAX layer). */
   | ({ readonly _tag: "EntityReference"; readonly name: string } & Offsets);
-
-/** Matchers and guards for {@link Tok}. */
-export const Tok = Data.taggedEnum<Tok>();
 
 /** Why a strict (XML) grammar rejected its input. */
 export type Issue =

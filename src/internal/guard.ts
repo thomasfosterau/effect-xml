@@ -9,6 +9,7 @@
 import { LimitExceeded, type LimitName } from "../Error.ts";
 import type { Limits } from "../Limits.ts";
 import type { Position } from "../Position.ts";
+import type { Span } from "../Position.ts";
 import type { LexEvent, Lexer } from "./lexer.ts";
 
 export class Guard {
@@ -43,41 +44,56 @@ export class Guard {
   }
 
   /** Check one event. */
+  // A `switch`, not a `$match` table: this runs once per token, and only a
+  // switch lets V8 inline the cases (see `vite.config.ts`).
   event(ev: LexEvent): LimitExceeded | null {
-    const { maxNameLength: names, maxTextLength: text } = this.limits;
     switch (ev._tag) {
-      case "StartElement": {
-        if (ev.name.length > names) return this.fail("maxNameLength", ev.span.start);
-        if (ev.attributes.length > this.limits.maxAttributes)
-          return this.fail("maxAttributes", ev.span.start);
-        for (const a of ev.attributes) {
-          if (a.name.length > names) return this.fail("maxNameLength", a.span.start);
-          if (a.value.length > text) return this.fail("maxTextLength", a.span.start);
-        }
-        if (this.countDepth && !ev.selfClosing && ++this.depth > this.limits.maxDepth) {
-          return this.fail("maxDepth", ev.span.start);
-        }
-        return null;
-      }
+      case "StartElement":
+        return this.startElement(ev);
       case "EndElement":
         if (this.countDepth && this.depth > 0) this.depth--;
         return null;
       case "Text":
       case "CData":
       case "Comment":
-        return ev.data.length > text ? this.fail("maxTextLength", ev.span.start) : null;
+        return this.data(ev);
       case "ProcessingInstruction":
-        if (ev.target.length > names) return this.fail("maxNameLength", ev.span.start);
-        return ev.data.length > text ? this.fail("maxTextLength", ev.span.start) : null;
+        return ev.target.length > this.limits.maxNameLength
+          ? this.fail("maxNameLength", ev.span.start)
+          : this.data(ev);
       case "Doctype":
-        if (ev.name.length > names) return this.fail("maxNameLength", ev.span.start);
-        return (ev.internalSubset?.length ?? 0) > text
+        if (ev.name.length > this.limits.maxNameLength)
+          return this.fail("maxNameLength", ev.span.start);
+        return (ev.internalSubset?.length ?? 0) > this.limits.maxTextLength
           ? this.fail("maxTextLength", ev.span.start)
           : null;
       case "XmlDeclaration":
       case "EntityReference":
         return null;
     }
+  }
+
+  private data(ev: { readonly data: string; readonly span: Span }): LimitExceeded | null {
+    return ev.data.length > this.limits.maxTextLength
+      ? this.fail("maxTextLength", ev.span.start)
+      : null;
+  }
+
+  private startElement(ev: Extract<LexEvent, { _tag: "StartElement" }>): LimitExceeded | null {
+    const { maxNameLength: names, maxTextLength: text } = this.limits;
+    if (ev.name.length > names) return this.fail("maxNameLength", ev.span.start);
+    if (ev.attributes.length > this.limits.maxAttributes)
+      return this.fail("maxAttributes", ev.span.start);
+    const over = ev.attributes.find((a) => a.name.length > names || a.value.length > text);
+    if (over !== undefined)
+      return this.fail(
+        over.name.length > names ? "maxNameLength" : "maxTextLength",
+        over.span.start,
+      );
+    if (this.countDepth && !ev.selfClosing && ++this.depth > this.limits.maxDepth) {
+      return this.fail("maxDepth", ev.span.start);
+    }
+    return null;
   }
 }
 
@@ -90,14 +106,3 @@ export const depthExceeded = (
   depth > limits.maxDepth
     ? new LimitExceeded({ limit: "maxDepth", max: limits.maxDepth, position })
     : null;
-
-/** Run a tree-builder step, returning the {@link LimitExceeded} it throws, if any. */
-export const tryAccept = (accept: () => void): LimitExceeded | null => {
-  try {
-    accept();
-    return null;
-  } catch (e) {
-    if (e instanceof LimitExceeded) return e;
-    throw e;
-  }
-};

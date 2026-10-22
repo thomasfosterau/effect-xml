@@ -44,4 +44,11 @@ export * from "./TreeConstruction.ts";
  * @category parsing
  */
 export * from "./Html.ts";
-export { serialize, serializeFragment } from "./Serialize.ts";
+
+/**
+ * HTML serialization (the WHATWG fragment-serialization algorithm).
+ *
+ * @since 0.3.0
+ * @category serialization
+ */
+export * from "./Serialize.ts";

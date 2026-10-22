@@ -13,24 +13,22 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as HashMap from "effect/HashMap";
-import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import {
-  DuplicateAttribute,
   InvalidDocumentStructure,
   MismatchedEndTag,
   UnboundNamespacePrefix,
   UnexpectedEndTag,
   type SaxError,
 } from "../Error.ts";
+import { resolveAttributes } from "../internal/attributes.ts";
 import { Namespaces, QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
 import { SaxEvent, type Attribute } from "../Sax.ts";
 import {
-  XmlAttribute,
   XmlCData,
   XmlComment,
   XmlDeclaration,
@@ -201,26 +199,9 @@ class Builder {
     const position = ev.span.start;
     // This element's own xmlns declarations are in scope for its name and attributes.
     const bindings = this.collectBindings(ev.attributes);
-    const seen = MutableHashSet.empty<string>();
     // In document order: the first duplicate or unbound prefix is the one reported.
-    const none: Result.Result<Array<XmlAttribute>, SaxError> = Result.succeed([]);
-    const attributes = Arr.reduce(ev.attributes, none, (acc, a) =>
-      Result.flatMap(acc, (list) => {
-        if (MutableHashSet.has(seen, a.name)) {
-          return Result.fail(
-            new DuplicateAttribute({
-              element: ev.name,
-              attribute: a.name,
-              position: a.span.start,
-            }),
-          );
-        }
-        MutableHashSet.add(seen, a.name);
-        return Result.map(this.resolve(a.name, true, a.span.start, bindings), (qname) => {
-          list.push(new XmlAttribute({ name: qname, value: a.value }));
-          return list;
-        });
-      }),
+    const attributes = resolveAttributes(ev.name, ev.attributes, (name, at) =>
+      this.resolve(name, true, at, bindings),
     );
     const opened = Result.flatMap(this.resolve(ev.name, false, position, bindings), (name) =>
       Result.map(attributes, (attributes) => ({ name, attributes })),

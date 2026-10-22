@@ -56,7 +56,7 @@ export interface EntityOptions {
   /** When true, an unknown/unterminated reference is a hard error; when false it is left verbatim. */
   readonly strict: boolean;
   /** Apply the ambiguous-ampersand rule (the value is an attribute value). */
-  readonly inAttribute?: boolean;
+  readonly inAttribute?: boolean | undefined;
   /** Entities declared in a DTD, resolved when referenced (XML only; see `dtd.ts`). */
   readonly dtd?: EntityResolver | undefined;
 }

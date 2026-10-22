@@ -16,11 +16,13 @@ import type { SaxEvent } from "../Sax.ts";
  * Parse an HTML string into a lenient DOM fragment (forest of top-level nodes).
  *
  * @example
+ * ```ts
  * import * as Effect from "effect/Effect"
  * import { Html } from "effect-sax"
  *
  * const nodes = Effect.runSync(Html.parseFragment("<p>Hi <b>there<br>!</p>"))
  * console.log(nodes.length) // 1
+ * ```
  *
  * @since 0.2.0
  * @category parsing
@@ -51,12 +53,14 @@ export const parseFragmentStream =
  * templates and foreign (SVG / MathML) content.
  *
  * @example
+ * ```ts
  * import * as Effect from "effect/Effect"
  * import { Html, Xml } from "effect-sax"
  *
  * const doc = Effect.runSync(Html.parseDocument("<b>1<i>2</b>3</i>"))
  * console.log(Xml.serialize(doc.root))
  * // <html><head/><body><b>1<i>2</i></b><i>3</i></body></html>
+ * ```
  *
  * @since 0.2.0
  * @category parsing
@@ -77,10 +81,15 @@ export const parseDocumentStream =
   <E, R>(input: Stream.Stream<string, E, R>): Effect.Effect<XmlDocument, SaxError | E, R> =>
     buildDocument(input.pipe(tokenize(options)), options);
 
-/** Options for HTML byte input: the HTML options plus a transport-layer encoding hint. */
+/**
+ * Options for HTML byte input: the HTML options plus a transport-layer encoding hint.
+ *
+ * @since 0.3.0
+ * @category options
+ */
 export interface HtmlBytesOptions extends HtmlOptions {
   /** The transport layer's encoding (e.g. a `Content-Type` charset). A byte order mark still wins. */
-  readonly encoding?: string;
+  readonly encoding?: string | undefined;
 }
 
 const htmlDecodeOptions = (options: HtmlBytesOptions | undefined) =>
@@ -90,6 +99,9 @@ const htmlDecodeOptions = (options: HtmlBytesOptions | undefined) =>
  * Parse an HTML document from bytes, detecting the encoding with the WHATWG
  * sniffing algorithm (byte order mark, transport hint, `<meta charset>`
  * prescan, then windows-1252). Invalid bytes decode to U+FFFD, as in browsers.
+ *
+ * @since 0.3.0
+ * @category parsing
  */
 export const parseDocumentBytes = (
   input: Uint8Array,
@@ -99,7 +111,12 @@ export const parseDocumentBytes = (
     Effect.flatMap((text) => buildDocumentString(text, options)),
   );
 
-/** Parse a stream of HTML bytes into a full document, detecting the encoding. */
+/**
+ * Parse a stream of HTML bytes into a full document, detecting the encoding.
+ *
+ * @since 0.3.0
+ * @category parsing
+ */
 export const parseDocumentBytesStream =
   (options?: HtmlBytesOptions) =>
   <E, R>(input: Stream.Stream<Uint8Array, E, R>): Effect.Effect<XmlDocument, SaxError | E, R> =>

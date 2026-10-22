@@ -21,9 +21,18 @@ import { MalformedDeclaration } from "./Error.ts";
 import { Dtd } from "./internal/dtd.ts";
 import { applyDefaults, Expander } from "./internal/expansion.ts";
 import { Guard } from "./internal/guard.ts";
-import { LexEvent, Lexer, type LexOutput } from "./internal/lexer.ts";
+import {
+  isDoctypeEvent,
+  isEntityReferenceEvent,
+  isFault,
+  isStartElementEvent,
+  Lexer,
+  type LexOutput,
+} from "./internal/lexer.ts";
+import { convertBatch } from "./internal/convert.ts";
+import { quote } from "./internal/quote.ts";
 import { xmlEntities, htmlEntities } from "./internal/entities.ts";
-import { unsafeAttrName, unsafeTagName, type AttrName, type TagName } from "./Name.ts";
+import type { AttrName, TagName } from "./Name.ts";
 import type { Span } from "./Position.ts";
 import { resolveLimits, type Limits } from "./Limits.ts";
 import * as Encoding from "./Encoding.ts";
@@ -220,71 +229,6 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
 // Conversion
 // -----------------------------------------------------------------------------
 
-const isWhitespaceOnly = (s: string): boolean => /^\s*$/.test(s);
-
-/** Convert a lexer event to a public event, applying whitespace policy. Returns null to drop. */
-/** @internal Convert a raw lexer event into a SAX event (used by coupled drivers). */
-export const convertLexEvent = (ev: LexEvent, opts: ResolvedOptions): SaxEvent | null =>
-  matchLexEvent(ev, convertersFor(opts));
-
-const matchLexEvent = LexEvent.$match;
-
-/** The per-kind conversions for one options object (built once per options, not per event). */
-const converters = new WeakMap<ResolvedOptions, ReturnType<typeof makeConverters>>();
-const convertersFor = (opts: ResolvedOptions): ReturnType<typeof makeConverters> => {
-  const cached = converters.get(opts);
-  if (cached !== undefined) return cached;
-  const made = makeConverters(opts);
-  converters.set(opts, made);
-  return made;
-};
-
-const makeConverters = (opts: ResolvedOptions) => ({
-  StartElement: (ev: Extract<LexEvent, { _tag: "StartElement" }>): SaxEvent | null =>
-    SaxEvent.StartElement({
-      name: unsafeTagName(ev.name),
-      attributes: ev.attributes.map((a) => ({
-        name: unsafeAttrName(a.name),
-        value: a.value,
-        span: a.span,
-      })),
-      selfClosing: ev.selfClosing,
-      span: ev.span,
-    }),
-  EndElement: (ev: Extract<LexEvent, { _tag: "EndElement" }>): SaxEvent | null =>
-    SaxEvent.EndElement({ name: unsafeTagName(ev.name), span: ev.span }),
-  Text: (ev: Extract<LexEvent, { _tag: "Text" }>): SaxEvent | null => {
-    const data = opts.whitespace === "collapse" ? ev.data.replace(/\s+/g, " ").trim() : ev.data;
-    if (opts.dropWhitespaceOnlyText && isWhitespaceOnly(data)) return null;
-    return SaxEvent.Text({ data, span: ev.span });
-  },
-  CData: (ev: Extract<LexEvent, { _tag: "CData" }>): SaxEvent | null =>
-    SaxEvent.CData({ data: ev.data, span: ev.span }),
-  Comment: (ev: Extract<LexEvent, { _tag: "Comment" }>): SaxEvent | null =>
-    SaxEvent.Comment({ data: ev.data, span: ev.span }),
-  ProcessingInstruction: (
-    ev: Extract<LexEvent, { _tag: "ProcessingInstruction" }>,
-  ): SaxEvent | null =>
-    SaxEvent.ProcessingInstruction({ target: ev.target, data: ev.data, span: ev.span }),
-  Doctype: (ev: Extract<LexEvent, { _tag: "Doctype" }>): SaxEvent | null =>
-    SaxEvent.Doctype({
-      name: ev.name,
-      publicId: ev.publicId,
-      systemId: ev.systemId,
-      internalSubset: ev.internalSubset,
-      span: ev.span,
-    }),
-  XmlDeclaration: (ev: Extract<LexEvent, { _tag: "XmlDeclaration" }>): SaxEvent | null =>
-    SaxEvent.XmlDeclaration({
-      version: ev.version,
-      encoding: ev.encoding,
-      standalone: ev.standalone,
-      span: ev.span,
-    }),
-  // Expanded before conversion (see `tokenize`).
-  EntityReference: (): SaxEvent | null => null,
-});
-
 // -----------------------------------------------------------------------------
 // Streaming API
 // -----------------------------------------------------------------------------
@@ -295,10 +239,12 @@ const makeConverters = (opts: ResolvedOptions) => ({
  * across them.
  *
  * @example
+ * ```ts
  * import { Stream } from "effect"
  * import { Sax } from "effect-sax"
  *
  * Stream.fromIterable(["<roo", "t>hi</root>"]).pipe(Sax.tokenize())
+ * ```
  *
  * @since 0.2.0
  * @category tokenizing
@@ -309,50 +255,41 @@ export const tokenize =
     const opts = resolveSaxOptions(options);
     return Stream.suspend(() => {
       const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined;
-      const lexer = new Lexer({
-        mode: opts.mode,
-        entities: opts.entities,
-        ...(dtd !== undefined ? { dtd } : {}),
-      });
+      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities, dtd });
       const expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
       const guard = new Guard(opts.limits, opts.mode === "xml");
       /** Interpret the DTD-related outputs (with `dtd: "internal"`). */
       const interpret = (o: LexOutput): ReadonlyArray<LexOutput> => {
         if (dtd === undefined || expander === undefined) return [o];
-        switch (o._tag) {
-          case "Doctype": {
-            const error = o.internalSubset === null ? null : dtd.declare(o.internalSubset);
-            if (error === null) return [o];
-            const found = o.internalSubset!.slice(error.offset, error.offset + 1);
-            const fault = new MalformedDeclaration({
-              construct: "DOCTYPE internal subset",
-              expected: error.expected,
-              found: found === "" ? "end of input" : JSON.stringify(found),
-              position: o.span.start,
-            });
-            return [{ _tag: "Fault", error: fault }];
-          }
-          case "EntityReference":
-            return expander.expand(o);
-          case "StartElement":
-            return [applyDefaults(dtd, o)];
-          default:
-            return [o];
+        if (isDoctypeEvent(o)) {
+          const subset = o.internalSubset;
+          const error = subset === null ? null : dtd.declare(subset);
+          if (subset === null || error === null) return [o];
+          const found = subset.slice(error.offset, error.offset + 1);
+          const fault = new MalformedDeclaration({
+            construct: "DOCTYPE internal subset",
+            expected: error.expected,
+            found: found === "" ? "end of input" : quote(found),
+            position: o.span.start,
+          });
+          return [{ _tag: "Fault", error: fault }];
         }
+        if (isEntityReferenceEvent(o)) return expander.expand(o);
+        if (isStartElementEvent(o)) return [applyDefaults(dtd, o)];
+        return [o];
       };
       // Lex token by token, so a limit stops the lexer at the offending token
-      // rather than after the whole chunk.
+      // rather than after the whole chunk; the first fault ends the batch.
+      let out: Array<LexOutput> = [];
+      /** Keep one output; `false` once it is (or has become) a fault, ending the batch. */
+      const accept = (o: LexOutput): boolean => {
+        const over = isFault(o) ? null : guard.event(o);
+        out.push(over === null ? o : { _tag: "Fault", error: over });
+        return over === null && !isFault(o);
+      };
       const drain = (): ReadonlyArray<LexOutput> => {
-        const out: Array<LexOutput> = [];
-        for (let outs = lexer.pull(); outs !== null; outs = lexer.pull()) {
-          for (const raw of outs) {
-            for (const o of interpret(raw)) {
-              const over = o._tag === "Fault" ? null : guard.event(o);
-              out.push(over === null ? o : { _tag: "Fault", error: over });
-              if (over !== null || o._tag === "Fault") return out;
-            }
-          }
-        }
+        out = [];
+        lexer.pullEach(dtd === undefined ? accept : (raw) => interpret(raw).every(accept));
         return out;
       };
       const write = (chunk: string): ReadonlyArray<LexOutput> => {
@@ -366,14 +303,10 @@ export const tokenize =
       // One stream per input chunk, not per event: the events of a chunk are
       // converted in a loop, followed by the failure if there was one.
       const emit = (outs: ReadonlyArray<LexOutput>): Stream.Stream<SaxEvent, SaxError> => {
-        const events: Array<SaxEvent> = [];
-        for (const o of outs) {
-          if (o._tag === "Fault")
-            return Stream.concat(Stream.fromIterable(events), Stream.fail(o.error));
-          const ev = convertLexEvent(o, opts);
-          if (ev !== null) events.push(ev);
-        }
-        return Stream.fromIterable(events);
+        const { events, fault } = convertBatch(outs, opts);
+        return fault === undefined
+          ? Stream.fromIterable(events)
+          : Stream.concat(Stream.fromIterable(events), Stream.fail(fault));
       };
       const body = input.pipe(Stream.flatMap((chunk) => emit(write(chunk))));
       const tail = Stream.suspend(() => {
@@ -384,27 +317,35 @@ export const tokenize =
     });
   };
 
-/** Options for byte input: the SAX options plus an external encoding hint. */
+/**
+ * Options for byte input: the SAX options plus an external encoding hint.
+ *
+ * @since 0.3.0
+ * @category options
+ */
 export interface SaxBytesOptions extends SaxOptions {
   /**
    * An external encoding hint, such as the `charset` of a `Content-Type`. It
    * overrides the document's own declaration (or `<meta charset>`), but not a
    * byte order mark.
    */
-  readonly encoding?: string;
+  readonly encoding?: string | undefined;
 }
 
 /** @internal The decoding options that match a set of SAX options. */
 export const decodeOptions = (options: SaxBytesOptions | undefined): Encoding.DecodeOptions => ({
   mode: options?.mode ?? "xml",
   maxTotalBytes: resolveLimits(options?.limits).maxTotalBytes,
-  ...(options?.encoding !== undefined ? { encoding: options.encoding } : {}),
+  encoding: options?.encoding,
 });
 
 /**
  * Turn a stream of bytes into a stream of SAX events. The encoding is detected
  * from the input (see {@link Encoding.sniffXml} and {@link Encoding.sniffHtml}),
  * and chunks may split multi-byte sequences anywhere.
+ *
+ * @since 0.3.0
+ * @category tokenizing
  */
 export const tokenizeBytes =
   (options?: SaxBytesOptions) =>
@@ -426,11 +367,13 @@ export const tokenizeString = (
  * Collect every SAX event into an array (convenient for tests and small inputs).
  *
  * @example
+ * ```ts
  * import * as Effect from "effect/Effect"
  * import { Sax } from "effect-sax"
  *
  * const events = Effect.runSync(Sax.collect("<a>hi</a>"))
  * console.log(events.map((e) => e._tag)) // ["StartElement", "Text", "EndElement"]
+ * ```
  *
  * @since 0.2.0
  * @category tokenizing
@@ -492,8 +435,11 @@ export const named =
 /**
  * Select the subtrees matching a path, each built into an element while the
  * rest of the document streams past (see `Xml/Select.ts`).
+ *
+ * @since 0.3.0
+ * @category selectors
  */
-export { select } from "./Xml/Select.ts";
+export * from "./Xml/Select.ts";
 
 // -----------------------------------------------------------------------------
 // Attribute helpers

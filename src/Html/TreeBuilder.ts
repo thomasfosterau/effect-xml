@@ -20,7 +20,8 @@ import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { resolveLimits, type Limits } from "../Limits.ts";
 import { QName } from "../Name.ts";
-import { depthExceeded, tryAccept } from "../internal/guard.ts";
+import { depthExceeded } from "../internal/guard.ts";
+import { acceptAll } from "../internal/unwind.ts";
 import { SaxEvent } from "../Sax.ts";
 import {
   XmlAttribute,
@@ -137,11 +138,6 @@ export const buildFragment = <E, R>(
 ): Effect.Effect<ReadonlyArray<XmlNode>, SaxError | E, R> =>
   Effect.gen(function* () {
     const builder = new FragmentBuilder(resolveLimits(options?.limits));
-    yield* Stream.runForEach(events, (ev) =>
-      Effect.suspend(() => {
-        const over = tryAccept(() => builder.accept(ev));
-        return over === null ? Effect.void : Effect.fail(over);
-      }),
-    );
+    yield* acceptAll(events, (ev) => builder.accept(ev));
     return builder.finish();
   });

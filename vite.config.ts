@@ -138,6 +138,70 @@ export default defineConfig({
           "effect/imperative-loops": "off",
         },
       },
+      // The two primitive loops everything else is built on. The stack-safe
+      // tree walk: an explicit stack and a loop are what let documents of any
+      // depth be traversed without overflowing the call stack (an `Arr` fold
+      // over children would have to recurse per level). The lexer's drive
+      // loop: it runs once per token, and an `Arr.unfold` there allocates per
+      // token (measured: every parser slowed by a quarter). Every DOM walk
+      // and every lexer driver goes through them. The SAX conversion of a
+      // batch is the same per-token loop (see the next override).
+      {
+        files: ["src/internal/tree.ts", "src/internal/drive.ts", "src/internal/convert.ts"],
+        rules: {
+          "effect/imperative-loops": "off",
+        },
+      },
+      // The per-token dispatch: the lexer's token → event step and its
+      // guards, the limit check, and the SAX conversion run once per token.
+      // `$match` and `$is` are each ONE function shared by every table and
+      // guard in the program, so their property reads and calls go
+      // megamorphic and V8 can't inline the cases; written that way, these
+      // three files cost the SAX path a third of its throughput (`vp run
+      // bench`, 64 KiB chunks: ~495 ms against ~360 ms). Here a `switch` on
+      // `_tag`, direct tag guards and one plain batch loop are the fix.
+      {
+        files: ["src/internal/lexer.ts", "src/internal/guard.ts", "src/internal/convert.ts"],
+        rules: {
+          "effect/avoid-direct-tag-checks": "off",
+          "effect/prefer-match-over-switch": "off",
+        },
+      },
+      // `Xml.serialize` / `serializeDocument` unwrap a writer run that cannot
+      // fail: `invalid: "replace"` patches every unwritable character and a
+      // tree's events are always balanced, so a failure would be a defect.
+      // They are total string functions; an error channel would only make
+      // every caller handle an error that never happens.
+      {
+        files: ["src/Xml/Xml.ts"],
+        rules: {
+          "effect/avoid-option-getorthrow": "off",
+        },
+      },
+      // The tree builders' one exception boundary (see its module comment):
+      // a resource limit is thrown from deep inside the WHATWG algorithm and
+      // caught here, once per event, at no cost on the path that doesn't throw.
+      {
+        files: ["src/internal/unwind.ts"],
+        rules: {
+          "effect/avoid-try-catch": "off",
+        },
+      },
+      // The benchmark is a standalone program, like a build script: it times
+      // runs in loops, prints a table, runs its effects at the top level
+      // (it is the entry point), and imports optional third-party parsers
+      // that may not be installed (a failed dynamic import means "skip").
+      {
+        files: ["bench/**/*.ts"],
+        rules: {
+          "effect/imperative-loops": "off",
+          "effect/effect-run-in-body": "off",
+          "effect/use-console-service": "off",
+          "effect/avoid-try-catch": "off",
+          "effect/avoid-any": "off",
+          "effect/no-unknown-returns": "off",
+        },
+      },
       // The example is a program: its one `Effect.runPromise` IS the entry
       // point the rule sends execution to (no platform runtime is a
       // dependency of this library to run it with instead).
@@ -211,6 +275,11 @@ export default defineConfig({
         command: "docgen",
         dependsOn: ["build"],
         cache: { input: cacheInputs, output: ["docs/**"] },
+      },
+      // Parsing throughput on a generated SpreadsheetML worksheet (not a gate).
+      bench: {
+        command: "tsx bench/parse.ts",
+        cache: false,
       },
       // The tour in examples/usage.ts.
       example: {

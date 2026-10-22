@@ -22,15 +22,35 @@
  * {@link serialize} does the same for a DOM node or document, declaring the
  * namespaces the tree uses on its root.
  */
-import { Data, Effect, Result, Stream } from "effect";
+import * as Arr from "effect/Array";
+import * as Data from "effect/Data";
+import * as Effect from "effect/Effect";
+import * as Iterable from "effect/Iterable";
+import * as Match from "effect/Match";
+import * as MutableHashSet from "effect/MutableHashSet";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import * as Record from "effect/Record";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import * as Str from "effect/String";
 import { Namespaces, QName } from "../Name.ts";
-import { XmlDocument, type XmlAttribute, type XmlNode } from "./Node.ts";
+import { quote } from "../internal/quote.ts";
+import { byKey, byNamespaceThenLocal } from "../internal/order.ts";
+import { isEnter, preorder } from "../internal/tree.ts";
+import { XmlDocument, type XmlAttribute, type XmlElement, type XmlNode } from "./Node.ts";
 
 // -----------------------------------------------------------------------------
 // Events
 // -----------------------------------------------------------------------------
 
-/** What the writer writes. Names are namespace-aware {@link QName}s. */
+/**
+ * What the writer writes. Names are namespace-aware {@link QName}s.
+ *
+ * @since 0.3.0
+ * @category models
+ */
 export type WriterEvent =
   | {
       readonly _tag: "StartElement";
@@ -41,7 +61,7 @@ export type WriterEvent =
        * whitespace inside it. (Set by {@link events}; when streaming, text in
        * an element turns indentation off from there on anyway.)
        */
-      readonly inline?: boolean;
+      readonly inline?: boolean | undefined;
     }
   | { readonly _tag: "EndElement" }
   | { readonly _tag: "Text"; readonly data: string }
@@ -50,9 +70,14 @@ export type WriterEvent =
   | { readonly _tag: "ProcessingInstruction"; readonly target: string; readonly data: string };
 
 const toQName = (name: string | QName): QName =>
-  typeof name === "string" ? QName.fromRaw(name) : name;
+  Predicate.isString(name) ? QName.fromRaw(name) : name;
 
-/** A start tag. */
+/**
+ * A start tag.
+ *
+ * @since 0.3.0
+ * @category constructors
+ */
 export const start = (
   name: string | QName,
   attributes: ReadonlyArray<XmlAttribute> = [],
@@ -61,108 +86,154 @@ export const start = (
   _tag: "StartElement",
   name: toQName(name),
   attributes,
-  ...(inline !== undefined ? { inline } : {}),
+  inline,
 });
 
-/** An end tag (for the innermost open element). */
+/**
+ * An end tag (for the innermost open element).
+ *
+ * @since 0.3.0
+ * @category constructors
+ */
 export const end: WriterEvent = { _tag: "EndElement" };
 
-/** Character data. */
+/**
+ * Character data.
+ *
+ * @since 0.3.0
+ * @category constructors
+ */
 export const text = (data: string): WriterEvent => ({ _tag: "Text", data });
 
-/** A CDATA section. */
+/**
+ * A CDATA section.
+ *
+ * @since 0.3.0
+ * @category constructors
+ */
 export const cdata = (data: string): WriterEvent => ({ _tag: "CData", data });
 
-/** A comment. */
+/**
+ * A comment.
+ *
+ * @since 0.3.0
+ * @category constructors
+ */
 export const comment = (data: string): WriterEvent => ({ _tag: "Comment", data });
 
-/** A processing instruction. */
+/**
+ * A processing instruction.
+ *
+ * @since 0.3.0
+ * @category constructors
+ */
 export const processingInstruction = (target: string, data = ""): WriterEvent => ({
   _tag: "ProcessingInstruction",
   target,
   data,
 });
 
-/** The events of a node (iteratively, so any depth is fine). */
+const WriterEvent = Data.taggedEnum<WriterEvent>();
+const matchWriterEvent = WriterEvent.$match;
+const isStartEvent = WriterEvent.$is("StartElement");
+
+const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+
+/** The event a node starts with (an element's start tag; all of a leaf). */
+const eventOf = (node: XmlNode): WriterEvent =>
+  Match.valueTags(node, {
+    XmlElement: (e): WriterEvent => ({
+      _tag: "StartElement",
+      name: e.name,
+      attributes: e.attributes,
+      // Whitespace-only text is layout, which pretty-printing replaces.
+      inline: e.children.some(
+        (c) =>
+          Predicate.isTagged(c, "XmlCData") ||
+          (Predicate.isTagged(c, "XmlText") && /[^ \t\r\n]/.test(c.data)),
+      ),
+    }),
+    XmlText: (t): WriterEvent => ({ _tag: "Text", data: t.data }),
+    XmlCData: (t): WriterEvent => ({ _tag: "CData", data: t.data }),
+    XmlComment: (c): WriterEvent => ({ _tag: "Comment", data: c.data }),
+    XmlProcessingInstruction: (pi): WriterEvent => ({
+      _tag: "ProcessingInstruction",
+      target: pi.target,
+      data: pi.data,
+    }),
+  });
+
+/**
+ * The events of a node (without recursion, so any depth is fine).
+ *
+ * @since 0.3.0
+ * @category conversions
+ */
 export function* events(node: XmlNode | XmlDocument): Generator<WriterEvent> {
-  const stack: Array<XmlNode | "end"> =
-    node instanceof XmlDocument ? [...node.children].reverse() : [node];
-  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
-    if (item === "end") {
-      yield end;
-      continue;
-    }
-    switch (item._tag) {
-      case "XmlElement": {
-        // Whitespace-only text is layout, which pretty-printing replaces.
-        const inline = item.children.some(
-          (c) => c._tag === "XmlCData" || (c._tag === "XmlText" && /[^ \t\r\n]/.test(c.data)),
-        );
-        yield { _tag: "StartElement", name: item.name, attributes: item.attributes, inline };
-        stack.push("end");
-        for (let i = item.children.length - 1; i >= 0; i--) stack.push(item.children[i]!);
-        break;
-      }
-      case "XmlText":
-        yield { _tag: "Text", data: item.data };
-        break;
-      case "XmlCData":
-        yield { _tag: "CData", data: item.data };
-        break;
-      case "XmlComment":
-        yield { _tag: "Comment", data: item.data };
-        break;
-      case "XmlProcessingInstruction":
-        yield { _tag: "ProcessingInstruction", target: item.target, data: item.data };
-        break;
-    }
-  }
+  yield* Iterable.map(
+    preorder(node instanceof XmlDocument ? node.children : [node], (n) =>
+      isElement(n) ? n.children : undefined,
+    ),
+    (step) => (isEnter(step) ? eventOf(step.node) : end),
+  );
 }
 
 // -----------------------------------------------------------------------------
 // Options and errors
 // -----------------------------------------------------------------------------
 
-/** What can't be written as asked. */
-export class SerializationError extends Data.TaggedError("SerializationError")<{
-  readonly reason: string;
-}> {
+/**
+ * What can't be written as asked.
+ *
+ * @since 0.3.0
+ * @category errors
+ */
+export class SerializationError extends Schema.TaggedError<SerializationError>()(
+  "SerializationError",
+  { reason: Schema.String },
+) {
   override get message(): string {
     return `Cannot serialize: ${this.reason}`;
   }
 }
 
+/**
+ * Options for the writer: declaration, encoding, indentation, handling of characters XML 1.0 forbids, and namespace management.
+ *
+ * @since 0.3.0
+ * @category options
+ */
 export interface WriterOptions {
   /** Emit an XML declaration (default `false`), optionally with `standalone`. */
-  readonly declaration?: boolean | { readonly standalone?: boolean };
+  readonly declaration?: boolean | { readonly standalone?: boolean } | undefined;
   /** The encoding named in the declaration and used by {@link writeBytes} (default `"utf-8"`). */
-  readonly encoding?: "utf-8" | "utf-16";
+  readonly encoding?: "utf-8" | "utf-16" | undefined;
   /**
    * Pretty-print with this indentation (spaces, or the string itself).
    * Whitespace is never added inside elements with text content, or under
    * `xml:space="preserve"`; whitespace-only text is dropped elsewhere.
    */
-  readonly indent?: number | string;
+  readonly indent?: number | string | undefined;
   /** Write empty elements as `<a/>` (default `true`), or `<a></a>`; or decide per element. */
-  readonly selfClose?: boolean | ((name: QName) => boolean);
+  readonly selfClose?: boolean | ((name: QName) => boolean) | undefined;
   /** What to do with content XML can't represent (see the module docs). Default `"fail"`. */
-  readonly invalid?: "fail" | "strip" | "replace";
+  readonly invalid?: "fail" | "strip" | "replace" | undefined;
   /**
    * Encode a character XML 1.0 forbids, before `invalid` applies: return its
    * replacement (written as text, so escaped as usual), or `undefined` to
    * leave it to `invalid`. OOXML: `(cp) => "_x" + cp.toString(16).toUpperCase().padStart(4, "0") + "_"`.
    */
-  readonly escape?: (codePoint: number) => string | undefined;
+  readonly escape?: ((codePoint: number) => string | undefined) | undefined;
   /** Preferred prefixes (prefix → namespace URI), declared on the root element. */
-  readonly prefixes?: Readonly<Record<string, string>>;
+  readonly prefixes?: Readonly<Record<string, string>> | undefined;
   /** Sort attributes by namespace URI and local name (default: as given). */
-  readonly sortAttributes?: boolean;
+  readonly sortAttributes?: boolean | undefined;
   /**
    * `"manage"` (default) declares namespaces as described above. `"asIs"`
    * writes names as their prefixes say and adds no declarations, for trees
    * that already carry their `xmlns` attributes.
    */
-  readonly namespaces?: "manage" | "asIs";
+  readonly namespaces?: "manage" | "asIs" | undefined;
 }
 
 // -----------------------------------------------------------------------------
@@ -195,7 +266,8 @@ const escapeAttributeChars = (s: string): string =>
                 : "&#xD;",
   );
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** Namespace bindings: prefix (`""` for the default namespace) to URI, in declaration order. */
+type Bindings = Record.ReadonlyRecord<string, string>;
 
 // -----------------------------------------------------------------------------
 // The writer
@@ -204,17 +276,14 @@ const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 interface Frame {
   readonly name: string;
   /** Prefix → URI bindings in scope inside this element (`""`: the default namespace). */
-  readonly scope: ReadonlyMap<string, string>;
+  readonly scope: Bindings;
   /** No whitespace may be added inside (text content, or `xml:space="preserve"`). */
   inline: boolean;
   readonly preserve: boolean;
   hasChildren: boolean;
 }
 
-const INITIAL_SCOPE: ReadonlyMap<string, string> = new Map([
-  ["xml", Namespaces.xml],
-  ["", ""],
-]);
+const INITIAL_SCOPE: Bindings = { xml: Namespaces.xml, "": "" };
 
 /** @internal The writer's state machine: one event in, some text out. */
 export class XmlWriter {
@@ -231,12 +300,12 @@ export class XmlWriter {
   constructor(options: WriterOptions = {}) {
     this.options = options;
     const i = options.indent;
-    this.indent = i === undefined ? null : typeof i === "number" ? " ".repeat(i) : i;
+    this.indent = i === undefined ? null : Predicate.isNumber(i) ? " ".repeat(i) : i;
     this.invalid = options.invalid ?? "fail";
   }
 
-  private get scope(): ReadonlyMap<string, string> {
-    return this.stack[this.stack.length - 1]?.scope ?? INITIAL_SCOPE;
+  private get scope(): Bindings {
+    return this.stack.at(-1)?.scope ?? INITIAL_SCOPE;
   }
 
   // --- content ---------------------------------------------------------------
@@ -246,7 +315,8 @@ export class XmlWriter {
     if (!INVALID.test(s)) return s;
     let failed: string | null = null;
     const out = s.replace(INVALID_ALL, (c) => {
-      const cp = c.codePointAt(0)!;
+      // `c` is one matched character, so it has a code point.
+      const cp = c.codePointAt(0) ?? 0;
       const escaped = this.options.escape?.(cp);
       if (escaped !== undefined) return escaped;
       if (this.invalid === "strip") return "";
@@ -263,7 +333,7 @@ export class XmlWriter {
 
   private text(data: string, attribute: boolean): string | SerializationError {
     const s = this.chars(data, attribute ? "an attribute value" : "text");
-    if (typeof s !== "string") return s;
+    if (!Predicate.isString(s)) return s;
     return attribute ? escapeAttributeChars(s) : escapeTextChars(s);
   }
 
@@ -275,11 +345,11 @@ export class XmlWriter {
     fix: (s: string) => string,
   ): string | SerializationError {
     const chars = this.chars(s, what);
-    if (typeof chars !== "string") return chars;
+    if (!Predicate.isString(chars)) return chars;
     if (!bad.test(chars)) return chars;
     if (this.invalid === "fail")
       return new SerializationError({
-        reason: `${what} contains ${JSON.stringify(chars.match(bad)![0])}`,
+        reason: `${what} contains ${quote(chars.match(bad)?.[0] ?? "")}`,
       });
     return fix(chars);
   }
@@ -321,7 +391,7 @@ export class XmlWriter {
     this.started = true;
     const encoding = this.options.encoding === "utf-16" ? "UTF-16" : "UTF-8";
     const standalone =
-      typeof d === "object" && d.standalone !== undefined
+      Predicate.isObjectOrArray(d) && d.standalone !== undefined
         ? ` standalone="${d.standalone ? "yes" : "no"}"`
         : "";
     return `<?xml version="1.0" encoding="${encoding}"${standalone}?>`;
@@ -334,57 +404,69 @@ export class XmlWriter {
     | {
         element: string;
         attributes: Array<readonly [string, string]>;
-        decls: Map<string, string>;
-        scope: ReadonlyMap<string, string>;
+        decls: Bindings;
+        scope: Bindings;
       }
     | SerializationError {
-    const scope = new Map(this.scope);
-    const decls = new Map<string, string>();
+    let scope: Bindings = this.scope;
+    let decls: Bindings = {};
     const declare = (prefix: string, uri: string) => {
-      if (scope.get(prefix) === uri) return;
-      decls.set(prefix, uri);
-      scope.set(prefix, uri);
+      if (Option.getOrUndefined(Record.get(scope, prefix)) === uri) return;
+      decls = Record.set(decls, prefix, uri);
+      scope = Record.set(scope, prefix, uri);
     };
-    const prefixFor = (uri: string): string | undefined => {
-      for (const [p, u] of scope) if (u === uri && p !== "") return p;
-      return undefined;
-    };
+    // The first prefix (in declaration order) bound to `uri`.
+    const prefixFor = (uri: string): string | undefined =>
+      Option.getOrUndefined(
+        Arr.findFirst(Record.toEntries(scope), ([p, u]) =>
+          u === uri && p !== "" ? Option.some(p) : Option.none(),
+        ),
+      );
     /** The prefix the element's own name uses: rebinding it would change the element's namespace. */
     let elementPrefix: string | null = null;
     /** A prefix to declare for `uri`: the one asked for, a preferred one, or a new `nsN`. */
     const fresh = (preferred: string | null, uri: string): string => {
       const candidates = [
         preferred,
-        ...Object.entries(this.options.prefixes ?? {})
-          .filter(([, u]) => u === uri)
-          .map(([p]) => p),
+        ...Arr.filterMap(Record.toEntries(this.options.prefixes ?? {}), ([p, u]) =>
+          u === uri ? Result.succeed(p) : Result.failVoid,
+        ),
       ];
-      for (const p of candidates) {
-        if (p === null || p === "" || p === "xml" || p === "xmlns" || p === elementPrefix) continue;
-        // A prefix this element already declared for something else is taken.
-        if (decls.has(p) && decls.get(p) !== uri) continue;
-        return p;
-      }
-      for (let i = 0; ; i++) if (!scope.has(`ns${i}`)) return `ns${i}`;
+      const usable = Arr.findFirst(
+        candidates,
+        (p): p is string =>
+          p !== null &&
+          p !== "" &&
+          p !== "xml" &&
+          p !== "xmlns" &&
+          p !== elementPrefix &&
+          // A prefix this element already declared for something else is taken.
+          !(Record.has(decls, p) && Option.getOrUndefined(Record.get(decls, p)) !== uri),
+      );
+      if (Option.isSome(usable)) return usable.value;
+      // One of the first `size + 1` is free: there are only `size` bindings.
+      return Option.getOrElse(
+        Arr.findFirst(Arr.range(0, Record.size(scope)), (i) => !Record.has(scope, `ns${i}`)).pipe(
+          Option.map((i) => `ns${i}`),
+        ),
+        () => `ns${Record.size(scope)}`,
+      );
     };
 
     // Declarations the input asks for (xmlns attributes), and the preferred
     // prefixes on the root element.
-    const attributes: Array<XmlAttribute> = [];
-    for (const a of ev.attributes) {
-      if (
+    const attributes = ev.attributes.filter((a) => {
+      const isDeclaration =
         a.name.namespace === Namespaces.xmlns ||
         a.name.qualified === "xmlns" ||
-        a.name.prefix === "xmlns"
-      ) {
-        declare(a.name.qualified === "xmlns" ? "" : a.name.local, a.value);
-      } else attributes.push(a);
-    }
-    if (this.stack.length === 0) {
-      for (const [p, uri] of Object.entries(this.options.prefixes ?? {}).sort(([a], [b]) =>
-        compare(a, b),
-      ))
-        declare(p, uri);
+        a.name.prefix === "xmlns";
+      if (isDeclaration) declare(a.name.qualified === "xmlns" ? "" : a.name.local, a.value);
+      return !isDeclaration;
+    });
+    if (Arr.isReadonlyArrayEmpty(this.stack)) {
+      Arr.sort(Record.toEntries(this.options.prefixes ?? {}), byKey).forEach(([p, uri]) =>
+        declare(p, uri),
+      );
     }
 
     // The element's own name.
@@ -393,19 +475,25 @@ export class XmlWriter {
     if (name.namespace === null) {
       if (name.prefix !== null) element = name.qualified; // an unresolved name: as written
       else {
-        if (scope.get("") !== "") declare("", "");
+        if (Option.getOrUndefined(Record.get(scope, "")) !== "") declare("", "");
         element = name.local;
       }
     } else if (name.namespace === Namespaces.xml) {
       element = `xml:${name.local}`;
-    } else if (name.prefix !== null && scope.get(name.prefix) === name.namespace) {
+    } else if (
+      name.prefix !== null &&
+      Option.getOrUndefined(Record.get(scope, name.prefix)) === name.namespace
+    ) {
       element = name.qualified;
-    } else if (name.prefix === null && scope.get("") === name.namespace) {
+    } else if (
+      name.prefix === null &&
+      Option.getOrUndefined(Record.get(scope, "")) === name.namespace
+    ) {
       element = name.local;
     } else {
       const existing = prefixFor(name.namespace);
       if (existing !== undefined) element = `${existing}:${name.local}`;
-      else if (name.prefix === null && !decls.has("")) {
+      else if (name.prefix === null && !Record.has(decls, "")) {
         declare("", name.namespace);
         element = name.local;
       } else {
@@ -419,20 +507,21 @@ export class XmlWriter {
 
     // Attributes: unprefixed ones are in no namespace; others need a prefix.
     const sorted = this.options.sortAttributes
-      ? [...attributes].sort(
-          (a, b) =>
-            compare(a.name.namespace ?? "", b.name.namespace ?? "") ||
-            compare(a.name.local, b.name.local),
-        )
+      ? Arr.sort(attributes, byNamespaceThenLocal)
       : attributes;
     const out: Array<readonly [string, string]> = [];
-    const seen = new Set<string>();
-    for (const a of sorted) {
+    const seen = MutableHashSet.empty<string>();
+    let duplicate: SerializationError | null = null;
+    sorted.every((a) => {
       const n = a.name;
       let qualified: string;
       if (n.namespace === null) qualified = n.qualified;
       else if (n.namespace === Namespaces.xml) qualified = `xml:${n.local}`;
-      else if (n.prefix !== null && scope.get(n.prefix) === n.namespace) qualified = n.qualified;
+      else if (
+        n.prefix !== null &&
+        Option.getOrUndefined(Record.get(scope, n.prefix)) === n.namespace
+      )
+        qualified = n.qualified;
       else {
         const existing = prefixFor(n.namespace);
         if (existing !== undefined) qualified = `${existing}:${n.local}`;
@@ -443,140 +532,177 @@ export class XmlWriter {
         }
       }
       const key = n.namespace === null ? qualified : `{${n.namespace}}${n.local}`;
-      if (seen.has(key)) {
+      if (MutableHashSet.has(seen, key)) {
         if (this.invalid === "fail")
-          return new SerializationError({ reason: `<${element}> has two ${qualified} attributes` });
-        continue;
+          duplicate = new SerializationError({
+            reason: `<${element}> has two ${qualified} attributes`,
+          });
+        return duplicate === null;
       }
-      seen.add(key);
+      MutableHashSet.add(seen, key);
       out.push([qualified, a.value]);
-    }
+      return true;
+    });
+    if (duplicate !== null) return duplicate;
     return { element, attributes: out, decls, scope };
   }
 
   // --- events ----------------------------------------------------------------
 
   write(ev: WriterEvent): string | SerializationError {
-    switch (ev._tag) {
-      case "StartElement": {
-        let out = this.beforeNode();
-        let element: string;
-        let scope: ReadonlyMap<string, string>;
-        let attrs = "";
-        if (this.options.namespaces === "asIs") {
-          element = ev.name.qualified;
-          scope = this.scope;
-          const seen = new Set<string>();
-          for (const a of ev.attributes) {
-            if (seen.has(a.name.qualified)) {
-              if (this.invalid === "fail")
-                return new SerializationError({
-                  reason: `<${element}> has two ${a.name.qualified} attributes`,
-                });
-              continue;
-            }
-            seen.add(a.name.qualified);
-            const v = this.text(a.value, true);
-            if (typeof v !== "string") return v;
-            attrs += ` ${a.name.qualified}="${v}"`;
-          }
-        } else {
-          const names = this.names(ev);
-          if (names instanceof SerializationError) return names;
-          element = names.element;
-          scope = names.scope;
-          // Declarations first, the default namespace before prefixes, then by prefix.
-          for (const [p, uri] of [...names.decls].sort(([a], [b]) => compare(a, b))) {
-            attrs += ` ${p === "" ? "xmlns" : `xmlns:${p}`}="${escapeAttributeChars(uri)}"`;
-          }
-          for (const [qualified, value] of names.attributes) {
-            const v = this.text(value, true);
-            if (typeof v !== "string") return v;
-            attrs += ` ${qualified}="${v}"`;
-          }
-        }
-        const space = ev.attributes.find(
-          (a) =>
-            a.name.local === "space" &&
-            (a.name.namespace === Namespaces.xml || a.name.prefix === "xml"),
-        )?.value;
-        const parent = this.stack[this.stack.length - 1];
-        const preserve =
-          space === "preserve" ? true : space === "default" ? false : (parent?.preserve ?? false);
-        this.stack.push({
-          name: element,
-          scope,
-          inline: preserve || ev.inline === true,
-          preserve,
-          hasChildren: false,
-        });
-        out += `<${element}${attrs}`;
-        this.pendingStart = ev.name;
-        return out;
+    return matchWriterEvent(ev, this.handlers);
+  }
+
+  /** What each event kind writes; built once per writer. */
+  private readonly handlers = {
+    StartElement: (ev: Extract<WriterEvent, { _tag: "StartElement" }>) => this.startElement(ev),
+    EndElement: () => this.endElement(),
+    Text: (ev: Extract<WriterEvent, { _tag: "Text" }>) => this.textNode(ev.data),
+    CData: (ev: Extract<WriterEvent, { _tag: "CData" }>) => this.cdata(ev.data),
+    Comment: (ev: Extract<WriterEvent, { _tag: "Comment" }>) => this.comment(ev.data),
+    ProcessingInstruction: (ev: Extract<WriterEvent, { _tag: "ProcessingInstruction" }>) =>
+      this.processingInstruction(ev.target, ev.data),
+  };
+
+  /** The attributes as they are, and their names as written (`namespaces: "asIs"`). */
+  private attributesAsIs(
+    element: string,
+    attributes: ReadonlyArray<XmlAttribute>,
+  ): string | SerializationError {
+    const seen = MutableHashSet.empty<string>();
+    return Arr.reduce(attributes, "", (out: string | SerializationError, a) => {
+      if (!Predicate.isString(out)) return out;
+      if (MutableHashSet.has(seen, a.name.qualified)) {
+        return this.invalid === "fail"
+          ? new SerializationError({
+              reason: `<${element}> has two ${a.name.qualified} attributes`,
+            })
+          : out;
       }
-      case "EndElement": {
-        const frame = this.stack.pop();
-        if (frame === undefined)
-          return new SerializationError({ reason: "an end tag with no open element" });
-        if (this.pendingStart !== null) {
-          const name = this.pendingStart;
-          this.pendingStart = null;
-          const sc = this.options.selfClose ?? true;
-          return (typeof sc === "function" ? sc(name) : sc) ? "/>" : `></${frame.name}>`;
-        }
-        const nl =
-          this.indent !== null && frame.hasChildren && !frame.inline
-            ? "\n" + this.indent.repeat(this.stack.length)
-            : "";
-        return `${nl}</${frame.name}>`;
-      }
-      case "Text": {
-        const parent = this.stack[this.stack.length - 1];
-        // Pretty-printing replaces whitespace-only text where it may add its own.
-        if (
-          this.indent !== null &&
-          (parent === undefined || !parent.inline) &&
-          /^[ \t\r\n]*$/.test(ev.data)
-        )
-          return "";
-        if (ev.data === "") return "";
-        if (parent !== undefined) parent.inline = true;
-        const t = this.text(ev.data, false);
-        if (typeof t !== "string") return t;
-        return this.prolog() + this.flush() + t;
-      }
-      case "CData": {
-        const parent = this.stack[this.stack.length - 1];
-        if (parent !== undefined) parent.inline = true;
-        const data = this.chars(ev.data, "a CDATA section");
-        if (typeof data !== "string") return data;
-        // `]]>` can't occur inside a section: end it after `]]` and start another.
-        return (
-          this.prolog() + this.flush() + `<![CDATA[${data.replaceAll("]]>", "]]]]><![CDATA[>")}]]>`
-        );
-      }
-      case "Comment": {
-        const data = this.unescapable(ev.data, "a comment", /--|-$/, (s) => {
-          let out = s;
-          while (out.includes("--")) out = out.replaceAll("--", "- -");
-          return out.endsWith("-") ? out + " " : out;
-        });
-        if (typeof data !== "string") return data;
-        return this.beforeNode() + `<!--${data}-->`;
-      }
-      case "ProcessingInstruction": {
-        if (/^xml$/i.test(ev.target) && this.invalid === "fail") {
-          return new SerializationError({
-            reason: `the processing instruction target "${ev.target}" is reserved`,
-          });
-        }
-        const data = this.unescapable(ev.data, "a processing instruction", /\?>/, (s) =>
-          s.replaceAll("?>", "? >"),
-        );
-        if (typeof data !== "string") return data;
-        return this.beforeNode() + `<?${ev.target}${data === "" ? "" : " " + data}?>`;
-      }
+      MutableHashSet.add(seen, a.name.qualified);
+      const v = this.text(a.value, true);
+      return Predicate.isString(v) ? `${out} ${a.name.qualified}="${v}"` : v;
+    });
+  }
+
+  /** The declarations (default namespace first, then by prefix) and attributes `names` chose. */
+  private attributesManaged(names: {
+    readonly attributes: ReadonlyArray<readonly [string, string]>;
+    readonly decls: Bindings;
+  }): string | SerializationError {
+    const xmlns = Arr.sort(Record.toEntries(names.decls), byKey)
+      .map(([p, uri]) => ` ${p === "" ? "xmlns" : `xmlns:${p}`}="${escapeAttributeChars(uri)}"`)
+      .join("");
+    return Arr.reduce(names.attributes, xmlns, (out: string | SerializationError, [q, value]) => {
+      if (!Predicate.isString(out)) return out;
+      const v = this.text(value, true);
+      return Predicate.isString(v) ? `${out} ${q}="${v}"` : v;
+    });
+  }
+
+  private startElement(
+    ev: Extract<WriterEvent, { _tag: "StartElement" }>,
+  ): string | SerializationError {
+    const out = this.beforeNode();
+    let element: string;
+    let scope: Bindings;
+    let attrs: string | SerializationError;
+    if (this.options.namespaces === "asIs") {
+      element = ev.name.qualified;
+      scope = this.scope;
+      attrs = this.attributesAsIs(element, ev.attributes);
+    } else {
+      const names = this.names(ev);
+      if (names instanceof SerializationError) return names;
+      element = names.element;
+      scope = names.scope;
+      attrs = this.attributesManaged(names);
     }
+    if (!Predicate.isString(attrs)) return attrs;
+    const space = ev.attributes.find(
+      (a) =>
+        a.name.local === "space" &&
+        (a.name.namespace === Namespaces.xml || a.name.prefix === "xml"),
+    )?.value;
+    const parent = this.stack.at(-1);
+    const preserve =
+      space === "preserve" ? true : space === "default" ? false : (parent?.preserve ?? false);
+    this.stack.push({
+      name: element,
+      scope,
+      inline: preserve || ev.inline === true,
+      preserve,
+      hasChildren: false,
+    });
+    this.pendingStart = ev.name;
+    return out + `<${element}${attrs}`;
+  }
+
+  private endElement(): string | SerializationError {
+    const frame = this.stack.pop();
+    if (frame === undefined)
+      return new SerializationError({ reason: "an end tag with no open element" });
+    if (this.pendingStart !== null) {
+      const name = this.pendingStart;
+      this.pendingStart = null;
+      const sc = this.options.selfClose ?? true;
+      return (Predicate.isFunction(sc) ? sc(name) : sc) ? "/>" : `></${frame.name}>`;
+    }
+    const nl =
+      this.indent !== null && frame.hasChildren && !frame.inline
+        ? "\n" + this.indent.repeat(this.stack.length)
+        : "";
+    return `${nl}</${frame.name}>`;
+  }
+
+  private textNode(data: string): string | SerializationError {
+    const parent = this.stack.at(-1);
+    // Pretty-printing replaces whitespace-only text where it may add its own.
+    if (
+      this.indent !== null &&
+      (parent === undefined || !parent.inline) &&
+      /^[ \t\r\n]*$/.test(data)
+    )
+      return "";
+    if (data === "") return "";
+    if (parent !== undefined) parent.inline = true;
+    const t = this.text(data, false);
+    if (!Predicate.isString(t)) return t;
+    return this.prolog() + this.flush() + t;
+  }
+
+  private cdata(text: string): string | SerializationError {
+    const parent = this.stack.at(-1);
+    if (parent !== undefined) parent.inline = true;
+    const data = this.chars(text, "a CDATA section");
+    if (!Predicate.isString(data)) return data;
+    // `]]>` can't occur inside a section: end it after `]]` and start another.
+    return (
+      this.prolog() + this.flush() + `<![CDATA[${data.replaceAll("]]>", "]]]]><![CDATA[>")}]]>`
+    );
+  }
+
+  private comment(text: string): string | SerializationError {
+    const data = this.unescapable(text, "a comment", /--|-$/, (s) => {
+      // A space between every two dashes, and after a trailing one.
+      const out = s.replace(/-(?=-)/g, "- ");
+      return out.endsWith("-") ? out + " " : out;
+    });
+    if (!Predicate.isString(data)) return data;
+    return this.beforeNode() + `<!--${data}-->`;
+  }
+
+  private processingInstruction(target: string, text: string): string | SerializationError {
+    if (/^xml$/i.test(target) && this.invalid === "fail") {
+      return new SerializationError({
+        reason: `the processing instruction target "${target}" is reserved`,
+      });
+    }
+    const data = this.unescapable(text, "a processing instruction", /\?>/, (s) =>
+      s.replaceAll("?>", "? >"),
+    );
+    if (!Predicate.isString(data)) return data;
+    return this.beforeNode() + `<?${target}${data === "" ? "" : " " + data}?>`;
   }
 
   /** Raw markup at the top level (a DOCTYPE), laid out like a node. */
@@ -586,10 +712,9 @@ export class XmlWriter {
 
   /** After the last event: everything must be closed. */
   end(): string | SerializationError {
-    if (this.stack.length > 0) {
-      return new SerializationError({
-        reason: `<${this.stack[this.stack.length - 1]!.name}> was never closed`,
-      });
+    const open = this.stack.at(-1);
+    if (open !== undefined) {
+      return new SerializationError({ reason: `<${open.name}> was never closed` });
     }
     return this.prolog();
   }
@@ -600,9 +725,14 @@ export class XmlWriter {
 // -----------------------------------------------------------------------------
 
 const lift = (out: string | SerializationError) =>
-  typeof out === "string" ? Effect.succeed(out) : Effect.fail(out);
+  Predicate.isString(out) ? Effect.succeed(out) : Effect.fail(out);
 
-/** Write a stream of events as a stream of XML text. */
+/**
+ * Write a stream of events as a stream of XML text.
+ *
+ * @since 0.3.0
+ * @category streaming
+ */
 export const write =
   (options?: WriterOptions) =>
   <E, R>(
@@ -612,10 +742,15 @@ export const write =
       const writer = new XmlWriter(options);
       const body = input.pipe(Stream.mapEffect((ev) => lift(writer.write(ev))));
       const tail = Stream.fromEffect(Effect.suspend(() => lift(writer.end())));
-      return Stream.concat(body, tail).pipe(Stream.filter((s) => s.length > 0));
+      return Stream.concat(body, tail).pipe(Stream.filter(Str.isNonEmpty));
     });
 
-/** Encode text as UTF-8, or as UTF-16LE with a byte order mark. */
+/**
+ * Encode text as UTF-8, or as UTF-16LE with a byte order mark.
+ *
+ * @since 0.3.0
+ * @category streaming
+ */
 export const encode =
   (encoding: "utf-8" | "utf-16" = "utf-8") =>
   <E, R>(input: Stream.Stream<string, E, R>): Stream.Stream<Uint8Array, E, R> =>
@@ -632,13 +767,20 @@ export const encode =
           const out = new Uint8Array((s.length + bom) * 2);
           const view = new DataView(out.buffer);
           if (bom) view.setUint16(0, 0xfeff, true);
-          for (let i = 0; i < s.length; i++) view.setUint16((i + bom) * 2, s.charCodeAt(i), true);
+          Array.from({ length: s.length }, (_, i) =>
+            view.setUint16((i + bom) * 2, s.charCodeAt(i), true),
+          );
           return out;
         }),
       );
     });
 
-/** Write a stream of events as bytes in `options.encoding` (default UTF-8). */
+/**
+ * Write a stream of events as bytes in `options.encoding` (default UTF-8).
+ *
+ * @since 0.3.0
+ * @category streaming
+ */
 export const writeBytes =
   (options?: WriterOptions) =>
   <E, R>(
@@ -651,24 +793,24 @@ export const writeBytes =
 // -----------------------------------------------------------------------------
 
 /** The namespaces a tree uses with a prefix, keyed by prefix (the first URI seen wins). */
-const usedPrefixes = (node: XmlNode | XmlDocument): Record<string, string> => {
-  const found: Record<string, string> = {};
-  const note = (n: QName) => {
-    if (
-      n.prefix !== null &&
-      n.namespace !== null &&
-      n.namespace !== Namespaces.xml &&
-      n.namespace !== Namespaces.xmlns
-    ) {
-      found[n.prefix] ??= n.namespace;
-    }
-  };
-  for (const ev of events(node)) {
-    if (ev._tag !== "StartElement") continue;
-    note(ev.name);
-    for (const a of ev.attributes) note(a.name);
-  }
-  return found;
+const usedPrefixes = (node: XmlNode | XmlDocument): Bindings => {
+  const prefixed = (n: QName): ReadonlyArray<readonly [string, string]> =>
+    n.prefix !== null &&
+    n.namespace !== null &&
+    n.namespace !== Namespaces.xml &&
+    n.namespace !== Namespaces.xmlns
+      ? [[n.prefix, n.namespace]]
+      : [];
+  const none: Bindings = {};
+  return Iterable.reduce(events(node), none, (found, ev) =>
+    !isStartEvent(ev)
+      ? found
+      : Arr.reduce(
+          [...prefixed(ev.name), ...ev.attributes.flatMap((a) => prefixed(a.name))],
+          found,
+          (acc, [prefix, uri]) => (Record.has(acc, prefix) ? acc : Record.set(acc, prefix, uri)),
+        ),
+  );
 };
 
 const doctypeOf = (doc: XmlDocument): string => {
@@ -703,25 +845,32 @@ export const serializeSync = (
     manage ? { ...options, prefixes: { ...usedPrefixes(node), ...options.prefixes } } : options,
   );
   // A document keeps its own declaration and DOCTYPE, unless told otherwise.
-  let out = isDoc && options.declaration === undefined ? declarationOf(node) : "";
+  const out = isDoc && options.declaration === undefined ? declarationOf(node) : "";
   let doctype = isDoc ? doctypeOf(node) : "";
   if (out !== "") writer.markup("");
-  for (const ev of events(node)) {
-    if (doctype !== "" && ev._tag === "StartElement") {
+  const written = Iterable.reduce(events(node), out, (acc: string | SerializationError, ev) => {
+    if (!Predicate.isString(acc)) return acc;
+    let prefix = "";
+    if (doctype !== "" && isStartEvent(ev)) {
       // The DOCTYPE goes right before the root element.
-      out += writer.markup(doctype);
+      prefix = writer.markup(doctype);
       doctype = "";
     }
     const s = writer.write(ev);
-    if (typeof s !== "string") return Result.fail(s);
-    out += s;
-  }
+    return Predicate.isString(s) ? acc + prefix + s : s;
+  });
+  if (!Predicate.isString(written)) return Result.fail(written);
   const tail = writer.end();
-  if (typeof tail !== "string") return Result.fail(tail);
-  return Result.succeed(out + tail);
+  if (!Predicate.isString(tail)) return Result.fail(tail);
+  return Result.succeed(written + tail);
 };
 
-/** Serialize a node or a document, declaring the namespaces it uses on its root. */
+/**
+ * Serialize a node or a document, declaring the namespaces it uses on its root.
+ *
+ * @since 0.3.0
+ * @category serialization
+ */
 export const serialize = (
   node: XmlNode | XmlDocument,
   options?: WriterOptions,

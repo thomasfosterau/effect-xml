@@ -35,7 +35,31 @@ export * from "./TreeBuilder.ts";
  * @category parsing
  */
 export * from "./Xml.ts";
+/**
+ * Writing XML: namespace management, indentation and streaming output.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
 export * as Writer from "./Writer.ts";
+/**
+ * Exclusive XML Canonicalization 1.0.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
 export * as C14n from "./C14n.ts";
+/**
+ * Namespace-qualified name builders for lookups by namespace URI and local name.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
 export * as Ns from "./Ns.ts";
+/**
+ * A subset of XPath 1.0 location paths, compiled and evaluated over the DOM.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
 export * as XPath from "./XPath.ts";

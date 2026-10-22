@@ -27,7 +27,6 @@ import * as Data from "effect/Data";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import * as Str from "effect/String";
 import {
   InvalidEntity,
@@ -39,14 +38,16 @@ import {
 } from "../Error.ts";
 import type { Position, Span } from "../Position.ts";
 import { declarationContexts } from "./declarations.ts";
+import { drive } from "./drive.ts";
+import { quote } from "./quote.ts";
 import type { Dtd } from "./dtd.ts";
-import { grammars, type Grammars, Issue, type RawKind, type Step, Tok } from "./tokens.ts";
+import { grammars, type Grammars, Issue, type RawKind, type Step, type Tok } from "./tokens.ts";
 
 // -----------------------------------------------------------------------------
 // Output model
 // -----------------------------------------------------------------------------
 
-export interface LexAttribute {
+interface LexAttribute {
   readonly name: string;
   readonly value: string;
   readonly span: Span;
@@ -95,20 +96,37 @@ export interface LexFault {
 
 export type LexOutput = LexEvent | LexFault;
 
-/** Matchers for {@link LexEvent}. */
-export const LexEvent = Data.taggedEnum<LexEvent>();
-
-/** Matchers and guards for {@link LexOutput}. */
-const LexOutput = Data.taggedEnum<LexOutput>();
+// The guards below run per token. Each is its own function with a direct
+// tag check, not a `$is` guard: `Predicate.isTagged` (what `$is` returns) is
+// one function shared by every guard in the program, so its property reads
+// see every tagged shape and go megamorphic, which costs the SAX path about a
+// third of its throughput (`vp run bench`).
 
 /** Is this output a fault? */
-export const isFault = LexOutput.$is("Fault");
+export const isFault = (o: LexOutput): o is Extract<LexOutput, { readonly _tag: "Fault" }> =>
+  o._tag === "Fault";
 
-// The tagged-enum matchers and guards, taken once: each property read of a
-// `Data.taggedEnum` goes through a Proxy and builds a fresh function.
-const matchTok = Tok.$match;
-const isEndTag = Tok.$is("EndElement");
-const isStartTag = Tok.$is("StartElement");
+/** Guards for the {@link LexEvent} kinds the drivers branch on. */
+export const isStartElementEvent = (
+  o: LexOutput,
+): o is Extract<LexOutput, { readonly _tag: "StartElement" }> => o._tag === "StartElement";
+export const isEndElementEvent = (
+  o: LexOutput,
+): o is Extract<LexOutput, { readonly _tag: "EndElement" }> => o._tag === "EndElement";
+export const isDoctypeEvent = (
+  o: LexOutput,
+): o is Extract<LexOutput, { readonly _tag: "Doctype" }> => o._tag === "Doctype";
+export const isXmlDeclarationEvent = (
+  o: LexOutput,
+): o is Extract<LexOutput, { readonly _tag: "XmlDeclaration" }> => o._tag === "XmlDeclaration";
+export const isEntityReferenceEvent = (
+  o: LexOutput,
+): o is Extract<LexOutput, { readonly _tag: "EntityReference" }> => o._tag === "EntityReference";
+
+const isEndTag = (t: Tok): t is Extract<Tok, { readonly _tag: "EndElement" }> =>
+  t._tag === "EndElement";
+const isStartTag = (t: Tok): t is Extract<Tok, { readonly _tag: "StartElement" }> =>
+  t._tag === "StartElement";
 const isEntityIssue = Issue.$is("Entity");
 
 // -----------------------------------------------------------------------------
@@ -121,7 +139,7 @@ export interface LexerOptions {
   /** Named entity table. */
   readonly entities: Record<string, string>;
   /** Declared entities, for XML with `dtd: "internal"`. */
-  readonly dtd?: Dtd;
+  readonly dtd?: Dtd | undefined;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -178,9 +196,6 @@ const crlfSearch = (crlf: ReadonlyArray<number>, index: number, lo: number, hi: 
     ? crlfSearch(crlf, index, mid + 1, hi)
     : crlfSearch(crlf, index, lo, mid);
 };
-
-/** Quote a source excerpt for a message: a JSON string literal, escapes and all. */
-const quote = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
 class Positions {
   /** Absolute indices of `\n`s that were `\r\n` in the raw input, ascending. */
@@ -370,10 +385,25 @@ export class Lexer {
   }
   private state_: Input.State<string> | undefined = undefined;
 
+  /**
+   * Lex one token at a time, handing each output to `f` before the next token
+   * is read, so a driver can react (switch raw text off, stop at a limit) in
+   * between. Stops when `f` returns `false` or no more tokens can be read.
+   */
+  pullEach(f: (output: LexOutput) => boolean): void {
+    drive(() => this.pull(), f);
+  }
+
   private drain(): ReadonlyArray<LexOutput> {
-    return Arr.unfold(undefined, () =>
-      Option.map(Option.fromNullishOr(this.pull()), (outs) => [outs, undefined] as const),
-    ).flat();
+    const out: Array<LexOutput> = [];
+    drive(
+      () => this.pull(),
+      (o) => {
+        out.push(o);
+        return true;
+      },
+    );
+    return out;
   }
 
   /** Collapse `\r\n` and `\r` to `\n`, recording where a CRLF was. */
@@ -434,8 +464,54 @@ export class Lexer {
     return { start: this.at(t.start), end: this.at(t.end) };
   }
 
+  // A `switch`, not a `$match` table: this runs once per token, and a switch
+  // lets V8 inline each case (and the `at` / `span` calls in it), where the
+  // table's shared, megamorphic dispatch can't (see `vite.config.ts`).
   private event(t: Tok): LexEvent {
-    return matchTok(t, this.toEvent);
+    switch (t._tag) {
+      case "StartElement": {
+        const start = this.at(t.start);
+        const attributes = t.attributes.map((a) => ({
+          name: a.name,
+          value: a.value,
+          span: this.span(a),
+        }));
+        return {
+          _tag: "StartElement",
+          name: t.name,
+          attributes,
+          selfClosing: t.selfClosing,
+          span: { start, end: this.at(t.end) },
+        };
+      }
+      case "EndElement":
+        return { _tag: "EndElement", name: t.name, span: this.span(t) };
+      case "Text":
+      case "CData":
+      case "Comment":
+        return { _tag: t._tag, data: t.data, span: this.span(t) };
+      case "ProcessingInstruction":
+        return { _tag: t._tag, target: t.target, data: t.data, span: this.span(t) };
+      case "Doctype":
+        return {
+          _tag: t._tag,
+          name: t.name,
+          publicId: t.publicId,
+          systemId: t.systemId,
+          internalSubset: t.internalSubset,
+          span: this.span(t),
+        };
+      case "XmlDeclaration":
+        return {
+          _tag: t._tag,
+          version: t.version,
+          encoding: t.encoding,
+          standalone: t.standalone,
+          span: this.span(t),
+        };
+      case "EntityReference":
+        return { _tag: t._tag, name: t.name, span: this.span(t) };
+    }
   }
 
   /** The grammar for each tokenizer state; built once per lexer. */
@@ -443,71 +519,6 @@ export class Lexer {
     Data: () => this.grammars.data,
     Raw: ({ name, kind }: Extract<LexState, { _tag: "Raw" }>) => this.grammars.raw(name, kind),
     Plaintext: () => this.grammars.plaintext,
-  };
-
-  /** The output event for each token kind; built once per lexer. */
-  private readonly toEvent = {
-    StartElement: (t: Extract<Tok, { _tag: "StartElement" }>): LexEvent => {
-      const start = this.at(t.start);
-      const attributes = t.attributes.map((a) => ({
-        name: a.name,
-        value: a.value,
-        span: this.span(a),
-      }));
-      return {
-        _tag: "StartElement",
-        name: t.name,
-        attributes,
-        selfClosing: t.selfClosing,
-        span: { start, end: this.at(t.end) },
-      };
-    },
-    EndElement: (t: Extract<Tok, { _tag: "EndElement" }>): LexEvent => ({
-      _tag: "EndElement",
-      name: t.name,
-      span: this.span(t),
-    }),
-    Text: (t: Extract<Tok, { _tag: "Text" }>): LexEvent => ({
-      _tag: "Text",
-      data: t.data,
-      span: this.span(t),
-    }),
-    CData: (t: Extract<Tok, { _tag: "CData" }>): LexEvent => ({
-      _tag: "CData",
-      data: t.data,
-      span: this.span(t),
-    }),
-    Comment: (t: Extract<Tok, { _tag: "Comment" }>): LexEvent => ({
-      _tag: "Comment",
-      data: t.data,
-      span: this.span(t),
-    }),
-    ProcessingInstruction: (t: Extract<Tok, { _tag: "ProcessingInstruction" }>): LexEvent => ({
-      _tag: "ProcessingInstruction",
-      target: t.target,
-      data: t.data,
-      span: this.span(t),
-    }),
-    Doctype: (t: Extract<Tok, { _tag: "Doctype" }>): LexEvent => ({
-      _tag: "Doctype",
-      name: t.name,
-      publicId: t.publicId,
-      systemId: t.systemId,
-      internalSubset: t.internalSubset,
-      span: this.span(t),
-    }),
-    XmlDeclaration: (t: Extract<Tok, { _tag: "XmlDeclaration" }>): LexEvent => ({
-      _tag: "XmlDeclaration",
-      version: t.version,
-      encoding: t.encoding,
-      standalone: t.standalone,
-      span: this.span(t),
-    }),
-    EntityReference: (t: Extract<Tok, { _tag: "EntityReference" }>): LexEvent => ({
-      _tag: "EntityReference",
-      name: t.name,
-      span: this.span(t),
-    }),
   };
 
   /** The typed error for a failed (XML) token. */

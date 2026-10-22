@@ -12,20 +12,30 @@
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as Iterable from "effect/Iterable";
 import * as Schema from "effect/Schema";
+import { isEnter, preorder } from "../internal/tree.ts";
 import { Namespaces, QName } from "../Name.ts";
 
 /**
  * A name to look elements and attributes up by: a namespace URI (`null` for
  * none) and a local name. A {@link QName} is one; so is what an `Ns` handle
  * returns. Matching ignores prefixes, which producers are free to choose.
+ *
+ * @since 0.3.0
+ * @category names
  */
 export interface NameLike {
   readonly namespace: string | null;
   readonly local: string;
 }
 
-/** The arguments of the lookup methods: a {@link NameLike}, or a namespace and a local name. */
+/**
+ * The arguments of the lookup methods: a {@link NameLike}, or a namespace and a local name.
+ *
+ * @since 0.3.0
+ * @category names
+ */
 export type NameArgs =
   | readonly [name: NameLike]
   | readonly [namespace: string | null, local: string];
@@ -157,31 +167,26 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
   /** The first child element with this name. */
   child(...args: NameArgs): Option.Option<XmlElement> {
     const name = nameOf(args);
-    for (const c of this.children)
-      if (c._tag === "XmlElement" && isNamed(c.name, name)) return Option.some(c);
-    return Option.none();
+    return Arr.findFirst(
+      this.children,
+      (c): c is XmlElement => isElement(c) && isNamed(c.name, name),
+    );
   }
 
   /** The child elements with this name, in document order. */
   childElements(...args: NameArgs): ReadonlyArray<XmlElement> {
     const name = nameOf(args);
-    return this.children.filter(
-      (c): c is XmlElement => c._tag === "XmlElement" && isNamed(c.name, name),
-    );
+    return this.children.filter((c): c is XmlElement => isElement(c) && isNamed(c.name, name));
   }
 
   /** The descendant elements with this name (not this element), in document order. */
   descendants(...args: NameArgs): ReadonlyArray<XmlElement> {
     const name = nameOf(args);
-    const out: Array<XmlElement> = [];
-    // Iterative, so arbitrarily deep trees can't overflow the stack.
-    const stack: Array<XmlNode> = [...this.children].reverse();
-    for (let c = stack.pop(); c !== undefined; c = stack.pop()) {
-      if (c._tag !== "XmlElement") continue;
-      if (isNamed(c.name, name)) out.push(c);
-      for (let i = c.children.length - 1; i >= 0; i--) stack.push(c.children[i]!);
-    }
-    return out;
+    return Iterable.reduce(walk(this.children), Arr.empty<XmlElement>(), (out, step) => {
+      if (isEnter(step) && isElement(step.node) && isNamed(step.node.name, name))
+        out.push(step.node);
+      return out;
+    });
   }
 
   /** The text content of the first child element with this name. */
@@ -191,20 +196,20 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
 
   /** Concatenated text of all descendant text / CDATA nodes. */
   get textContent(): string {
-    // Iterative, so arbitrarily deep trees can't overflow the stack.
-    let out = "";
-    const stack: Array<XmlNode> = [...this.children].reverse();
-    for (let c = stack.pop(); c !== undefined; c = stack.pop()) {
-      if (c._tag === "XmlText" || c._tag === "XmlCData") out += c.data;
-      else if (c._tag === "XmlElement")
-        for (let i = c.children.length - 1; i >= 0; i--) stack.push(c.children[i]!);
-    }
-    return out;
+    return Iterable.reduce(walk(this.children), "", (out, step) =>
+      isEnter(step) && (isText(step.node) || isCData(step.node)) ? out + step.node.data : out,
+    );
   }
 }
 
 /** Is this node an element? */
 const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isText = (node: XmlNode): node is XmlText => Predicate.isTagged(node, "XmlText");
+const isCData = (node: XmlNode): node is XmlCData => Predicate.isTagged(node, "XmlCData");
+
+/** Every node under `nodes`, in document order, without recursion (any depth is fine). */
+const walk = (nodes: ReadonlyArray<XmlNode>) =>
+  preorder(nodes, (node) => (isElement(node) ? node.children : undefined));
 
 /**
  * Any node that can appear as a child.

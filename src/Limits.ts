@@ -11,6 +11,12 @@
  * {@link unlimited} to switch them all off for trusted input.
  */
 
+/**
+ * The resource limits every parser enforces; exceeding one fails with `LimitExceeded`.
+ *
+ * @since 0.3.0
+ * @category models
+ */
 export interface Limits {
   /** Maximum element nesting depth. */
   readonly maxDepth: number;
@@ -42,6 +48,9 @@ export interface Limits {
 /**
  * Conservative defaults, close to libxml2's: generous for real documents
  * (OOXML, ODF, EPUB, RDF/XML), small enough to stop hostile ones early.
+ *
+ * @since 0.3.0
+ * @category limits
  */
 export const defaultLimits: Limits = {
   maxDepth: 1024,
@@ -53,7 +62,12 @@ export const defaultLimits: Limits = {
   maxEntityDepth: 64,
 };
 
-/** No limits at all. Only for trusted input. */
+/**
+ * No limits at all. Only for trusted input.
+ *
+ * @since 0.3.0
+ * @category limits
+ */
 export const unlimited: Limits = {
   maxDepth: Infinity,
   maxAttributes: Infinity,
@@ -64,6 +78,11 @@ export const unlimited: Limits = {
   maxEntityDepth: Infinity,
 };
 
-/** Fill in the limits a caller left out with the defaults. */
+/**
+ * Fill in the limits a caller left out with the defaults.
+ *
+ * @since 0.3.0
+ * @category limits
+ */
 export const resolveLimits = (limits: Partial<Limits> | undefined): Limits =>
   limits === undefined ? defaultLimits : { ...defaultLimits, ...limits };

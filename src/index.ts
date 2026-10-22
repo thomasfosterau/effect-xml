@@ -11,6 +11,7 @@
  * positions/spans, and the tagged {@link SaxError} union — is re-exported here.
  *
  * @example
+ * ```ts
  * import * as Effect from "effect/Effect"
  * import { Xml } from "effect-sax"
  *
@@ -19,6 +20,7 @@
  * )
  *
  * console.log(Effect.runSync(program)) // "1"
+ * ```
  *
  * @since 0.2.0
  */
@@ -46,7 +48,19 @@ export * as Xml from "./Xml/index.ts";
  * @category modules
  */
 export * as Html from "./Html/index.ts";
+/**
+ * Encoding detection (XML Appendix F and WHATWG sniffing) and byte decoding.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
 export * as Encoding from "./Encoding.ts";
+/**
+ * The resource limits every parser enforces, and their defaults.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
 export * as Limits from "./Limits.ts";
 
 /**
