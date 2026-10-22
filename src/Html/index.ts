@@ -1,10 +1,54 @@
 /**
- * The `Html` module: HTML tokenization (html5ever groundwork) and an
- * experimental lenient fragment builder.
+ * The `Html` module: lenient HTML tokenization, WHATWG tree construction
+ * (`parseDocument`) and a lenient fragment builder (`parseFragment`).
+ *
+ * @since 0.2.0
  */
-export { MATHML_NS, SVG_NS, XLINK_NS, XML_NS, XMLNS_NS } from "./foreign.ts"
-export * from "./Tokenizer.ts"
-export * from "./TreeBuilder.ts"
-export * from "./TreeConstruction.ts"
-export * from "./Html.ts"
-export { serialize, serializeFragment } from "./Serialize.ts"
+
+/**
+ * The namespace URIs foreign (SVG / MathML) content is placed in.
+ *
+ * @since 0.2.0
+ * @category namespaces
+ */
+export * from "./Namespaces.ts";
+
+/**
+ * HTML-mode tokenization and the element-category tables.
+ *
+ * @since 0.2.0
+ * @category tokenizing
+ */
+export * from "./Tokenizer.ts";
+
+/**
+ * The lenient fragment builder.
+ *
+ * @since 0.2.0
+ * @category parsing
+ */
+export * from "./TreeBuilder.ts";
+
+/**
+ * WHATWG tree construction.
+ *
+ * @since 0.2.0
+ * @category parsing
+ */
+export * from "./TreeConstruction.ts";
+
+/**
+ * One-call parsing of strings and streams.
+ *
+ * @since 0.2.0
+ * @category parsing
+ */
+export * from "./Html.ts";
+
+/**
+ * HTML serialization (the WHATWG fragment-serialization algorithm).
+ *
+ * @since 0.3.0
+ * @category serialization
+ */
+export * from "./Serialize.ts";

@@ -9,38 +9,79 @@
  * those tables and the small pure helpers that operate on them.
  */
 
-export const SVG_NS = "http://www.w3.org/2000/svg"
-export const MATHML_NS = "http://www.w3.org/1998/Math/MathML"
-export const XLINK_NS = "http://www.w3.org/1999/xlink"
-export const XML_NS = "http://www.w3.org/XML/1998/namespace"
-export const XMLNS_NS = "http://www.w3.org/2000/xmlns/"
+import { tagSet } from "./tagSet.ts";
+import { MATHML_NS, SVG_NS, XLINK_NS, XML_NS, XMLNS_NS } from "../Html/Namespaces.ts";
 
 /** A working-DOM attribute, optionally carrying a namespace/prefix after adjustment. */
 export interface Attr {
-  name: string
-  value: string
-  prefix?: string | null
-  ns?: string | null
+  name: string;
+  value: string;
+  prefix?: string | null;
+  ns?: string | null;
 }
 
 /** MathML text integration points (start tags/characters inside them use HTML rules). */
-export const MATHML_TEXT_IP = new Set(["mi", "mo", "mn", "ms", "mtext"])
+export const MATHML_TEXT_IP = tagSet("mi", "mo", "mn", "ms", "mtext");
 
 /**
  * HTML start tags that force the parser out of foreign content. (`font` is a
  * conditional member — only with a color/face/size attribute — handled in the
  * tree builder.)
  */
-export const FOREIGN_BREAKOUT = new Set([
-  "b", "big", "blockquote", "body", "br", "center", "code", "dd", "div", "dl",
-  "dt", "em", "embed", "h1", "h2", "h3", "h4", "h5", "h6", "head", "hr", "i",
-  "img", "li", "listing", "menu", "meta", "nobr", "ol", "p", "pre", "ruby", "s",
-  "small", "span", "strong", "strike", "sub", "sup", "table", "tt", "u", "ul",
+export const FOREIGN_BREAKOUT = tagSet(
+  "b",
+  "big",
+  "blockquote",
+  "body",
+  "br",
+  "center",
+  "code",
+  "dd",
+  "div",
+  "dl",
+  "dt",
+  "em",
+  "embed",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "head",
+  "hr",
+  "i",
+  "img",
+  "li",
+  "listing",
+  "menu",
+  "meta",
+  "nobr",
+  "ol",
+  "p",
+  "pre",
+  "ruby",
+  "s",
+  "small",
+  "span",
+  "strong",
+  "strike",
+  "sub",
+  "sup",
+  "table",
+  "tt",
+  "u",
+  "ul",
   "var",
-])
+);
+
+/** Case corrections: the lowercased name a tokenizer sees to the name the spec spells. */
+interface NameCorrections {
+  readonly [lowercased: string]: string;
+}
 
 /** SVG tag names that are case-corrected from their lowercased form. */
-const SVG_TAG_NAMES: Record<string, string> = {
+const SVG_TAG_NAMES: NameCorrections = {
   altglyph: "altGlyph",
   altglyphdef: "altGlyphDef",
   altglyphitem: "altGlyphItem",
@@ -78,12 +119,12 @@ const SVG_TAG_NAMES: Record<string, string> = {
   lineargradient: "linearGradient",
   radialgradient: "radialGradient",
   textpath: "textPath",
-}
+};
 
-export const svgTagName = (name: string): string => SVG_TAG_NAMES[name] ?? name
+export const svgTagName = (name: string): string => SVG_TAG_NAMES[name] ?? name;
 
 /** SVG attribute names that are case-corrected from their lowercased form. */
-const SVG_ATTRS: Record<string, string> = {
+const SVG_ATTRS: NameCorrections = {
   attributename: "attributeName",
   attributetype: "attributeType",
   basefrequency: "baseFrequency",
@@ -142,10 +183,13 @@ const SVG_ATTRS: Record<string, string> = {
   xchannelselector: "xChannelSelector",
   ychannelselector: "yChannelSelector",
   zoomandpan: "zoomAndPan",
-}
+};
 
 /** Foreign attributes placed into the XLink / XML / XMLNS namespaces. */
-const FOREIGN_ATTRS: Record<string, { prefix: string | null; local: string; ns: string }> = {
+interface ForeignAttributes {
+  readonly [name: string]: { prefix: string | null; local: string; ns: string };
+}
+const FOREIGN_ATTRS: ForeignAttributes = {
   "xlink:actuate": { prefix: "xlink", local: "actuate", ns: XLINK_NS },
   "xlink:arcrole": { prefix: "xlink", local: "arcrole", ns: XLINK_NS },
   "xlink:href": { prefix: "xlink", local: "href", ns: XLINK_NS },
@@ -155,9 +199,9 @@ const FOREIGN_ATTRS: Record<string, { prefix: string | null; local: string; ns: 
   "xlink:type": { prefix: "xlink", local: "type", ns: XLINK_NS },
   "xml:lang": { prefix: "xml", local: "lang", ns: XML_NS },
   "xml:space": { prefix: "xml", local: "space", ns: XML_NS },
-  "xmlns": { prefix: null, local: "xmlns", ns: XMLNS_NS },
+  xmlns: { prefix: null, local: "xmlns", ns: XMLNS_NS },
   "xmlns:xlink": { prefix: "xmlns", local: "xlink", ns: XMLNS_NS },
-}
+};
 
 /**
  * Apply the per-namespace attribute fix-ups to a token's attributes: SVG/MathML
@@ -166,15 +210,15 @@ const FOREIGN_ATTRS: Record<string, { prefix: string | null; local: string; ns: 
  */
 export const adjustForeignAttrs = (attrs: ReadonlyArray<Attr>, ns: string): Array<Attr> =>
   attrs.map((a): Attr => {
-    const foreign = FOREIGN_ATTRS[a.name]
+    const foreign = FOREIGN_ATTRS[a.name];
     if (foreign) {
-      return { name: foreign.local, value: a.value, prefix: foreign.prefix, ns: foreign.ns }
+      return { name: foreign.local, value: a.value, prefix: foreign.prefix, ns: foreign.ns };
     }
     if (ns === SVG_NS) {
-      const fixed = SVG_ATTRS[a.name]
-      if (fixed) return { name: fixed, value: a.value }
+      const fixed = SVG_ATTRS[a.name];
+      if (fixed) return { name: fixed, value: a.value };
     } else if (ns === MATHML_NS) {
-      if (a.name === "definitionurl") return { name: "definitionURL", value: a.value }
+      if (a.name === "definitionurl") return { name: "definitionURL", value: a.value };
     }
-    return { name: a.name, value: a.value }
-  })
+    return { name: a.name, value: a.value };
+  });

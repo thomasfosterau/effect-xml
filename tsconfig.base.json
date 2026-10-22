@@ -1,0 +1,65 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/schema.json",
+  "compilerOptions": {
+    // The family's shared options (effect-web's tsconfig.base.json), plus the
+    // stricter flags this library has always compiled under
+    // (`noUncheckedIndexedAccess`, `noUnusedParameters`,
+    // `noFallthroughCasesInSwitch`). `erasableSyntaxOnly` because consumers
+    // may load TypeScript under Node's strip-only loader.
+    "erasableSyntaxOnly": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "target": "esnext",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    // Source imports are written `./x.ts`; the build rewrites them to `./x.js`.
+    "rewriteRelativeImportExtensions": true,
+    "allowJs": true,
+    "checkJs": false,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    // Optional members are spelled `?: T | undefined` because of this flag: a
+    // consumer forwarding an optional of its own must still compile.
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // The severities below keep every Effect rule visible in the editor,
+        // but a "warning" still fails the patched tsc by default — this flag
+        // is what actually makes warnings non-blocking in the check task.
+        "ignoreEffectWarningsInTscExitCode": true,
+        "diagnosticSeverity": {
+          "asyncFunction": "warning",
+          "extendsNativeError": "warning",
+          "globalConsole": "warning",
+          "globalConsoleInEffect": "warning",
+          "globalDate": "warning",
+          "globalDateInEffect": "warning",
+          "globalRandom": "warning",
+          "globalRandomInEffect": "warning",
+          "globalTimers": "warning",
+          "globalTimersInEffect": "warning",
+          "instanceOfSchema": "warning",
+          "newPromise": "warning",
+          "nodeBuiltinImport": "warning",
+          "preferSchemaOverJson": "warning",
+          "processEnv": "warning",
+          "processEnvInEffect": "warning",
+          "unsafeEffectTypeAssertion": "warning"
+        }
+      }
+    ]
+  }
+}

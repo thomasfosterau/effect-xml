@@ -137,3 +137,17 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Tooling (Vite+ task cache, fallow, Claude Code local state).
+.vite/
+.vite-hooks/_/
+.fallow
+fallow.sarif
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.pnpm-store
+
+# Generated API reference (`vp run docgen`). Never committed; the README is
+# the reference consumers read.
+docs/

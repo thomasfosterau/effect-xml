@@ -11,37 +11,46 @@
  * {@link unlimited} to switch them all off for trusted input.
  */
 
+/**
+ * The resource limits every parser enforces; exceeding one fails with `LimitExceeded`.
+ *
+ * @since 0.3.0
+ * @category models
+ */
 export interface Limits {
   /** Maximum element nesting depth. */
-  readonly maxDepth: number
+  readonly maxDepth: number;
   /** Maximum number of attributes on one element. */
-  readonly maxAttributes: number
+  readonly maxAttributes: number;
   /** Maximum length of an element name, attribute name or PI target. */
-  readonly maxNameLength: number
+  readonly maxNameLength: number;
   /**
    * Maximum length of any single run of character data: a text node, CDATA
    * section, comment, attribute value, PI body or DOCTYPE internal subset.
    * While streaming, this also bounds how much of one unfinished token is
    * buffered.
    */
-  readonly maxTextLength: number
+  readonly maxTextLength: number;
   /**
    * Maximum size of the whole input: bytes for byte input, UTF-16 code units
    * for string input.
    */
-  readonly maxTotalBytes: number
+  readonly maxTotalBytes: number;
   /**
    * Maximum total length of replacement text that entity references may add
    * to a document (with `dtd: "internal"`). Stops "billion laughs".
    */
-  readonly maxEntityExpansion: number
+  readonly maxEntityExpansion: number;
   /** Maximum nesting of entity references inside entity replacement text. */
-  readonly maxEntityDepth: number
+  readonly maxEntityDepth: number;
 }
 
 /**
  * Conservative defaults, close to libxml2's: generous for real documents
  * (OOXML, ODF, EPUB, RDF/XML), small enough to stop hostile ones early.
+ *
+ * @since 0.3.0
+ * @category limits
  */
 export const defaultLimits: Limits = {
   maxDepth: 1024,
@@ -51,9 +60,14 @@ export const defaultLimits: Limits = {
   maxTotalBytes: 1024 * 1024 * 1024,
   maxEntityExpansion: 1_000_000,
   maxEntityDepth: 64,
-}
+};
 
-/** No limits at all. Only for trusted input. */
+/**
+ * No limits at all. Only for trusted input.
+ *
+ * @since 0.3.0
+ * @category limits
+ */
 export const unlimited: Limits = {
   maxDepth: Infinity,
   maxAttributes: Infinity,
@@ -62,8 +76,13 @@ export const unlimited: Limits = {
   maxTotalBytes: Infinity,
   maxEntityExpansion: Infinity,
   maxEntityDepth: Infinity,
-}
+};
 
-/** Fill in the limits a caller left out with the defaults. */
+/**
+ * Fill in the limits a caller left out with the defaults.
+ *
+ * @since 0.3.0
+ * @category limits
+ */
 export const resolveLimits = (limits: Partial<Limits> | undefined): Limits =>
-  limits === undefined ? defaultLimits : { ...defaultLimits, ...limits }
+  limits === undefined ? defaultLimits : { ...defaultLimits, ...limits };

@@ -12,96 +12,145 @@
  * Moved from effect-rdfxml. The InclusiveNamespaces PrefixList is not
  * supported (it is always empty).
  */
-import { Namespaces } from "../Name.ts"
-import { XmlDocument, type XmlNode } from "./Node.ts"
+import * as Arr from "effect/Array";
+import * as HashMap from "effect/HashMap";
+import * as Iterable from "effect/Iterable";
+import * as Match from "effect/Match";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import { Namespaces } from "../Name.ts";
+import { byKey, byNamespaceThenLocal } from "../internal/order.ts";
+import { isEnter, preorder } from "../internal/tree.ts";
+import { XmlDocument, type XmlElement, type XmlNode } from "./Node.ts";
 
+/**
+ * Options for {@link exclusive}.
+ *
+ * @since 0.3.0
+ * @category options
+ */
 export interface C14nOptions {
   /** Keep comments ("with comments"); default `false`. */
-  readonly comments?: boolean
+  readonly comments?: boolean | undefined;
 }
 
-/** Escape character data as Canonical XML does. */
+/**
+ * Escape character data as Canonical XML does.
+ *
+ * @since 0.3.0
+ * @category canonicalization
+ */
 export const escapeText = (value: string): string =>
-  value.replace(/[&<>\r]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&#xD;"))
+  value.replace(/[&<>\r]/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&#xD;",
+  );
 
-/** Escape an attribute value as Canonical XML does. */
+/**
+ * Escape an attribute value as Canonical XML does.
+ *
+ * @since 0.3.0
+ * @category canonicalization
+ */
 export const escapeAttribute = (value: string): string =>
   value.replace(/[&<"\t\n\r]/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === "\"" ? "&quot;" : c === "\t" ? "&#x9;" : c === "\n" ? "&#xA;" : "&#xD;"
-  )
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === '"'
+          ? "&quot;"
+          : c === "\t"
+            ? "&#x9;"
+            : c === "\n"
+              ? "&#xA;"
+              : "&#xD;",
+  );
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+/** Namespace declarations: prefix (`""` for the default namespace) to URI. */
+type Bindings = HashMap.HashMap<string, string>;
+
+const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
 
 const isXmlns = (prefix: string | null, local: string, namespace: string | null): boolean =>
-  namespace === Namespaces.xmlns || prefix === "xmlns" || (prefix === null && local === "xmlns")
+  namespace === Namespaces.xmlns || prefix === "xmlns" || (prefix === null && local === "xmlns");
 
 /**
  * Canonicalize nodes (each with all its descendants, none of its ancestors).
  * A document's top-level nodes are separated by line feeds, as Canonical XML
  * requires; its declaration and DOCTYPE are not part of the canonical form.
  */
-export const exclusive = (input: XmlNode | XmlDocument | ReadonlyArray<XmlNode>, options?: C14nOptions): string => {
-  const comments = options?.comments ?? false
-  const isDoc = input instanceof XmlDocument
-  const nodes: ReadonlyArray<XmlNode> = isDoc ? input.children : Array.isArray(input) ? input : [input as XmlNode]
-  const parts: Array<string> = []
-  // Iterative: a node with the namespace bindings rendered above it, or an end tag.
-  type Item = { readonly node: XmlNode; readonly rendered: ReadonlyMap<string, string> } | { readonly close: string }
-  const stack: Array<Item> = []
-  const empty: ReadonlyMap<string, string> = new Map()
-  for (const node of nodes) {
-    let out = ""
-    stack.length = 0
-    stack.push({ node, rendered: empty })
-    for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
-      if ("close" in item) {
-        out += item.close
-        continue
-      }
-      const { node: n, rendered } = item
-      switch (n._tag) {
-        case "XmlText":
-        case "XmlCData":
-          out += escapeText(n.data)
-          break
-        case "XmlComment":
-          if (comments) out += `<!--${n.data}-->`
-          break
-        case "XmlProcessingInstruction":
-          out += n.data === "" ? `<?${n.target}?>` : `<?${n.target} ${n.data}?>`
-          break
-        case "XmlElement": {
-          const attributes = n.attributes.filter((a) => !isXmlns(a.name.prefix, a.name.local, a.name.namespace))
-          // The namespaces this element visibly uses: its own prefix (or the
-          // default namespace) and its attributes' prefixes.
-          const utilized = new Map<string, string>([[n.name.prefix ?? "", n.name.namespace ?? ""]])
-          for (const a of attributes) {
-            if (a.name.prefix !== null && a.name.prefix !== "xml") utilized.set(a.name.prefix, a.name.namespace ?? "")
-          }
-          utilized.delete("xml")
-          const decls = [...utilized].filter(([p, uri]) => (rendered.get(p) ?? "") !== uri).sort(([a], [b]) => compare(a, b))
-          let next = rendered
-          if (decls.length > 0) {
-            const m = new Map(rendered)
-            for (const [p, uri] of decls) m.set(p, uri)
-            next = m
-          }
-          const name = n.name.qualified
-          out += `<${name}`
-          for (const [p, uri] of decls) out += p === "" ? ` xmlns="${escapeAttribute(uri)}"` : ` xmlns:${p}="${escapeAttribute(uri)}"`
-          const sorted = [...attributes].sort(
-            (a, b) => compare(a.name.namespace ?? "", b.name.namespace ?? "") || compare(a.name.local, b.name.local)
-          )
-          for (const a of sorted) out += ` ${a.name.qualified}="${escapeAttribute(a.value)}"`
-          out += ">"
-          stack.push({ close: `</${name}>` })
-          for (let k = n.children.length - 1; k >= 0; k--) stack.push({ node: n.children[k]!, rendered: next })
-          break
-        }
-      }
-    }
-    parts.push(out)
-  }
+/** A node's own canonical markup (all of a leaf, an element's start tag). */
+const render = (node: XmlNode, scopes: Array<Bindings>, comments: boolean): string =>
+  Match.valueTags(node, {
+    XmlText: (t) => escapeText(t.data),
+    XmlCData: (t) => escapeText(t.data),
+    XmlComment: (c) => (comments ? `<!--${c.data}-->` : ""),
+    XmlProcessingInstruction: (pi) =>
+      pi.data === "" ? `<?${pi.target}?>` : `<?${pi.target} ${pi.data}?>`,
+    XmlElement: (e) => {
+      const rendered = scopes.at(-1) ?? HashMap.empty();
+      const attributes = e.attributes.filter(
+        (a) => !isXmlns(a.name.prefix, a.name.local, a.name.namespace),
+      );
+      // The namespaces this element visibly uses: its own prefix (or the
+      // default namespace) and its attributes' prefixes.
+      const utilized = HashMap.remove(
+        Arr.reduce(
+          attributes,
+          HashMap.make([e.name.prefix ?? "", e.name.namespace ?? ""] as const),
+          (used, a) =>
+            a.name.prefix !== null && a.name.prefix !== "xml"
+              ? HashMap.set(used, a.name.prefix, a.name.namespace ?? "")
+              : used,
+        ),
+        "xml",
+      );
+      const decls = Arr.sort(
+        Arr.filter(
+          Arr.fromIterable(utilized),
+          ([p, uri]) => Option.getOrElse(HashMap.get(rendered, p), () => "") !== uri,
+        ),
+        byKey,
+      );
+      scopes.push(Arr.reduce(decls, rendered, (m, [p, uri]) => HashMap.set(m, p, uri)));
+      const xmlns = decls
+        .map(([p, uri]) =>
+          p === "" ? ` xmlns="${escapeAttribute(uri)}"` : ` xmlns:${p}="${escapeAttribute(uri)}"`,
+        )
+        .join("");
+      const attrs = Arr.sort(attributes, byNamespaceThenLocal)
+        .map((a) => ` ${a.name.qualified}="${escapeAttribute(a.value)}"`)
+        .join("");
+      return `<${e.name.qualified}${xmlns}${attrs}>`;
+    },
+  });
+
+/**
+ * Exclusive XML Canonicalization 1.0 of nodes, an element or a document: namespace declarations only where visibly used, attributes in canonical order, comments dropped unless `comments` is set.
+ *
+ * @since 0.3.0
+ * @category canonicalization
+ */
+export const exclusive = (
+  input: XmlNode | XmlDocument | ReadonlyArray<XmlNode>,
+  options?: C14nOptions,
+): string => {
+  const comments = options?.comments ?? false;
+  const isDoc = input instanceof XmlDocument;
+  const nodes: ReadonlyArray<XmlNode> = isDoc ? input.children : Arr.ensure(input);
+  const parts = nodes.map((node) => {
+    // The namespace bindings rendered by each open element and its ancestors.
+    const scopes: Array<Bindings> = [HashMap.empty()];
+    return Iterable.reduce(
+      preorder([node], (n) => (isElement(n) ? n.children : undefined)),
+      "",
+      (out, step) => {
+        if (isEnter(step)) return out + render(step.node, scopes, comments);
+        scopes.pop();
+        return isElement(step.node) ? out + `</${step.node.name.qualified}>` : out;
+      },
+    );
+  });
   // Canonical XML separates a document's top-level nodes with line feeds.
-  return isDoc ? parts.filter((p) => p !== "").join("\n") : parts.join("")
-}
+  return isDoc ? parts.filter((p) => p !== "").join("\n") : parts.join("");
+};

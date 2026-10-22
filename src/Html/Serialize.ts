@@ -6,87 +6,123 @@
  *
  * Elements in no namespace (from `Html.parseFragment`) are treated as HTML.
  */
-import { Namespaces } from "../Name.ts"
-import { XmlDocument, type XmlNode } from "../Xml/Node.ts"
-import { MATHML_NS, SVG_NS, XLINK_NS } from "./foreign.ts"
-import { HTML_NS } from "./TreeConstruction.ts"
+import * as Iterable from "effect/Iterable";
+import * as Match from "effect/Match";
+import * as Predicate from "effect/Predicate";
+import { Namespaces } from "../Name.ts";
+import { XmlDocument, type XmlElement, type XmlNode } from "../Xml/Node.ts";
+import { isIn, tagSet } from "../internal/tagSet.ts";
+import { isEnter, preorder } from "../internal/tree.ts";
+import { HTML_NS, MATHML_NS, SVG_NS, XLINK_NS } from "./Namespaces.ts";
 
-const VOID = new Set([
-  "area", "base", "basefont", "bgsound", "br", "col", "embed", "frame", "hr", "img", "input", "keygen", "link", "meta",
-  "param", "source", "track", "wbr",
-])
+const VOID = tagSet(
+  "area",
+  "base",
+  "basefont",
+  "bgsound",
+  "br",
+  "col",
+  "embed",
+  "frame",
+  "hr",
+  "img",
+  "input",
+  "keygen",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+);
 
 /** Elements whose text children are written without escaping (scripting is off, so not `noscript`). */
-const RAW = new Set(["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext"])
+const RAW = tagSet("style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext");
 
-const isHtml = (ns: string | null): boolean => ns === null || ns === HTML_NS
+const isHtml = (ns: string | null): boolean => ns === null || ns === HTML_NS;
 
 const escapeText = (s: string): string =>
-  s.replace(/[& <>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&nbsp;"))
+  s.replace(/[& <>]/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&nbsp;",
+  );
 
 const escapeAttribute = (s: string): string =>
-  s.replace(/[& "<>]/g, (c) => (c === "&" ? "&amp;" : c === "\"" ? "&quot;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&nbsp;"))
+  s.replace(/[& "<>]/g, (c) =>
+    c === "&" ? "&amp;" : c === '"' ? "&quot;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&nbsp;",
+  );
 
-const tagName = (name: { readonly local: string; readonly namespace: string | null; readonly qualified: string }): string =>
-  isHtml(name.namespace) || name.namespace === SVG_NS || name.namespace === MATHML_NS ? name.local : name.qualified
+const tagName = (name: {
+  readonly local: string;
+  readonly namespace: string | null;
+  readonly qualified: string;
+}): string =>
+  isHtml(name.namespace) || name.namespace === SVG_NS || name.namespace === MATHML_NS
+    ? name.local
+    : name.qualified;
 
-const attributeName = (name: { readonly local: string; readonly namespace: string | null; readonly qualified: string }): string => {
-  switch (name.namespace) {
-    case null:
-      return name.qualified
-    case Namespaces.xml:
-      return `xml:${name.local}`
-    case Namespaces.xmlns:
-      return name.local === "xmlns" ? "xmlns" : `xmlns:${name.local}`
-    case XLINK_NS:
-      return `xlink:${name.local}`
-    default:
-      return name.qualified
-  }
-}
+const attributeName = (name: {
+  readonly local: string;
+  readonly namespace: string | null;
+  readonly qualified: string;
+}): string => {
+  if (name.namespace === Namespaces.xml) return `xml:${name.local}`;
+  if (name.namespace === Namespaces.xmlns)
+    return name.local === "xmlns" ? "xmlns" : `xmlns:${name.local}`;
+  if (name.namespace === XLINK_NS) return `xlink:${name.local}`;
+  return name.qualified;
+};
 
-/** Serialize nodes in order (an element's `innerHTML` is its children, serialized). */
+const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+
+/** The children a serialization descends into: none for a void HTML element (it has no end tag). */
+const contentOf = (node: XmlNode): ReadonlyArray<XmlNode> | undefined =>
+  isElement(node) && !(isHtml(node.name.namespace) && isIn(VOID, node.name.local))
+    ? node.children
+    : undefined;
+
+/**
+ * Serialize nodes in order (an element's `innerHTML` is its children, serialized).
+ *
+ * @since 0.3.0
+ * @category serialization
+ */
 export const serializeFragment = (nodes: ReadonlyArray<XmlNode>): string => {
-  let out = ""
-  // Iterative: a node and whether its parent is a raw-text element, or an end tag.
-  const stack: Array<{ readonly node: XmlNode; readonly raw: boolean } | string> = []
-  for (let i = nodes.length - 1; i >= 0; i--) stack.push({ node: nodes[i]!, raw: false })
-  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
-    if (typeof item === "string") {
-      out += item
-      continue
-    }
-    const { node, raw } = item
-    switch (node._tag) {
-      case "XmlText":
-      case "XmlCData":
-        out += raw ? node.data : escapeText(node.data)
-        break
-      case "XmlComment":
-        out += `<!--${node.data}-->`
-        break
-      case "XmlProcessingInstruction":
-        out += `<?${node.target}${node.data === "" ? "" : " " + node.data}>`
-        break
-      case "XmlElement": {
-        const name = tagName(node.name)
-        out += `<${name}`
-        for (const a of node.attributes) out += ` ${attributeName(a.name)}="${escapeAttribute(a.value)}"`
-        out += ">"
-        const html = isHtml(node.name.namespace)
-        if (html && VOID.has(node.name.local)) break
-        stack.push(`</${name}>`)
-        const childrenRaw = html && RAW.has(node.name.local)
-        for (let i = node.children.length - 1; i >= 0; i--) stack.push({ node: node.children[i]!, raw: childrenRaw })
-        break
-      }
-    }
-  }
-  return out
-}
+  // For each open element, whether its text children are written raw.
+  const raw: Array<boolean> = [];
+  return Iterable.reduce(preorder(nodes, contentOf), "", (out, step) => {
+    if (isEnter(step)) return out + open(step.node, raw);
+    raw.pop();
+    return isElement(step.node) ? out + `</${tagName(step.node.name)}>` : out;
+  });
+};
 
-/** Serialize a node (an element's `outerHTML`), or a document with its DOCTYPE. */
+/** A node's own markup: all of a leaf, the start tag of an element. */
+const open = (node: XmlNode, raw: Array<boolean>): string =>
+  Match.valueTags(node, {
+    XmlText: (t) => (raw.at(-1) === true ? t.data : escapeText(t.data)),
+    XmlCData: (t) => (raw.at(-1) === true ? t.data : escapeText(t.data)),
+    XmlComment: (c) => `<!--${c.data}-->`,
+    XmlProcessingInstruction: (pi) => `<?${pi.target}${pi.data === "" ? "" : " " + pi.data}>`,
+    XmlElement: (e) => {
+      const html = isHtml(e.name.namespace);
+      if (contentOf(e) !== undefined) raw.push(html && isIn(RAW, e.name.local));
+      const attributes = e.attributes
+        .map((a) => ` ${attributeName(a.name)}="${escapeAttribute(a.value)}"`)
+        .join("");
+      return `<${tagName(e.name)}${attributes}>`;
+    },
+  });
+
+/**
+ * Serialize a node (an element's `outerHTML`), or a document with its DOCTYPE.
+ *
+ * @since 0.3.0
+ * @category serialization
+ */
 export const serialize = (node: XmlNode | XmlDocument): string => {
-  if (!(node instanceof XmlDocument)) return serializeFragment([node])
-  return (node.doctype === null ? "" : `<!DOCTYPE ${node.doctype.name}>`) + serializeFragment(node.children)
-}
+  if (!(node instanceof XmlDocument)) return serializeFragment([node]);
+  return (
+    (node.doctype === null ? "" : `<!DOCTYPE ${node.doctype.name}>`) +
+    serializeFragment(node.children)
+  );
+};

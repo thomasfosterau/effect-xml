@@ -2,133 +2,201 @@
  * Parse errors.
  *
  * All failures surfaced by the SAX layer and the XML tree builder are modelled
- * as `Data.TaggedError`s and unified under {@link SaxError}. Because they are
+ * as `Schema.TaggedError`s and unified under {@link SaxError}. Because they are
  * tagged, callers can exhaustively narrow with `Effect.catchTag` /
  * `Effect.catchTags` and the type system guarantees every case is handled.
  */
-import { Data } from "effect"
-import type { Position } from "./Position.ts"
-import { showPosition } from "./Position.ts"
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
+import { showPosition } from "./Position.ts";
+import { quote } from "./internal/quote.ts";
 
-/** A character appeared where the grammar did not allow it. */
-export class UnexpectedCharacter extends Data.TaggedError("UnexpectedCharacter")<{
-  readonly char: string
-  readonly position: Position
-  readonly context: string
-}> {
+/** The `Position` every error carries, as a schema (the `Position` interface's shape). */
+const ErrorPosition = Schema.Struct({
+  offset: Schema.Number,
+  line: Schema.Number,
+  column: Schema.Number,
+});
+
+/**
+ * A character appeared where the grammar did not allow it.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class UnexpectedCharacter extends Schema.TaggedError<UnexpectedCharacter>()(
+  "UnexpectedCharacter",
+  {
+    char: Schema.String,
+    position: ErrorPosition,
+    context: Schema.String,
+  },
+) {
   override get message(): string {
-    return `Unexpected character ${JSON.stringify(this.char)} at ${showPosition(
-      this.position
-    )} while ${this.context}`
+    return `Unexpected character ${quote(this.char)} at ${showPosition(
+      this.position,
+    )} while ${this.context}`;
   }
 }
 
-/** The input ended in the middle of a construct that was still open. */
-export class UnexpectedEndOfInput extends Data.TaggedError("UnexpectedEndOfInput")<{
-  readonly position: Position
-  readonly context: string
-}> {
+/**
+ * The input ended in the middle of a construct that was still open.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class UnexpectedEndOfInput extends Schema.TaggedError<UnexpectedEndOfInput>()(
+  "UnexpectedEndOfInput",
+  {
+    position: ErrorPosition,
+    context: Schema.String,
+  },
+) {
   override get message(): string {
-    return `Unexpected end of input at ${showPosition(this.position)} while ${
-      this.context
-    }`
+    return `Unexpected end of input at ${showPosition(this.position)} while ${this.context}`;
   }
 }
 
-/** A closing tag did not match the element currently open on the stack. */
-export class MismatchedEndTag extends Data.TaggedError("MismatchedEndTag")<{
-  readonly expected: string
-  readonly actual: string
-  readonly position: Position
-}> {
+/**
+ * A closing tag did not match the element currently open on the stack.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class MismatchedEndTag extends Schema.TaggedError<MismatchedEndTag>()("MismatchedEndTag", {
+  expected: Schema.String,
+  actual: Schema.String,
+  position: ErrorPosition,
+}) {
   override get message(): string {
     return `Mismatched end tag at ${showPosition(this.position)}: expected </${
       this.expected
-    }> but found </${this.actual}>`
+    }> but found </${this.actual}>`;
   }
 }
 
-/** A closing tag was found with no corresponding open element. */
-export class UnexpectedEndTag extends Data.TaggedError("UnexpectedEndTag")<{
-  readonly name: string
-  readonly position: Position
-}> {
+/**
+ * A closing tag was found with no corresponding open element.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class UnexpectedEndTag extends Schema.TaggedError<UnexpectedEndTag>()("UnexpectedEndTag", {
+  name: Schema.String,
+  position: ErrorPosition,
+}) {
   override get message(): string {
-    return `Unexpected end tag </${this.name}> at ${showPosition(this.position)}`
+    return `Unexpected end tag </${this.name}> at ${showPosition(this.position)}`;
   }
 }
 
-/** An entity reference (`&...;`) could not be resolved or was malformed. */
-export class InvalidEntity extends Data.TaggedError("InvalidEntity")<{
-  readonly reference: string
-  readonly position: Position
-  readonly reason: string
-}> {
+/**
+ * An entity reference (`&...;`) could not be resolved or was malformed.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class InvalidEntity extends Schema.TaggedError<InvalidEntity>()("InvalidEntity", {
+  reference: Schema.String,
+  position: ErrorPosition,
+  reason: Schema.String,
+}) {
   override get message(): string {
-    return `Invalid entity reference ${JSON.stringify(this.reference)} at ${showPosition(
-      this.position
-    )}: ${this.reason}`
+    return `Invalid entity reference ${quote(this.reference)} at ${showPosition(
+      this.position,
+    )}: ${this.reason}`;
   }
 }
 
 /**
  * An XML declaration, processing instruction or DOCTYPE did not match its
  * grammar. `expected` describes what the grammar wanted at `position`.
+ *
+ * @since 0.2.0
+ * @category errors
  */
-export class MalformedDeclaration extends Data.TaggedError("MalformedDeclaration")<{
-  readonly construct: string
-  readonly expected: string
-  readonly found: string
-  readonly position: Position
-}> {
+export class MalformedDeclaration extends Schema.TaggedError<MalformedDeclaration>()(
+  "MalformedDeclaration",
+  {
+    construct: Schema.String,
+    expected: Schema.String,
+    found: Schema.String,
+    position: ErrorPosition,
+  },
+) {
   override get message(): string {
     return `Malformed ${this.construct} at ${showPosition(this.position)}: expected ${
       this.expected
-    }, found ${this.found}`
+    }, found ${this.found}`;
   }
 }
 
-/** A duplicate attribute name was found on a single element (not well-formed). */
-export class DuplicateAttribute extends Data.TaggedError("DuplicateAttribute")<{
-  readonly element: string
-  readonly attribute: string
-  readonly position: Position
-}> {
+/**
+ * A duplicate attribute name was found on a single element (not well-formed).
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class DuplicateAttribute extends Schema.TaggedError<DuplicateAttribute>()(
+  "DuplicateAttribute",
+  {
+    element: Schema.String,
+    attribute: Schema.String,
+    position: ErrorPosition,
+  },
+) {
   override get message(): string {
     return `Duplicate attribute "${this.attribute}" on <${this.element}> at ${showPosition(
-      this.position
-    )}`
+      this.position,
+    )}`;
   }
 }
 
-/** A document had more than one root element, or a stray node where only the root is allowed. */
-export class InvalidDocumentStructure extends Data.TaggedError(
-  "InvalidDocumentStructure"
-)<{
-  readonly position: Position
-  readonly reason: string
-}> {
+/**
+ * A document had more than one root element, or a stray node where only the root is allowed.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class InvalidDocumentStructure extends Schema.TaggedError<InvalidDocumentStructure>()(
+  "InvalidDocumentStructure",
+  {
+    position: ErrorPosition,
+    reason: Schema.String,
+  },
+) {
   override get message(): string {
-    return `Invalid document structure at ${showPosition(this.position)}: ${this.reason}`
+    return `Invalid document structure at ${showPosition(this.position)}: ${this.reason}`;
   }
 }
 
-/** A namespace prefix was used without a corresponding declaration. */
-export class UnboundNamespacePrefix extends Data.TaggedError(
-  "UnboundNamespacePrefix"
-)<{
-  readonly prefix: string
-  readonly name: string
-  readonly position: Position
-}> {
+/**
+ * A namespace prefix was used without a corresponding declaration.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export class UnboundNamespacePrefix extends Schema.TaggedError<UnboundNamespacePrefix>()(
+  "UnboundNamespacePrefix",
+  {
+    prefix: Schema.String,
+    name: Schema.String,
+    position: ErrorPosition,
+  },
+) {
   override get message(): string {
     return `Unbound namespace prefix "${this.prefix}" in "${this.name}" at ${showPosition(
-      this.position
-    )}`
+      this.position,
+    )}`;
   }
 }
 
-/** The resource limits a document can exceed (see {@link Limits}). */
+/**
+ * The resource limits a document can exceed (see {@link Limits}).
+ *
+ * @since 0.3.0
+ * @category errors
+ */
 export type LimitName =
   | "maxDepth"
   | "maxAttributes"
@@ -136,31 +204,47 @@ export type LimitName =
   | "maxTextLength"
   | "maxTotalBytes"
   | "maxEntityExpansion"
-  | "maxEntityDepth"
+  | "maxEntityDepth";
 
 /**
  * The input exceeded one of the configured resource limits. `position` is where
  * the offending construct starts, or `null` when the limit was hit while
  * decoding bytes (before there are any positions).
+ *
+ * @since 0.3.0
+ * @category errors
  */
-export class LimitExceeded extends Data.TaggedError("LimitExceeded")<{
-  readonly limit: LimitName
-  readonly max: number
-  readonly position: Position | null
-}> {
+export class LimitExceeded extends Schema.TaggedError<LimitExceeded>()("LimitExceeded", {
+  limit: Schema.Literals([
+    "maxDepth",
+    "maxAttributes",
+    "maxNameLength",
+    "maxTextLength",
+    "maxTotalBytes",
+    "maxEntityExpansion",
+    "maxEntityDepth",
+  ]),
+  max: Schema.Number,
+  position: Schema.NullOr(ErrorPosition),
+}) {
   override get message(): string {
-    const at = this.position === null ? "" : ` at ${showPosition(this.position)}`
-    return `Resource limit ${this.limit} (${this.max}) exceeded${at}`
+    const at = this.position === null ? "" : ` at ${showPosition(this.position)}`;
+    return `Resource limit ${this.limit} (${this.max}) exceeded${at}`;
   }
 }
 
-/** The document's encoding could not be determined, is unknown, or contradicts its byte order mark. */
-export class UnsupportedEncoding extends Data.TaggedError("UnsupportedEncoding")<{
-  readonly encoding: string
-  readonly reason: string
-}> {
+/**
+ * The document's encoding could not be determined, is unknown, or contradicts its byte order mark.
+ *
+ * @since 0.3.0
+ * @category errors
+ */
+export class UnsupportedEncoding extends Schema.TaggedError<UnsupportedEncoding>()(
+  "UnsupportedEncoding",
+  { encoding: Schema.String, reason: Schema.String },
+) {
   override get message(): string {
-    return `Unsupported encoding ${JSON.stringify(this.encoding)}: ${this.reason}`
+    return `Unsupported encoding ${quote(this.encoding)}: ${this.reason}`;
   }
 }
 
@@ -168,27 +252,45 @@ export class UnsupportedEncoding extends Data.TaggedError("UnsupportedEncoding")
  * The input bytes are not valid in the document's encoding. `offset` counts
  * bytes from the start of the input; for multi-byte encodings decoded in
  * chunks it is where the chunk containing the invalid sequence starts.
+ *
+ * @since 0.3.0
+ * @category errors
  */
-export class InvalidByteSequence extends Data.TaggedError("InvalidByteSequence")<{
-  readonly encoding: string
-  readonly offset: number
-}> {
+export class InvalidByteSequence extends Schema.TaggedError<InvalidByteSequence>()(
+  "InvalidByteSequence",
+  { encoding: Schema.String, offset: Schema.Number },
+) {
   override get message(): string {
-    return `Invalid ${this.encoding} byte sequence in the input from byte ${this.offset}`
+    return `Invalid ${this.encoding} byte sequence in the input from byte ${this.offset}`;
   }
 }
 
-/** Errors produced while turning bytes into text. */
-export type DecodeError = UnsupportedEncoding | InvalidByteSequence
+/**
+ * Errors produced while turning bytes into text.
+ *
+ * @since 0.3.0
+ * @category errors
+ */
+export type DecodeError = UnsupportedEncoding | InvalidByteSequence;
 
-/** Errors that can be produced by the lexer / SAX layer. */
+/**
+ * Errors that can be produced by the lexer / SAX layer.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
 export type LexError =
   | UnexpectedCharacter
   | UnexpectedEndOfInput
   | InvalidEntity
-  | MalformedDeclaration
+  | MalformedDeclaration;
 
-/** The full union of errors any part of the library can raise. */
+/**
+ * The full union of errors any part of the library can raise.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
 export type SaxError =
   | LexError
   | MismatchedEndTag
@@ -197,17 +299,18 @@ export type SaxError =
   | InvalidDocumentStructure
   | UnboundNamespacePrefix
   | LimitExceeded
-  | DecodeError
+  | DecodeError;
 
-/** Type guard: is this value one of the library's tagged errors? */
+/**
+ * Type guard: is this value one of the library's tagged errors?
+ *
+ * @since 0.2.0
+ * @category guards
+ */
 export const isSaxError = (u: unknown): u is SaxError =>
-  typeof u === "object" &&
-  u !== null &&
-  "_tag" in u &&
-  typeof (u as { _tag: unknown })._tag === "string" &&
-  saxErrorTags.has((u as { _tag: string })._tag)
+  Predicate.hasProperty(u, "_tag") && Predicate.isString(u._tag) && saxErrorTags.includes(u._tag);
 
-const saxErrorTags = new Set<string>([
+const saxErrorTags: ReadonlyArray<string> = [
   "UnexpectedCharacter",
   "UnexpectedEndOfInput",
   "InvalidEntity",
@@ -220,4 +323,4 @@ const saxErrorTags = new Set<string>([
   "LimitExceeded",
   "UnsupportedEncoding",
   "InvalidByteSequence",
-])
+];

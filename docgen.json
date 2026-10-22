@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/@effect/docgen/schema.json",
+  "runExamples": true,
+  "exclude": ["src/internal/**/*.ts"],
+  "parseCompilerOptions": {
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "strict": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "exactOptionalPropertyTypes": false,
+    "types": ["node"]
+  },
+  "examplesCompilerOptions": {
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "exactOptionalPropertyTypes": false,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "types": ["node"]
+  }
+}

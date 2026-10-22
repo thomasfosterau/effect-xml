@@ -1,0 +1,121 @@
+# Dependabot version updates, grouped so dependencies that must move together
+# never drift apart in separate PRs. Groups match first-to-last, so the
+# specific ones come before the catch-all.
+#
+# - `effect`: the Effect release line is a lockstep singleton set (two copies
+#   break Schema / Context identity). `@effect/tsgo` is excluded: it belongs
+#   to the toolchain set below.
+# - `toolchain`: `@effect/tsgo` patches the native `tsc` (`@typescript/native`)
+#   and the `oxlint` / `oxlint-tsgolint` that `vite-plus` pins, matched by
+#   gitHead, and hard-errors (UnsupportedTargetPackageVersionError) at
+#   `pnpm install` on any pairing it has no artifact for; `vite`, `vitest`
+#   and `@vitest/*` must equal vite-plus's own pins; the TS6 alias
+#   (`typescript` → `@typescript/typescript6`) and the Effect oxlint plugin
+#   ride along. One group, all update types, so the set lands as one PR —
+#   check the `components` table in node_modules/@effect/tsgo/dist/effect-tsgo.cjs
+#   before merging it.
+# - `docgen`: `@effect/docgen` runs the examples under `tsx`.
+# - `changesets`, `fallow`: their own small sets.
+# - `minor-and-patch`: everything else, minor and patch only (a major gets
+#   its own PR).
+#
+# `cooldown` mirrors pnpm-workspace.yaml's `minimumReleaseAge` (1 day), with
+# first-party `@thomasfosterau/*` exempt as it is there.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+    cooldown:
+      default-days: 1
+      exclude:
+        - "@thomasfosterau/*"
+    groups:
+      effect:
+        applies-to: version-updates
+        patterns:
+          - "effect"
+          - "@effect/*"
+        exclude-patterns:
+          - "@effect/tsgo"
+          - "@effect/docgen"
+          - "@effect/language-service"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      toolchain:
+        applies-to: version-updates
+        patterns:
+          - "vite-plus"
+          - "vite"
+          - "vitest"
+          - "@vitest/*"
+          - "oxlint"
+          - "oxfmt"
+          - "oxlint-tsgolint"
+          - "@effect/tsgo"
+          - "@effect/language-service"
+          - "@typescript/native"
+          - "typescript"
+          - "@typescript/typescript6"
+          - "@mpsuesser/oxlint-plugin-effect"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      docgen:
+        applies-to: version-updates
+        patterns:
+          - "@effect/docgen"
+          - "tsx"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      changesets:
+        applies-to: version-updates
+        patterns:
+          - "@changesets/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      fallow:
+        applies-to: version-updates
+        patterns:
+          - "fallow"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"
+    cooldown:
+      default-days: 1
+    groups:
+      github-actions:
+        patterns:
+          - "*"
