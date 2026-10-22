@@ -9,7 +9,9 @@ import { Effect, Stream } from "effect"
 import type { SaxError } from "../Error.ts"
 import * as Sax from "../Sax.ts"
 import { build, type BuildOptions } from "./TreeBuilder.ts"
-import type { XmlDocument } from "./Node.ts"
+import type { XmlDocument, XmlNode } from "./Node.ts"
+import { serializeSync } from "./Writer.ts"
+import { Result } from "effect"
 import type { Limits } from "../Limits.ts"
 
 export interface ParseOptions extends BuildOptions {
@@ -89,3 +91,18 @@ export const parseBytesStream =
  */
 export const events = (input: string, options?: ParseOptions): Stream.Stream<Sax.SaxEvent, SaxError> =>
   Sax.tokenizeString(input, saxOptions(options))
+
+/**
+ * Serialize a node back to an XML string, writing names as their prefixes say
+ * (the tree's own `xmlns` attributes declare its namespaces). It is always
+ * well-formed: CDATA sections containing `]]>` are split, comments and PIs
+ * that can't be written as they are are patched, and characters XML forbids
+ * become U+FFFD. For namespace management, a choice of policy, pretty-printing
+ * or streaming, use the `Writer` module.
+ */
+export const serialize = (node: XmlNode): string =>
+  Result.getOrThrow(serializeSync(node, { namespaces: "asIs", invalid: "replace" }))
+
+/** Serialize a whole document, including its declaration and DOCTYPE (see {@link serialize}). */
+export const serializeDocument = (doc: XmlDocument): string =>
+  Result.getOrThrow(serializeSync(doc, { namespaces: "asIs", invalid: "replace" }))

@@ -246,15 +246,3 @@ export const decode = (raw: string, options: EntityOptions): DecodeResult => {
   }
   return { _tag: "Ok", value }
 }
-
-/** Escape a string for safe inclusion in XML text content. */
-export const escapeText = (s: string): string =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-
-/** Escape a string for inclusion in a double-quoted attribute value. */
-export const escapeAttribute = (s: string): string =>
-  s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
