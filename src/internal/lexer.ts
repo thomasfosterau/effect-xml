@@ -24,7 +24,7 @@
 import { Input, ParseError } from "@thomasfosterau/effect-parse"
 import {
   InvalidEntity,
-  type LimitExceeded,
+  LimitExceeded,
   MalformedDeclaration,
   UnexpectedCharacter,
   UnexpectedEndOfInput,
@@ -32,6 +32,7 @@ import {
 } from "../Error.ts"
 import type { Position, Span } from "../Position.ts"
 import { declarationContexts } from "./declarations.ts"
+import type { Dtd } from "./dtd.ts"
 import { grammars, type Grammars, type Issue, type RawKind, type Step, type Tok } from "./tokens.ts"
 
 // -----------------------------------------------------------------------------
@@ -53,6 +54,7 @@ export type LexEvent =
   | { readonly _tag: "ProcessingInstruction"; readonly target: string; readonly data: string; readonly span: Span }
   | { readonly _tag: "Doctype"; readonly name: string; readonly publicId: string | null; readonly systemId: string | null; readonly internalSubset: string | null; readonly span: Span }
   | { readonly _tag: "XmlDeclaration"; readonly version: string; readonly encoding: string | null; readonly standalone: boolean | null; readonly span: Span }
+  | { readonly _tag: "EntityReference"; readonly name: string; readonly span: Span }
 
 /** A fatal fault. The SAX stream turns these into typed failures. */
 export interface LexFault {
@@ -71,6 +73,8 @@ export interface LexerOptions {
   readonly mode: "xml" | "html"
   /** Named entity table. */
   readonly entities: Record<string, string>
+  /** Declared entities, for XML with `dtd: "internal"`. */
+  readonly dtd?: Dtd
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -192,7 +196,7 @@ export class Lexer {
   suppressRawText = false
 
   constructor(private readonly options: LexerOptions) {
-    this.grammars = grammars(options.mode, options.entities)
+    this.grammars = grammars(options.mode, options.entities, options.dtd)
   }
 
   /** Feed a chunk of input. Returns every output produced by this chunk. */
@@ -385,15 +389,20 @@ export class Lexer {
         return { _tag: t._tag, name: t.name, publicId: t.publicId, systemId: t.systemId, internalSubset: t.internalSubset, span: this.span(t) }
       case "XmlDeclaration":
         return { _tag: t._tag, version: t.version, encoding: t.encoding, standalone: t.standalone, span: this.span(t) }
+      case "EntityReference":
+        return { _tag: t._tag, name: t.name, span: this.span(t) }
     }
   }
 
   /** The typed error for a failed (XML) token. */
-  private toError(state: Input.State<string>): LexError {
+  private toError(state: Input.State<string>): LexError | LimitExceeded {
     const failure = state.reportedFailure()
     const at = failure.offset
     this.positions.anchor(this.base + this.cursor)
     const issue = failure.hasCause ? (failure.cause as Issue) : undefined
+    if (issue?._tag === "Entity" && issue.limit !== undefined) {
+      return new LimitExceeded({ limit: issue.limit.name, max: issue.limit.max, position: this.at(issue.offset) })
+    }
     if (issue?._tag === "Entity") {
       return new InvalidEntity({ reference: issue.reference, position: this.at(issue.offset), reason: issue.reason })
     }

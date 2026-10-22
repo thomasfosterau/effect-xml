@@ -158,6 +158,8 @@ heap:
 | `maxNameLength` | 10,000 | element and attribute names, PI targets |
 | `maxTextLength` | 10,000,000 | one text node, CDATA section, comment, attribute value, PI or internal subset; also how much of one unfinished token is buffered while streaming |
 | `maxTotalBytes` | 1 GiB | the whole input (bytes, or UTF-16 code units for strings) |
+| `maxEntityExpansion` | 1,000,000 | replacement text entity references may add (`dtd: "internal"`; stops "billion laughs") |
+| `maxEntityDepth` | 64 | entity references nested in replacement text |
 
 ```ts
 import { Limits, Xml } from "effect-sax"
@@ -168,6 +170,25 @@ Xml.parse(trusted, { limits: Limits.unlimited })  // or Infinity for any one
 
 Tree building, serialization and `textContent` are iterative, so even with the
 limits switched off a deep document can't overflow the stack.
+
+## DTD internal subset (opt-in)
+
+By default a DOCTYPE's internal subset is read past, and only the predefined
+entities exist. `dtd: "internal"` interprets it, as RDF/XML's conformance
+tests need:
+
+```ts
+Xml.parse(input, { dtd: "internal" })
+```
+
+- Internal general entities are expanded, including ones whose replacement
+  text contains markup (re-parsed in context, and required to be balanced).
+- `<!ATTLIST>` defaults and `#FIXED` values are added to elements that lack
+  them, and values of tokenized types (`NMTOKEN`, `ID`, …) are normalized.
+- Recursion is an `InvalidEntity`. The total replacement text and the nesting
+  depth are bounded by `limits.maxEntityExpansion` and `limits.maxEntityDepth`.
+- External and parameter entities are never fetched: referring to one is an
+  `InvalidEntity` (in content) or a `MalformedDeclaration` (in the subset).
 
 ## Typed errors
 

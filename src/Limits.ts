@@ -30,6 +30,13 @@ export interface Limits {
    * for string input.
    */
   readonly maxTotalBytes: number
+  /**
+   * Maximum total length of replacement text that entity references may add
+   * to a document (with `dtd: "internal"`). Stops "billion laughs".
+   */
+  readonly maxEntityExpansion: number
+  /** Maximum nesting of entity references inside entity replacement text. */
+  readonly maxEntityDepth: number
 }
 
 /**
@@ -42,6 +49,8 @@ export const defaultLimits: Limits = {
   maxNameLength: 10_000,
   maxTextLength: 10_000_000,
   maxTotalBytes: 1024 * 1024 * 1024,
+  maxEntityExpansion: 1_000_000,
+  maxEntityDepth: 64,
 }
 
 /** No limits at all. Only for trusted input. */
@@ -51,6 +60,8 @@ export const unlimited: Limits = {
   maxNameLength: Infinity,
   maxTextLength: Infinity,
   maxTotalBytes: Infinity,
+  maxEntityExpansion: Infinity,
+  maxEntityDepth: Infinity,
 }
 
 /** Fill in the limits a caller left out with the defaults. */

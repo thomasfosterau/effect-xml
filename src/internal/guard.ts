@@ -67,6 +67,7 @@ export class Guard {
         if (ev.name.length > names) return this.fail("maxNameLength", ev.span.start)
         return (ev.internalSubset?.length ?? 0) > text ? this.fail("maxTextLength", ev.span.start) : null
       case "XmlDeclaration":
+      case "EntityReference":
         return null
     }
   }

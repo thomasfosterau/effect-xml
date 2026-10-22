@@ -14,6 +14,8 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuil
 | ---- | -------------- |
 | `src/Encoding.ts` | Byte input: XML (Appendix F) and HTML (WHATWG) encoding sniffing, strict decoding, the `decode` stream stage. |
 | `src/Limits.ts` | The `Limits` record and its defaults. |
+| `src/internal/dtd.ts` | The internal subset (`dtd: "internal"`): its grammar, entity resolution with recursion/depth/budget checks, ATTLIST defaults. |
+| `src/internal/expansion.ts` | Splices in the events of entities whose replacement text contains markup, and applies ATTLIST defaults. |
 | `src/internal/guard.ts` | Enforces `Limits` over the lexer's input and events. |
 | `src/Position.ts` | `Position`/`Span` value types and offset/line/column arithmetic. |
 | `src/Error.ts` | `Data.TaggedError` classes unified under `SaxError`. |
@@ -80,6 +82,18 @@ the SAX level only for XML; the HTML builders check their stack of open
 elements, since end tags are optional there. While streaming, the guard also
 fails once the token still being buffered outgrows `maxTextLength`, so an
 unterminated comment can't buffer forever.
+
+## The internal subset
+
+With `dtd: "internal"`, the SAX stream hands each DOCTYPE's internal subset to
+a `Dtd` before the lexer reads the next token, and the lexer's grammars
+consult it from then on. An entity whose replacement text is plain text is
+decoded where it is referenced, like a character reference. A reference to
+an entity with markup in it is a token of its own; the SAX layer lexes that
+entity's replacement text once, caches the events, and splices them in with
+the reference's span. Both paths charge one expansion budget per use, so
+caching keeps "many references" linear without letting "billion laughs"
+through.
 
 ## Type-safety choices
 

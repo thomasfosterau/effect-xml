@@ -21,6 +21,8 @@ export interface ParseOptions extends BuildOptions {
   readonly dropWhitespaceOnlyText?: boolean
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
   readonly limits?: Partial<Limits>
+  /** Interpret the DOCTYPE internal subset (see {@link Sax.SaxOptions.dtd}); default `"ignore"`. */
+  readonly dtd?: "ignore" | "internal"
 }
 
 const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
@@ -31,6 +33,7 @@ const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
     ? { dropWhitespaceOnlyText: options.dropWhitespaceOnlyText }
     : {}),
   ...(options?.limits !== undefined ? { limits: options.limits } : {}),
+  ...(options?.dtd !== undefined ? { dtd: options.dtd } : {}),
 })
 
 /** Parse a complete XML string into a typed document. */

@@ -135,6 +135,8 @@ export type LimitName =
   | "maxNameLength"
   | "maxTextLength"
   | "maxTotalBytes"
+  | "maxEntityExpansion"
+  | "maxEntityDepth"
 
 /**
  * The input exceeded one of the configured resource limits. `position` is where

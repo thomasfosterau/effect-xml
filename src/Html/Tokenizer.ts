@@ -86,7 +86,7 @@ export type InsertionMode =
   | "after-after-body"
   | "after-after-frameset"
 
-export type HtmlOptions = Omit<Sax.SaxOptions, "mode">
+export type HtmlOptions = Omit<Sax.SaxOptions, "mode" | "dtd">
 
 /** Turn a stream of HTML chunks into a lenient SAX event stream. */
 export const tokenize =

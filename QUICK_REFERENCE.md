@@ -108,4 +108,5 @@ Limits.defaultLimits / Limits.unlimited
 | `dropWhitespaceOnlyText` | Sax/Xml | `false` | drop blank text nodes |
 | `namespaces` | Xml | `true` | resolve prefixes to URIs |
 | `limits` | Sax/Xml/Html | `Limits.defaultLimits` | resource limits (partial) |
+| `dtd` | Sax/Xml | `"ignore"` | `"internal"`: expand internal entities, apply ATTLIST defaults |
 | `encoding` | `*Bytes` | detected | external encoding hint; a BOM still wins |

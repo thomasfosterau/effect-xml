@@ -13,6 +13,9 @@
  */
 import { Data, Effect, Option, Stream } from "effect"
 import type { SaxError } from "./Error.ts"
+import { MalformedDeclaration } from "./Error.ts"
+import { Dtd } from "./internal/dtd.ts"
+import { applyDefaults, Expander } from "./internal/expansion.ts"
 import { Guard } from "./internal/guard.ts"
 import { Lexer, type LexEvent, type LexOutput } from "./internal/lexer.ts"
 import { xmlEntities, htmlEntities } from "./internal/entities.ts"
@@ -105,6 +108,15 @@ export interface SaxOptions {
   readonly dropWhitespaceOnlyText?: boolean
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
   readonly limits?: Partial<Limits>
+  /**
+   * What to do with a DOCTYPE internal subset (XML only). `"ignore"` (the
+   * default) reads past it. `"internal"` interprets it: internal general
+   * entities are expanded (markup included), within `limits.maxEntityExpansion`
+   * and `limits.maxEntityDepth`, and `<!ATTLIST>` defaults are applied.
+   * External and parameter entities are never fetched; referring to one is
+   * an error.
+   */
+  readonly dtd?: "ignore" | "internal"
 }
 
 /** @internal */
@@ -114,6 +126,7 @@ export interface ResolvedOptions {
   readonly whitespace: "preserve" | "collapse"
   readonly dropWhitespaceOnlyText: boolean
   readonly limits: Limits
+  readonly dtd: "ignore" | "internal"
 }
 
 /** @internal */
@@ -125,6 +138,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     whitespace: options?.whitespace ?? "preserve",
     dropWhitespaceOnlyText: options?.dropWhitespaceOnlyText ?? false,
     limits: resolveLimits(options?.limits),
+    dtd: options?.dtd ?? "ignore",
   }
 }
 
@@ -182,6 +196,9 @@ export const convertLexEvent = (ev: LexEvent, opts: ResolvedOptions): SaxEvent |
         standalone: ev.standalone,
         span: ev.span,
       })
+    case "EntityReference":
+      // Expanded before conversion (see `tokenize`).
+      return null
   }
 }
 
@@ -205,17 +222,45 @@ export const tokenize =
   <E, R>(input: Stream.Stream<string, E, R>): Stream.Stream<SaxEvent, SaxError | E, R> => {
     const opts = resolveSaxOptions(options)
     return Stream.suspend(() => {
-      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities })
+      const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined
+      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities, ...(dtd !== undefined ? { dtd } : {}) })
+      const expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities)
       const guard = new Guard(opts.limits, opts.mode === "xml")
+      /** Interpret the DTD-related outputs (with `dtd: "internal"`). */
+      const interpret = (o: LexOutput): ReadonlyArray<LexOutput> => {
+        if (dtd === undefined || expander === undefined) return [o]
+        switch (o._tag) {
+          case "Doctype": {
+            const error = o.internalSubset === null ? null : dtd.declare(o.internalSubset)
+            if (error === null) return [o]
+            const found = o.internalSubset!.slice(error.offset, error.offset + 1)
+            const fault = new MalformedDeclaration({
+              construct: "DOCTYPE internal subset",
+              expected: error.expected,
+              found: found === "" ? "end of input" : JSON.stringify(found),
+              position: o.span.start,
+            })
+            return [{ _tag: "Fault", error: fault }]
+          }
+          case "EntityReference":
+            return expander.expand(o)
+          case "StartElement":
+            return [applyDefaults(dtd, o)]
+          default:
+            return [o]
+        }
+      }
       // Lex token by token, so a limit stops the lexer at the offending token
       // rather than after the whole chunk.
       const drain = (): ReadonlyArray<LexOutput> => {
         const out: Array<LexOutput> = []
         for (let outs = lexer.pull(); outs !== null; outs = lexer.pull()) {
-          for (const o of outs) {
-            const over = o._tag === "Fault" ? null : guard.event(o)
-            out.push(over === null ? o : { _tag: "Fault", error: over })
-            if (over !== null || o._tag === "Fault") return out
+          for (const raw of outs) {
+            for (const o of interpret(raw)) {
+              const over = o._tag === "Fault" ? null : guard.event(o)
+              out.push(over === null ? o : { _tag: "Fault", error: over })
+              if (over !== null || o._tag === "Fault") return out
+            }
           }
         }
         return out

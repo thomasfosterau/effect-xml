@@ -47,6 +47,8 @@ export interface EntityOptions {
   readonly strict: boolean
   /** Apply the ambiguous-ampersand rule (the value is an attribute value). */
   readonly inAttribute?: boolean
+  /** Entities declared in a DTD, resolved when referenced (XML only; see `dtd.ts`). */
+  readonly dtd?: EntityResolver
 }
 
 /** A failure encountered while decoding, with the offset *within the raw value*. */
@@ -54,6 +56,28 @@ export interface EntityError {
   readonly reference: string
   readonly reason: string
   readonly relativeOffset: number
+  /** Set when the failure is a resource limit rather than a malformed reference. */
+  readonly limit?: EntityLimit
+}
+
+/** A resource limit an entity expansion ran into. */
+export interface EntityLimit {
+  readonly name: "maxEntityExpansion" | "maxEntityDepth"
+  readonly max: number
+}
+
+/** Why a declared entity could not be expanded. */
+export interface ExpansionFailure {
+  readonly reason: string
+  readonly limit?: EntityLimit
+}
+
+/** Entities declared in a DTD, which a reference resolves through. */
+export interface EntityResolver {
+  /** Whether `name` is declared (internal or external). */
+  declares(name: string): boolean
+  /** The decoded replacement text of a reference in content or in an attribute value. */
+  resolve(name: string, inAttribute: boolean): string | ExpansionFailure
 }
 
 export type DecodeResult =
@@ -131,12 +155,12 @@ const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part
  * decide how long the reference is; the grammar then takes that much.
  */
 const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
-  const { entities, legacy, strict } = options
+  const { entities, legacy, strict, dtd } = options
   const inAttribute = options.inAttribute ?? false
   const has = (table: Record<string, string>, name: string) => Object.prototype.hasOwnProperty.call(table, name)
   /** The length of the reference at `&name` + `next`, or 0 if none decodes. */
   const lengthOf = ([name, next]: readonly [string, string]): number => {
-    if (next === ";" && has(entities, name)) return name.length + 2
+    if (next === ";" && (has(entities, name) || dtd?.declares(name) === true)) return name.length + 2
     if (legacy !== undefined) {
       for (let len = name.length; len >= 1; len--) {
         if (!has(legacy, name.slice(0, len))) continue
@@ -146,12 +170,18 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
     }
     return 0
   }
-  const valueOf = (reference: string): string =>
-    reference.endsWith(";") ? entities[reference.slice(1, -1)]! : legacy![reference.slice(1)]!
+  const valueOf = (reference: string, relativeOffset: number): Part => {
+    if (!reference.endsWith(";")) return legacy![reference.slice(1)]!
+    const name = reference.slice(1, -1)
+    if (has(entities, name)) return entities[name]!
+    const out = dtd!.resolve(name, inAttribute)
+    if (typeof out === "string") return out
+    return { reference, reason: out.reason, relativeOffset, ...(out.limit !== undefined ? { limit: out.limit } : {}) }
+  }
+  // Declared entity names can use any name character; the built-in tables only ASCII ones.
+  const nameChars = dtd === undefined ? Token.takeWhile(alnum, { min: 1 }) : Token.takeTill(";&<>\"' \t\n\r", { min: 1 })
   const length = Parser.map(
-    Parser.peek(
-      Parser.seq(Parser.preceded(ampersand, Token.takeWhile(alnum, { min: 1 })), Parser.alt(Token.any, Parser.succeed("")))
-    ),
+    Parser.peek(Parser.seq(Parser.preceded(ampersand, nameChars), Parser.alt(Token.any, Parser.succeed("")))),
     lengthOf
   )
   const takes: Array<Parser.Parser<Part>> = []
@@ -163,7 +193,9 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
     )
   )
   return Parser.alt(
-    Parser.dispatch(length, (n) => (n === 0 ? unknown : (takes[n] ??= Parser.map(Token.take(n), valueOf)))),
+    Parser.dispatch(length, (n) =>
+      n === 0 ? unknown : (takes[n] ??= Parser.map(Parser.seq(Parser.location, Token.take(n)), ([at, r]) => valueOf(r, at)))
+    ),
     unknown
   )
 }
@@ -185,6 +217,11 @@ const byOptions = new WeakMap<EntityOptions, Parser.Parser<ReadonlyArray<Part>>>
 const grammar = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> => {
   let g = byOptions.get(options)
   if (g !== undefined) return g
+  if (options.dtd !== undefined) {
+    // Per document: the DTD is part of the grammar.
+    byOptions.set(options, (g = grammarFor(options)))
+    return g
+  }
   let byKey = byEntities.get(options.entities)
   if (byKey === undefined) byEntities.set(options.entities, (byKey = new Map()))
   const key = `${options.strict}:${options.inAttribute ?? false}:${options.legacy === undefined ? "" : "legacy"}`
