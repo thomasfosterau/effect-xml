@@ -360,6 +360,12 @@ export const named =
         (isStartElement(ev) || isEndElement(ev)) && ev.name === name
     )
 
+/**
+ * Select the subtrees matching a path, each built into an element while the
+ * rest of the document streams past (see `Xml/Select.ts`).
+ */
+export { select } from "./Xml/Select.ts"
+
 // -----------------------------------------------------------------------------
 // Attribute helpers
 // -----------------------------------------------------------------------------

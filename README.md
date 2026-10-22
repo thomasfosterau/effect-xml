@@ -92,6 +92,76 @@ const back    = Schema.decodeSync(Xml.XmlElement)(encoded) // real instances
 Both `Xml.parse` (string) and `Xml.parseStream` (a `Stream<string>`) are
 available; the latter builds the tree without ever holding the whole input.
 
+## Navigating by namespace
+
+Look elements and attributes up by namespace URI and local name, never by the
+prefix a producer happened to choose:
+
+```ts
+import { Option } from "effect"
+import { Xml } from "effect-sax"
+
+const w = Xml.Ns.make("http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+
+const body = doc.root.child(w("body"))                    // Option<XmlElement>
+const paragraphs = body.pipe(Option.map((b) => b.childElements(w("p"))))
+const texts = doc.root.descendants(w("t"))                // document order, iterative
+jc.attributeNS(w("val"))                                  // Option<string>; w14:val is a different attribute
+run.text(w("t"))                                          // Option<string>
+el.child(null, "item")                                    // or (namespace, local)
+```
+
+A `Cursor` is an element plus the path to it, so it can resolve what an
+element inherits: `xml:lang`, `xml:space` and `xml:base` (resolved against the
+document's base URI):
+
+```ts
+const root = Xml.cursor(doc.root, { base: "http://example.org/doc.rdf" })
+for (const c of root.descendants(rdf("Description"))) {
+  c.lang   // Option<string>
+  c.space  // "default" | "preserve"
+  c.base   // Option<string>
+}
+```
+
+### XPath subset
+
+`Xml.XPath.compile` takes location paths with namespace prefixes, `//`, `.`,
+`..`, `@`, `*`, `prefix:*`, `text()`, `node()`, the common axes, and predicates
+with positions, comparisons, `and`/`or` and a few functions (`not`,
+`position`, `last`, `count`, `string`, `local-name`, `contains`, `starts-with`,
+`normalize-space`):
+
+```ts
+import { Result } from "effect"
+
+const title = Result.getOrThrow(
+  Xml.XPath.compile("//dc:title[@xml:lang = 'en']", { namespaces: { dc: "http://purl.org/dc/elements/1.1/" } })
+)
+Xml.XPath.string(title, doc)    // Option<string>
+Xml.XPath.select(path, doc)     // elements, attributes, text...
+Xml.XPath.elements(path, el)    // just the elements
+Xml.XPath.cursors(path, doc)    // as cursors, with inherited values
+```
+
+### Streaming selection
+
+`Sax.select` builds each subtree that matches a path into an `XmlElement` as
+soon as it ends, while the rest of the document streams past. This is how to
+read a huge spreadsheet in constant memory:
+
+```ts
+sheetBytes.pipe(
+  Sax.tokenize(),
+  Sax.select("/x:worksheet/x:sheetData/x:row[not(@hidden = '1')]", { namespaces: { x: SPREADSHEETML } }),
+  Stream.runForEach((row) => ...)
+)
+```
+
+Streamable paths use child and descendant steps with element name tests, and
+predicates on the element's own attributes and name. Anything that needs
+positions or content fails the stream with an `XPathError`.
+
 ## Lenient HTML
 
 ```ts

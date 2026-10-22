@@ -31,6 +31,10 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuil
 | `src/Xml/Writer.ts` | The streaming writer: namespace management, escaping, validity policy, pretty-printing; DOM serialization. |
 | `src/Xml/C14n.ts` | Exclusive XML Canonicalization 1.0 (moved from effect-rdfxml). |
 | `src/Html/Serialize.ts` | WHATWG HTML fragment serialization. |
+| `src/Xml/Ns.ts` | Namespace handles (`Ns.make(uri)("local")`). |
+| `src/Xml/Cursor.ts` | Elements with their path, resolving inherited `xml:lang`/`xml:space`/`xml:base`. |
+| `src/Xml/XPath.ts` | An XPath 1.0 subset: an effect-parse grammar compiled to an AST, and an evaluator over cursors. |
+| `src/Xml/Select.ts` | `Sax.select`: streaming selection of the subtrees matching a streamable path. |
 | `src/Xml/Xml.ts` | One-call `parse` / `parseStream` / `events`. |
 | `src/Html/*` | html5ever-style tokenization + a lenient fragment builder + roadmap. |
 
