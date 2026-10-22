@@ -1,0 +1,2 @@
+# The suite keeps expected outputs in out/ directories, which the root .gitignore excludes.
+!out

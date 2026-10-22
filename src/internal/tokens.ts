@@ -22,7 +22,8 @@
 import { Ascii, Parser, Token } from "@thomasfosterau/effect-parse"
 import { Result } from "effect"
 import { doctype as xmlDoctype, processingInstruction } from "./declarations.ts"
-import { decode, htmlLegacyEntities } from "./entities.ts"
+import { decode, htmlLegacyEntities, type EntityLimit } from "./entities.ts"
+import type { Dtd } from "./dtd.ts"
 
 // -----------------------------------------------------------------------------
 // Tokens
@@ -49,11 +50,19 @@ export type Tok =
   | ({ readonly _tag: "ProcessingInstruction"; readonly target: string; readonly data: string } & Offsets)
   | ({ readonly _tag: "Doctype"; readonly name: string; readonly publicId: string | null; readonly systemId: string | null; readonly internalSubset: string | null } & Offsets)
   | ({ readonly _tag: "XmlDeclaration"; readonly version: string; readonly encoding: string | null; readonly standalone: boolean | null } & Offsets)
+  /** A reference to a DTD entity whose replacement text contains markup (expanded by the SAX layer). */
+  | ({ readonly _tag: "EntityReference"; readonly name: string } & Offsets)
 
 /** Why a strict (XML) grammar rejected its input. */
 export type Issue =
   | { readonly _tag: "Char"; readonly context: string }
-  | { readonly _tag: "Entity"; readonly reference: string; readonly reason: string; readonly offset: number }
+  | {
+      readonly _tag: "Entity"
+      readonly reference: string
+      readonly reason: string
+      readonly offset: number
+      readonly limit?: EntityLimit
+    }
 
 /** What one step of the lexer produces: tokens, possibly none (input dropped at EOF). */
 export type Step = ReadonlyArray<Tok>
@@ -97,6 +106,8 @@ export interface EntityConfig {
   readonly strict: boolean
   readonly entities: Record<string, string>
   readonly legacy: Record<string, string> | undefined
+  /** Declared entities (XML with `dtd: "internal"`). */
+  readonly dtd?: Dtd
 }
 
 /**
@@ -108,17 +119,27 @@ const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
   const options = {
     entities: cfg.entities,
     ...(cfg.legacy !== undefined ? { legacy: cfg.legacy } : {}),
+    ...(cfg.dtd !== undefined ? { dtd: cfg.dtd } : {}),
     strict: cfg.strict,
     inAttribute,
   }
+  const normalizeWhitespace = cfg.strict && inAttribute
   return (p: Parser.Parser<string>): P<string> =>
     Parser.withSpan(p).pipe(
       Parser.tryMap(([raw, span]): Result.Result<string, Issue> => {
-        const res = decode(raw, options)
+        // XML attribute-value normalization (§3.3.3): literal whitespace
+        // characters become spaces; those from character references stay.
+        const res = decode(normalizeWhitespace ? raw.replace(/[\t\n\r]/g, " ") : raw, options)
         if (res._tag === "Ok") return Result.succeed(res.value)
         if (!cfg.strict) return Result.succeed(raw)
-        const { reference, reason, relativeOffset } = res.error
-        return Result.fail({ _tag: "Entity", reference, reason, offset: span.start + relativeOffset })
+        const { reference, reason, relativeOffset, limit } = res.error
+        return Result.fail({
+          _tag: "Entity",
+          reference,
+          reason,
+          offset: span.start + relativeOffset,
+          ...(limit !== undefined ? { limit } : {}),
+        })
       }),
       Parser.cut
     )
@@ -132,8 +153,29 @@ const text = (data: string, start: number, end: number): Tok => ({ _tag: "Text",
 const commentTok = (data: string, start: number, end: number): Tok => ({ _tag: "Comment", data, start, end })
 
 /** Text up to the next `<`, with character references decoded. */
-const textRun = (cfg: EntityConfig): P<Step> =>
-  Parser.preceded(Parser.peek(Token.noneOf("<")), spanned(decoded(cfg, false)(Token.takeTill("<")), text))
+const textRun = (cfg: EntityConfig): P<Step> => {
+  const dtd = cfg.dtd
+  if (dtd === undefined) {
+    return Parser.preceded(Parser.peek(Token.noneOf("<")), spanned(decoded(cfg, false)(Token.takeTill("<")), text))
+  }
+  // With a DTD, text also stops at a reference to an entity with markup in it,
+  // which is a token of its own.
+  const markupRef = markupReference(dtd)
+  const body = Parser.taken(
+    Parser.repeat(
+      Parser.alt(Token.takeTill("<&", { min: 1 }), Parser.preceded(Parser.not(markupRef), Token.literal("&"))),
+      { min: 1 }
+    )
+  )
+  const run = spanned(decoded(cfg, false)(body), text)
+  return Parser.alt(spanned(markupRef, (name, start, end): Tok => ({ _tag: "EntityReference", name, start, end })), run)
+}
+
+/** `&name;` where `name` is a declared entity whose replacement text contains markup. */
+const markupReference = (dtd: Dtd): Parser.Parser<string> =>
+  Parser.delimited(Token.literal("&"), Token.takeTill(";&<>\"' \t\n\r", { min: 1 }), Token.literal(";")).pipe(
+    Parser.filter((name) => dtd.isMarkup(name))
+  )
 
 /** HTML: a `<` that opens nothing is text, along with what follows it. */
 const strayLessThan = (cfg: EntityConfig): P<Step> =>
@@ -476,6 +518,7 @@ const isNameStart = (c: string): boolean => {
 }
 
 const makeGrammars = (cfg: EntityConfig): Grammars => {
+  // (With a DTD, `textRun` also produces entity references.)
   const textToken = textRun(cfg)
   const start = startTag(cfg)
   const tagOpen = Parser.seq(Token.literal("<"), Token.oneOf(nameStart))
@@ -532,7 +575,8 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
 const cache = new WeakMap<Record<string, string>, { xml?: Grammars; html?: Grammars }>()
 
 /** The grammars for a mode and named-entity table (built once per table). */
-export const grammars = (mode: "xml" | "html", entities: Record<string, string>): Grammars => {
+export const grammars = (mode: "xml" | "html", entities: Record<string, string>, dtd?: Dtd): Grammars => {
+  if (dtd !== undefined) return makeGrammars({ strict: true, entities, legacy: undefined, dtd })
   let byMode = cache.get(entities)
   if (byMode === undefined) cache.set(entities, (byMode = {}))
   return (byMode[mode] ??= makeGrammars({

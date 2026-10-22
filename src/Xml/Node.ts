@@ -85,10 +85,12 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
 
   /** Concatenated text of all descendant text / CDATA nodes. */
   get textContent(): string {
+    // Iterative, so arbitrarily deep trees can't overflow the stack.
     let out = ""
-    for (const c of this.children) {
+    const stack: Array<XmlNode> = [...this.children].reverse()
+    for (let c = stack.pop(); c !== undefined; c = stack.pop()) {
       if (c._tag === "XmlText" || c._tag === "XmlCData") out += c.data
-      else if (c._tag === "XmlElement") out += c.textContent
+      else if (c._tag === "XmlElement") for (let i = c.children.length - 1; i >= 0; i--) stack.push(c.children[i]!)
     }
     return out
   }
@@ -171,7 +173,7 @@ export const attr = (name: string | QName, value: string): XmlAttribute =>
 // Serialization
 // -----------------------------------------------------------------------------
 
-const serializeNode = (node: XmlNode): string => {
+const serializeLeaf = (node: Exclude<XmlNode, XmlElement>): string => {
   switch (node._tag) {
     case "XmlText":
       return escapeText(node.data)
@@ -181,15 +183,35 @@ const serializeNode = (node: XmlNode): string => {
       return `<!--${node.data}-->`
     case "XmlProcessingInstruction":
       return `<?${node.target}${node.data ? " " + node.data : ""}?>`
-    case "XmlElement": {
-      const attrs = node.attributes
-        .map((a) => ` ${a.name.qualified}="${escapeAttribute(a.value)}"`)
-        .join("")
-      if (node.children.length === 0) return `<${node.name.qualified}${attrs}/>`
-      const inner = node.children.map(serializeNode).join("")
-      return `<${node.name.qualified}${attrs}>${inner}</${node.name.qualified}>`
-    }
   }
+}
+
+/** Iterative, so arbitrarily deep trees can't overflow the stack. */
+const serializeNode = (root: XmlNode): string => {
+  let out = ""
+  // Either a node still to write, or the end tag of an element already opened.
+  const stack: Array<XmlNode | string> = [root]
+  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+    if (typeof item === "string") {
+      out += item
+      continue
+    }
+    if (item._tag !== "XmlElement") {
+      out += serializeLeaf(item)
+      continue
+    }
+    const name = item.name.qualified
+    let attrs = ""
+    for (const a of item.attributes) attrs += ` ${a.name.qualified}="${escapeAttribute(a.value)}"`
+    if (item.children.length === 0) {
+      out += `<${name}${attrs}/>`
+      continue
+    }
+    out += `<${name}${attrs}>`
+    stack.push(`</${name}>`)
+    for (let i = item.children.length - 1; i >= 0; i--) stack.push(item.children[i]!)
+  }
+  return out
 }
 
 /** Serialize a node back to an XML string. */

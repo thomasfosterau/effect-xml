@@ -15,7 +15,9 @@
  */
 import { Effect, Stream } from "effect"
 import type { SaxError } from "../Error.ts"
+import { resolveLimits, type Limits } from "../Limits.ts"
 import { QName } from "../Name.ts"
+import { depthExceeded, tryAccept } from "../internal/guard.ts"
 import type { SaxEvent } from "../Sax.ts"
 import {
   XmlAttribute,
@@ -38,6 +40,8 @@ class FragmentBuilder {
   private readonly stack: Array<Frame> = []
   private readonly roots: Array<XmlNode> = []
 
+  constructor(private readonly limits: Limits) {}
+
   private append(node: XmlNode): void {
     const frame = this.stack[this.stack.length - 1]
     if (frame) frame.children.push(node)
@@ -54,6 +58,8 @@ class FragmentBuilder {
       this.append(element)
       return
     }
+    const over = depthExceeded(this.limits, this.stack.length + 1, ev.span.start)
+    if (over !== null) throw over
     this.stack.push({ name, element, children: [] })
   }
 
@@ -117,13 +123,19 @@ class FragmentBuilder {
 
 /**
  * Build a lenient HTML fragment (a forest of top-level nodes) from a SAX stream.
- * Never fails on malformed markup.
+ * Never fails on malformed markup; fails only when a resource limit is exceeded.
  */
 export const buildFragment = <E, R>(
-  events: Stream.Stream<SaxEvent, E, R>
+  events: Stream.Stream<SaxEvent, E, R>,
+  options?: { readonly limits?: Partial<Limits> }
 ): Effect.Effect<ReadonlyArray<XmlNode>, SaxError | E, R> =>
   Effect.gen(function* () {
-    const builder = new FragmentBuilder()
-    yield* Stream.runForEach(events, (ev) => Effect.sync(() => builder.accept(ev)))
+    const builder = new FragmentBuilder(resolveLimits(options?.limits))
+    yield* Stream.runForEach(events, (ev) =>
+      Effect.suspend(() => {
+        const over = tryAccept(() => builder.accept(ev))
+        return over === null ? Effect.void : Effect.fail(over)
+      })
+    )
     return builder.finish()
   })

@@ -13,7 +13,11 @@
  */
 import { Data, Effect, Option, Stream } from "effect"
 import type { SaxError } from "./Error.ts"
-import { Lexer, type LexEvent } from "./internal/lexer.ts"
+import { MalformedDeclaration } from "./Error.ts"
+import { Dtd } from "./internal/dtd.ts"
+import { applyDefaults, Expander } from "./internal/expansion.ts"
+import { Guard } from "./internal/guard.ts"
+import { Lexer, type LexEvent, type LexOutput } from "./internal/lexer.ts"
 import { xmlEntities, htmlEntities } from "./internal/entities.ts"
 import {
   unsafeAttrName,
@@ -22,6 +26,8 @@ import {
   type TagName,
 } from "./Name.ts"
 import type { Span } from "./Position.ts"
+import { resolveLimits, type Limits } from "./Limits.ts"
+import * as Encoding from "./Encoding.ts"
 
 // -----------------------------------------------------------------------------
 // Public event model
@@ -100,6 +106,17 @@ export interface SaxOptions {
   readonly whitespace?: "preserve" | "collapse"
   /** Drop `Text` events that contain only whitespace (after the whitespace policy). */
   readonly dropWhitespaceOnlyText?: boolean
+  /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
+  readonly limits?: Partial<Limits>
+  /**
+   * What to do with a DOCTYPE internal subset (XML only). `"ignore"` (the
+   * default) reads past it. `"internal"` interprets it: internal general
+   * entities are expanded (markup included), within `limits.maxEntityExpansion`
+   * and `limits.maxEntityDepth`, and `<!ATTLIST>` defaults are applied.
+   * External and parameter entities are never fetched; referring to one is
+   * an error.
+   */
+  readonly dtd?: "ignore" | "internal"
 }
 
 /** @internal */
@@ -108,6 +125,8 @@ export interface ResolvedOptions {
   readonly entities: Record<string, string>
   readonly whitespace: "preserve" | "collapse"
   readonly dropWhitespaceOnlyText: boolean
+  readonly limits: Limits
+  readonly dtd: "ignore" | "internal"
 }
 
 /** @internal */
@@ -118,6 +137,8 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     entities: options?.entities ?? (mode === "html" ? htmlEntities : xmlEntities),
     whitespace: options?.whitespace ?? "preserve",
     dropWhitespaceOnlyText: options?.dropWhitespaceOnlyText ?? false,
+    limits: resolveLimits(options?.limits),
+    dtd: options?.dtd ?? "ignore",
   }
 }
 
@@ -175,6 +196,9 @@ export const convertLexEvent = (ev: LexEvent, opts: ResolvedOptions): SaxEvent |
         standalone: ev.standalone,
         span: ev.span,
       })
+    case "EntityReference":
+      // Expanded before conversion (see `tokenize`).
+      return null
   }
 }
 
@@ -198,18 +222,103 @@ export const tokenize =
   <E, R>(input: Stream.Stream<string, E, R>): Stream.Stream<SaxEvent, SaxError | E, R> => {
     const opts = resolveSaxOptions(options)
     return Stream.suspend(() => {
-      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities })
-      const body = input.pipe(Stream.map((chunk) => lexer.write(chunk)), Stream.flattenIterable)
-      const tail = Stream.unwrap(Effect.sync(() => Stream.fromIterable(lexer.end())))
-      return Stream.concat(body, tail).pipe(
-        Stream.flatMap((o) => {
-          if (o._tag === "Fault") return Stream.fail(o.error)
+      const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined
+      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities, ...(dtd !== undefined ? { dtd } : {}) })
+      const expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities)
+      const guard = new Guard(opts.limits, opts.mode === "xml")
+      /** Interpret the DTD-related outputs (with `dtd: "internal"`). */
+      const interpret = (o: LexOutput): ReadonlyArray<LexOutput> => {
+        if (dtd === undefined || expander === undefined) return [o]
+        switch (o._tag) {
+          case "Doctype": {
+            const error = o.internalSubset === null ? null : dtd.declare(o.internalSubset)
+            if (error === null) return [o]
+            const found = o.internalSubset!.slice(error.offset, error.offset + 1)
+            const fault = new MalformedDeclaration({
+              construct: "DOCTYPE internal subset",
+              expected: error.expected,
+              found: found === "" ? "end of input" : JSON.stringify(found),
+              position: o.span.start,
+            })
+            return [{ _tag: "Fault", error: fault }]
+          }
+          case "EntityReference":
+            return expander.expand(o)
+          case "StartElement":
+            return [applyDefaults(dtd, o)]
+          default:
+            return [o]
+        }
+      }
+      // Lex token by token, so a limit stops the lexer at the offending token
+      // rather than after the whole chunk.
+      const drain = (): ReadonlyArray<LexOutput> => {
+        const out: Array<LexOutput> = []
+        for (let outs = lexer.pull(); outs !== null; outs = lexer.pull()) {
+          for (const raw of outs) {
+            for (const o of interpret(raw)) {
+              const over = o._tag === "Fault" ? null : guard.event(o)
+              out.push(over === null ? o : { _tag: "Fault", error: over })
+              if (over !== null || o._tag === "Fault") return out
+            }
+          }
+        }
+        return out
+      }
+      const write = (chunk: string): ReadonlyArray<LexOutput> => {
+        const over = guard.input(chunk.length, lexer)
+        if (over !== null) return [{ _tag: "Fault", error: over }]
+        lexer.push(chunk)
+        const outs = drain()
+        const pending = guard.pending(lexer)
+        return pending === null ? outs : [...outs, { _tag: "Fault", error: pending }]
+      }
+      // One stream per input chunk, not per event: the events of a chunk are
+      // converted in a loop, followed by the failure if there was one.
+      const emit = (outs: ReadonlyArray<LexOutput>): Stream.Stream<SaxEvent, SaxError> => {
+        const events: Array<SaxEvent> = []
+        for (const o of outs) {
+          if (o._tag === "Fault") return Stream.concat(Stream.fromIterable(events), Stream.fail(o.error))
           const ev = convertLexEvent(o, opts)
-          return ev === null ? Stream.empty : Stream.succeed(ev)
-        })
-      )
+          if (ev !== null) events.push(ev)
+        }
+        return Stream.fromIterable(events)
+      }
+      const body = input.pipe(Stream.flatMap((chunk) => emit(write(chunk))))
+      const tail = Stream.suspend(() => {
+        lexer.close()
+        return emit(drain())
+      })
+      return Stream.concat(body, tail)
     })
   }
+
+/** Options for byte input: the SAX options plus an external encoding hint. */
+export interface SaxBytesOptions extends SaxOptions {
+  /**
+   * An external encoding hint, such as the `charset` of a `Content-Type`. It
+   * overrides the document's own declaration (or `<meta charset>`), but not a
+   * byte order mark.
+   */
+  readonly encoding?: string
+}
+
+/** @internal The decoding options that match a set of SAX options. */
+export const decodeOptions = (options: SaxBytesOptions | undefined): Encoding.DecodeOptions => ({
+  mode: options?.mode ?? "xml",
+  maxTotalBytes: resolveLimits(options?.limits).maxTotalBytes,
+  ...(options?.encoding !== undefined ? { encoding: options.encoding } : {}),
+})
+
+/**
+ * Turn a stream of bytes into a stream of SAX events. The encoding is detected
+ * from the input (see {@link Encoding.sniffXml} and {@link Encoding.sniffHtml}),
+ * and chunks may split multi-byte sequences anywhere.
+ */
+export const tokenizeBytes =
+  (options?: SaxBytesOptions) =>
+  <E, R>(input: Stream.Stream<Uint8Array, E, R>): Stream.Stream<SaxEvent, SaxError | E, R> =>
+    input.pipe(Encoding.decode(decodeOptions(options)), tokenize(options))
 
 /** Tokenize a complete in-memory string into a stream of SAX events. */
 export const tokenizeString = (

@@ -8,6 +8,7 @@ import { Sax } from "effect-sax"
 Sax.tokenize(options?)              // (Stream<string>) => Stream<SaxEvent, SaxError>
 Sax.tokenizeString(input, options?)// Stream<SaxEvent, SaxError>
 Sax.collect(input, options?)       // Effect<ReadonlyArray<SaxEvent>, SaxError>
+Sax.tokenizeBytes(options?)        // (Stream<Uint8Array>) => Stream<SaxEvent, SaxError>
 
 // guards
 Sax.isStartElement / isEndElement / isText / isComment / isCData
@@ -35,6 +36,8 @@ import { Xml } from "effect-sax"
 
 Xml.parse(input, options?)               // Effect<XmlDocument, SaxError>
 Xml.parseStream(options?)                // (Stream<string>) => Effect<XmlDocument>
+Xml.parseBytes(bytes, options?)          // Effect<XmlDocument, SaxError>, encoding detected
+Xml.parseBytesStream(options?)           // (Stream<Uint8Array>) => Effect<XmlDocument>
 Xml.events(input, options?)              // Stream<SaxEvent, SaxError>
 
 doc.root                                 // XmlElement
@@ -59,6 +62,8 @@ import { Html } from "effect-sax"
 Html.tokenize(options?) / tokenizeString(input, options?)
 Html.parseDocument(input, options?)      // Effect<XmlDocument> — WHATWG tree construction
 Html.parseDocumentStream(options?)
+Html.parseDocumentBytes(bytes, options?) // WHATWG encoding sniffing
+Html.parseDocumentBytesStream(options?)
 Html.parseFragment(input, options?)      // Effect<ReadonlyArray<XmlNode>> — lenient forest
 Html.parseFragmentStream(options?)
 Html.HTML_NS                             // "http://www.w3.org/1999/xhtml"
@@ -76,7 +81,21 @@ qname.qualified / .local / .prefix / .namespace / .clark
 // SaxError union (all Data.TaggedError, each with .position & .message):
 // UnexpectedCharacter, UnexpectedEndOfInput, InvalidEntity, MalformedDeclaration,
 // MismatchedEndTag, UnexpectedEndTag, DuplicateAttribute,
-// InvalidDocumentStructure, UnboundNamespacePrefix
+// InvalidDocumentStructure, UnboundNamespacePrefix, LimitExceeded,
+// UnsupportedEncoding, InvalidByteSequence
+```
+
+## Encoding & limits
+
+```ts
+import { Encoding, Limits } from "effect-sax"
+
+Encoding.sniffXml(head, final, { encoding? })   // Detected | NeedMore | UnsupportedEncoding
+Encoding.sniffHtml(head, final, { encoding? })
+Encoding.decode({ mode?, encoding?, maxTotalBytes? })  // (Stream<Uint8Array>) => Stream<string>
+Encoding.decodeBytes(bytes, options?)           // Effect<string>
+
+Limits.defaultLimits / Limits.unlimited
 ```
 
 ## Options
@@ -88,3 +107,6 @@ qname.qualified / .local / .prefix / .namespace / .clark
 | `whitespace` | Sax/Xml | `"preserve"` | or `"collapse"` |
 | `dropWhitespaceOnlyText` | Sax/Xml | `false` | drop blank text nodes |
 | `namespaces` | Xml | `true` | resolve prefixes to URIs |
+| `limits` | Sax/Xml/Html | `Limits.defaultLimits` | resource limits (partial) |
+| `dtd` | Sax/Xml | `"ignore"` | `"internal"`: expand internal entities, apply ATTLIST defaults |
+| `encoding` | `*Bytes` | detected | external encoding hint; a BOM still wins |

@@ -24,6 +24,7 @@
 import { Input, ParseError } from "@thomasfosterau/effect-parse"
 import {
   InvalidEntity,
+  LimitExceeded,
   MalformedDeclaration,
   UnexpectedCharacter,
   UnexpectedEndOfInput,
@@ -31,6 +32,7 @@ import {
 } from "../Error.ts"
 import type { Position, Span } from "../Position.ts"
 import { declarationContexts } from "./declarations.ts"
+import type { Dtd } from "./dtd.ts"
 import { grammars, type Grammars, type Issue, type RawKind, type Step, type Tok } from "./tokens.ts"
 
 // -----------------------------------------------------------------------------
@@ -52,11 +54,12 @@ export type LexEvent =
   | { readonly _tag: "ProcessingInstruction"; readonly target: string; readonly data: string; readonly span: Span }
   | { readonly _tag: "Doctype"; readonly name: string; readonly publicId: string | null; readonly systemId: string | null; readonly internalSubset: string | null; readonly span: Span }
   | { readonly _tag: "XmlDeclaration"; readonly version: string; readonly encoding: string | null; readonly standalone: boolean | null; readonly span: Span }
+  | { readonly _tag: "EntityReference"; readonly name: string; readonly span: Span }
 
 /** A fatal fault. The SAX stream turns these into typed failures. */
 export interface LexFault {
   readonly _tag: "Fault"
-  readonly error: LexError
+  readonly error: LexError | LimitExceeded
 }
 
 export type LexOutput = LexEvent | LexFault
@@ -70,6 +73,8 @@ export interface LexerOptions {
   readonly mode: "xml" | "html"
   /** Named entity table. */
   readonly entities: Record<string, string>
+  /** Declared entities, for XML with `dtd: "internal"`. */
+  readonly dtd?: Dtd
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -125,10 +130,14 @@ class Positions {
     const { buf, base } = this.source
     let { line, column } = this.pos
     // Lines: count the newlines in between; the column restarts after the last.
+    // Only the characters in between are scanned (an `indexOf` would run on to
+    // the next newline, which may be the end of a long buffer, every time).
     let last = -1
-    for (let nl = buf.indexOf("\n", this.index - base); nl !== -1 && nl < index - base; nl = buf.indexOf("\n", nl + 1)) {
-      line++
-      last = nl
+    for (let i = this.index - base; i < index - base; i++) {
+      if (buf.charCodeAt(i) === 10) {
+        line++
+        last = i
+      }
     }
     column = last === -1 ? column + (index - this.index) : index - base - last
     // Offsets: one per character, plus one per collapsed CRLF.
@@ -187,7 +196,7 @@ export class Lexer {
   suppressRawText = false
 
   constructor(private readonly options: LexerOptions) {
-    this.grammars = grammars(options.mode, options.entities)
+    this.grammars = grammars(options.mode, options.entities, options.dtd)
   }
 
   /** Feed a chunk of input. Returns every output produced by this chunk. */
@@ -200,6 +209,21 @@ export class Lexer {
   end(): ReadonlyArray<LexOutput> {
     this.ended = true
     return this.drain()
+  }
+
+  /** Length of the input buffered for a token that is not complete yet. */
+  get pendingLength(): number {
+    return this.buf.length - this.cursor
+  }
+
+  /** Where the pending (incomplete) token starts. */
+  pendingPosition(): Position {
+    return this.at(this.cursor)
+  }
+
+  /** The position just past all the input written so far. */
+  position(): Position {
+    return this.at(this.buf.length)
   }
 
   /** Add input without lexing it (see {@link pull}). */
@@ -365,15 +389,20 @@ export class Lexer {
         return { _tag: t._tag, name: t.name, publicId: t.publicId, systemId: t.systemId, internalSubset: t.internalSubset, span: this.span(t) }
       case "XmlDeclaration":
         return { _tag: t._tag, version: t.version, encoding: t.encoding, standalone: t.standalone, span: this.span(t) }
+      case "EntityReference":
+        return { _tag: t._tag, name: t.name, span: this.span(t) }
     }
   }
 
   /** The typed error for a failed (XML) token. */
-  private toError(state: Input.State<string>): LexError {
+  private toError(state: Input.State<string>): LexError | LimitExceeded {
     const failure = state.reportedFailure()
     const at = failure.offset
     this.positions.anchor(this.base + this.cursor)
     const issue = failure.hasCause ? (failure.cause as Issue) : undefined
+    if (issue?._tag === "Entity" && issue.limit !== undefined) {
+      return new LimitExceeded({ limit: issue.limit.name, max: issue.limit.max, position: this.at(issue.offset) })
+    }
     if (issue?._tag === "Entity") {
       return new InvalidEntity({ reference: issue.reference, position: this.at(issue.offset), reason: issue.reason })
     }
