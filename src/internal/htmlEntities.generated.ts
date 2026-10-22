@@ -10,7 +10,7 @@
  */
 
 /** Every named reference (the \`&name;\` semicolon-terminated form). ~2125 entries. */
-export const htmlNamedEntities: Record<string, string> = {
+export const htmlNamedEntities = {
   "AElig": "Æ",
   "AMP": "&",
   "Aacute": "Á",
@@ -2136,13 +2136,13 @@ export const htmlNamedEntities: Record<string, string> = {
   "zscr": "𝓏",
   "zwj": "‍",
   "zwnj": "‌",
-}
+} satisfies Readonly<Record<string, string>>;
 
 /**
  * The legacy subset (~106 entries) that may also appear WITHOUT a
  * trailing semicolon, e.g. \`&copy\`. Used for maximal-munch decoding in html mode.
  */
-export const htmlLegacyEntities: Record<string, string> = {
+export const htmlLegacyEntities = {
   "AElig": "Æ",
   "AMP": "&",
   "Aacute": "Á",
@@ -2249,4 +2249,4 @@ export const htmlLegacyEntities: Record<string, string> = {
   "yacute": "ý",
   "yen": "¥",
   "yuml": "ÿ",
-}
+} satisfies Readonly<Record<string, string>>;

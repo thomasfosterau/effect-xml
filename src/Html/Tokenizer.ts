@@ -8,12 +8,18 @@
  * stream and ships the element-category tables and insertion-mode vocabulary that
  * the full WHATWG tree-construction algorithm (the next phase) will consume.
  */
-import { Stream } from "effect"
-import type { SaxError } from "../Error.ts"
-import * as Sax from "../Sax.ts"
+import * as HashSet from "effect/HashSet";
+import * as Stream from "effect/Stream";
+import type { SaxError } from "../Error.ts";
+import * as Sax from "../Sax.ts";
 
-/** HTML void elements: they never have children and are implicitly self-closed. */
-export const voidElements: ReadonlySet<string> = new Set([
+/**
+ * HTML void elements: they never have children and are implicitly self-closed.
+ *
+ * @since 0.2.0
+ * @category element categories
+ */
+export const voidElements = HashSet.make(
   "area",
   "base",
   "br",
@@ -29,18 +35,38 @@ export const voidElements: ReadonlySet<string> = new Set([
   "source",
   "track",
   "wbr",
-])
+);
 
-/** Elements whose content is raw text (no entity decoding, no nested markup). */
-export const rawTextElements: ReadonlySet<string> = new Set([
-  "script", "style", "noframes", "noembed", "iframe", "xmp",
-])
+/**
+ * Elements whose content is raw text (no entity decoding, no nested markup).
+ *
+ * @since 0.2.0
+ * @category element categories
+ */
+export const rawTextElements = HashSet.make(
+  "script",
+  "style",
+  "noframes",
+  "noembed",
+  "iframe",
+  "xmp",
+);
 
-/** Elements whose content is rcdata (entity decoding, but no nested markup). */
-export const rcdataElements: ReadonlySet<string> = new Set(["title", "textarea"])
+/**
+ * Elements whose content is rcdata (entity decoding, but no nested markup).
+ *
+ * @since 0.2.0
+ * @category element categories
+ */
+export const rcdataElements = HashSet.make("title", "textarea");
 
-/** Formatting elements subject to the "adoption agency" algorithm in full HTML parsing. */
-export const formattingElements: ReadonlySet<string> = new Set([
+/**
+ * Formatting elements subject to the "adoption agency" algorithm in full HTML parsing.
+ *
+ * @since 0.2.0
+ * @category element categories
+ */
+export const formattingElements = HashSet.make(
   "a",
   "b",
   "big",
@@ -55,11 +81,14 @@ export const formattingElements: ReadonlySet<string> = new Set([
   "strong",
   "tt",
   "u",
-])
+);
 
 /**
- * The WHATWG "insertion modes" that drive tree construction. Declared here as the
- * vocabulary for the forthcoming spec-faithful builder; see `Html/ROADMAP.md`.
+ * The WHATWG "insertion modes" that drive HTML tree construction, by their
+ * spec names.
+ *
+ * @since 0.2.0
+ * @category models
  */
 export type InsertionMode =
   | "initial"
@@ -84,18 +113,35 @@ export type InsertionMode =
   | "in-frameset"
   | "after-frameset"
   | "after-after-body"
-  | "after-after-frameset"
+  | "after-after-frameset";
 
-export type HtmlOptions = Omit<Sax.SaxOptions, "mode" | "dtd">
+/**
+ * Options for the HTML entry points: the SAX options minus `mode`, which is
+ * always `"html"`, and `dtd`, which HTML never reads.
+ *
+ * @since 0.2.0
+ * @category options
+ */
+export type HtmlOptions = Omit<Sax.SaxOptions, "mode" | "dtd">;
 
-/** Turn a stream of HTML chunks into a lenient SAX event stream. */
+/**
+ * Turn a stream of HTML chunks into a lenient SAX event stream.
+ *
+ * @since 0.2.0
+ * @category tokenizing
+ */
 export const tokenize =
   (options?: HtmlOptions) =>
   <E, R>(input: Stream.Stream<string, E, R>): Stream.Stream<Sax.SaxEvent, SaxError | E, R> =>
-    input.pipe(Sax.tokenize({ ...options, mode: "html" }))
+    input.pipe(Sax.tokenize({ ...options, mode: "html" }));
 
-/** Tokenize a complete HTML string into a lenient SAX event stream. */
+/**
+ * Tokenize a complete HTML string into a lenient SAX event stream.
+ *
+ * @since 0.2.0
+ * @category tokenizing
+ */
 export const tokenizeString = (
   input: string,
-  options?: HtmlOptions
-): Stream.Stream<Sax.SaxEvent, SaxError> => Sax.tokenizeString(input, { ...options, mode: "html" })
+  options?: HtmlOptions,
+): Stream.Stream<Sax.SaxEvent, SaxError> => Sax.tokenizeString(input, { ...options, mode: "html" });

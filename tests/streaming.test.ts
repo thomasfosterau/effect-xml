@@ -1,21 +1,18 @@
-import { describe, expect, test } from "bun:test"
-import { Effect, Stream } from "effect"
-import { Sax } from "../src/index.ts"
+import { describe, expect, test } from "vite-plus/test";
+import * as Arr from "effect/Array";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import { Sax } from "../src/index.ts";
+import { narrowAt } from "./support/narrow.ts";
 
-const splitEvery = (s: string, n: number): ReadonlyArray<string> => {
-  const out: string[] = []
-  for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n))
-  return out
-}
+const splitEvery = (s: string, n: number): ReadonlyArray<string> =>
+  Arr.makeBy(Math.ceil(s.length / n), (i) => s.slice(i * n, i * n + n));
+
+const tokenizeChunks = (chunks: ReadonlyArray<string>, options?: Sax.SaxOptions) =>
+  Stream.fromIterable(chunks).pipe(Sax.tokenize(options), Stream.runCollect);
 
 const collectChunks = (chunks: ReadonlyArray<string>, options?: Sax.SaxOptions) =>
-  Effect.runPromise(
-    Stream.fromIterable(chunks).pipe(
-      Sax.tokenize(options),
-      Stream.runCollect,
-      Effect.map((c) => Array.from(c))
-    )
-  )
+  Effect.runPromise(tokenizeChunks(chunks, options));
 
 describe("Sax — true incremental streaming", () => {
   const document =
@@ -25,19 +22,24 @@ describe("Sax — true incremental streaming", () => {
     `<name>Laptop &lt;Pro&gt;</name>` +
     `<!-- a comment --><![CDATA[raw <data>]]>` +
     `</p:product>` +
-    `</catalog>`
+    `</catalog>`;
 
   test("result is identical regardless of chunk boundaries", async () => {
-    const whole = await collectChunks([document])
-    const reference = JSON.stringify(whole)
+    const whole = await collectChunks([document]);
 
     // Every chunk size from 1 to the full length must produce the same events,
     // including the same spans — this is the core promise the old parser broke.
-    for (let size = 1; size <= document.length; size++) {
-      const chunked = await collectChunks(splitEvery(document, size))
-      expect(JSON.stringify(chunked)).toBe(reference)
-    }
-  })
+    await Effect.runPromise(
+      Effect.forEach(
+        Arr.range(1, document.length),
+        (size) =>
+          tokenizeChunks(splitEvery(document, size)).pipe(
+            Effect.map((chunked) => expect(chunked).toStrictEqual(whole)),
+          ),
+        { concurrency: 1, discard: true },
+      ),
+    );
+  });
 
   test("splits in the middle of a multi-char delimiter are safe", async () => {
     // Force boundaries inside <!--, <![CDATA[, -->, ]]>, ?>, />
@@ -49,16 +51,21 @@ describe("Sax — true incremental streaming", () => {
       ["<a><?pi da", "ta?></a>"],
       ["<a/", ">"],
       ["<a></a", ">"],
-    ] as const
-    for (const chunks of cases) {
-      const joined = await collectChunks([chunks.join("")])
-      const split = await collectChunks(chunks)
-      expect(JSON.stringify(split)).toBe(JSON.stringify(joined))
-    }
-  })
+    ] as const;
+    await Effect.runPromise(
+      Effect.forEach(
+        cases,
+        (chunks) =>
+          Effect.zip(tokenizeChunks([chunks.join("")]), tokenizeChunks(chunks)).pipe(
+            Effect.map(([joined, split]) => expect(split).toStrictEqual(joined)),
+          ),
+        { concurrency: 1, discard: true },
+      ),
+    );
+  });
 
   test("entity split across chunk boundary still decodes", async () => {
-    const evs = await collectChunks(["<a>x &a", "mp; y</a>"])
-    expect((evs[1] as any).data).toBe("x & y")
-  })
-})
+    const evs = await collectChunks(["<a>x &a", "mp; y</a>"]);
+    expect(narrowAt(evs, 1, Sax.isText).data).toBe("x & y");
+  });
+});

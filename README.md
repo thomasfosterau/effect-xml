@@ -1,375 +1,195 @@
 # effect-sax
 
-Type-safe, streaming **XML & HTML parsing** for the [Effect](https://effect.website) ecosystem.
+Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.website).
 
-Three composable layers:
+| Layer | Import | What it gives you |
+| --- | --- | --- |
+| **`Sax`** | `effect-sax/Sax` | An incremental, chunk-boundary-safe tokenizer exposed as a `Stream` of typed events. |
+| **`Xml`** | `effect-sax/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
+| **`Html`** | `effect-sax/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, passing all 1368 runnable html5lib tree-construction cases) and a lenient fragment builder. |
 
-| Layer | What it gives you |
-| ----- | ----------------- |
-| **`Sax`** | A *true* incremental, chunk-boundary-safe SAX tokenizer exposed as an Effect `Stream` of strongly-typed events. |
-| **`Xml`** | A typed, `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
-| **`Html`** | html5ever-style tokenization (lenient, raw-text aware) plus an experimental fragment tree builder. |
+Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `effect-sax` re-exports all three layers as namespaces plus the shared errors, names and positions.
 
-Everything fails through typed errors (`Data.TaggedError`), names are branded
-(`TagName`, `AttrName`, `QName`), and the whole pipeline is built from ordinary
-`Stream`/`Effect` combinators.
+> **Status:** pre-1.0; the API may change between minor versions.
 
 ## Install
 
-```bash
-bun add effect-sax effect @thomasfosterau/effect-parse
+```sh
+pnpm add effect-sax effect @thomasfosterau/effect-parse
 ```
 
-`effect` (4.x) and `@thomasfosterau/effect-parse` are peer dependencies, so your
-application owns the single copy of each.
+`effect` (4.x, `^4.0.5`) and `@thomasfosterau/effect-parse` (`^0.1.0`) are peer dependencies, so your application owns the single copy of each. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node ≥ 22, browsers, workers).
 
-## Streaming SAX
-
-The tokenizer is genuinely incremental: feed it chunks of any size — even ones
-that split a tag, an attribute, an entity, or a `<![CDATA[` delimiter down the
-middle — and the lexer carries its state across them. The events (and their
-source spans) are identical no matter how the input is chunked.
+## Quick start
 
 ```ts
-import { Stream } from "effect"
-import { Sax } from "effect-sax"
-
-Stream.fromIterable(["<order id=", '"7"><item>Wid', "get</item></order>"]).pipe(
-  Sax.tokenize(),                     // Stream<SaxEvent, SaxError>
-  Stream.filter(Sax.isStartElement),
-  Stream.runForEach((e) => Console.log(e.name, e.attributes))
-)
-```
-
-`SaxEvent` is a `Data.TaggedEnum`, so you get exhaustive matching and guards:
-
-```ts
-SaxEvent.$match(event, {
-  StartElement: (e) => ...,
-  EndElement: (e) => ...,
-  Text: (e) => ...,
-  CData: (e) => ...,
-  Comment: (e) => ...,
-  ProcessingInstruction: (e) => ...,
-  Doctype: (e) => ...,
-  XmlDeclaration: (e) => ...,
-})
-```
-
-## Typed XML DOM
-
-```ts
-import { Effect } from "effect"
-import { Xml } from "effect-sax"
+import * as Effect from "effect/Effect";
+import { Xml } from "effect-sax";
 
 const program = Effect.gen(function* () {
   const doc = yield* Xml.parse(
     `<catalog xmlns:p="urn:products">
        <p:product sku="A1">Widget</p:product>
      </catalog>`,
-    { dropWhitespaceOnlyText: true }
-  )
-
-  const product = doc.root.elements[0]!
-  product.name.qualified   // "p:product"
-  product.name.namespace   // "urn:products"  (resolved)
-  product.attribute("sku") // "A1"
-  product.textContent      // "Widget"
-
-  Xml.serialize(product)   // round-trips back to XML
-})
+    { dropWhitespaceOnlyText: true },
+  );
+  const product = doc.root.elements[0];
+  if (product === undefined) return;
+  product.name.qualified; // "p:product"
+  product.name.namespace; // "urn:products" (resolved)
+  product.attribute("sku"); // "A1"
+  product.textContent; // "Widget"
+  return Xml.serialize(product); // round-trips back to XML
+});
 ```
 
-Nodes are `Schema` classes, so they double as runtime validators and are fully
-serializable:
+## Streaming SAX
+
+The tokenizer is genuinely incremental: feed it chunks of any size — even ones that split a tag, an attribute, an entity or a `<![CDATA[` delimiter down the middle — and it carries its state across them. The events and their source spans are identical however the input is chunked.
 
 ```ts
-import { Schema } from "effect"
-const encoded = Schema.encodeSync(Xml.XmlElement)(product) // plain data
-const back    = Schema.decodeSync(Xml.XmlElement)(encoded) // real instances
+import * as Console from "effect/Console";
+import * as Stream from "effect/Stream";
+import { Sax } from "effect-sax";
+
+Stream.fromIterable(["<order id=", '"7"><item>Wid', "get</item></order>"]).pipe(
+  Sax.tokenize(), // Stream<SaxEvent, SaxError>
+  Sax.startElements,
+  Stream.runForEach((e) => Console.log(e.name, e.attributes)),
+);
 ```
 
-Both `Xml.parse` (string) and `Xml.parseStream` (a `Stream<string>`) are
-available; the latter builds the tree without ever holding the whole input.
+| API | Type |  |
+| --- | --- | --- |
+| `Sax.tokenize(options?)` | `(Stream<string, E, R>) => Stream<SaxEvent, SaxError \| E, R>` | the core combinator |
+| `Sax.tokenizeString(input, options?)` | `Stream<SaxEvent, SaxError>` | a whole string |
+| `Sax.collect(input, options?)` | `Effect<ReadonlyArray<SaxEvent>, SaxError>` | every event, for small inputs and tests |
+| `Sax.startElements`, `Sax.endElements`, `Sax.texts`, `Sax.named(name)` | stream selectors |  |
+| `Sax.getAttribute(start, name)` | `Option<string>` |  |
+| `Sax.isStartElement`, `isEndElement`, `isText`, `isComment`, `isCData`, `isProcessingInstruction`, `isDoctype`, `isXmlDeclaration` | guards |  |
 
-## Navigating by namespace
-
-Look elements and attributes up by namespace URI and local name, never by the
-prefix a producer happened to choose:
+`SaxEvent` is a `Data.TaggedEnum` with the variants `StartElement`, `EndElement`, `Text`, `CData`, `Comment`, `ProcessingInstruction`, `Doctype` and `XmlDeclaration`, so you get exhaustive matching:
 
 ```ts
-import { Option } from "effect"
-import { Xml } from "effect-sax"
+import { Sax } from "effect-sax";
 
-const w = Xml.Ns.make("http://schemas.openxmlformats.org/wordprocessingml/2006/main")
-
-const body = doc.root.child(w("body"))                    // Option<XmlElement>
-const paragraphs = body.pipe(Option.map((b) => b.childElements(w("p"))))
-const texts = doc.root.descendants(w("t"))                // document order, iterative
-jc.attributeNS(w("val"))                                  // Option<string>; w14:val is a different attribute
-run.text(w("t"))                                          // Option<string>
-el.child(null, "item")                                    // or (namespace, local)
+const describe = (event: Sax.SaxEvent): string =>
+  Sax.SaxEvent.$match(event, {
+    StartElement: (e) => `<${e.name}>`,
+    EndElement: (e) => `</${e.name}>`,
+    Text: (e) => e.data,
+    CData: (e) => e.data,
+    Comment: () => "comment",
+    ProcessingInstruction: (e) => e.target,
+    Doctype: (e) => e.name,
+    XmlDeclaration: (e) => e.version,
+  });
 ```
 
-A `Cursor` is an element plus the path to it, so it can resolve what an
-element inherits: `xml:lang`, `xml:space` and `xml:base` (resolved against the
-document's base URI):
+Every event carries a `span` (`start` / `end` positions with `offset`, `line` and `column`; offsets count UTF-16 code units of the raw input, CRLF included).
+
+## Typed XML DOM
+
+| API | Type |
+| --- | --- |
+| `Xml.parse(input, options?)` | `Effect<XmlDocument, SaxError>` |
+| `Xml.parseStream(options?)` | `(Stream<string, E, R>) => Effect<XmlDocument, SaxError \| E, R>` — builds the tree without holding the input |
+| `Xml.events(input, options?)` | `Stream<SaxEvent, SaxError>` |
+| `Xml.serialize(node)`, `Xml.serializeDocument(doc)` | `string` |
+| `Xml.element(name, attributes?, children?)`, `Xml.attr(name, value)`, `Xml.text(data)` | builders |
+
+`XmlDocument` has `declaration`, `doctype`, `children` and `root` (the single root element). An `XmlElement` has `name` (a `QName`), `attributes`, `children`, `elements` (child elements), `attribute(name)` and `textContent`. The node classes — `XmlDocument`, `XmlElement`, `XmlText`, `XmlCData`, `XmlComment`, `XmlProcessingInstruction`, `XmlAttribute`, `XmlDeclaration`, `XmlDoctype` and the `XmlNode` union — are `Schema` classes, so they double as runtime validators and encode to plain data:
 
 ```ts
-const root = Xml.cursor(doc.root, { base: "http://example.org/doc.rdf" })
-for (const c of root.descendants(rdf("Description"))) {
-  c.lang   // Option<string>
-  c.space  // "default" | "preserve"
-  c.base   // Option<string>
-}
+import * as Schema from "effect/Schema";
+import { Xml } from "effect-sax";
+
+const el = Xml.element("p", [Xml.attr("class", "note")], [Xml.text("hi")]);
+const encoded = Schema.encodeSync(Xml.XmlElement)(el); // plain data
+const back = Schema.decodeSync(Xml.XmlElement)(encoded); // real instances again
 ```
 
-### XPath subset
+The XML tree builder is strict: it enforces matched tags, a single root and unique attributes, and resolves namespace prefixes into `QName.namespace` (the default namespace does not apply to attributes, per Namespaces in XML §6.2).
 
-`Xml.XPath.compile` takes location paths with namespace prefixes, `//`, `.`,
-`..`, `@`, `*`, `prefix:*`, `text()`, `node()`, the common axes, and predicates
-with positions, comparisons, `and`/`or` and a few functions (`not`,
-`position`, `last`, `count`, `string`, `local-name`, `contains`, `starts-with`,
-`normalize-space`):
+## HTML
 
 ```ts
-import { Result } from "effect"
+import * as Effect from "effect/Effect";
+import { Html, Xml } from "effect-sax";
 
-const title = Result.getOrThrow(
-  Xml.XPath.compile("//dc:title[@xml:lang = 'en']", { namespaces: { dc: "http://purl.org/dc/elements/1.1/" } })
-)
-Xml.XPath.string(title, doc)    // Option<string>
-Xml.XPath.select(path, doc)     // elements, attributes, text...
-Xml.XPath.elements(path, el)    // just the elements
-Xml.XPath.cursors(path, doc)    // as cursors, with inherited values
+// A full document: implicit html/head/body, insertion modes, tables,
+// templates, foreign (SVG/MathML) content and the adoption agency algorithm.
+const doc = Effect.runSync(Html.parseDocument("<b>1<i>2</b>3</i>"));
+Xml.serialize(doc.root); // <html><head/><body><b>1<i>2</i></b><i>3</i></body></html>
+
+// A lenient fragment (a forest of nodes); never fails on malformed markup.
+const nodes = Effect.runSync(
+  Html.parseFragment("<p>Hi <b>there<br>!</p><script>if (a<b){}</script>"),
+);
 ```
 
-### Streaming selection
+| API | Type |
+| --- | --- |
+| `Html.parseDocument(input, options?)` | `Effect<XmlDocument, SaxError>` — WHATWG tree construction |
+| `Html.parseDocumentStream(options?)` | `(Stream<string, E, R>) => Effect<XmlDocument, SaxError \| E, R>` |
+| `Html.parseFragment(input, options?)`, `Html.parseFragmentStream(options?)` | `Effect<ReadonlyArray<XmlNode>, …>` — lenient forest |
+| `Html.tokenize(options?)`, `Html.tokenizeString(input, options?)`, `Html.events(input, options?)` | HTML-mode SAX streams |
+| `Html.HTML_NS`, `SVG_NS`, `MATHML_NS`, `XLINK_NS`, `XML_NS`, `XMLNS_NS` | namespace URIs |
+| `Html.voidElements`, `rawTextElements`, `rcdataElements`, `formattingElements` | element categories (`HashSet<string>`) |
 
-`Sax.select` builds each subtree that matches a path into an `XmlElement` as
-soon as it ends, while the rest of the document streams past. This is how to
-read a huge spreadsheet in constant memory:
-
-```ts
-sheetBytes.pipe(
-  Sax.tokenize(),
-  Sax.select("/x:worksheet/x:sheetData/x:row[not(@hidden = '1')]", { namespaces: { x: SPREADSHEETML } }),
-  Stream.runForEach((row) => ...)
-)
-```
-
-Streamable paths use child and descendant steps with element name tests, and
-predicates on the element's own attributes and name. Anything that needs
-positions or content fails the stream with an `XPathError`.
-
-## Lenient HTML
-
-```ts
-import { Html } from "effect-sax"
-
-// Full document parse: implicit html/head/body, insertion modes, adoption agency.
-const doc = yield* Html.parseDocument(`<title>Hi</title><p>1<p>2<b>x<i>y</b>z`)
-doc.root // <html> with <head>/<body>, misnested formatting repaired
-
-// Or just a lenient fragment (forest of nodes), never throwing.
-const nodes = yield* Html.parseFragment(`<p>Hi <b>there<br>!</p><script>if (a<b){}</script>`)
-```
-
-`Html.parseDocument` runs the WHATWG tree-construction algorithm: implicit
-`html`/`head`/`body`, the insertion-mode spine, the active-formatting-elements
-list with reconstruction, and the **adoption agency algorithm** — so
-`<b>1<i>2</b>3</i>` becomes `<b>1<i>2</i></b><i>3</i>`.
-
-> **Status:** tokenization and the core tree-construction spine (including
-> formatting/adoption agency) are implemented. Tables, `select`/`template`, and
-> foreign (SVG/MathML) content are currently handled leniently rather than
-> per-spec; see [`src/Html/ROADMAP.md`](src/Html/ROADMAP.md) for the plan and the
-> html5lib-tests conformance gate.
-
-## Bytes and encodings
-
-Documents usually arrive as bytes, and the bytes say how to decode them. The
-`*Bytes` entry points detect the encoding instead of assuming UTF-8:
-
-```ts
-import { Html, Sax, Xml } from "effect-sax"
-
-// XML 1.0 Appendix F: byte order mark, then the XML declaration, then UTF-8.
-// UTF-8, UTF-16 and UTF-32 (either byte order, with or without a BOM),
-// ISO-8859-1, US-ASCII, and every encoding TextDecoder knows.
-const doc = yield* Xml.parseBytes(bytes)
-const streamed = yield* byteStream.pipe(Xml.parseBytesStream())
-const events = byteStream.pipe(Sax.tokenizeBytes())
-
-// An external hint (e.g. an HTTP charset) overrides the declaration, not a BOM.
-Xml.parseBytes(bytes, { encoding: "iso-8859-1" })
-
-// HTML uses the WHATWG sniffing algorithm: BOM, transport hint,
-// <meta charset> in the first 1024 bytes, then windows-1252.
-const page = yield* Html.parseDocumentBytes(bytes)
-```
-
-XML decoding is strict: invalid bytes fail with `InvalidByteSequence`, and an
-unknown or contradictory encoding with `UnsupportedEncoding`. HTML decodes
-invalid bytes to U+FFFD, as browsers do. Chunks may split multi-byte sequences
-anywhere. The sniffers and the decoding stream stage are exported as
-`Encoding.sniffXml`, `Encoding.sniffHtml` and `Encoding.decode`.
-
-## Resource limits
-
-Every parser enforces limits, so a hostile document fails with a typed
-`LimitExceeded { limit, max, position }` instead of exhausting the stack or the
-heap:
-
-| Limit | Default | Bounds |
-| ----- | ------- | ------ |
-| `maxDepth` | 1,024 | element nesting (in HTML, the tree's depth) |
-| `maxAttributes` | 1,024 | attributes on one element |
-| `maxNameLength` | 10,000 | element and attribute names, PI targets |
-| `maxTextLength` | 10,000,000 | one text node, CDATA section, comment, attribute value, PI or internal subset; also how much of one unfinished token is buffered while streaming |
-| `maxTotalBytes` | 1 GiB | the whole input (bytes, or UTF-16 code units for strings) |
-| `maxEntityExpansion` | 1,000,000 | replacement text entity references may add (`dtd: "internal"`; stops "billion laughs") |
-| `maxEntityDepth` | 64 | entity references nested in replacement text |
-
-```ts
-import { Limits, Xml } from "effect-sax"
-
-Xml.parse(input, { limits: { maxDepth: 256 } })   // the rest keep their defaults
-Xml.parse(trusted, { limits: Limits.unlimited })  // or Infinity for any one
-```
-
-Tree building, serialization and `textContent` are iterative, so even with the
-limits switched off a deep document can't overflow the stack.
-
-## DTD internal subset (opt-in)
-
-By default a DOCTYPE's internal subset is read past, and only the predefined
-entities exist. `dtd: "internal"` interprets it, as RDF/XML's conformance
-tests need:
-
-```ts
-Xml.parse(input, { dtd: "internal" })
-```
-
-- Internal general entities are expanded, including ones whose replacement
-  text contains markup (re-parsed in context, and required to be balanced).
-- `<!ATTLIST>` defaults and `#FIXED` values are added to elements that lack
-  them, and values of tokenized types (`NMTOKEN`, `ID`, …) are normalized.
-- Recursion is an `InvalidEntity`. The total replacement text and the nesting
-  depth are bounded by `limits.maxEntityExpansion` and `limits.maxEntityDepth`.
-- External and parameter entities are never fetched: referring to one is an
-  `InvalidEntity` (in content) or a `MalformedDeclaration` (in the subset).
-
-## Writing XML
-
-`Xml.serialize(node)` writes a tree back as it was parsed, and always
-well-formed. For new documents, `Xml.Writer` manages namespaces, checks
-what can't be escaped, and streams:
-
-```ts
-import { Effect, Stream } from "effect"
-import { QName, Xml } from "effect-sax"
-
-const w = (local: string) => new QName({ prefix: null, local, namespace: WORDML })
-
-// A DOM: the namespaces it uses are declared on its root.
-const xml = yield* Xml.Writer.serialize(body, {
-  declaration: { standalone: true },
-  prefixes: { w: WORDML },              // preferred prefixes
-  indent: 2,                            // never inside mixed content or xml:space="preserve"
-  invalid: "fail",                      // or "strip" / "replace" for characters XML 1.0 forbids
-  escape: (cp) => `_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`, // e.g. OOXML
-})
-
-// A stream of events, in constant memory (a 500 MB sheet is fine).
-const bytes = Stream.concat(
-  Stream.make(Xml.Writer.start(x("worksheet")), Xml.Writer.start(x("sheetData"))),
-  Stream.concat(rows.pipe(Stream.flatMap((row) => Stream.fromIterable(Xml.Writer.events(row)))), Stream.make(Xml.Writer.end, Xml.Writer.end))
-).pipe(Xml.Writer.writeBytes({ declaration: true, prefixes: { x: SML } }))
-```
-
-The writer:
-- splits a CDATA section that contains `]]>`;
-- escapes tabs and line breaks in attribute values, so they survive a round trip;
-- rejects a comment containing `--`, a PI containing `?>`, and characters XML 1.0
-  forbids, unless told to strip or replace them;
-- declares each namespace where it is first needed, or on the root for the
-  preferred prefixes, reuses bindings in scope, and orders declarations
-  deterministically.
-
-`Xml.C14n.exclusive(nodes, { comments })` is Exclusive XML Canonicalization
-1.0, for `rdf:parseType="Literal"` and XML signatures.
-`Html.serialize(doc)` follows the WHATWG HTML fragment-serialization
-algorithm.
+HTML mode decodes the complete WHATWG named character reference table, with maximal munch, the legacy semicolon-less references (`&copy`), the ambiguous-ampersand rule in attributes and the Windows-1252 numeric remap. `parseDocument` drives the tokenizer and the tree builder in lockstep, so `<title>` or `<style>` inside SVG is an ordinary element, not raw text; `parseDocumentStream` consumes an already-tokenized stream and cannot make that switch.
 
 ## Typed errors
 
-All failures are tagged and unioned under `SaxError`, so they narrow exhaustively:
+Every failure is a tagged class in the `SaxError` union, so it narrows exhaustively:
 
 ```ts
-Xml.parse(input).pipe(
+import * as Effect from "effect/Effect";
+import { Xml } from "effect-sax";
+
+const program = Xml.parse("<a></b>").pipe(
   Effect.catchTags({
-    MismatchedEndTag: (e) => ...,
-    UnboundNamespacePrefix: (e) => ...,
-    DuplicateAttribute: (e) => ...,
-    InvalidEntity: (e) => ...,
-    MalformedDeclaration: (e) => ...,
-    UnexpectedCharacter: (e) => ...,
-    UnexpectedEndOfInput: (e) => ...,
-    UnexpectedEndTag: (e) => ...,
-    InvalidDocumentStructure: (e) => ...,
-    LimitExceeded: (e) => ...,
-    UnsupportedEncoding: (e) => ...,
-    InvalidByteSequence: (e) => ...,
-  })
-)
+    MismatchedEndTag: (e) => Effect.succeed(`expected </${e.expected}>`),
+    UnexpectedEndTag: (e) => Effect.succeed(e.message),
+    UnboundNamespacePrefix: (e) => Effect.succeed(e.message),
+    DuplicateAttribute: (e) => Effect.succeed(e.message),
+    InvalidEntity: (e) => Effect.succeed(e.message),
+    MalformedDeclaration: (e) => Effect.succeed(e.message),
+    UnexpectedCharacter: (e) => Effect.succeed(e.message),
+    UnexpectedEndOfInput: (e) => Effect.succeed(e.message),
+    InvalidDocumentStructure: (e) => Effect.succeed(e.message),
+  }),
+);
 ```
 
-Every error carries a human-readable `message`, and a `position`
-(`offset`/`line`/`column`) when it has one: the decoding errors report a byte
-`offset` instead, and `LimitExceeded` has no position when it is hit while
-decoding bytes.
+Each error carries a `position` (`offset` / `line` / `column`) and a human-readable `message`; `isSaxError(u)` recognises any of them. `XmlDocument.root` throws `MissingRootElement` only for a hand-built document with no element (the parsers never produce one).
 
 ## Options
 
+| Option | Applies to | Default | Meaning |
+| --- | --- | --- | --- |
+| `mode` | `Sax.tokenize` | `"xml"` | `"xml"` is strict (malformed markup and unknown entities fail); `"html"` recovers (the `Html` entry points set it) |
+| `entities` | all | XML's five, or the full WHATWG set in HTML mode | named-entity table (`Record<string, string>`, names without `&` / `;`) |
+| `whitespace` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `"preserve"` | or `"collapse"` (runs of whitespace become one space, trimmed) |
+| `dropWhitespaceOnlyText` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `false` | drop text events / nodes that are only whitespace |
+| `namespaces` | `Xml` | `true` | resolve prefixes to URIs; when `false`, names keep their prefix and `namespace` is `null` |
+
+## Names and positions
+
 ```ts
-Sax.tokenize({
-  mode: "xml" | "html",                  // strict vs. lenient (default "xml")
-  entities: { ... },                     // named-entity table override
-  whitespace: "preserve" | "collapse",   // default "preserve"
-  dropWhitespaceOnlyText: false,         // drop blank text nodes
-  limits: { maxDepth: 1024, ... },       // see "Resource limits"
-})
+import { QName } from "effect-sax";
 
-Xml.parse(input, {
-  namespaces: true,                      // resolve prefixes to URIs (default true)
-  whitespace, dropWhitespaceOnlyText, entities,
-})
+QName.fromRaw("svg:rect"); // prefix "svg", local "rect", namespace null
+QName.simple("div").clark; // "div"; "{uri}local" once a namespace is resolved
 ```
 
-## Scripts
+`TagName(s)` / `AttrName(s)` are validating brand constructors; `isValidName` / `isValidNCName` test the XML `Name` / `NCName` productions. `Position`, `Span`, `origin`, `advance` and `showPosition` are the source-location helpers.
 
-```bash
-bun test          # run the suite
-bun run typecheck # tsc --noEmit
-bun run example   # the tour in examples/usage.ts
-bun bench/parse.ts [MB]   # parsing benchmarks on a generated worksheet
-```
+## Links
 
-Three conformance gates run with the tests, each asserting a pass-count
-baseline that may only go up:
-- html5lib tree construction (`tests/conformance.test.ts`);
-- html5lib tokenizer (`tests/html5lib-tokenizer.test.ts`);
-- the W3C XML Conformance Test Suite (`tests/xmlconf.test.ts`): XML 1.0 5th
-  edition and Namespaces 1.0, with the not-wf, valid and invalid documents
-  that need no external entities, and James Clark's expected outputs.
-  `XMLCONF_REPORT=1 bun test tests/xmlconf.test.ts` lists what fails.
-
-## Design
-
-See [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for the architecture and
-[`src/Html/ROADMAP.md`](src/Html/ROADMAP.md) for the xml5ever/html5ever plan.
+- [`examples/usage.ts`](https://github.com/thomasfosterau/effect-xml/blob/trunk/examples/usage.ts) — a tour of the three layers.
+- [CONTRIBUTING.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/CONTRIBUTING.md) — development setup. Repository conventions and architecture are in [AGENTS.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/AGENTS.md), the release pipeline in [PUBLISHING.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/PUBLISHING.md) and the vulnerability-reporting policy in [SECURITY.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/SECURITY.md).
 
 ## License
 
-MIT
+MIT — see [LICENSE](https://github.com/thomasfosterau/effect-xml/blob/trunk/LICENSE).

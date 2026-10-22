@@ -1,26 +1,58 @@
 name: CI
 
+# ONE required job, ONE required check: the pipeline's task graph lives in
+# vite.config.ts (the `check`, `test:unit`, `build` and `docgen` tasks), not
+# in GitHub Actions `needs:`. Copied in shape from the effect-web library.
+# Nothing here needs a database, a stage or a credential, so every PR runs
+# the whole gate.
+
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [trunk]
+    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches: [trunk]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
+
+# No permissions by default; the single job grants only read access.
+permissions: {}
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # A modest ceiling for every Node process in the pipeline. NODE_OPTIONS
+      # is inherited by every child, including each vitest fork.
+      NODE_OPTIONS: --max-old-space-size=2048
+      VITEST_MAX_WORKERS: 2
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Test
-        run: bun test tests/
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Restore the Vite+ task cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules/.vite/task-cache
+          key: vp-task-v1-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            vp-task-v1-${{ runner.os }}-
+      - name: Format and lint
+        run: vp check
+      - name: Type gate (src + tests + example)
+        run: vp run check
+      - name: Unit tests (incl. the html5lib conformance gate)
+        run: vp run test:unit
+      - name: Build
+        run: vp run build
+      # Type-checks AND runs every JSDoc @example against the built dist/.
+      - name: Verify documentation examples (docgen)
+        run: vp run docgen
+      - name: Audit
+        run: pnpm audit --audit-level high

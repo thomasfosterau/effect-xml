@@ -1,0 +1,80 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "src/index.ts",
+    "src/Sax.ts",
+    "src/Xml/index.ts",
+    "src/Html/index.ts",
+    "tests/**/*.test.ts",
+    "examples/usage.ts",
+    "vite.config.ts"
+  ],
+  "ignorePatterns": ["**/dist/**", "**/docs/**", "**/coverage/**", "tests/fixtures/**"],
+  "ignoreDependencies": [
+    "@types/node",
+    "@effect/docgen",
+    "@effect/tsgo",
+    "@effect/language-service",
+    "@typescript/native",
+    "typescript",
+    "tsx",
+    "vite",
+    "vitest",
+    "vite-plus",
+    "@changesets/cli",
+    "@changesets/changelog-github",
+    "@vitest/coverage-istanbul",
+    "fallow"
+  ],
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "error",
+    "unused-types": "error",
+    "unused-dependencies": "error",
+    "unused-dev-dependencies": "warn",
+    "unused-enum-members": "error",
+    "unused-class-members": "warn",
+    "unresolved-imports": "error",
+    "unlisted-dependencies": "error",
+    "duplicate-exports": "error",
+    "circular-dependencies": "error",
+    "boundary-violation": "error",
+    "stale-suppressions": "warn"
+  },
+  "boundaries": {
+    "zones": [
+      {
+        "name": "internal",
+        "patterns": ["src/internal/**"]
+      },
+      {
+        "name": "public",
+        "patterns": ["src/{Error,Name,Position,Sax,index}.ts", "src/Xml/**", "src/Html/**"]
+      },
+      {
+        "name": "tests",
+        "patterns": ["tests/**", "examples/**"]
+      }
+    ],
+    "rules": [
+      {
+        "from": "internal",
+        "allow": ["public"]
+      },
+      {
+        "from": "public",
+        "allow": ["internal"]
+      },
+      {
+        "from": "tests",
+        "allow": ["public"]
+      }
+    ]
+  },
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 15,
+    "maxCrap": 30,
+    "coverage": "coverage/coverage-final.json"
+  }
+}

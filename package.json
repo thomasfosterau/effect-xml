@@ -1,48 +1,92 @@
 {
+  "$schema": "https://www.schemastore.org/package",
   "name": "effect-sax",
   "version": "0.2.0",
   "description": "Type-safe, streaming XML & HTML parsing for the Effect ecosystem: an incremental SAX interface plus xml5ever/html5ever-style parsers.",
-  "type": "module",
-  "module": "src/index.ts",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts",
-    "./Sax": "./src/Sax.ts",
-    "./Xml": "./src/Xml/index.ts",
-    "./Html": "./src/Html/index.ts"
-  },
-  "scripts": {
-    "test": "bun test tests/",
-    "typecheck": "tsc --noEmit",
-    "example": "bun run examples/usage.ts"
-  },
-  "peerDependencies": {
-    "@thomasfosterau/effect-parse": "^0.1.0",
-    "effect": "^4.0.5"
-  },
-  "devDependencies": {
-    "@thomasfosterau/effect-parse": "^0.1.0",
-    "@types/bun": "^1.3.14",
-    "effect": "^4.0.5",
-    "typescript": "^5.6.0"
-  },
   "keywords": [
-    "xml",
+    "effect",
     "html",
+    "html5ever",
     "parser",
     "sax",
-    "streaming",
-    "effect",
     "schema",
+    "streaming",
     "type-safe",
-    "html5ever",
-    "xml5ever",
-    "bun"
+    "xml",
+    "xml5ever"
   ],
+  "homepage": "https://github.com/thomasfosterau/effect-xml#readme",
+  "bugs": {
+    "url": "https://github.com/thomasfosterau/effect-xml/issues"
+  },
+  "license": "MIT",
+  "author": "Thomas Foster <me@thomasfoster.au>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/thomasfosterau/effect-sax.git"
+    "url": "https://github.com/thomasfosterau/effect-xml.git"
   },
-  "license": "MIT"
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./Sax": {
+      "types": "./dist/Sax.d.ts",
+      "default": "./dist/Sax.js"
+    },
+    "./Xml": {
+      "types": "./dist/Xml.d.ts",
+      "default": "./dist/Xml.js"
+    },
+    "./Html": {
+      "types": "./dist/Html.d.ts",
+      "default": "./dist/Html.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "changeset": "changeset",
+    "version": "changeset version && vp fmt && pnpm install --lockfile-only",
+    "release": "bash scripts/release.sh",
+    "fallow": "fallow --summary",
+    "fallow:audit": "fallow audit",
+    "prepare": "vp config && effect-tsgo patch --typescript --oxlint"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "catalog:",
+    "@changesets/cli": "catalog:",
+    "@effect/docgen": "catalog:",
+    "@effect/language-service": "catalog:",
+    "@effect/tsgo": "catalog:",
+    "@mpsuesser/oxlint-plugin-effect": "catalog:",
+    "@thomasfosterau/effect-parse": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native": "catalog:",
+    "@vitest/coverage-istanbul": "catalog:",
+    "effect": "catalog:",
+    "fallow": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@thomasfosterau/effect-parse": "catalog:peers",
+    "effect": "catalog:peers"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.18.0"
 }

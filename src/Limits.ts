@@ -13,30 +13,30 @@
 
 export interface Limits {
   /** Maximum element nesting depth. */
-  readonly maxDepth: number
+  readonly maxDepth: number;
   /** Maximum number of attributes on one element. */
-  readonly maxAttributes: number
+  readonly maxAttributes: number;
   /** Maximum length of an element name, attribute name or PI target. */
-  readonly maxNameLength: number
+  readonly maxNameLength: number;
   /**
    * Maximum length of any single run of character data: a text node, CDATA
    * section, comment, attribute value, PI body or DOCTYPE internal subset.
    * While streaming, this also bounds how much of one unfinished token is
    * buffered.
    */
-  readonly maxTextLength: number
+  readonly maxTextLength: number;
   /**
    * Maximum size of the whole input: bytes for byte input, UTF-16 code units
    * for string input.
    */
-  readonly maxTotalBytes: number
+  readonly maxTotalBytes: number;
   /**
    * Maximum total length of replacement text that entity references may add
    * to a document (with `dtd: "internal"`). Stops "billion laughs".
    */
-  readonly maxEntityExpansion: number
+  readonly maxEntityExpansion: number;
   /** Maximum nesting of entity references inside entity replacement text. */
-  readonly maxEntityDepth: number
+  readonly maxEntityDepth: number;
 }
 
 /**
@@ -51,7 +51,7 @@ export const defaultLimits: Limits = {
   maxTotalBytes: 1024 * 1024 * 1024,
   maxEntityExpansion: 1_000_000,
   maxEntityDepth: 64,
-}
+};
 
 /** No limits at all. Only for trusted input. */
 export const unlimited: Limits = {
@@ -62,8 +62,8 @@ export const unlimited: Limits = {
   maxTotalBytes: Infinity,
   maxEntityExpansion: Infinity,
   maxEntityDepth: Infinity,
-}
+};
 
 /** Fill in the limits a caller left out with the defaults. */
 export const resolveLimits = (limits: Partial<Limits> | undefined): Limits =>
-  limits === undefined ? defaultLimits : { ...defaultLimits, ...limits }
+  limits === undefined ? defaultLimits : { ...defaultLimits, ...limits };
