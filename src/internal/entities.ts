@@ -275,10 +275,8 @@ const grammarFor = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> 
   const afterAmpersand = Parser.peek(
     Parser.preceded(ampersand, Parser.alt(Token.any, Parser.succeed(""))),
   );
-  const reference = Parser.dispatch(afterAmpersand, (c) => (c === "#" ? numeric : named));
-  return Parser.repeat(
-    Parser.dispatch(Parser.peek(Token.any), (c) => (c === "&" ? reference : text)),
-  );
+  const reference = Parser.dispatch(afterAmpersand, { "#": numeric }, named);
+  return Parser.repeat(Parser.dispatch(Parser.peek(Token.any), { "&": reference }, text));
 };
 
 const byEntities = new WeakMap<
