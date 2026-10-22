@@ -256,8 +256,10 @@ const startTag = (cfg: EntityConfig): P<Step> => {
   const unquoted = cfg.strict
     ? unexpected("reading an attribute value")
     : value(Token.takeTill(ws + ">", { min: 1 }));
-  const attrValue = Parser.dispatch(nextChar, (c): P<string> =>
-    c === '"' ? doubleQuoted : c === "'" ? singleQuoted : c === ">" ? empty : unquoted,
+  const attrValue: P<string> = Parser.dispatch(
+    nextChar,
+    { '"': doubleQuoted, "'": singleQuoted, ">": empty },
+    unquoted,
   );
   // An attribute's name runs to whitespace, `=`, `/` or `>`; its span takes
   // in the whitespace after a valueless one.
@@ -651,18 +653,26 @@ export interface Grammars {
  * Text, or markup chosen by the character after its `<` (`""` when the `<`
  * is the last character of the input).
  */
-const dispatchMarkup = (text: P<Step>, markup: (c: string) => P<Step>): P<Step> => {
+const dispatchMarkup = (
+  text: P<Step>,
+  markup: { readonly "/": P<Step>; readonly "!": P<Step>; readonly "?": P<Step> },
+  tag: P<Step>,
+  other: P<Step>,
+): P<Step> => {
   const afterLt = Parser.preceded(Token.literal("<"), Parser.alt(Token.any, Parser.as(eof, "")));
-  return Parser.dispatch(nextChar, (c): P<Step> =>
-    c === "<" ? Parser.dispatch(Parser.peek(afterLt), markup) : text,
+  // Any other character opens a tag when a name starts there.
+  const nameStartsHere = Parser.peek(Parser.preceded(Token.literal("<"), Token.oneOf(nameStart)));
+  return Parser.dispatch(
+    nextChar,
+    {
+      "<": Parser.dispatch(
+        Parser.peek(afterLt),
+        markup,
+        Parser.alt(Parser.preceded(nameStartsHere, tag), other),
+      ),
+    },
+    text,
   );
-};
-
-/** {@link nameStart} as a predicate, for choosing a branch. */
-const isNameStart = (c: string): boolean => {
-  if (c === "_" || c === ":") return true;
-  const code = c.charCodeAt(0);
-  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code > 127;
 };
 
 const makeGrammars = (cfg: EntityConfig): Grammars => {
@@ -683,16 +693,11 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
       badMarkupDeclaration,
     );
     const badOpen = Parser.preceded(Token.literal("<"), unexpected("opening a tag"));
-    data = dispatchMarkup(textToken, (c) =>
-      c === "/"
-        ? Parser.cut(xmlEndTag)
-        : c === "!"
-          ? markupDeclaration
-          : c === "?"
-            ? Parser.cut(piToken)
-            : isNameStart(c)
-              ? Parser.cut(start)
-              : badOpen,
+    data = dispatchMarkup(
+      textToken,
+      { "/": Parser.cut(xmlEndTag), "!": markupDeclaration, "?": Parser.cut(piToken) },
+      Parser.cut(start),
+      badOpen,
     );
   } else {
     // At EOF an unfinished start tag is dropped.
@@ -708,16 +713,11 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
     );
     const stray = strayLessThan(cfg);
     const pi = bogusComment("<");
-    data = dispatchMarkup(textToken, (c) =>
-      c === "/"
-        ? htmlEndTag
-        : c === "!"
-          ? markupDeclaration
-          : c === "?"
-            ? pi
-            : isNameStart(c)
-              ? startOrDrop
-              : stray,
+    data = dispatchMarkup(
+      textToken,
+      { "/": htmlEndTag, "!": markupDeclaration, "?": pi },
+      startOrDrop,
+      stray,
     );
   }
   const raws = MutableHashMap.empty<string, P<Step>>();
