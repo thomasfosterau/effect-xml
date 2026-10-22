@@ -241,7 +241,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
  * @example
  * ```ts
  * import { Stream } from "effect"
- * import { Sax } from "effect-sax"
+ * import { Sax } from "@thomasfosterau/effect-xml"
  *
  * Stream.fromIterable(["<roo", "t>hi</root>"]).pipe(Sax.tokenize())
  * ```
@@ -369,7 +369,7 @@ export const tokenizeString = (
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
- * import { Sax } from "effect-sax"
+ * import { Sax } from "@thomasfosterau/effect-xml"
  *
  * const events = Effect.runSync(Sax.collect("<a>hi</a>"))
  * console.log(events.map((e) => e._tag)) // ["StartElement", "Text", "EndElement"]

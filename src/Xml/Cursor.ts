@@ -11,7 +11,7 @@
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Option from "effect/Option"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const doc = Effect.runSync(
  *   Xml.parse(`<list xml:lang="en" xml:base="items/"><item xml:lang="fr" xml:base="a.xml"/></list>`)

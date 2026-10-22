@@ -328,7 +328,7 @@ class Selector {
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Stream from "effect/Stream"
- * import { Sax } from "effect-sax"
+ * import { Sax } from "@thomasfosterau/effect-xml"
  *
  * const SPREADSHEETML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
  * const sheet = Stream.make(

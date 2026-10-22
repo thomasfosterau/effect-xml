@@ -7,7 +7,7 @@
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
  * const w = Xml.Ns.make(W)

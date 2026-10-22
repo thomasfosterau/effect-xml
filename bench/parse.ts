@@ -3,7 +3,7 @@
  * [megabytes]`).
  *
  * The input is a generated SpreadsheetML worksheet (the shape of a large
- * XLSX `sheet1.xml`, about 8 MB by default). effect-sax is measured as a SAX
+ * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
  * stream (whole string and 64 KiB chunks), as bytes, as a DOM, and with
  * streaming selection of rows.
  *
@@ -69,17 +69,17 @@ const optional = async (pkg: string): Promise<any> => {
 
 console.log(`input: ${(input.length / 1024 / 1024).toFixed(1)} MB worksheet\n`);
 
-await time("effect-sax SAX (string)", () =>
+await time("effect-xml SAX (string)", () =>
   Effect.runPromise(Sax.tokenizeString(input).pipe(Stream.runDrain)),
 );
-await time("effect-sax SAX (64 KiB chunks)", () =>
+await time("effect-xml SAX (64 KiB chunks)", () =>
   Effect.runPromise(Stream.fromIterable(chunks).pipe(Sax.tokenize(), Stream.runDrain)),
 );
-await time("effect-sax SAX (bytes)", () =>
+await time("effect-xml SAX (bytes)", () =>
   Effect.runPromise(Stream.make(bytes).pipe(Sax.tokenizeBytes(), Stream.runDrain)),
 );
-await time("effect-sax DOM (Xml.parse)", () => Effect.runPromise(Effect.asVoid(Xml.parse(input))));
-await time("effect-sax rows (Sax.select)", () =>
+await time("effect-xml DOM (Xml.parse)", () => Effect.runPromise(Effect.asVoid(Xml.parse(input))));
+await time("effect-xml rows (Sax.select)", () =>
   Effect.runPromise(
     Stream.make(input).pipe(
       Sax.tokenize(),

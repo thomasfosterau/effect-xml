@@ -18,7 +18,7 @@ import type { SaxEvent } from "../Sax.ts";
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
- * import { Html } from "effect-sax"
+ * import { Html } from "@thomasfosterau/effect-xml"
  *
  * const nodes = Effect.runSync(Html.parseFragment("<p>Hi <b>there<br>!</p>"))
  * console.log(nodes.length) // 1
@@ -55,7 +55,7 @@ export const parseFragmentStream =
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
- * import { Html, Xml } from "effect-sax"
+ * import { Html, Xml } from "@thomasfosterau/effect-xml"
  *
  * const doc = Effect.runSync(Html.parseDocument("<b>1<i>2</b>3</i>"))
  * console.log(Xml.serialize(doc.root))

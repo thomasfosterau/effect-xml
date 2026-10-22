@@ -2,7 +2,7 @@
 
 `CLAUDE.md` is a symlink to this file. Project conventions live here; personal style preferences live in user memory.
 
-This repo publishes one npm package, `effect-sax`, from the repository root: type-safe, streaming XML and HTML parsing for Effect. It has three layers, each usable on its own and each a thin composition of the one below:
+This repo publishes one npm package, `@thomasfosterau/effect-xml`, from the repository root: type-safe, streaming XML and HTML parsing for Effect. It has three layers, each usable on its own and each a thin composition of the one below:
 
 ```
 input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree builder ──▶ XmlDocument
@@ -11,10 +11,10 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 
 | Entry | Source | What it is |
 | --- | --- | --- |
-| `effect-sax` | `src/index.ts` | `Sax`, `Xml`, `Html`, `Encoding` (`Encoding.ts`: byte sniffing and decoding) and `Limits` (`Limits.ts`) namespaces plus the shared errors, names and positions |
-| `effect-sax/Sax` | `src/Sax.ts` | `SaxEvent` tagged enum and the `Stream` combinators over the lexer, including `tokenizeBytes` and `select` (`Xml/Select.ts`) |
-| `effect-sax/Xml` | `src/Xml/index.ts` | the Schema-backed DOM (`Node.ts`), cursors (`Cursor.ts`), the strict tree builder with namespace resolution (`TreeBuilder.ts`), `parse` / `parseStream` / `parseBytes` (`Xml.ts`), and the `Writer`, `C14n`, `Ns` and `XPath` namespaces |
-| `effect-sax/Html` | `src/Html/index.ts` | HTML-mode tokenizing, WHATWG tree construction (`TreeConstruction.ts`, `parseDocument`), the lenient fragment builder (`TreeBuilder.ts`, `parseFragment`) and serialization (`Serialize.ts`) |
+| `@thomasfosterau/effect-xml` | `src/index.ts` | `Sax`, `Xml`, `Html`, `Encoding` (`Encoding.ts`: byte sniffing and decoding) and `Limits` (`Limits.ts`) namespaces plus the shared errors, names and positions |
+| `@thomasfosterau/effect-xml/Sax` | `src/Sax.ts` | `SaxEvent` tagged enum and the `Stream` combinators over the lexer, including `tokenizeBytes` and `select` (`Xml/Select.ts`) |
+| `@thomasfosterau/effect-xml/Xml` | `src/Xml/index.ts` | the Schema-backed DOM (`Node.ts`), cursors (`Cursor.ts`), the strict tree builder with namespace resolution (`TreeBuilder.ts`), `parse` / `parseStream` / `parseBytes` (`Xml.ts`), and the `Writer`, `C14n`, `Ns` and `XPath` namespaces |
+| `@thomasfosterau/effect-xml/Html` | `src/Html/index.ts` | HTML-mode tokenizing, WHATWG tree construction (`TreeConstruction.ts`, `parseDocument`), the lenient fragment builder (`TreeBuilder.ts`, `parseFragment`) and serialization (`Serialize.ts`) |
 
 `src/internal/**` is never exported: the incremental lexer (`lexer.ts`), the effect-parse token grammars (`tokens.ts`), the declaration / PI / DOCTYPE grammars (`declarations.ts`), name productions (`names.ts`), entity decoding (`entities.ts`, `htmlEntities.generated.ts`), the foreign-content (SVG / MathML) tables (`foreign.ts`), the DTD internal subset and entity expansion (`dtd.ts`, `expansion.ts`), limit enforcement (`guard.ts`, with the exception boundary for tree builders in `unwind.ts`) and small shared helpers: `tree.ts` (stack-safe preorder traversal; use it rather than recursion over a DOM), `drive.ts` (the lexer pull loop), `convert.ts` (lexer events to SAX events), `attributes.ts` (attribute resolution shared by the XML tree builder and `Sax.select`), `order.ts`, `tagSet.ts` and `quote.ts`. A new public entry is added to `pack.entry` in `vite.config.ts`, `exports` in `package.json`, `entry` in `.fallowrc.json` and the table above.
 
@@ -30,7 +30,7 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 - **The hot path is measured.** `vp run bench` (`bench/parse.ts`) times the SAX (string, chunks, bytes), DOM and select paths on a generated worksheet. A refactor of the lexer → SAX path (per token: `pull`, `guard.event`, conversion) should leave it unchanged. `$match` / `$is` there cost a third of the throughput (each is one function shared program-wide, so V8's caches go megamorphic and nothing inlines), which is why `lexer.ts`, `guard.ts` and `convert.ts` dispatch with a `switch` under a scoped lint override; closures and `Option`s per token have cost tens of percent too.
 - **`src/internal/htmlEntities.generated.ts` is generated data** (the WHATWG named-reference table); don't hand-edit entries.
 - **`"sideEffects": false` is a claim about `dist/`.** Every emitted module must be pure declarations: no top-level statements with effects.
-- **`vp run docgen` executes your examples.** `@effect/docgen` compiles every JSDoc `@example` and runs it under `tsx`, importing `effect-sax` by name through `dist/` (`"runExamples": true` in `docgen.json`). An example must be a fenced ` ```ts ` block inside `@example` (docgen silently skips bare code), must import everything it uses, must not use `declare const`, and must not throw.
+- **`vp run docgen` executes your examples.** `@effect/docgen` compiles every JSDoc `@example` and runs it under `tsx`, importing `@thomasfosterau/effect-xml` by name through `dist/` (`"runExamples": true` in `docgen.json`). An example must be a fenced ` ```ts ` block inside `@example` (docgen silently skips bare code), must import everything it uses, must not use `declare const`, and must not throw.
 - **`effect` and `@thomasfosterau/effect-parse` are peers, never dependencies.** Two copies of `effect` break `Schema` / `Context` identity; the consumer owns the singleton.
 
 ## Conventions

@@ -1,5 +1,5 @@
 /**
- * effect-sax — type-safe, streaming XML & HTML parsing for the Effect ecosystem.
+ * `@thomasfosterau/effect-xml`: type-safe, streaming XML & HTML parsing for the Effect ecosystem.
  *
  * Three layers, smallest to largest:
  *   - {@link Sax}  — a true incremental, chunk-boundary-safe SAX event stream.
@@ -13,7 +13,7 @@
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const program = Xml.parse("<a x='1'>hi</a>").pipe(
  *   Effect.map((doc) => doc.root.attribute("x"))
