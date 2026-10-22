@@ -11,7 +11,6 @@
  */
 import { Schema } from "effect"
 import { QName } from "../Name.ts"
-import { escapeAttribute, escapeText } from "../internal/entities.ts"
 
 /** An attribute on an element. */
 export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
@@ -168,71 +167,3 @@ export const attr = (name: string | QName, value: string): XmlAttribute =>
     name: typeof name === "string" ? QName.fromRaw(name) : name,
     value,
   })
-
-// -----------------------------------------------------------------------------
-// Serialization
-// -----------------------------------------------------------------------------
-
-const serializeLeaf = (node: Exclude<XmlNode, XmlElement>): string => {
-  switch (node._tag) {
-    case "XmlText":
-      return escapeText(node.data)
-    case "XmlCData":
-      return `<![CDATA[${node.data}]]>`
-    case "XmlComment":
-      return `<!--${node.data}-->`
-    case "XmlProcessingInstruction":
-      return `<?${node.target}${node.data ? " " + node.data : ""}?>`
-  }
-}
-
-/** Iterative, so arbitrarily deep trees can't overflow the stack. */
-const serializeNode = (root: XmlNode): string => {
-  let out = ""
-  // Either a node still to write, or the end tag of an element already opened.
-  const stack: Array<XmlNode | string> = [root]
-  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
-    if (typeof item === "string") {
-      out += item
-      continue
-    }
-    if (item._tag !== "XmlElement") {
-      out += serializeLeaf(item)
-      continue
-    }
-    const name = item.name.qualified
-    let attrs = ""
-    for (const a of item.attributes) attrs += ` ${a.name.qualified}="${escapeAttribute(a.value)}"`
-    if (item.children.length === 0) {
-      out += `<${name}${attrs}/>`
-      continue
-    }
-    out += `<${name}${attrs}>`
-    stack.push(`</${name}>`)
-    for (let i = item.children.length - 1; i >= 0; i--) stack.push(item.children[i]!)
-  }
-  return out
-}
-
-/** Serialize a node back to an XML string. */
-export const serialize = (node: XmlNode): string => serializeNode(node)
-
-/** Serialize a whole document, including declaration and doctype. */
-export const serializeDocument = (doc: XmlDocument): string => {
-  let out = ""
-  if (doc.declaration) {
-    const d = doc.declaration
-    out += `<?xml version="${d.version}"`
-    if (d.encoding) out += ` encoding="${d.encoding}"`
-    if (d.standalone !== null) out += ` standalone="${d.standalone ? "yes" : "no"}"`
-    out += "?>"
-  }
-  if (doc.doctype) {
-    out += `<!DOCTYPE ${doc.doctype.name}`
-    if (doc.doctype.publicId) out += ` PUBLIC "${doc.doctype.publicId}"`
-    if (doc.doctype.systemId) out += `${doc.doctype.publicId ? "" : " SYSTEM"} "${doc.doctype.systemId}"`
-    out += ">"
-  }
-  out += doc.children.map(serializeNode).join("")
-  return out
-}

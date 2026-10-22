@@ -28,6 +28,9 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ TreeBuil
 | `src/Sax.ts` | Public streaming SAX: `SaxEvent` tagged enum + `Stream` combinators. |
 | `src/Xml/Node.ts` | The typed, `Schema`-backed DOM + serialization. |
 | `src/Xml/TreeBuilder.ts` | SAX events → `XmlDocument`, with well-formedness checks and namespace resolution. |
+| `src/Xml/Writer.ts` | The streaming writer: namespace management, escaping, validity policy, pretty-printing; DOM serialization. |
+| `src/Xml/C14n.ts` | Exclusive XML Canonicalization 1.0 (moved from effect-rdfxml). |
+| `src/Html/Serialize.ts` | WHATWG HTML fragment serialization. |
 | `src/Xml/Xml.ts` | One-call `parse` / `parseStream` / `events`. |
 | `src/Html/*` | html5ever-style tokenization + a lenient fragment builder + roadmap. |
 

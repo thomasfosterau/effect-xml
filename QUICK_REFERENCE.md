@@ -45,7 +45,14 @@ el.elements                              // child elements
 el.attribute("name")                     // string | undefined
 el.textContent                           // string
 
-Xml.serialize(node)                      // string
+Xml.serialize(node)                      // string, names as written, always well-formed
+Xml.Writer.serialize(node | doc, opts?)  // Effect<string, SerializationError>, namespaces managed
+Xml.Writer.write(opts?)                  // (Stream<WriterEvent>) => Stream<string>
+Xml.Writer.writeBytes(opts?)             // (Stream<WriterEvent>) => Stream<Uint8Array> (UTF-8/UTF-16)
+Xml.Writer.events(node) / start / end / text / cdata / comment / processingInstruction
+//   opts: declaration, encoding, indent, selfClose, invalid ("fail"|"strip"|"replace"),
+//         escape(cp), prefixes, sortAttributes, namespaces ("manage"|"asIs")
+Xml.C14n.exclusive(nodes | node | doc, { comments? })  // Exclusive XML Canonicalization
 Xml.serializeDocument(doc)               // string
 Xml.element(name, attrs?, children?)     // builders
 Xml.attr(name, value); Xml.text(data)
@@ -66,6 +73,8 @@ Html.parseDocumentBytes(bytes, options?) // WHATWG encoding sniffing
 Html.parseDocumentBytesStream(options?)
 Html.parseFragment(input, options?)      // Effect<ReadonlyArray<XmlNode>> — lenient forest
 Html.parseFragmentStream(options?)
+Html.serialize(node | doc)               // WHATWG HTML serialization
+Html.serializeFragment(nodes)            // innerHTML-style
 Html.HTML_NS                             // "http://www.w3.org/1999/xhtml"
 Html.voidElements / rawTextElements / rcdataElements / formattingElements
 ```

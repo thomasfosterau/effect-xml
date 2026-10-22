@@ -190,6 +190,48 @@ Xml.parse(input, { dtd: "internal" })
 - External and parameter entities are never fetched: referring to one is an
   `InvalidEntity` (in content) or a `MalformedDeclaration` (in the subset).
 
+## Writing XML
+
+`Xml.serialize(node)` writes a tree back as it was parsed, and always
+well-formed. For new documents, `Xml.Writer` manages namespaces, checks
+what can't be escaped, and streams:
+
+```ts
+import { Effect, Stream } from "effect"
+import { QName, Xml } from "effect-sax"
+
+const w = (local: string) => new QName({ prefix: null, local, namespace: WORDML })
+
+// A DOM: the namespaces it uses are declared on its root.
+const xml = yield* Xml.Writer.serialize(body, {
+  declaration: { standalone: true },
+  prefixes: { w: WORDML },              // preferred prefixes
+  indent: 2,                            // never inside mixed content or xml:space="preserve"
+  invalid: "fail",                      // or "strip" / "replace" for characters XML 1.0 forbids
+  escape: (cp) => `_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`, // e.g. OOXML
+})
+
+// A stream of events, in constant memory (a 500 MB sheet is fine).
+const bytes = Stream.concat(
+  Stream.make(Xml.Writer.start(x("worksheet")), Xml.Writer.start(x("sheetData"))),
+  Stream.concat(rows.pipe(Stream.flatMap((row) => Stream.fromIterable(Xml.Writer.events(row)))), Stream.make(Xml.Writer.end, Xml.Writer.end))
+).pipe(Xml.Writer.writeBytes({ declaration: true, prefixes: { x: SML } }))
+```
+
+The writer:
+- splits a CDATA section that contains `]]>`;
+- escapes tabs and line breaks in attribute values, so they survive a round trip;
+- rejects a comment containing `--`, a PI containing `?>`, and characters XML 1.0
+  forbids, unless told to strip or replace them;
+- declares each namespace where it is first needed, or on the root for the
+  preferred prefixes, reuses bindings in scope, and orders declarations
+  deterministically.
+
+`Xml.C14n.exclusive(nodes, { comments })` is Exclusive XML Canonicalization
+1.0, for `rdf:parseType="Literal"` and XML signatures.
+`Html.serialize(doc)` follows the WHATWG HTML fragment-serialization
+algorithm.
+
 ## Typed errors
 
 All failures are tagged and unioned under `SaxError`, so they narrow exhaustively:
