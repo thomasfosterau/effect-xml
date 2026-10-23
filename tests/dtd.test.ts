@@ -178,6 +178,90 @@ describe("dtd: internal", () => {
   ];
   test.each(rejects)("rejects %s", (_what, input, tag) => expect(parseErr(input)._tag).toBe(tag));
 
+  test("the declaration grammar accepts every well-formed form", () => {
+    const doc = parseOk(`<!DOCTYPE a [
+  <!ELEMENT a EMPTY>
+  <!ELEMENT b ANY>
+  <!ELEMENT c (#PCDATA)>
+  <!ELEMENT d ( #PCDATA )*>
+  <!ELEMENT e (#PCDATA | a | b)*>
+  <!ELEMENT f (a)>
+  <!ELEMENT g ( a , (b | c)+ , d? )*>
+  <!ELEMENT h ((a|b),c*)>
+  <!ELEMENT p:q (p:r)>
+  <!ATTLIST a n NOTATION ( x | y ) #IMPLIED e (1|two|-3) "1">
+  <!NOTATION x SYSTEM "x">
+  <!NOTATION y PUBLIC "-//A//B">
+  <!NOTATION z PUBLIC '-//A//B' "z">
+  <!ENTITY u SYSTEM "u.bin" NDATA x>
+  <!ENTITY % pe PUBLIC "-//P//E" "pe.ent">
+  <!ENTITY % pv "a &u; &#38; value">
+  <?target data?>
+  <?t?>
+  <!-- a comment -->
+]><a/>`);
+    expect(doc.root.attribute("e")).toBe("1");
+  });
+
+  const malformed: ReadonlyArray<readonly [string, string]> = [
+    ["ELEMENT without a name", `<!ELEMENT (a)>`],
+    ["ELEMENT without a space before the content model", `<!ELEMENT a(b)>`],
+    ["ELEMENT without a content model", `<!ELEMENT a >`],
+    ["a keyword in the wrong case", `<!ELEMENT a empty>`],
+    ["two content models", `<!ELEMENT a EMPTY ANY>`],
+    ["two element names", `<!ELEMENT (a|b) EMPTY>`],
+    ["an SGML declared content", `<!ELEMENT a CDATA>`],
+    ["SGML tag minimization", `<!ELEMENT a - - ANY>`],
+    ["an SGML exclusion", `<!ELEMENT a (b) -(c)>`],
+    ["mixed connectors", `<!ELEMENT a (b, c | d)>`],
+    ["an SGML & connector", `<!ELEMENT a (b & c)>`],
+    ["no connector", `<!ELEMENT a (b c)>`],
+    ["an empty group", `<!ELEMENT a ()>`],
+    ["a trailing connector", `<!ELEMENT a (b|)>`],
+    ["space before an occurrence", `<!ELEMENT a (b) *>`],
+    ["an occurrence before a name", `<!ELEMENT a (*b)>`],
+    ["an unclosed group", `<!ELEMENT a (b|c>`],
+    ["#PCDATA not first", `<!ELEMENT a (b|#PCDATA)*>`],
+    ["#PCDATA in lowercase", `<!ELEMENT a (#pcdata)>`],
+    ["mixed content without *", `<!ELEMENT a (#PCDATA|b)>`],
+    ["mixed content with +", `<!ELEMENT a (#PCDATA)+>`],
+    ["mixed content with a group", `<!ELEMENT a (#PCDATA|(b))*>`],
+    ["mixed content with a comma", `<!ELEMENT a (#PCDATA,b)*>`],
+    ["a comment inside a declaration", `<!ELEMENT a ANY --comment-->`],
+    ["a parameter entity in a content model", `<!ENTITY % e "b"><!ELEMENT a (%e;)>`],
+    ["an empty enumeration", `<!ATTLIST a x () #IMPLIED>`],
+    ["a comma in an enumeration", `<!ATTLIST a x (b,c) #IMPLIED>`],
+    ["a quoted enumeration value", `<!ATTLIST a x ("b") #IMPLIED>`],
+    ["a notation type that isn't a Name", `<!ATTLIST a x NOTATION (0b) #IMPLIED>`],
+    ["NOTATION without a name", `<!NOTATION SYSTEM "x">`],
+    ["NOTATION without an identifier", `<!NOTATION n>`],
+    ["NOTATION with a lowercase keyword", `<!NOTATION n public "x">`],
+    ["NOTATION with a stray character", `<!NOTATION n SYSTEM "x"!>`],
+    ["a public ID with [", `<!NOTATION n PUBLIC "[">`],
+    ["a public ID with a tab", `<!ENTITY e PUBLIC "a\tb" "e">`],
+    ["NDATA on a parameter entity", `<!ENTITY % e SYSTEM "e" NDATA n>`],
+    ["a lone & in an entity value", `<!ENTITY % e "&">`],
+    ["an unterminated reference", `<!ENTITY e "&#65">`],
+    ["a reference to a non-Name", `<!ENTITY e "&49;">`],
+    ["a parameter entity in a parameter entity value", `<!ENTITY % e "%f;">`],
+    ["an XML declaration", `<?xml version="1.0"?>`],
+    ["a PI target that isn't a Name", `<?#x data?>`],
+    ["a PI without a space before its data", `<?pi+?>`],
+    ["-- in a comment", `<!-- a -- b -->`],
+  ];
+  test.each(malformed)("rejects %s in the subset", (_what, decl) => {
+    expect(parseErr(`<!DOCTYPE a [${decl}]><a/>`)._tag).toBe("MalformedDeclaration");
+  });
+
+  test.each([`<!-- a -- b -->`, `<?xml version="1.0"?>`, `<?pi+?>`])(
+    "rejects %s in the subset when it is ignored too",
+    (decl) => {
+      expect(parseErr(`<!DOCTYPE a [${decl}]><a/>`, { dtd: "ignore" })._tag).toBe(
+        "MalformedDeclaration",
+      );
+    },
+  );
+
   test("external entities are reported as such", () => {
     const e = parseErr(`<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>`);
     expect(e.message).toContain(`external entity "x" is not supported`);
