@@ -114,6 +114,24 @@ describe("Xml.parse — namespaces", () => {
     await expect(parse(input, { namespaces: false })).resolves.toBeDefined();
   });
 
+  test("expanded-name uniqueness holds over many attributes", async () => {
+    // 20,000 prefixed attributes, all distinct, then one that repeats the
+    // first through another prefix. The check is a hash set, linear in the
+    // attributes; the bound is generous so a loaded machine doesn't flake.
+    const n = 20_000;
+    const attrs = Array.from({ length: n }, (_, i) => ` a:k${i}="v"`).join("");
+    const unlimited = { limits: { maxAttributes: Infinity } } as const;
+    const start = performance.now();
+    const doc = await parse(`<e xmlns:a="urn:x" xmlns:b="urn:x"${attrs}/>`, unlimited);
+    expect(doc.root.attributes).toHaveLength(n + 2);
+    const r = await Effect.runPromise(
+      Effect.result(Xml.parse(`<e xmlns:a="urn:x" xmlns:b="urn:x"${attrs} b:k0="w"/>`, unlimited)),
+    );
+    assert(Result.isFailure(r), "expected a duplicate attribute");
+    expect(r.failure._tag).toBe("DuplicateAttribute");
+    expect(performance.now() - start).toBeLessThan(30_000);
+  }, 60_000);
+
   test("the reserved prefixes and namespaces, used as allowed", async () => {
     const doc = await parse(
       `<foo xmlns:xml="${XML}" xml:lang="en" xmlns:a="urn:x" xmlns:b="urn:y">` +

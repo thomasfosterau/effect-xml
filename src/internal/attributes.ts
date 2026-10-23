@@ -35,21 +35,17 @@ export const resolveAttributes = (
       MutableHashSet.add(seen, a.name);
       return Result.flatMap(resolve(a.name, a.span.start), (name) => {
         // Only a prefixed name can share its expanded name with an earlier
-        // one spelt differently; elements have few attributes, so the
-        // earlier ones are just scanned.
-        if (
-          name.prefix !== null &&
-          name.namespace !== null &&
-          list.some(
-            (b) =>
-              b.name.prefix !== null &&
-              b.name.local === name.local &&
-              b.name.namespace === name.namespace,
-          )
-        )
-          return Result.fail(
-            new DuplicateAttribute({ element, attribute: a.name, position: a.span.start }),
-          );
+        // one spelt differently. Its key goes in the same set as the raw
+        // names: it has a space, which no name has, so the two never collide,
+        // and the check stays linear in the number of attributes.
+        if (name.prefix !== null && name.namespace !== null) {
+          const expanded = `${name.namespace} ${name.local}`;
+          if (MutableHashSet.has(seen, expanded))
+            return Result.fail(
+              new DuplicateAttribute({ element, attribute: a.name, position: a.span.start }),
+            );
+          MutableHashSet.add(seen, expanded);
+        }
         list.push(new XmlAttribute({ name, value: a.value }));
         return Result.succeed(list);
       });
