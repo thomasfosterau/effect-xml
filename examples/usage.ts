@@ -1,5 +1,5 @@
 /**
- * A tour of the three layers of `@thomasfosterau/effect-xml`. Run with: `vp run example`
+ * A tour of `@thomasfosterau/effect-xml`: its three layers, then XML Schema. Run with: `vp run example`
  */
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
@@ -7,7 +7,9 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as BigDecimal from "effect/BigDecimal";
 import { Html, Sax, Xml } from "../src/index.ts";
+import * as Order from "./xsd/order.generated.ts";
 
 /** Display a value as JSON. */
 const toJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -77,8 +79,37 @@ const errorDemo = Effect.fn("errorDemo")(function* () {
   );
 });
 
+// 5. XML Schema: a parser generated from examples/xsd/order.xsd (see
+// examples/xsd/generate.ts) validates as it streams and returns typed values.
+const xsdDemo = Effect.fn("xsdDemo")(function* () {
+  yield* Console.log("\n# 5. Parsers generated from an XML Schema");
+  const order = yield* Order.order.parse(
+    `<order xmlns="urn:example:order" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" number="42">
+       <customer xsi:type="Company"><name>Acme</name><abn>51 824 753 556</abn></customer>
+       <placed>2026-10-23T09:30:00+11:00</placed>
+       <line id="l1"><sku>TEA-0001</sku><quantity>3</quantity><price>4.50</price></line>
+     </order>`,
+  );
+  const [line] = order.line;
+  yield* Console.log(
+    `  order ${order.number} for ${order.customer.name} (${order.customer.$type})`,
+  );
+  if (line !== undefined)
+    yield* Console.log(
+      `  ${line.quantity} × ${line.sku} at ${BigDecimal.format(line.price.$value)} ${line.price.currency}`,
+    );
+  yield* Order.order
+    .parse(
+      `<order xmlns="urn:example:order" number="1"><placed>2026-10-23T09:30:00Z</placed></order>`,
+    )
+    .pipe(Effect.catchTag("XsdValidationError", (e) => Console.log(`  caught: ${e.message}`)));
+});
+
 // The entry point: run the tour in order. A failure rejects the promise, which
 // Node reports and turns into a non-zero exit.
 void Effect.runPromise(
-  Effect.all([saxDemo(), xmlDemo(), htmlDemo(), errorDemo()], { concurrency: 1, discard: true }),
+  Effect.all([saxDemo(), xmlDemo(), htmlDemo(), errorDemo(), xsdDemo()], {
+    concurrency: 1,
+    discard: true,
+  }),
 );

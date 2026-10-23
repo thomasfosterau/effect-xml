@@ -4,8 +4,9 @@
  *
  * The input is a generated SpreadsheetML worksheet (the shape of a large
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
- * stream (whole string and 64 KiB chunks), as bytes, as a DOM, and with
- * streaming selection of rows.
+ * stream (whole string and 64 KiB chunks), as bytes, as a DOM, with
+ * streaming selection of rows, and validated against a schema for the
+ * worksheet (as events, and as typed values).
  *
  * Other parsers are compared when they are installed, without being
  * dependencies of this package: `pnpm add -D saxes sax fast-xml-parser`
@@ -16,7 +17,7 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
 import * as Stream from "effect/Stream";
-import { Sax, Xml } from "../src/index.ts";
+import { Sax, Xml, Xsd } from "../src/index.ts";
 
 const SML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const megabytes = Number(process.argv[2] ?? 8);
@@ -39,6 +40,32 @@ const sheet = (bytes: number): string => {
   }
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="${SML}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rows.join("")}</sheetData></worksheet>`;
 };
+
+/** The part of the SpreadsheetML schema the generated worksheet uses. */
+const worksheetSchema = `
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="${SML}" targetNamespace="${SML}"
+           elementFormDefault="qualified">
+  <xs:simpleType name="ST_CellType"><xs:restriction base="xs:string">
+    <xs:enumeration value="b"/><xs:enumeration value="n"/><xs:enumeration value="e"/>
+    <xs:enumeration value="s"/><xs:enumeration value="str"/><xs:enumeration value="inlineStr"/>
+  </xs:restriction></xs:simpleType>
+  <xs:complexType name="CT_Cell">
+    <xs:sequence><xs:element name="v" type="xs:string" minOccurs="0"/></xs:sequence>
+    <xs:attribute name="r" type="xs:string"/>
+    <xs:attribute name="s" type="xs:unsignedInt" default="0"/>
+    <xs:attribute name="t" type="ST_CellType" default="n"/>
+  </xs:complexType>
+  <xs:complexType name="CT_Row">
+    <xs:sequence><xs:element name="c" type="CT_Cell" minOccurs="0" maxOccurs="unbounded"/></xs:sequence>
+    <xs:attribute name="r" type="xs:unsignedInt"/>
+    <xs:attribute name="spans" type="xs:string"/>
+  </xs:complexType>
+  <xs:element name="worksheet"><xs:complexType><xs:sequence>
+    <xs:element name="sheetData"><xs:complexType><xs:sequence>
+      <xs:element name="row" type="CT_Row" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence></xs:complexType></xs:element>
+  </xs:sequence></xs:complexType></xs:element>
+</xs:schema>`;
 
 const input = sheet(megabytes * 1024 * 1024);
 const bytes = new TextEncoder().encode(input);
@@ -87,6 +114,16 @@ await time("effect-xml rows (Sax.select)", () =>
       Stream.runDrain,
     ),
   ),
+);
+
+const model = await Effect.runPromise(Xsd.compile(worksheetSchema));
+await time("effect-xml XSD events (Xsd.validate)", () =>
+  Effect.runPromise(
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), Xsd.validate(model), Stream.runDrain),
+  ),
+);
+await time("effect-xml XSD values (Xsd.parse)", () =>
+  Effect.runPromise(Effect.asVoid(Xsd.parse(model, input))),
 );
 
 const saxes = await optional("saxes");

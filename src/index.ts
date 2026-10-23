@@ -49,6 +49,13 @@ export * as Xml from "./Xml/index.ts";
  */
 export * as Html from "./Html/index.ts";
 /**
+ * XML Schema: compile schemas, then validate and parse documents into typed values.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
+export * as Xsd from "./Xsd/index.ts";
+/**
  * Encoding detection (XML Appendix F and WHATWG sniffing) and byte decoding.
  *
  * @since 0.3.0

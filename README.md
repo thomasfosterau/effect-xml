@@ -7,8 +7,9 @@ Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.websit
 | **`Sax`** | `@thomasfosterau/effect-xml/Sax` | An incremental, chunk-boundary-safe tokenizer exposed as a `Stream` of typed events. |
 | **`Xml`** | `@thomasfosterau/effect-xml/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
 | **`Html`** | `@thomasfosterau/effect-xml/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, passing all 1368 runnable html5lib tree-construction cases) and a lenient fragment builder. |
+| **`Xsd`** | `@thomasfosterau/effect-xml/Xsd` | XML Schema 1.0: compile a schema, then validate documents as they stream (failing at the first violation) into typed values, or generate a typed parser module from it. |
 
-Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `@thomasfosterau/effect-xml` re-exports all three layers as namespaces plus the shared errors, names and positions.
+Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `@thomasfosterau/effect-xml` re-exports every layer as a namespace plus the shared errors, names and positions.
 
 > **Status:** pre-1.0; the API may change between minor versions.
 
@@ -335,6 +336,74 @@ const xml = Xml.Writer.serialize(body, {
 | `Html.serialize(node)`, `Html.serializeFragment(nodes)` | the WHATWG HTML fragment-serialization algorithm |
 
 The writer splits a CDATA section that contains `]]>`; escapes tabs and line breaks in attribute values so they survive a round trip; rejects a comment containing `--`, a PI containing `?>` and characters XML 1.0 forbids unless told to strip or replace them; and declares each namespace where it is first needed (or on the root, for the preferred prefixes), reusing bindings in scope and ordering declarations deterministically.
+
+## XML Schema
+
+`Xsd` turns an XML Schema (XSD 1.0) into a parser for the documents it describes. Validation runs on the SAX stream, so it fails at the first event that breaks the schema, without reading the rest of the input or building a DOM, and a valid document comes out as a typed value rather than a tree.
+
+It complements [`Xml.Bind`](#decoding-into-a-schema): `Bind` starts from an Effect `Schema` you write and maps XML onto it; `Xsd` starts from an XSD you are given and derives the validation and the types from it.
+
+```ts
+import * as Effect from "effect/Effect";
+import { Xsd } from "@thomasfosterau/effect-xml";
+
+const program = Effect.gen(function* () {
+  const model = yield* Xsd.compile(xsd, {
+    location: "schemas/order.xsd", // relative includes and imports resolve against this
+    documents: { "schemas/common.xsd": common }, // known documents, by location
+    resolve: (location) => readFile(location), // or fetched on demand
+  });
+  const { name, value } = yield* Xsd.parse(model, input);
+  // value: { number: 42, paid: false, line: [{ sku: "TEA-0001", quantity: 3n, … }], … }
+});
+```
+
+**Generated parsers.** `Xsd.generate(model)` writes a TypeScript module with a type per schema type, the compiled model as a literal (nothing is compiled at run time) and a parser per global element; [examples/xsd](examples/xsd) has a schema, the module generated from it and the [script](examples/xsd/generate.ts) that does it:
+
+```ts
+import * as Order from "./order.generated.ts";
+
+const order = yield * Order.order.parse(input); // Effect<Order.Order, Xsd.XsdError>
+order.line[0]?.price.$value; // BigDecimal
+order.customer.$type; // "{urn:example:order}Person" | "{urn:example:order}Company"
+```
+
+| API | Type |
+| --- | --- |
+| `Xsd.compile(schema, options?)` | `Effect<Model, XsdSchemaError \| E, R>`, where `resolve` returns `Effect<string, E, R>` |
+| `Xsd.parse(model, input, options?)`, `parseBytes` | `Effect<Validated, XsdError>`: the root's expanded name and value |
+| `Xsd.parseStream(model, options?)`, `parseBytesStream` | `(Stream<string \| Uint8Array>) => Effect<Validated, …>` |
+| `Xsd.decode(model, options?)` | `(Stream<SaxEvent>) => Effect<Validated, …>` |
+| `Xsd.validate(model, options?)` | `(Stream<SaxEvent>) => Stream<SaxEvent, …>`: the events, failing at the first violation |
+| `Xsd.parser<A>(model, element)` | a `Parser<A>` (`parse`, `parseBytes`, `parseStream`, `parseBytesStream`, `decode`) for one root element |
+| `Xsd.generate(model, options?)` | `Effect<string, XsdSchemaError>`: a TypeScript module (`importFrom`, `roots`, `source`) |
+
+Options for parsing are the SAX ones that apply to XML (`entities`, `limits`, `dtd`, `encoding`) and `root`, the expanded name (`{namespace}local`) the document element must have.
+
+**Values.** A simple type's value is a JavaScript value; a complex type's is a record of its attributes and child elements, named after their local names:
+
+| Schema | Value |
+| --- | --- |
+| `boolean` | `boolean` |
+| `decimal` | `BigDecimal` |
+| `integer`, `long`, `nonNegativeInteger`, … (unbounded or 64-bit) | `bigint` |
+| `int`, `short`, `byte`, their unsigned forms, `float`, `double` | `number` |
+| `hexBinary`, `base64Binary` | `Uint8Array` |
+| a list type | an array of its items |
+| `QName` | its expanded name, `{namespace}local` |
+| strings, URIs, dates, times, durations | the whitespace-normalized lexical form, checked against the type and its facets |
+| an element that may occur more than once / may be absent | an array (empty when there are none) / an optional property |
+| simple content, mixed content's text | `$value`, `$text` |
+| elements matched by `xs:any`, attributes by `xs:anyAttribute` | `$any` (as `Xml.XmlElement`s), `$attributes` (by expanded name) |
+| `xsi:type` naming a derived type, `xsi:nil="true"` | `$type` (its expanded name), `null` |
+
+When names collide, later elements get `$2`, `$3`, … suffixes and attributes an `@` prefix; generated enumerations of strings, numbers and booleans are unions of literals.
+
+**Supported:** global and local element and attribute declarations (`form`, `default`, `fixed`, `nillable`, `abstract`, `block`); simple types by restriction (every facet, including XSD regular expressions with character class subtraction, `\i` / `\c` and Unicode blocks), list and union; complex types with simple or complex content, by extension or restriction, `mixed`; `sequence`, `choice` and `all` with any occurrence bounds (counted, never unrolled, so `maxOccurs="100000"` costs nothing); named model and attribute groups; element and attribute wildcards with `strict` / `lax` / `skip`; substitution groups; `xsi:type` and `xsi:nil`; `ID` / `IDREF`; `unique`, `key` and `keyref`; `include` (chameleon includes too) and `import`. Content models are compiled into automata lazily, as documents exercise them, and cached, so after warm-up each element costs one lookup.
+
+**Not supported:** `xs:redefine` and the XSD 1.1 additions (`override`, assertions, type alternatives, open content) are rejected with an `XsdSchemaError`; schema-for-schemas checks such as Unique Particle Attribution and the derivation-by-restriction rules are not enforced (the first matching particle wins); identity-constraint fields compare as whitespace-collapsed strings, and the element that declares the constraints is kept as a DOM until it ends.
+
+**Errors.** `XsdError` is `SaxError | XsdSchemaError | XsdValidationError`. An `XsdValidationError` has a `rule` (`UnexpectedElement`, `MissingElement`, `UnexpectedAttribute`, `MissingAttribute`, `UnexpectedText`, `InvalidValue`, `InvalidType`, `Nil` or `IdentityConstraint`), a `reason` (`<price> is not allowed here; expected <quantity>`), a `path` (`/order/line[2]`) and a `position`.
 
 ## Typed errors
 

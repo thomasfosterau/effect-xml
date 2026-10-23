@@ -2,7 +2,7 @@
 
 `CLAUDE.md` is a symlink to this file. Project conventions live here; personal style preferences live in user memory.
 
-This repo publishes one npm package, `@thomasfosterau/effect-xml`, from the repository root: type-safe, streaming XML and HTML parsing for Effect. It has three layers, each usable on its own and each a thin composition of the one below:
+This repo publishes one npm package, `@thomasfosterau/effect-xml`, from the repository root: type-safe, streaming XML and HTML parsing for Effect. It has three layers, each usable on its own and each a thin composition of the one below, plus XML Schema validation (`Xsd`) on top of the SAX stream:
 
 ```
 input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree builder ──▶ XmlDocument
@@ -11,12 +11,13 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 
 | Entry | Source | What it is |
 | --- | --- | --- |
-| `@thomasfosterau/effect-xml` | `src/index.ts` | `Sax`, `Xml`, `Html`, `Encoding` (`Encoding.ts`: byte sniffing and decoding) and `Limits` (`Limits.ts`) namespaces plus the shared errors, names and positions |
+| `@thomasfosterau/effect-xml` | `src/index.ts` | `Sax`, `Xml`, `Html`, `Xsd`, `Encoding` (`Encoding.ts`: byte sniffing and decoding) and `Limits` (`Limits.ts`) namespaces plus the shared errors, names and positions |
 | `@thomasfosterau/effect-xml/Sax` | `src/Sax.ts` | `SaxEvent` tagged enum and the `Stream` combinators over the lexer, including `tokenizeBytes` and `select` (`Xml/Select.ts`) |
 | `@thomasfosterau/effect-xml/Xml` | `src/Xml/index.ts` | the Schema-backed DOM (`Node.ts`), cursors (`Cursor.ts`), the strict tree builder with namespace resolution (`TreeBuilder.ts`), `parse` / `parseStream` / `parseBytes` (`Xml.ts`), and the `Writer`, `C14n`, `Ns` and `XPath` namespaces |
 | `@thomasfosterau/effect-xml/Html` | `src/Html/index.ts` | HTML-mode tokenizing, WHATWG tree construction (`TreeConstruction.ts`, `parseDocument`), the lenient fragment builder (`TreeBuilder.ts`, `parseFragment`) and serialization (`Serialize.ts`) |
+| `@thomasfosterau/effect-xml/Xsd` | `src/Xsd/index.ts` | XML Schema 1.0: the serializable compiled `Model` (`Model.ts`), `compile` (`Compile.ts`), validation and typed `parser`s over the SAX stream (`Validate.ts`, values in `Value.ts`), `generate` (`Generate.ts`, a TypeScript module per schema) and their errors (`Error.ts`) |
 
-`src/internal/**` is never exported: the incremental lexer (`lexer.ts`), the effect-parse token grammars (`tokens.ts`), the declaration / PI / DOCTYPE grammars (`declarations.ts`), name productions (`names.ts`), entity decoding (`entities.ts`, `htmlEntities.generated.ts`), the foreign-content (SVG / MathML) tables (`foreign.ts`), the DTD internal subset and entity expansion (`dtd.ts`, `expansion.ts`), limit enforcement (`guard.ts`, with the exception boundary for tree builders in `unwind.ts`) and small shared helpers: `tree.ts` (stack-safe preorder traversal; use it rather than recursion over a DOM), `drive.ts` (the lexer pull loop), `convert.ts` (lexer events to SAX events), `attributes.ts` (attribute resolution shared by the XML tree builder and `Sax.select`), `order.ts`, `tagSet.ts` and `quote.ts`. A new public entry is added to `pack.entry` in `vite.config.ts`, `exports` in `package.json`, `entry` in `.fallowrc.json` and the table above.
+`src/internal/**` is never exported: the incremental lexer (`lexer.ts`), the effect-parse token grammars (`tokens.ts`), the declaration / PI / DOCTYPE grammars (`declarations.ts`), name productions (`names.ts`), entity decoding (`entities.ts`, `htmlEntities.generated.ts`), the foreign-content (SVG / MathML) tables (`foreign.ts`), the DTD internal subset and entity expansion (`dtd.ts`, `expansion.ts`), limit enforcement (`guard.ts`, with the exception boundary for tree builders in `unwind.ts`) and small shared helpers: `tree.ts` (stack-safe preorder traversal; use it rather than recursion over a DOM), `drive.ts` (the lexer pull loop), `convert.ts` (lexer events to SAX events), `attributes.ts` (attribute resolution shared by the XML tree builder and `Sax.select`), `order.ts`, `tagSet.ts` and `quote.ts`. `internal/xsd/` is the XML Schema engine: the schema-document reader (`reader.ts`), datatypes and facets (`datatypes.ts`, with XSD regular expressions translated to `v`-flag `RegExp`s in `regex.ts`), content models as lazily built, cached derivative automata (`content.ts`), substitution groups, derivation and value layouts (`components.ts`), the compiled per-model `Runtime` (`runtime.ts`), the streaming `Validator` (`validator.ts`) and identity constraints over XPath (`identity.ts`). A new public entry is added to `pack.entry` in `vite.config.ts`, `exports` in `package.json`, `entry` in `.fallowrc.json` and the table above.
 
 ## Common pitfalls
 
