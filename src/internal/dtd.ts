@@ -35,7 +35,7 @@ import {
   subsetProcessingInstruction,
   SystemLiteral,
 } from "./declarations.ts";
-import { invalidNameAt, Name, NCName, Nmtoken } from "./names.ts";
+import { invalidNameAt, Name, Nmtoken } from "./names.ts";
 
 /** An attribute declared in an `<!ATTLIST>`. */
 export interface AttributeDecl {
@@ -80,6 +80,7 @@ type Decl =
       readonly element: string;
       readonly attributes: ReadonlyArray<RawAttribute>;
     }
+  | { readonly _tag: "Notation"; readonly name: string }
   | { readonly _tag: "Skip" };
 
 interface RawAttribute {
@@ -113,7 +114,8 @@ const entityDecl: Parser.Parser<Decl> = Parser.gen(function* () {
   yield* lit("<!ENTITY");
   yield* S;
   const parameter = (yield* Parser.optional(Parser.seq(lit("%"), S))) !== undefined;
-  const name = yield* NCName.pipe(Parser.expected("an entity name"));
+  // A Name: with namespace processing on, a colon in it is an error there.
+  const name = yield* Name.pipe(Parser.expected("an entity name"));
   yield* S;
   const value = yield* Parser.alt(
     quoted,
@@ -255,7 +257,7 @@ const elementDecl: Parser.Parser<Decl> = Parser.as(
 );
 
 /** `NotationDecl ::= '<!NOTATION' S Name S (ExternalID | PublicID) S? '>'` (§4.7). */
-const notationDecl: Parser.Parser<Decl> = Parser.as(
+const notationDecl: Parser.Parser<Decl> = Parser.map(
   Parser.seq(
     lit("<!NOTATION"),
     S,
@@ -269,7 +271,7 @@ const notationDecl: Parser.Parser<Decl> = Parser.as(
     S0,
     lit(">"),
   ),
-  skip,
+  ([, , name]): Decl => ({ _tag: "Notation", name }),
 );
 
 const commentDecl: Parser.Parser<Decl> = Parser.as(Parser.seq(lit("<!--"), commentRest), skip);
@@ -297,6 +299,21 @@ const internalSubset: Parser.Parser<ReadonlyArray<Decl>> = Parser.terminated(
   Parser.repeat(Parser.preceded(S0, markupDecl)),
   Parser.seq(S0, Parser.eof),
 );
+
+/**
+ * The entity and notation names an internal subset declares, in order, or
+ * none if it doesn't parse. With namespace processing on, none may contain
+ * a colon (Namespaces in XML 1.0 §7).
+ */
+export const declaredNames = (subset: string): ReadonlyArray<string> =>
+  Result.match(Parser.parse(internalSubset, subset), {
+    onFailure: () => [],
+    onSuccess: Arr.filterMap((decl) =>
+      Predicate.isTagged(decl, "Entity") || Predicate.isTagged(decl, "Notation")
+        ? Result.succeed(decl.name)
+        : Result.failVoid,
+    ),
+  });
 
 // -----------------------------------------------------------------------------
 // The declarations

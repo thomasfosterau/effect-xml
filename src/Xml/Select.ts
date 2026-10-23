@@ -32,6 +32,7 @@ import {
   type SaxError,
 } from "../Error.ts";
 import { resolveAttributes } from "../internal/attributes.ts";
+import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
 import { Namespaces, QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
 import type { SaxEvent } from "../Sax.ts";
@@ -155,6 +156,7 @@ class Selector {
   /** The subtree being built, innermost element last, and the level it started at. */
   private readonly capture: Array<Frame> = [];
   private captureDepth = -1;
+  private unbinding = false;
   last: Position = origin;
 
   private readonly steps: ReadonlyArray<StreamStep>;
@@ -181,7 +183,8 @@ class Selector {
         Option.orElse(() => Arr.findLast(this.levels, (level) => HashMap.get(level.bindings, key))),
       ),
     );
-    if (ns === undefined) {
+    // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
+    if (ns === undefined || (ns === "" && parsed.prefix !== null)) {
       if (parsed.prefix === null) return parsed;
       return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position });
     }
@@ -224,9 +227,15 @@ class Selector {
     Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>) =>
       this.append(new XmlComment({ data: ev.data })),
     ProcessingInstruction: (ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>) =>
+      checkNoColon(ev.target, "a processing instruction target", ev.span.start) ??
       this.append(new XmlProcessingInstruction({ target: ev.target, data: ev.data })),
-    Doctype: () => null,
-    XmlDeclaration: () => null,
+    Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>) =>
+      checkSubset(ev.internalSubset, ev.span.start),
+    XmlDeclaration: (ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>) => {
+      // Only an XML 1.1 document may undeclare a prefix with `xmlns:p=""`.
+      this.unbinding = ev.version === "1.1";
+      return null;
+    },
   };
 
   private append(node: XmlNode): null {
@@ -235,6 +244,8 @@ class Selector {
   }
 
   private start(ev: Extract<SaxEvent, { _tag: "StartElement" }>): XmlElement | SaxError | null {
+    const invalid = checkStartTag(ev.name, ev.attributes, ev.span.start, this.unbinding);
+    if (invalid !== null) return invalid;
     const bindings = Arr.reduce(ev.attributes, HashMap.empty<string, string>(), (acc, a) =>
       a.name === "xmlns"
         ? HashMap.set(acc, "", a.value)

@@ -13,7 +13,9 @@ import { XmlAttribute } from "../Xml/Node.ts";
 
 /**
  * The attributes of the element `element`, each name resolved by `resolve`.
- * In document order, the first duplicate name or failed resolution is the
+ * No two may have the same name, nor the same expanded name once resolved
+ * (Namespaces in XML 1.0 §6.3: `a:x` and `b:x` with `a` and `b` bound to one
+ * URI). In document order, the first duplicate or failed resolution is the
  * error reported.
  */
 export const resolveAttributes = (
@@ -31,9 +33,19 @@ export const resolveAttributes = (
         );
       }
       MutableHashSet.add(seen, a.name);
-      return Result.map(resolve(a.name, a.span.start), (name) => {
+      return Result.flatMap(resolve(a.name, a.span.start), (name) => {
+        // Only a prefixed name can share its expanded name with another
+        // spelling; the key can't collide with a raw name (it has a space).
+        if (name.namespace !== null && name.prefix !== null) {
+          const expanded = `${name.namespace} ${name.local}`;
+          if (MutableHashSet.has(seen, expanded))
+            return Result.fail(
+              new DuplicateAttribute({ element, attribute: a.name, position: a.span.start }),
+            );
+          MutableHashSet.add(seen, expanded);
+        }
         list.push(new XmlAttribute({ name, value: a.value }));
-        return list;
+        return Result.succeed(list);
       });
     }),
   );

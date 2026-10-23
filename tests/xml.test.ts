@@ -1,6 +1,7 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { Xml } from "../src/index.ts";
 import { at } from "./support/narrow.ts";
@@ -62,6 +63,75 @@ describe("Xml.parse — namespaces", () => {
     const doc = await parse(`<x:a xmlns:x="http://x"/>`, { namespaces: false });
     expect(doc.root.name.namespace).toBeNull();
     expect(doc.root.name.prefix).toBe("x");
+  });
+
+  const XML = "http://www.w3.org/XML/1998/namespace";
+  const XMLNS = "http://www.w3.org/2000/xmlns/";
+  const violations: ReadonlyArray<readonly [string, string, string]> = [
+    ["a colon at the end of a name", `<foo:/>`, "InvalidNamespace"],
+    ["a colon at the start of a name", `<:foo/>`, "InvalidNamespace"],
+    ["two colons in a name", `<a:b:c xmlns:a="urn:a"/>`, "InvalidNamespace"],
+    ["a local name that isn't an NCName", `<a:-b xmlns:a="urn:a"/>`, "InvalidNamespace"],
+    ["xmlns: with no prefix", `<foo xmlns:="urn:a"/>`, "InvalidNamespace"],
+    [
+      "undeclaring a prefix in XML 1.0",
+      `<a xmlns:p="urn:p"><b xmlns:p=""/></a>`,
+      "InvalidNamespace",
+    ],
+    ["binding xml elsewhere", `<foo xmlns:xml="urn:x"/>`, "InvalidNamespace"],
+    ["binding another prefix to xml's namespace", `<foo xmlns:yml="${XML}"/>`, "InvalidNamespace"],
+    ["declaring xmlns", `<foo xmlns:xmlns="${XMLNS}"/>`, "InvalidNamespace"],
+    ["binding a prefix to xmlns's namespace", `<foo xmlns:p="${XMLNS}"/>`, "InvalidNamespace"],
+    ["xml's namespace as the default", `<foo xmlns="${XML}"/>`, "InvalidNamespace"],
+    ["xmlns's namespace as the default", `<foo xmlns="${XMLNS}"/>`, "InvalidNamespace"],
+    ["an element with the xmlns prefix", `<xmlns:foo/>`, "InvalidNamespace"],
+    ["a colon in a PI target", `<?a:b data?><foo/>`, "InvalidNamespace"],
+    [
+      "a colon in a notation name",
+      `<!DOCTYPE foo [<!NOTATION a:b SYSTEM "n">]><foo/>`,
+      "InvalidNamespace",
+    ],
+    ["a colon in an entity name", `<!DOCTYPE foo [<!ENTITY a:b "x">]><foo/>`, "InvalidNamespace"],
+    [
+      "attributes with the same expanded name",
+      `<foo xmlns:a="urn:x" xmlns:b="urn:x"><bar a:attr="1" b:attr="2"/></foo>`,
+      "DuplicateAttribute",
+    ],
+    [
+      "the same expanded name through a character reference",
+      `<foo xmlns:a="urn:x" xmlns:b="urn:&#x78;"><bar a:attr="1" b:attr="2"/></foo>`,
+      "DuplicateAttribute",
+    ],
+  ];
+
+  test.each(violations)("rejects %s", async (_what, input, tag) => {
+    const r = await Effect.runPromise(Effect.result(Xml.parse(input)));
+    assert(Result.isFailure(r), "expected a namespace error");
+    expect(r.failure._tag).toBe(tag);
+  });
+
+  test.each(violations)("accepts %s without namespace processing", async (_what, input) => {
+    await expect(parse(input, { namespaces: false })).resolves.toBeDefined();
+  });
+
+  test("the reserved prefixes and namespaces, used as allowed", async () => {
+    const doc = await parse(
+      `<foo xmlns:xml="${XML}" xml:lang="en" xmlns:a="urn:x" xmlns:b="urn:y">` +
+        `<bar a:attr="1" b:attr="2" attr="3"/></foo>`,
+    );
+    expect(doc.root.attribute("xml:lang")).toBe("en");
+  });
+
+  test("XML 1.1 may undeclare a prefix", async () => {
+    const doc = await parse(
+      `<?xml version="1.1"?><a xmlns:p="urn:p"><p:b xmlns:p="urn:q"/><c xmlns:p=""/></a>`,
+    );
+    expect(at(doc.root.elements, 0).name.namespace).toBe("urn:q");
+    const r = await Effect.runPromise(
+      Effect.result(Xml.parse(`<?xml version="1.1"?><a xmlns:p="urn:p"><p:b xmlns:p=""/></a>`)),
+    );
+    assert(Result.isFailure(r), "expected an unbound prefix");
+    expect(r.failure._tag).toBe("UnboundNamespacePrefix");
   });
 });
 
