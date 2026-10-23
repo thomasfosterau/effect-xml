@@ -5,8 +5,10 @@
     "src/Sax.ts",
     "src/Xml/index.ts",
     "src/Html/index.ts",
+    "src/Xsd/index.ts",
     "tests/**/*.test.ts",
     "examples/usage.ts",
+    "examples/xsd/generate.ts",
     "bench/parse.ts",
     "vite.config.ts"
   ],
@@ -53,7 +55,8 @@
         "patterns": [
           "src/{Encoding,Error,Limits,Name,Position,Sax,index}.ts",
           "src/Xml/**",
-          "src/Html/**"
+          "src/Html/**",
+          "src/Xsd/**"
         ]
       },
       {

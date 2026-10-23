@@ -13,7 +13,9 @@
     "streaming",
     "type-safe",
     "xml",
-    "xml5ever"
+    "xml-schema",
+    "xml5ever",
+    "xsd"
   ],
   "homepage": "https://github.com/thomasfosterau/effect-xml#readme",
   "bugs": {
@@ -49,6 +51,10 @@
     "./Html": {
       "types": "./dist/Html.d.ts",
       "default": "./dist/Html.js"
+    },
+    "./Xsd": {
+      "types": "./dist/Xsd.d.ts",
+      "default": "./dist/Xsd.js"
     }
   },
   "publishConfig": {

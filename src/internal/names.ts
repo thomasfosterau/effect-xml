@@ -48,3 +48,8 @@ export const Name: Parser.Parser<string> = Compiler.jit(
     Parser.seq(Token.oneOf([...ncNameStartChar, ":"]), Token.takeWhile([...ncNameChar, ":"])),
   ),
 );
+
+/** `Nmtoken ::= (NameChar)+` (XML 1.0 §2.3). */
+export const Nmtoken: Parser.Parser<string> = Compiler.jit(
+  Token.takeWhile([...ncNameChar, ":"], { min: 1 }),
+);

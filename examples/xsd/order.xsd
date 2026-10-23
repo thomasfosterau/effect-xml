@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- An order: the schema `examples/xsd/order.generated.ts` is generated from. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="urn:example:order"
+           targetNamespace="urn:example:order"
+           xmlns:o="urn:example:order"
+           elementFormDefault="qualified">
+
+  <xs:simpleType name="Sku">
+    <xs:restriction base="xs:token">
+      <xs:pattern value="[A-Z]{3}-\d{4}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Currency">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="AUD"/>
+      <xs:enumeration value="EUR"/>
+      <xs:enumeration value="USD"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="Money">
+    <xs:simpleContent>
+      <xs:extension base="xs:decimal">
+        <xs:attribute name="currency" type="Currency" default="AUD"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="Line">
+    <xs:sequence>
+      <xs:element name="sku" type="Sku"/>
+      <xs:element name="quantity" type="xs:positiveInteger"/>
+      <xs:element name="price" type="Money"/>
+      <xs:element name="note" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:ID" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="Party" abstract="true">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Person">
+    <xs:complexContent>
+      <xs:extension base="Party">
+        <xs:sequence>
+          <xs:element name="email" type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="Company">
+    <xs:complexContent>
+      <xs:extension base="Party">
+        <xs:sequence>
+          <xs:element name="abn" type="xs:string"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:element name="order">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="customer" type="Party"/>
+        <xs:element name="placed" type="xs:dateTime"/>
+        <xs:element name="line" type="Line" maxOccurs="unbounded"/>
+        <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="number" type="xs:unsignedInt" use="required"/>
+      <xs:attribute name="paid" type="xs:boolean" default="false"/>
+    </xs:complexType>
+    <xs:unique name="sku">
+      <xs:selector xpath="o:line"/>
+      <xs:field xpath="o:sku"/>
+    </xs:unique>
+  </xs:element>
+</xs:schema>

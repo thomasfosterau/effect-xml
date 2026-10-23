@@ -42,6 +42,8 @@ export default defineConfig({
       "tests/fixtures/**",
       // Generated from the WHATWG entity table; never edited by hand.
       "src/internal/htmlEntities.generated.ts",
+      // `Xsd.generate`'s output, compared byte for byte by tests/xsd.test.ts.
+      "examples/xsd/order.generated.ts",
     ],
     overrides: [
       {
@@ -294,6 +296,7 @@ export default defineConfig({
       Sax: "src/Sax.ts",
       Xml: "src/Xml/index.ts",
       Html: "src/Html/index.ts",
+      Xsd: "src/Xsd/index.ts",
     },
     format: "esm",
     platform: "neutral",
