@@ -69,6 +69,23 @@ const nameRegExp = new RegExp(`^[${nameStartClass}][${nameCharClass}]*$`, "u");
 const nameStartRegExp = new RegExp(`^[${nameStartClass}]`, "u");
 const notNameCharRegExp = new RegExp(`[^${nameCharClass}]`, "u");
 
+const ncNameStartRegExp = new RegExp(`^[${nameStartClass.replace(":", "")}]`, "u");
+
+/**
+ * Whether an XML `Name` is also a `QName` (Namespaces in XML 1.0 §3): no
+ * colon, or one colon between two `NCName`s. `name` must already be a Name,
+ * so only the colon's place and the character after it are checked.
+ */
+export const isQName = (name: string): boolean => {
+  const colon = name.indexOf(":");
+  return (
+    colon === -1 ||
+    (colon > 0 &&
+      name.indexOf(":", colon + 1) === -1 &&
+      ncNameStartRegExp.test(name.slice(colon + 1)))
+  );
+};
+
 /**
  * Where `s` stops being an XML `Name` (colons allowed anywhere): the index of
  * the first character not allowed where it is, or -1 when `s` is a Name.

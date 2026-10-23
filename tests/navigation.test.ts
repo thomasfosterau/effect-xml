@@ -281,4 +281,26 @@ describe("Sax.select", () => {
     const unbound = await Effect.runPromise(Effect.result(selecting(`<a><q:b/></a>`, "//b")));
     expect(failure(unbound)._tag).toBe("UnboundNamespacePrefix");
   });
+
+  test("namespace well-formedness errors surface too", async () => {
+    const inputs = [
+      `<a:b:c xmlns:a="urn:a"/>`,
+      `<a xmlns:xmlns="urn:x"><b/></a>`,
+      `<a xmlns:p="urn:p"><b xmlns:p=""/></a>`,
+      `<?a:b?><a><b/></a>`,
+      `<!DOCTYPE a [<!NOTATION a:b SYSTEM "n">]><a><b/></a>`,
+    ];
+    const results = await Promise.all(
+      inputs.map((input) => Effect.runPromise(Effect.result(selecting(input, "//b")))),
+    );
+    expect(results.map((r) => failure(r)._tag)).toEqual(
+      Arr.replicate("InvalidNamespace", inputs.length),
+    );
+    const duplicate = await Effect.runPromise(
+      Effect.result(
+        selecting(`<a xmlns:p="urn:x" xmlns:q="urn:x"><b p:k="1" q:k="2"/></a>`, "//b"),
+      ),
+    );
+    expect(failure(duplicate)._tag).toBe("DuplicateAttribute");
+  });
 });

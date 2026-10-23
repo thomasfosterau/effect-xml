@@ -25,6 +25,7 @@ import {
   type SaxError,
 } from "../Error.ts";
 import { resolveAttributes } from "../internal/attributes.ts";
+import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
 import { Namespaces, QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
 import { SaxEvent, type Attribute } from "../Sax.ts";
@@ -84,10 +85,17 @@ class Builder {
     if (prefix === "xml") return Namespaces.xml;
     if (prefix === "xmlns") return Namespaces.xmlns;
     const key = prefix ?? "";
-    return HashMap.get(own, key).pipe(
+    const uri = HashMap.get(own, key).pipe(
       Option.orElse(() => Arr.findLast(this.scopes, (scope) => HashMap.get(scope, key))),
       Option.getOrNull,
     );
+    // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
+    return uri === "" && prefix !== null ? null : uri;
+  }
+
+  /** Whether `xmlns:p=""` may undeclare a prefix: an XML 1.1 document (Namespaces in XML 1.1 §5). */
+  private get unbinding(): boolean {
+    return this.declaration?.version === "1.1";
   }
 
   private resolve(
@@ -167,11 +175,16 @@ class Builder {
       this.appendChild(new XmlComment({ data: ev.data }), ev.span.start),
     ProcessingInstruction: (
       ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>,
-    ): Effect.Effect<void, SaxError> =>
-      this.appendChild(
+    ): Effect.Effect<void, SaxError> => {
+      const error = this.namespaces
+        ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
+        : Option.none();
+      if (Option.isSome(error)) return Effect.fail(error.value);
+      return this.appendChild(
         new XmlProcessingInstruction({ target: ev.target, data: ev.data }),
         ev.span.start,
-      ),
+      );
+    },
     XmlDeclaration: (
       ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>,
     ): Effect.Effect<void, SaxError> => {
@@ -183,6 +196,11 @@ class Builder {
       return Effect.void;
     },
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>): Effect.Effect<void, SaxError> => {
+      const error =
+        this.namespaces && ev.internalSubset !== null
+          ? checkSubset(ev.internalSubset, ev.span.start)
+          : Option.none();
+      if (Option.isSome(error)) return Effect.fail(error.value);
       this.doctype = new XmlDoctype({
         name: ev.name,
         publicId: ev.publicId,
@@ -197,6 +215,10 @@ class Builder {
     ev: Extract<SaxEvent, { _tag: "StartElement" }>,
   ): Effect.Effect<void, SaxError> {
     const position = ev.span.start;
+    const invalid = this.namespaces
+      ? checkStartTag(ev.name, ev.attributes, position, this.unbinding)
+      : Option.none();
+    if (Option.isSome(invalid)) return Effect.fail(invalid.value);
     // This element's own xmlns declarations are in scope for its name and attributes.
     const bindings = this.collectBindings(ev.attributes);
     // In document order: the first duplicate or unbound prefix is the one reported.

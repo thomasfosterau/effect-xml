@@ -192,6 +192,26 @@ export class UnboundNamespacePrefix extends Schema.TaggedError<UnboundNamespaceP
 }
 
 /**
+ * A name or namespace declaration broke a constraint of Namespaces in XML 1.0
+ * (with namespace processing on): a name that is not a `QName`, a colon in
+ * a processing instruction target or notation name, an empty prefixed
+ * declaration (`xmlns:p=""`, XML 1.1 only), or a misuse of the reserved
+ * `xml` / `xmlns` prefixes and namespaces. `name` is the offending name.
+ *
+ * @since 0.3.0
+ * @category errors
+ */
+export class InvalidNamespace extends Schema.TaggedError<InvalidNamespace>()("InvalidNamespace", {
+  name: Schema.String,
+  reason: Schema.String,
+  position: ErrorPosition,
+}) {
+  override get message(): string {
+    return `Namespace error in "${this.name}" at ${showPosition(this.position)}: ${this.reason}`;
+  }
+}
+
+/**
  * The resource limits a document can exceed (see {@link Limits}).
  *
  * @since 0.3.0
@@ -298,6 +318,7 @@ export type SaxError =
   | DuplicateAttribute
   | InvalidDocumentStructure
   | UnboundNamespacePrefix
+  | InvalidNamespace
   | LimitExceeded
   | DecodeError;
 
@@ -320,6 +341,7 @@ const saxErrorTags: ReadonlyArray<string> = [
   "DuplicateAttribute",
   "InvalidDocumentStructure",
   "UnboundNamespacePrefix",
+  "InvalidNamespace",
   "LimitExceeded",
   "UnsupportedEncoding",
   "InvalidByteSequence",

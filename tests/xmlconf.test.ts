@@ -27,11 +27,10 @@ import { canonical, readManifest, type XmlconfTest } from "./support/xmlconf.ts"
 
 const FIXTURES = new URL("./fixtures/xmlconf/", import.meta.url);
 
-// Observed pass counts. The not-wf gap is the namespace well-formedness
-// constraints (#33); see the gate's report.
+// Observed pass counts; see the gate's report for what still fails.
 const BASELINE = {
-  notWf: 932, // of 951
-  valid: 599, // of 601
+  notWf: 951, // of 951
+  valid: 600, // of 601
   invalid: 173, // of 175
   output: 248, // of 261
 };

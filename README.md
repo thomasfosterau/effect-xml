@@ -112,7 +112,7 @@ const encoded = Schema.encodeSync(Xml.XmlElement)(el); // plain data
 const back = Schema.decodeSync(Xml.XmlElement)(encoded); // real instances again
 ```
 
-The XML tree builder is strict: it enforces matched tags, a single root and unique attributes, and resolves namespace prefixes into `QName.namespace` (the default namespace does not apply to attributes, per Namespaces in XML §6.2).
+The XML tree builder is strict: it enforces matched tags, a single root and unique attributes, and resolves namespace prefixes into `QName.namespace` (the default namespace does not apply to attributes, per Namespaces in XML §6.2). With namespace processing on (the default, and always in `Sax.select`), it also enforces the constraints of Namespaces in XML 1.0: names are `QName`s, no two attributes share an expanded name (`DuplicateAttribute`), the reserved `xml` and `xmlns` prefixes and namespaces are used only as allowed, `xmlns:p=""` is accepted only in an XML 1.1 document, and processing instruction targets and entity and notation names have no colon (`InvalidNamespace`).
 
 ## Navigating by namespace
 
@@ -418,6 +418,7 @@ const program = Xml.parse("<a></b>").pipe(
     MismatchedEndTag: (e) => Effect.succeed(`expected </${e.expected}>`),
     UnexpectedEndTag: (e) => Effect.succeed(e.message),
     UnboundNamespacePrefix: (e) => Effect.succeed(e.message),
+    InvalidNamespace: (e) => Effect.succeed(e.message),
     DuplicateAttribute: (e) => Effect.succeed(e.message),
     InvalidEntity: (e) => Effect.succeed(e.message),
     MalformedDeclaration: (e) => Effect.succeed(e.message),
