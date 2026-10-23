@@ -29,33 +29,47 @@ const checkElementName = (name: string, position: Position): Option.Option<Inval
   return Option.none();
 };
 
+/** `xmlns="…"`: neither reserved namespace can be the default (§3). */
+const checkDefault = (a: Attribute): Option.Option<InvalidNamespace> =>
+  a.value === Namespaces.xml || a.value === Namespaces.xmlns
+    ? invalid(a.name, `${a.value} can't be the default namespace`, a.span.start)
+    : Option.none();
+
+/**
+ * `xmlns:prefix="…"`: the reserved prefixes and namespaces (§3), and in XML
+ * 1.0 no undeclaring a prefix (§5: `xmlns:p=""` is XML 1.1's).
+ */
+const checkPrefixed = (
+  a: Attribute,
+  prefix: string,
+  unbinding: boolean,
+): Option.Option<InvalidNamespace> => {
+  const reserved = a.value === Namespaces.xml || a.value === Namespaces.xmlns;
+  const reason =
+    prefix === "xmlns"
+      ? "the xmlns prefix can't be declared"
+      : prefix === "xml"
+        ? a.value === Namespaces.xml
+          ? null
+          : `the xml prefix can only be bound to ${Namespaces.xml}`
+        : reserved
+          ? `no other prefix can be bound to ${a.value}`
+          : a.value === "" && !unbinding
+            ? "a prefix can't be undeclared in XML 1.0"
+            : null;
+  return reason === null ? Option.none() : invalid(a.name, reason, a.span.start);
+};
+
 /**
  * An attribute's name is a `QName`, and if it declares a namespace, the
- * declaration respects the reserved prefixes and namespaces (§3) and, in
- * XML 1.0, doesn't undeclare a prefix (§5: `xmlns:p=""` is XML 1.1's).
+ * declaration is allowed.
  */
 const checkAttribute = (a: Attribute, unbinding: boolean): Option.Option<InvalidNamespace> => {
   // The common case, an unprefixed name other than xmlns, has nothing to check.
-  if (!a.name.includes(":") && a.name !== "xmlns") return Option.none();
-  const position = a.span.start;
+  if (!a.name.includes(":")) return a.name === "xmlns" ? checkDefault(a) : Option.none();
   if (!isQName(a.name))
-    return invalid(a.name, "a colon may only separate a prefix from a local name", position);
-  if (a.name === "xmlns")
-    return a.value === Namespaces.xml || a.value === Namespaces.xmlns
-      ? invalid(a.name, `${a.value} can't be the default namespace`, position)
-      : Option.none();
-  if (!a.name.startsWith("xmlns:")) return Option.none();
-  const prefix = a.name.slice(6);
-  if (prefix === "xmlns") return invalid(a.name, "the xmlns prefix can't be declared", position);
-  if (prefix === "xml")
-    return a.value === Namespaces.xml
-      ? Option.none()
-      : invalid(a.name, `the xml prefix can only be bound to ${Namespaces.xml}`, position);
-  if (a.value === Namespaces.xml || a.value === Namespaces.xmlns)
-    return invalid(a.name, `no other prefix can be bound to ${a.value}`, position);
-  if (a.value === "" && !unbinding)
-    return invalid(a.name, "a prefix can't be undeclared in XML 1.0", position);
-  return Option.none();
+    return invalid(a.name, "a colon may only separate a prefix from a local name", a.span.start);
+  return a.name.startsWith("xmlns:") ? checkPrefixed(a, a.name.slice(6), unbinding) : Option.none();
 };
 
 /**
