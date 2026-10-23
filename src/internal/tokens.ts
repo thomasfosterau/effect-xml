@@ -248,6 +248,12 @@ const strayLessThan = (cfg: EntityConfig): P<Step> =>
     text,
   );
 
+/** `<` and an element name: up to whitespace, `/` or `>`. */
+const startTagName = Parser.preceded(
+  Token.literal("<"),
+  Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeTill(ws + "/>"))),
+);
+
 /**
  * Attribute values in double and single quotes, keyed by the opening quote.
  * The next character decides; an unclosed quote is not retried unquoted.
@@ -323,14 +329,7 @@ const xmlStartTag = (cfg: EntityConfig): P<Step> => {
     ),
   );
   const tag = Parser.withSpan(
-    Parser.seq(
-      Parser.preceded(
-        Token.literal("<"),
-        Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeTill(ws + "/>"))),
-      ),
-      Parser.repeat(Parser.preceded(S1, attribute)),
-      close,
-    ),
+    Parser.seq(startTagName, Parser.repeat(Parser.preceded(S1, attribute)), close),
   );
   // (The data grammar cuts at a start tag, so a failure here is fatal.)
   return Parser.tryMap(tag, ([parts, span]) => validNames(parts, span.start, span.end));
@@ -371,10 +370,7 @@ const startTag = (cfg: EntityConfig): P<Step> => {
   );
   return spanned(
     Parser.seq(
-      Parser.preceded(
-        Token.literal("<"),
-        Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeTill(ws + "/>"))),
-      ),
+      startTagName,
       Parser.map(Parser.repeat(Parser.preceded(S0, Parser.alt(attribute, slash))), (attributes) =>
         attributes.filter((a) => a !== null),
       ),
