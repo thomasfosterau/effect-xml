@@ -24,7 +24,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import type { Limits } from "../Limits.ts";
-import type { EntityResolver, ExpansionFailure } from "./entities.ts";
+import { isXmlChar, type EntityResolver, type ExpansionFailure } from "./entities.ts";
 import { Name, NCName } from "./names.ts";
 
 /** An attribute declared in an `<!ATTLIST>`. */
@@ -44,14 +44,6 @@ const PREDEFINED: PredefinedEntities = { lt: "<", gt: ">", amp: "&", apos: "'", 
 
 /** Collapse runs of spaces and trim: normalization for tokenized attribute types. */
 export const collapse = (s: string): string => s.replace(/ +/g, " ").replace(/^ | $/g, "");
-
-const isXmlChar = (cp: number): boolean =>
-  cp === 0x9 ||
-  cp === 0xa ||
-  cp === 0xd ||
-  (cp >= 0x20 && cp <= 0xd7ff) ||
-  (cp >= 0xe000 && cp <= 0xfffd) ||
-  (cp >= 0x10000 && cp <= 0x10ffff);
 
 /** A character reference body (`#38`, `#x26`) as a string, or null if it isn't a valid one. */
 const charRef = (body: string): string | null => {

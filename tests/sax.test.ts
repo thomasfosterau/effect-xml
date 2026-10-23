@@ -53,9 +53,9 @@ describe("Sax.tokenize — structure", () => {
 
 describe("Sax.tokenize — special constructs", () => {
   test("comments", async () => {
-    const evs = await collect("<a><!-- hi -- there --></a>");
+    const evs = await collect("<a><!-- hi - there --></a>");
     const c = evs.find(Sax.isComment);
-    expect(c?.data).toBe(" hi -- there ");
+    expect(c?.data).toBe(" hi - there ");
   });
 
   test("CDATA preserves raw content", async () => {

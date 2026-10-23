@@ -2634,7 +2634,7 @@ export const buildDocumentString = (
       entities: options?.entities,
       limits: options?.limits,
     });
-    const lexer = new Lexer({ mode: "html", entities: opts.entities });
+    const lexer = new Lexer({ mode: "html", entities: opts.entities, content: false });
     const guard = new Guard(opts.limits, false);
     const builder = new HtmlTreeBuilder(opts.limits);
     const over = guard.input(input.length, lexer);

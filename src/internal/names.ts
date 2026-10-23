@@ -53,3 +53,32 @@ export const Name: Parser.Parser<string> = Compiler.jit(
 export const Nmtoken: Parser.Parser<string> = Compiler.jit(
   Token.takeWhile([...ncNameChar, ":"], { min: 1 }),
 );
+
+// The same productions as regular expressions, for checking a name the lexer
+// has already delimited: one `test` per name on the hot path.
+
+/** `NameStartChar` (XML 1.0 §2.3), as a character class body. */
+const nameStartClass =
+  "A-Z_a-z:\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C\u200D" +
+  "\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u{10000}-\u{EFFFF}";
+
+/** `NameChar` (XML 1.0 §2.3), as a character class body. */
+const nameCharClass = `${nameStartClass}\\-.0-9\u00B7\u0300-\u036F\u203F\u2040`;
+
+const nameRegExp = new RegExp(`^[${nameStartClass}][${nameCharClass}]*$`, "u");
+const nameStartRegExp = new RegExp(`^[${nameStartClass}]`, "u");
+const notNameCharRegExp = new RegExp(`[^${nameCharClass}]`, "u");
+
+/**
+ * Where `s` stops being an XML `Name` (colons allowed anywhere): the index of
+ * the first character not allowed where it is, or -1 when `s` is a Name.
+ */
+export const invalidNameAt = (s: string): number => {
+  if (nameRegExp.test(s)) return -1;
+  if (!nameStartRegExp.test(s)) return 0;
+  // The first character is a name start; one beyond the BMP takes two units.
+  const first = s.codePointAt(0) ?? 0;
+  const rest = first > 0xffff ? 2 : 1;
+  const at = s.slice(rest).search(notNameCharRegExp);
+  return at === -1 ? -1 : rest + at;
+};

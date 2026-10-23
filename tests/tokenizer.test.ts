@@ -111,6 +111,85 @@ describe("XML tokenization errors", () => {
   });
 });
 
+describe("XML well-formedness", () => {
+  const rejects = (cases: ReadonlyArray<readonly [input: string, message: string]>) =>
+    Promise.all(
+      cases.map(async ([input, message]) => {
+        const e = await xmlError(input);
+        expect(e.message, input).toContain(message);
+      }),
+    );
+  const accepts = (input: string) => Effect.runPromise(Sax.collect(input));
+
+  test("characters XML does not allow are rejected wherever they are", () =>
+    rejects([
+      ["<a>\f</a>", "at 1:4 while reading a character XML does not allow"],
+      ["<a>x</a><!-- \u001B -->", "at 1:14"],
+      [`<a b="\u0000"/>`, "at 1:7"],
+      ["<a>\uFFFF</a>", "at 1:4"],
+      ["<?pi \uFFFE?><a/>", "at 1:6"],
+    ]));
+
+  test("tab, LF and CR are allowed, as are characters beyond the BMP", async () => {
+    const events = await accepts("<a>\t\r\n\u{1F600}\uFFFD</a>");
+    expect(events.find(Sax.isText)?.data).toBe("\t\n\u{1F600}\uFFFD");
+  });
+
+  test("character references must refer to characters XML allows, with a lower-case x", () =>
+    rejects([
+      ["<a>&#X58;</a>", "Invalid entity reference"],
+      ["<a>&#5;</a>", "code point out of range"],
+      ["<a>&#x1f;</a>", "code point out of range"],
+      [`<a b="&#xFFFE;"/>`, "code point out of range"],
+    ]));
+
+  test("comments may not contain `--` or end in `--->`", () =>
+    rejects([
+      ["<a><!-- a -- b --></a>", "at 1:11 while reading a comment"],
+      ["<a><!-- a ---></a>", "at 1:11 while reading a comment"],
+    ]));
+
+  test("text may not contain `]]>`", () =>
+    rejects([["<a>x ]]> y</a>", `"]" at 1:6 while reading text`]]));
+
+  test("attributes have a name, `=` and a quoted value without `<`, apart from each other", () =>
+    rejects([
+      ["<a b></a>", "at 1:5 while after an attribute name"],
+      ["<a b=></a>", "at 1:6 while reading an attribute value"],
+      ["<a b=c></a>", "at 1:6 while reading an attribute value"],
+      [`<a b="<"></a>`, `"<" at 1:7 while reading an attribute value`],
+      [`<a b="1"c="2"></a>`, "at 1:9 while reading a start tag"],
+      [`<a b="1" "2"="3"></a>`, "at 1:10 while reading an attribute name"],
+      [`<a 1="2"></a>`, `"1" at 1:4 while reading an attribute name`],
+    ]));
+
+  test("element names are XML names", () =>
+    rejects([[`<a\u00D7></a\u00D7>`, `"×" at 1:3 while reading an element name`]]));
+
+  test("the XML declaration comes first, and only there", () =>
+    rejects([
+      [` <?xml version="1.0"?><a/>`, "at 1:2: the XML declaration must be at the very start"],
+      [`<!-- c --><?xml version="1.0"?><a/>`, "the XML declaration must be at the very start"],
+      [`<a><?xml version="1.0"?></a>`, "the XML declaration must be at the very start"],
+    ]));
+
+  test("outside the root element there are no references or CDATA sections", () =>
+    rejects([
+      ["<a/>&#32;", "at 1:5: references are not allowed outside the root element"],
+      ["&#32;<a/>", "references are not allowed outside the root element"],
+      ["<a/><![CDATA[ ]]>", "CDATA sections are not allowed outside the root element"],
+    ]));
+
+  test("references and CDATA sections in an entity's replacement text are content", async () => {
+    const events = await Effect.runPromise(
+      Sax.collect(`<!DOCTYPE a [<!ENTITY e "&#38;amp;<![CDATA[x]]>">]><a>&e;</a>`, {
+        dtd: "internal",
+      }),
+    );
+    expect(events.filter(Sax.isCData).map((c) => c.data)).toStrictEqual(["x"]);
+  });
+});
+
 describe("names", () => {
   test("XML names may use characters outside the BMP (#x10000-#xEFFFF)", () => {
     expect(isValidName("x\u{10000}:\u{1F600}")).toBe(true);

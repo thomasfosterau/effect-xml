@@ -29,6 +29,7 @@ import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
 import * as Str from "effect/String";
 import {
+  InvalidDocumentStructure,
   InvalidEntity,
   LimitExceeded,
   MalformedDeclaration,
@@ -91,7 +92,7 @@ export type LexEvent =
 /** A fatal fault. The SAX stream turns these into typed failures. */
 export interface LexFault {
   readonly _tag: "Fault";
-  readonly error: LexError | LimitExceeded;
+  readonly error: LexError | LimitExceeded | InvalidDocumentStructure;
 }
 
 export type LexOutput = LexEvent | LexFault;
@@ -140,6 +141,11 @@ export interface LexerOptions {
   readonly entities: Record<string, string>;
   /** Declared entities, for XML with `dtd: "internal"`. */
   readonly dtd?: Dtd | undefined;
+  /**
+   * XML: the input is content (an entity's replacement text), not a
+   * document, so references and CDATA sections may appear at its top level.
+   */
+  readonly content: boolean;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -162,6 +168,13 @@ type LexState =
 const LexState = Data.taggedEnum<LexState>();
 
 const matchState = LexState.$match;
+
+/**
+ * A character XML 1.0 does not allow anywhere in a document (§2.2 `Char`):
+ * the C0 controls other than tab, LF and CR (a CR never reaches the buffer),
+ * and U+FFFE / U+FFFF. Surrogates come in pairs in decoded input.
+ */
+const FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/;
 const DATA: LexState = LexState.Data();
 const PLAINTEXT: LexState = LexState.Plaintext();
 
@@ -256,6 +269,12 @@ class Positions {
   }
 }
 
+/** The (whole) character at `index`, or `""` past the end. */
+const charAt = (s: string, index: number): string => {
+  const cp = s.codePointAt(index);
+  return cp === undefined ? "" : String.fromCodePoint(cp);
+};
+
 // -----------------------------------------------------------------------------
 // The lexer
 // -----------------------------------------------------------------------------
@@ -271,7 +290,16 @@ export class Lexer {
   /** After an Incomplete token: the buffer length to wait for before retrying. */
   private retryAt = 0;
   private failed = false;
+  /**
+   * XML: the absolute index of the first character XML does not allow, or -1.
+   * The token that takes it in fails, wherever the chunks were split.
+   */
+  private forbidden = -1;
   private state: LexState = DATA;
+  /** XML: the number of elements open, for the checks outside the root element. */
+  private depth = 0;
+  /** XML: why the last token {@link misplaced} looked at is not well-formed. */
+  private misplacement: Option.Option<InvalidDocumentStructure> = Option.none();
   private readonly grammars: Grammars;
   private readonly positions: Positions = new Positions(this);
 
@@ -328,6 +356,10 @@ export class Lexer {
     // Keep only the unconsumed input: appending makes a new string anyway.
     if (this.cursor > 0) this.trimTo(this.cursor);
     if (s.indexOf("\r") !== -1) s = this.normalize(s);
+    if (this.forbidden === -1 && this.options.mode === "xml") {
+      const i = s.search(FORBIDDEN);
+      if (i !== -1) this.forbidden = this.base + this.buf.length + i;
+    }
     this.buf += s;
   }
 
@@ -357,6 +389,17 @@ export class Lexer {
       return [{ _tag: "Fault", error: this.toError(state) }];
     }
     this.positions.anchor(this.base + start);
+    if (this.forbidden !== -1 && this.forbidden < this.base + state.pos) {
+      this.failed = true;
+      return [{ _tag: "Fault", error: this.forbiddenCharacter() }];
+    }
+    if (this.options.mode === "xml" && step.some(this.misplaced)) {
+      this.failed = true;
+      // `misplaced` recorded why.
+      return Arr.fromOption(
+        Option.map(this.misplacement, (error): LexFault => ({ _tag: "Fault", error })),
+      );
+    }
     this.cursor = state.pos;
     this.retryAt = 0;
     const out = step.map((t) => this.event(t));
@@ -449,6 +492,60 @@ export class Lexer {
     }
   }
 
+  /**
+   * XML: is `t` out of place (§2.1, §2.8)? An XML declaration must open the
+   * document (an entity's replacement text has none), and outside the root
+   * element there may be no references or CDATA sections. Records why in
+   * {@link misplacement}, and counts the open elements as it goes.
+   */
+  // A `switch` and a method built once: this runs once per XML token.
+  private readonly misplaced = (t: Tok): boolean => {
+    switch (t._tag) {
+      case "StartElement":
+        if (!t.selfClosing) this.depth++;
+        return false;
+      case "EndElement":
+        if (this.depth > 0) this.depth--;
+        return false;
+      case "XmlDeclaration":
+        return (
+          (this.options.content || this.base + t.start !== 0) &&
+          this.misplace(t.start, "the XML declaration must be at the very start of the document")
+        );
+      case "Text":
+        return (
+          this.outside() &&
+          this.buf.slice(t.start, t.end).indexOf("&") !== -1 &&
+          this.misplace(t.start, "references are not allowed outside the root element")
+        );
+      case "EntityReference":
+        return (
+          this.outside() &&
+          this.misplace(t.start, "references are not allowed outside the root element")
+        );
+      case "CData":
+        return (
+          this.outside() &&
+          this.misplace(t.start, "CDATA sections are not allowed outside the root element")
+        );
+      default:
+        return false;
+    }
+  };
+
+  /** Is the lexer outside the root element of a document? */
+  private outside(): boolean {
+    return this.depth === 0 && !this.options.content;
+  }
+
+  /** Record why the token at `index` is out of place; always true. */
+  private misplace(index: number, reason: string): true {
+    this.misplacement = Option.some(
+      new InvalidDocumentStructure({ position: this.at(index), reason }),
+    );
+    return true;
+  }
+
   // --- output --------------------------------------------------------------
 
   private at(index: number): Position {
@@ -516,11 +613,23 @@ export class Lexer {
     Plaintext: () => this.grammars.plaintext,
   };
 
+  /** The error for the first character XML does not allow (the token at the cursor takes it in). */
+  private forbiddenCharacter(): UnexpectedCharacter {
+    const at = this.forbidden - this.base;
+    return new UnexpectedCharacter({
+      char: charAt(this.buf, at),
+      position: this.at(at),
+      context: "reading a character XML does not allow",
+    });
+  }
+
   /** The typed error for a failed (XML) token. */
   private toError(state: Input.State<string>): LexError | LimitExceeded {
     const failure = state.reportedFailure();
     const at = failure.offset;
     this.positions.anchor(this.base + this.cursor);
+    // The grammar may have stumbled over the character itself.
+    if (this.forbidden !== -1 && this.forbidden <= this.base + at) return this.forbiddenCharacter();
     // SAFETY: every grammar here fails with an `Issue` (its error type `P<A>`);
     // the parse state's failure record stores causes as `unknown`.
     const issue = failure.hasCause ? (failure.cause as Issue) : undefined;
@@ -544,10 +653,14 @@ export class Lexer {
         context: "parsing markup",
       });
     }
-    const cp = this.buf.codePointAt(at);
-    const char = cp === undefined ? "" : String.fromCodePoint(cp);
-    if (issue !== undefined)
-      return new UnexpectedCharacter({ char, position: this.at(at), context: issue.context });
+    if (issue !== undefined) {
+      return new UnexpectedCharacter({
+        char: charAt(this.buf, issue.offset),
+        position: this.at(issue.offset),
+        context: issue.context,
+      });
+    }
+    const char = charAt(this.buf, at);
     const construct = failure.context.find((c) => HashSet.has(declarationContexts, c));
     if (construct !== undefined) {
       return new MalformedDeclaration({

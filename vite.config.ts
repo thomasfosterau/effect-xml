@@ -169,6 +169,15 @@ export default defineConfig({
           "effect/prefer-match-over-switch": "off",
         },
       },
+      // The lexer's check for the characters XML 1.0 does not allow (§2.2
+      // `Char`): those are C0 control characters, so matching them is the
+      // regular expression's whole point.
+      {
+        files: ["src/internal/lexer.ts"],
+        rules: {
+          "no-control-regex": "off",
+        },
+      },
       // `Xml.serialize` / `serializeDocument` unwrap a writer run that cannot
       // fail: `invalid: "replace"` patches every unwritable character and a
       // tree's events are always balanced, so a failure would be a defect.

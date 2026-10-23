@@ -27,11 +27,11 @@ import { canonical, readManifest, type XmlconfTest } from "./support/xmlconf.ts"
 
 const FIXTURES = new URL("./fixtures/xmlconf/", import.meta.url);
 
-// Observed pass counts. The not-wf gap is the strict lexer accepting some
-// malformed input (characters XML forbids, `--` in comments, `]]>` in text,
-// valueless attributes, DTD syntax it only skims); see the gate's report.
+// Observed pass counts. The not-wf gap is DTD syntax the internal-subset
+// grammar only skims (content models, enumerations, notations, public IDs)
+// and the namespace well-formedness constraints; see the gate's report.
 const BASELINE = {
-  notWf: 618, // of 951
+  notWf: 777, // of 951
   valid: 599, // of 601
   invalid: 173, // of 175
   output: 248, // of 261
