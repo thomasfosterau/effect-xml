@@ -21,7 +21,7 @@
  * integration lives in `Sax.ts`, which constructs a fresh instance per stream
  * materialization.
  */
-import { Input, ParseError } from "@thomasfosterau/effect-parse";
+import { Input, ParseError, Parser } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as HashMap from "effect/HashMap";
@@ -41,7 +41,7 @@ import { declarationContexts } from "./declarations.ts";
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
 import type { Dtd } from "./dtd.ts";
-import { grammars, type Grammars, Issue, type RawKind, type Step, type Tok } from "./tokens.ts";
+import { grammars, type Grammars, Issue, type RawKind, type Tok } from "./tokens.ts";
 
 // -----------------------------------------------------------------------------
 // Output model
@@ -345,9 +345,9 @@ export class Lexer {
     if (!this.ended && this.buf.length < this.retryAt) return null;
     const start = this.cursor;
     const state = this.parseState(start);
-    // SAFETY: a grammar's `step` returns its `Step` value or the `Input.Fail`
-    // sentinel; the parser's `unknown`-typed entry point loses that.
-    const step = this.grammar().step(state) as Step | Input.Fail;
+    // The compiled grammar runs on the reused state; on a failure `Parser.run`
+    // re-runs the interpreter, so `mode` and the reported failure are its.
+    const step = Parser.run(this.grammar(), state);
     if (step === Input.Fail) {
       if (state.mode === "Incomplete" && !this.ended) {
         this.retryAt = this.buf.length + 1 + ((this.buf.length - start) >> 1);
@@ -374,14 +374,9 @@ export class Lexer {
     if (state === undefined || state.input !== this.buf) {
       return (this.state_ = new Input.State(this.buf, { partial: !this.ended, offset: pos }));
     }
-    state.pos = pos;
-    state.partial = !this.ended;
-    state.mode = "Backtrack";
-    state.hintOffset = -1;
-    state.hintExpected = [];
-    state.deepest = undefined;
-    state.depth = 0;
-    return state;
+    // The grammars read no services, so the empty context `reset` restores is
+    // the one the state was built with.
+    return state.reset(pos, { partial: !this.ended });
   }
   private state_: Input.State<string> | undefined = undefined;
 

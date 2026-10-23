@@ -19,7 +19,7 @@
  * Positions in tokens are offsets into the lexer's buffer; the lexer turns
  * them into line/column {@link Position}s.
  */
-import { Ascii, Parser, Token } from "@thomasfosterau/effect-parse";
+import { Ascii, Compiler, Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Data from "effect/Data";
 import * as Result from "effect/Result";
 import { doctype as xmlDoctype, processingInstruction } from "./declarations.ts";
@@ -724,19 +724,21 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
   const raw = (name: string, kind: RawKind): P<Step> => {
     const key = `${kind}:${name}`;
     return Option.getOrElse(MutableHashMap.get(raws, key), () => {
-      const g = rawText(
-        name,
-        kind === "script"
-          ? scriptBody
-          : kind === "rcdata"
-            ? decoded(cfg, false)(plainBody(name))
-            : plainBody(name),
+      const g = Compiler.jit(
+        rawText(
+          name,
+          kind === "script"
+            ? scriptBody
+            : kind === "rcdata"
+              ? decoded(cfg, false)(plainBody(name))
+              : plainBody(name),
+        ),
       );
       MutableHashMap.set(raws, key, g);
       return g;
     });
   };
-  return { data, raw, plaintext };
+  return { data: Compiler.jit(data), raw, plaintext: Compiler.jit(plaintext) };
 };
 
 const cache = new WeakMap<Record<string, string>, { xml?: Grammars; html?: Grammars }>();

@@ -28,8 +28,8 @@ catalogs:
       specifier: ^0.6.0
       version: 0.6.0
     '@thomasfosterau/effect-parse':
-      specifier: ^0.1.0
-      version: 0.1.0
+      specifier: ^0.2.0
+      version: 0.2.0
     '@types/node':
       specifier: ^26.6.5
       version: 26.6.5
@@ -84,7 +84,7 @@ importers:
         version: 0.6.0
       '@thomasfosterau/effect-parse':
         specifier: 'catalog:'
-        version: 0.1.0(effect@4.0.5)
+        version: 0.2.0(effect@4.0.5)
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.5
@@ -922,9 +922,9 @@ packages:
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
 
-  '@thomasfosterau/effect-parse@0.1.0':
-    resolution: {integrity: sha512-SQ9GwUsAqvrgT0R7z8GhYAKnRHQgSssFFG9k3HAGCYJWYjbdZyy9bOkhqSDbyBRwLjfNQ2mwkm0TratRRaa6JQ==}
-    engines: {node: '>=22'}
+  '@thomasfosterau/effect-parse@0.2.0':
+    resolution: {integrity: sha512-UAFNWq0/qsgdMcyGfX6cWnmmWV80lc8NAhYZNuHCEANbmnOfyYcBxYS3g5+k8CvVCvWZxPYmjA/9uBeU3Q4bwA==}
+    engines: {node: '>=22', pnpm: '>=11'}
     peerDependencies:
       effect: 4.0.5
 
@@ -2739,7 +2739,7 @@ snapshots:
     dependencies:
       '@testing-library/dom': 10.4.2
 
-  '@thomasfosterau/effect-parse@0.1.0(effect@4.0.5)':
+  '@thomasfosterau/effect-parse@0.2.0(effect@4.0.5)':
     dependencies:
       effect: 4.0.5
 
