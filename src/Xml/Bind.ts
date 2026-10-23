@@ -53,7 +53,7 @@ import { parse, type ParseOptions } from "./Xml.ts";
  * @since 0.3.0
  * @category annotations
  */
-export const FieldBindingId = "effect-sax/Xml/Bind/field";
+export const FieldBindingId = "@thomasfosterau/effect-xml/Xml/Bind/field";
 
 /**
  * The annotation key under which a type's {@link ElementName} is stored.
@@ -61,7 +61,7 @@ export const FieldBindingId = "effect-sax/Xml/Bind/field";
  * @since 0.3.0
  * @category annotations
  */
-export const ElementNameId = "effect-sax/Xml/Bind/name";
+export const ElementNameId = "@thomasfosterau/effect-xml/Xml/Bind/name";
 
 /**
  * Where a field lives in its element: an attribute, a child element, or the element's own text.
@@ -136,7 +136,7 @@ const fieldBinding = (node: FieldBinding["node"], options: ElementOptions): Fiel
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * class Book extends Schema.Class<Book>("Book")(
  *   { title: Schema.String },
@@ -180,7 +180,7 @@ export const annotations = {
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Item = Schema.Struct({
  *   sku: Schema.String.pipe(Xml.Bind.attribute()),
@@ -209,7 +209,7 @@ export const attribute =
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Post = Schema.Struct({
  *   tags: Schema.Array(Schema.String).pipe(Xml.Bind.element({ name: "tag", wrapper: "tags" }))
@@ -236,7 +236,7 @@ export const element =
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Price = Schema.Struct({
  *   currency: Schema.String.pipe(Xml.Bind.attribute()),
@@ -265,7 +265,7 @@ export const text =
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Circle = Schema.TaggedStruct("Circle", {
  *   r: Schema.NumberFromString.pipe(Xml.Bind.attribute())
@@ -855,7 +855,7 @@ const writeRoot = (plan: Plan, value: Tree): Result.Result<XmlElement, XmlBindEr
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
  * import * as Stream from "effect/Stream"
- * import { Sax, Xml } from "effect-sax"
+ * import { Sax, Xml } from "@thomasfosterau/effect-xml"
  *
  * const Row = Schema.Struct({
  *   r: Schema.NumberFromString.pipe(Xml.Bind.attribute()),
@@ -915,7 +915,7 @@ export interface DecodeOptions extends ParseOptions {
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * class Author extends Schema.Class<Author>("Author")({
  *   id: Schema.String.pipe(Xml.Bind.attribute()),
@@ -1000,7 +1000,7 @@ export interface EncodeOptions extends WriterOptions {
  * ```ts
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
- * import { Xml } from "effect-sax"
+ * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Note = Schema.Struct({
  *   id: Schema.Number.pipe(Xml.Bind.attribute()),
