@@ -9,7 +9,7 @@
  * numeric-reference Windows-1252 remap). Which named reference applies, and
  * how long it is, is a table lookup.
  */
-import { Parser, Token } from "@thomasfosterau/effect-parse";
+import { Compiler, Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
@@ -276,7 +276,9 @@ const grammarFor = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> 
     Parser.preceded(ampersand, Parser.alt(Token.any, Parser.succeed(""))),
   );
   const reference = Parser.dispatch(afterAmpersand, { "#": numeric }, named);
-  return Parser.repeat(Parser.dispatch(Parser.peek(Token.any), { "&": reference }, text));
+  return Compiler.jit(
+    Parser.repeat(Parser.dispatch(Parser.peek(Token.any), { "&": reference }, text)),
+  );
 };
 
 const byEntities = new WeakMap<

@@ -46,7 +46,7 @@ catalog:
   # `vp check` against the plugin too.
   "@mpsuesser/oxlint-plugin-effect": ^0.6.0
   # Peer: the token, declaration and entity grammars are effect-parse parsers.
-  "@thomasfosterau/effect-parse": ^0.1.0
+  "@thomasfosterau/effect-parse": ^0.2.0
   "@types/node": ^26.6.5
   # Must equal the vitest that vite-plus bundles (see `vitest` below); vite-plus
   # refuses to run coverage on a mismatch.
@@ -83,7 +83,7 @@ catalogs:
   peers:
     # Caret, not `>=`: on 0.x a minor release may break the combinator API
     # the grammars are written against.
-    "@thomasfosterau/effect-parse": ^0.1.0
+    "@thomasfosterau/effect-parse": ^0.2.0
     # The floor the package declared before the tooling migration; raising it
     # is a breaking change.
     effect: ^4.0.5
