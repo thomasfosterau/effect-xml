@@ -191,6 +191,40 @@ sheetBytes.pipe(
 
 Streamable paths use child and descendant steps with element name tests, and predicates on the element's own attributes and name. A path that needs positions or content fails the stream with an `XPathError`.
 
+## Decoding into a Schema
+
+`Xml.Bind` maps XML straight onto an Effect `Schema` and back. A struct (or `Schema.Class`) is an element and its fields are child elements named after their keys. Annotate a field to make it an attribute, the element's own text, or a renamed, namespaced or wrapped element:
+
+```ts
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { Xml } from "@thomasfosterau/effect-xml";
+
+const { Bind } = Xml;
+
+class Author extends Schema.Class<Author>("Author")({
+  id: Schema.String.pipe(Bind.attribute()), // <author id="…">
+  name: Schema.String, //                       <name>…</name>
+}) {}
+
+class Book extends Schema.Class<Book>("Book")(
+  {
+    isbn: Schema.String.pipe(Bind.attribute()),
+    lang: Schema.optional(Schema.String).pipe(Bind.attribute("xml:lang")),
+    title: Schema.String,
+    year: Schema.Int, //                                   "1965" → 1965, checked
+    authors: Schema.Array(Author).pipe(Bind.element("author")), // repeated <author>
+    tags: Schema.Array(Schema.String).pipe(Bind.element({ name: "tag", wrapper: "tags" })),
+  },
+  Bind.annotations.named("book"), // the root element's name, checked on decode
+) {}
+
+const book = yield * Bind.decode(Book)(xml); // Book, or SaxError | XmlBindError | SchemaError
+const out = yield * Bind.encode(Book)(book); // back to a string
+```
+
+Leaves travel as strings through `Schema.toCodecStringTree`, so numbers, booleans, `NumberFromString`, brands and checks all decode from text with their own transformations, and validation failures are `SchemaError`s carrying the field path. A union of structs is a choice picked by element name (`Bind.named`, else a class's identifier or a `TaggedStruct`'s `_tag`); `_tag` itself isn't in the XML. Elements match by local name, and by namespace too when an annotation gives one; on encode, children inherit their parent's namespace and the `Writer` declares what is used. `Bind.decodeElement(schema)` decodes any `XmlElement`, so it composes with `Sax.select` to decode a huge document one record at a time (`Stream.mapEffect(Bind.decodeElement(Row))`).
+
 ## HTML
 
 ```ts

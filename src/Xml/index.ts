@@ -63,3 +63,10 @@ export * as Ns from "./Ns.ts";
  * @category modules
  */
 export * as XPath from "./XPath.ts";
+/**
+ * Schema-driven binding: decode XML into a `Schema`'s type and encode it back, with annotations for attributes, elements and text.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
+export * as Bind from "./Bind.ts";
