@@ -2,9 +2,12 @@
  * The DOCTYPE internal subset, interpreted (with `dtd: "internal"`).
  *
  * {@link Dtd.declare} reads the internal subset's declarations (XML 1.0
- * §2.8, §3.3, §4.2): general entities and attribute-list declarations are
- * recorded; element and notation declarations, comments and processing
- * instructions are skipped. External and parameter entities are never
+ * §2.8, §3.2, §3.3, §4.2, §4.7): general entities and attribute-list
+ * declarations are recorded; element and notation declarations, comments
+ * and processing instructions are checked against their grammar (content
+ * models, enumerations, public identifiers and all) and otherwise skipped.
+ * Every entity value must be well-formed, parameter entities' included,
+ * though nothing references them. External and parameter entities are never
  * fetched: a reference to an external entity, or any parameter entity
  * reference, is an error.
  *
@@ -25,7 +28,14 @@ import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import type { Limits } from "../Limits.ts";
 import { isXmlChar, type EntityResolver, type ExpansionFailure } from "./entities.ts";
-import { Name, NCName } from "./names.ts";
+import {
+  commentRest,
+  ExternalID,
+  PubidLiteral,
+  subsetProcessingInstruction,
+  SystemLiteral,
+} from "./declarations.ts";
+import { invalidNameAt, Name, NCName, Nmtoken } from "./names.ts";
 
 /** An attribute declared in an `<!ATTLIST>`. */
 export interface AttributeDecl {
@@ -86,12 +96,19 @@ const quoted: Parser.Parser<string> = Parser.alt(
   Parser.delimited(lit("'"), Token.takeTill("'"), lit("'")),
 ).pipe(Parser.expected("a quoted string"));
 
-/** `SYSTEM "…"` or `PUBLIC "…" "…"`. */
-const externalId = Parser.alt(
-  Parser.seq(lit("SYSTEM"), S, quoted),
-  Parser.seq(lit("PUBLIC"), S, quoted, S, quoted),
-);
+/** `NDataDecl ::= S 'NDATA' S Name` (general entities only, §4.2.2). */
+const nDataDecl = Parser.seq(S, lit("NDATA"), S, Name.pipe(Parser.expected("a notation name")));
 
+/** A parameter entity's `ExternalID`. */
+const externalEntity: Parser.Parser<unknown> = ExternalID;
+/** A general entity's `ExternalID NDataDecl?`. */
+const unparsedEntity: Parser.Parser<unknown> = Parser.seq(ExternalID, Parser.optional(nDataDecl));
+
+/**
+ * `GEDecl ::= '<!ENTITY' S Name S EntityDef S? '>'` and
+ * `PEDecl ::= '<!ENTITY' S '%' S Name S PEDef S? '>'`. A parameter entity
+ * is always parsed, so it takes no `NDATA` (§4.2.2).
+ */
 const entityDecl: Parser.Parser<Decl> = Parser.gen(function* () {
   yield* lit("<!ENTITY");
   yield* S;
@@ -100,21 +117,39 @@ const entityDecl: Parser.Parser<Decl> = Parser.gen(function* () {
   yield* S;
   const value = yield* Parser.alt(
     quoted,
-    Parser.as(
-      Parser.seq(externalId, Parser.optional(Parser.seq(S, lit("NDATA"), S, NCName))),
-      null,
-    ),
-  );
+    Parser.as(parameter ? externalEntity : unparsedEntity, null),
+  ).pipe(Parser.expected("an entity value or external identifier"));
   yield* S0;
   yield* lit(">");
   return { _tag: "Entity", name, value, parameter } as const;
 });
 
-/** `CDATA`, a tokenized type, `NOTATION (…)` or an enumeration `(…)`. */
+/** `'|'` between the members of a group, with optional whitespace around it. */
+const bar = Parser.seq(S0, lit("|"), S0);
+
+/** `'(' S? item (S? '|' S? item)* S? ')'`: at least one item. */
+const alternatives = (item: Parser.Parser<string>): Parser.Parser<true> =>
+  Parser.as(
+    Parser.seq(lit("("), S0, item, Parser.repeat(Parser.preceded(bar, item)), S0, lit(")")),
+    true,
+  );
+
+/**
+ * `AttType` (§3.3.1): `CDATA`, a tokenized type, a `NotationType`
+ * (`'NOTATION' S '(' S? Name (S? '|' S? Name)* S? ')'`) or an `Enumeration`
+ * (`'(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'`). True for every type but
+ * CDATA.
+ */
 const attType: Parser.Parser<boolean> = Parser.alt(
   Parser.as(lit("CDATA"), false),
-  Parser.as(Parser.seq(lit("NOTATION"), S, lit("("), Token.takeTill(")"), lit(")")), true),
-  Parser.as(Parser.seq(lit("("), Token.takeTill(")"), lit(")")), true),
+  Parser.preceded(
+    Parser.seq(lit("NOTATION"), S),
+    Parser.cut(alternatives(Name.pipe(Parser.expected("a notation name")))),
+  ),
+  Parser.preceded(
+    Parser.peek(lit("(")),
+    Parser.cut(alternatives(Nmtoken.pipe(Parser.expected("a name token")))),
+  ),
   ...["IDREFS", "IDREF", "ID", "ENTITY", "ENTITIES", "NMTOKENS", "NMTOKEN"].map((t) =>
     Parser.as(lit(t), true),
   ),
@@ -146,32 +181,108 @@ const attlistDecl: Parser.Parser<Decl> = Parser.gen(function* () {
   return { _tag: "Attlist", element, attributes } as const;
 });
 
-/** `<!ELEMENT …>` and `<!NOTATION …>`, skipped (respecting quotes). */
-const skippedDecl: Parser.Parser<Decl> = Parser.as(
-  Parser.seq(
-    Parser.alt(lit("<!ELEMENT"), lit("<!NOTATION")),
-    Parser.repeat(Parser.alt(quoted, Token.takeTill(">\"'", { min: 1 }))),
-    lit(">"),
-  ),
-  { _tag: "Skip" } as const,
+const skip: Decl = { _tag: "Skip" };
+
+/** `('?' | '*' | '+')?`, directly after a name or a `)`. */
+const occurrence = Parser.optional(Parser.alt(lit("?"), lit("*"), lit("+")));
+
+/**
+ * `choice ::= '(' S? cp ( S? '|' S? cp )+ S? ')'` or
+ * `seq ::= '(' S? cp ( S? ',' S? cp )* S? ')'`: one kind of connector per
+ * group, set by the first one.
+ */
+const group: Parser.Parser<true> = Parser.suspend(() =>
+  Parser.gen(function* () {
+    yield* lit("(");
+    yield* S0;
+    yield* cp;
+    yield* S0;
+    const connector = yield* Parser.optional(Parser.alt(lit("|"), lit(",")));
+    if (connector !== undefined) {
+      yield* S0;
+      yield* cp;
+      yield* Parser.repeat(Parser.preceded(Parser.seq(S0, lit(connector), S0), cp));
+      yield* S0;
+    }
+    yield* lit(")").pipe(
+      Parser.expected(connector === undefined ? '"|", "," or ")"' : `"${connector}" or ")"`),
+    );
+    return true as const;
+  }),
 );
 
-const commentDecl: Parser.Parser<Decl> = Parser.as(
-  Parser.seq(lit("<!--"), Token.takeUntil("-->"), lit("-->")),
-  { _tag: "Skip" },
+/** `cp ::= (Name | choice | seq) ('?' | '*' | '+')?` */
+const cp: Parser.Parser<unknown> = Parser.seq(
+  Parser.alt(Name, group).pipe(Parser.expected("an element name or a group")),
+  occurrence,
 );
+
+/**
+ * `Mixed ::= '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*' | '(' S? '#PCDATA' S? ')'`:
+ * `#PCDATA` first, then element names only, and `*` once there are any.
+ */
+const mixedRest: Parser.Parser<true> = Parser.gen(function* () {
+  const names = yield* Parser.repeat(
+    Parser.preceded(bar, Name.pipe(Parser.expected("an element name"))),
+  );
+  yield* S0;
+  yield* lit(")");
+  if (Arr.isReadonlyArrayNonEmpty(names)) yield* lit("*").pipe(Parser.expected('"*"'));
+  else yield* Parser.optional(lit("*"));
+  return true as const;
+});
+
+/** `contentspec ::= 'EMPTY' | 'ANY' | Mixed | children` (§3.2). */
+const contentspec: Parser.Parser<unknown> = Parser.alt(
+  lit("EMPTY"),
+  lit("ANY"),
+  Parser.preceded(Parser.seq(lit("("), S0, lit("#PCDATA")), Parser.cut(mixedRest)),
+  Parser.seq(group, occurrence),
+).pipe(Parser.expected("a content model"));
+
+/** `elementdecl ::= '<!ELEMENT' S Name S contentspec S? '>'` */
+const elementDecl: Parser.Parser<Decl> = Parser.as(
+  Parser.seq(
+    lit("<!ELEMENT"),
+    S,
+    Name.pipe(Parser.expected("an element name")),
+    S,
+    contentspec,
+    S0,
+    lit(">"),
+  ),
+  skip,
+);
+
+/** `NotationDecl ::= '<!NOTATION' S Name S (ExternalID | PublicID) S? '>'` (§4.7). */
+const notationDecl: Parser.Parser<Decl> = Parser.as(
+  Parser.seq(
+    lit("<!NOTATION"),
+    S,
+    Name.pipe(Parser.expected("a notation name")),
+    S,
+    Parser.alt(
+      Parser.seq(lit("SYSTEM"), S, SystemLiteral),
+      // `PublicID ::= 'PUBLIC' S PubidLiteral`, or a full ExternalID.
+      Parser.seq(lit("PUBLIC"), S, PubidLiteral, Parser.optional(Parser.seq(S, SystemLiteral))),
+    ).pipe(Parser.expected("an external or public identifier")),
+    S0,
+    lit(">"),
+  ),
+  skip,
+);
+
+const commentDecl: Parser.Parser<Decl> = Parser.as(Parser.seq(lit("<!--"), commentRest), skip);
 const piDecl: Parser.Parser<Decl> = Parser.as(
-  Parser.seq(lit("<?"), Token.takeUntil("?>"), lit("?>")),
-  { _tag: "Skip" },
+  Parser.seq(lit("<?"), subsetProcessingInstruction),
+  skip,
 );
 
 const markupDecl: Parser.Parser<Decl> = Parser.alt(
   Parser.preceded(Parser.peek(lit("<!ENTITY")), Parser.cut(entityDecl)),
   Parser.preceded(Parser.peek(lit("<!ATTLIST")), Parser.cut(attlistDecl)),
-  Parser.preceded(
-    Parser.peek(Parser.alt(lit("<!ELEMENT"), lit("<!NOTATION"))),
-    Parser.cut(skippedDecl),
-  ),
+  Parser.preceded(Parser.peek(lit("<!ELEMENT")), Parser.cut(elementDecl)),
+  Parser.preceded(Parser.peek(lit("<!NOTATION")), Parser.cut(notationDecl)),
   Parser.preceded(Parser.peek(lit("<!--")), Parser.cut(commentDecl)),
   Parser.preceded(Parser.peek(lit("<?")), Parser.cut(piDecl)),
   Parser.preceded(
@@ -237,6 +348,13 @@ export class Dtd implements EntityResolver {
   }
 
   private declareEntity(decl: Extract<Decl, { _tag: "Entity" }>): DeclarationError | null {
+    // Every entity value must be well-formed, whether or not it is ever used.
+    const value = decl.value === null ? null : this.literal(decl.value);
+    if (value !== null && !Predicate.isString(value))
+      return {
+        offset: 0,
+        expected: `a valid value for entity "${decl.name}" (${value.reason})`,
+      };
     if (decl.parameter) return null;
     // The first declaration of an entity wins (§4.2); the predefined ones can't change.
     if (
@@ -245,16 +363,10 @@ export class Dtd implements EntityResolver {
       decl.name in PREDEFINED
     )
       return null;
-    if (decl.value === null) {
+    if (value === null) {
       MutableHashSet.add(this.external, decl.name);
       return null;
     }
-    const value = this.literal(decl.value);
-    if (!Predicate.isString(value))
-      return {
-        offset: 0,
-        expected: `a valid value for entity "${decl.name}" (${value.reason})`,
-      };
     MutableHashMap.set(this.entities, decl.name, value);
     return null;
   }
@@ -289,22 +401,26 @@ export class Dtd implements EntityResolver {
     );
   }
 
-  /** An entity value: character references expanded, entity references kept (§4.5). */
+  /**
+   * An entity value (§2.3 P9): character references expanded, entity
+   * references kept (§4.5). Every `&` must start a character reference or a
+   * `&Name;` entity reference. A `%` is a parameter entity reference, which
+   * may not occur inside a declaration in the internal subset (WFC: PEs in
+   * Internal Subset).
+   */
   private literal(raw: string): string | ExpansionFailure {
-    if (raw.includes("%")) return { reason: "parameter entity references are not supported" };
+    if (raw.includes("%"))
+      return { reason: "parameter entity references are not allowed in the internal subset" };
     let bad = false;
-    const value = raw.replace(
-      /&(#x[0-9a-fA-F]+|#[0-9]+|[^;&\s]+);|&/g,
-      (m, body: string | undefined) => {
-        if (body === undefined) bad = true;
-        else if (body.startsWith("#")) {
-          const c = charRef(body);
-          if (c !== null) return c;
-          bad = true;
-        }
-        return m;
-      },
-    );
+    const value = raw.replace(/&([^;&]*);|&/g, (m, body: string | undefined) => {
+      if (body === undefined) bad = true;
+      else if (body.startsWith("#")) {
+        const c = charRef(body);
+        if (c !== null) return c;
+        bad = true;
+      } else if (invalidNameAt(body) !== -1) bad = true;
+      return m;
+    });
     return bad ? { reason: "invalid reference" } : value;
   }
 

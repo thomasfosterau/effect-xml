@@ -152,7 +152,7 @@ const PITarget = Parser.flatMap(Parser.peek(Name), (name) =>
 ).pipe(Parser.expected("processing instruction target"));
 
 /** `(S (Char* - (Char* '?>' Char*)))? '?>'` */
-const PIRest = Parser.terminated(
+export const PIRest: Parser.Parser<string> = Parser.terminated(
   Parser.alt(Parser.preceded(S, Token.takeUntil("?>")), Parser.succeed("")),
   Parser.cut(Token.literal("?>")),
 );
@@ -173,7 +173,9 @@ export const processingInstruction: Parser.Parser<XmlDeclarationBody | Processin
 // -----------------------------------------------------------------------------
 
 /** `SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")` */
-const SystemLiteral = quoted((q) => Token.takeTill(q)).pipe(Parser.expected("system literal"));
+export const SystemLiteral: Parser.Parser<string> = quoted((q) => Token.takeTill(q)).pipe(
+  Parser.expected("system literal"),
+);
 
 /** `PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]` */
 const pubidChars = (quote: '"' | "'") => [
@@ -184,17 +186,17 @@ const pubidChars = (quote: '"' | "'") => [
 ];
 
 /** `PubidLiteral ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"` */
-const PubidLiteral = quoted((q) => Token.takeWhile(pubidChars(q))).pipe(
-  Parser.expected("public identifier"),
-);
+export const PubidLiteral: Parser.Parser<string> = quoted((q) =>
+  Token.takeWhile(pubidChars(q)),
+).pipe(Parser.expected("public identifier"));
 
-interface ExternalId {
+export interface ExternalId {
   readonly publicId: string | null;
   readonly systemId: string;
 }
 
 /** `ExternalID ::= 'SYSTEM' S SystemLiteral | 'PUBLIC' S PubidLiteral S SystemLiteral` */
-const ExternalID: Parser.Parser<ExternalId> = Parser.alt(
+export const ExternalID: Parser.Parser<ExternalId> = Parser.alt(
   keyword(
     "SYSTEM",
     Parser.preceded(S, SystemLiteral).pipe(
@@ -209,12 +211,30 @@ const ExternalID: Parser.Parser<ExternalId> = Parser.alt(
   ),
 );
 
+/**
+ * A processing instruction in the internal subset, after `<?`:
+ * `PITarget (S Char*)? '?>'`. An XML declaration is not allowed there, so
+ * no target may be `xml` in any case.
+ */
+export const subsetProcessingInstruction: Parser.Parser<string> = Parser.preceded(
+  Parser.flatMap(Parser.peek(Name), (name) =>
+    name.toLowerCase() === "xml" ? Parser.failMessage("processing instruction target") : Name,
+  ).pipe(Parser.expected("processing instruction target")),
+  PIRest,
+);
+
+/** `Comment` (§2.5) after `<!--`: no `--` before the closing `-->`. */
+export const commentRest: Parser.Parser<string> = Parser.terminated(
+  Token.takeUntil("--"),
+  Token.literal("-->").pipe(Parser.expected("`-->` (only `-->` may contain `--`)")),
+);
+
 /** A string literal, comment or PI inside the internal subset, kept as text. */
 const subsetItem = Parser.alt(
   Parser.seq(Token.literal('"'), Token.takeTill('"'), Token.literal('"')),
   Parser.seq(Token.literal("'"), Token.takeTill("'"), Token.literal("'")),
-  Parser.seq(Token.literal("<!--"), Token.takeUntil("-->"), Token.literal("-->")),
-  Parser.seq(Token.literal("<?"), Token.takeUntil("?>"), Token.literal("?>")),
+  keyword("<!--", commentRest),
+  keyword("<?", subsetProcessingInstruction),
   Token.takeTill("]\"'<", { min: 1 }),
   Token.literal("<"),
 );
