@@ -78,7 +78,12 @@ export class Expander {
     const before = this.dtd.spent;
     const value = this.dtd.replacement(name, stack);
     if (!Predicate.isString(value)) return this.fail(name, span, value);
-    const lexer = new Lexer({ mode: "xml", entities: this.entities, dtd: this.dtd });
+    const lexer = new Lexer({
+      mode: "xml",
+      entities: this.entities,
+      dtd: this.dtd,
+      content: true,
+    });
     lexer.push(value);
     const outputs = lexer.end();
     const events: Array<LexEvent> = [];

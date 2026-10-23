@@ -25,6 +25,7 @@ import * as Result from "effect/Result";
 import { doctype as xmlDoctype, processingInstruction } from "./declarations.ts";
 import { decode, htmlLegacyEntities, type EntityLimit, type EntityTable } from "./entities.ts";
 import type { Dtd } from "./dtd.ts";
+import { invalidNameAt } from "./names.ts";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
 
@@ -78,7 +79,7 @@ export type Tok =
 
 /** Why a strict (XML) grammar rejected its input. */
 export type Issue =
-  | { readonly _tag: "Char"; readonly context: string }
+  | { readonly _tag: "Char"; readonly context: string; readonly offset: number }
   | {
       readonly _tag: "Entity";
       readonly reference: string;
@@ -122,7 +123,9 @@ const gtOrEof = Parser.alt(Parser.asVoid(gt), eof);
 
 /** In XML: fail here, unrecoverably, with an unexpected-character issue. */
 const unexpected = (context: string): P<never> =>
-  Parser.cut(Parser.fail<Issue>({ _tag: "Char", context }));
+  Parser.flatMap(Parser.location, (offset) =>
+    Parser.cut(Parser.fail(Issue.Char({ context, offset }))),
+  );
 
 const none: Step = [];
 
@@ -159,12 +162,19 @@ const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
     inAttribute,
   };
   const normalizeWhitespace = cfg.strict && inAttribute;
+  // XML: a literal `<` in an attribute value (§3.1), or `]]>` in text (§2.4).
+  const banned = cfg.strict ? (inAttribute ? "<" : "]]>") : undefined;
+  const context = inAttribute
+    ? "reading an attribute value (`<` must be escaped)"
+    : "reading text (`]]>` must be escaped)";
   return (p: Parser.Parser<string>): P<string> =>
     Parser.withSpan(p).pipe(
-      Parser.tryMap(([raw, span]): Result.Result<string, Issue> =>
+      Parser.tryMap(([raw, span]): Result.Result<string, Issue> => {
+        const at = banned === undefined ? -1 : raw.indexOf(banned);
+        if (at !== -1) return Result.fail(Issue.Char({ context, offset: span.start + at }));
         // XML attribute-value normalization (§3.3.3): literal whitespace
         // characters become spaces; those from character references stay.
-        Result.orElse(
+        return Result.orElse(
           decode(normalizeWhitespace ? raw.replace(/[\t\n\r]/g, " ") : raw, options),
           ({ reference, reason, relativeOffset, limit }) =>
             cfg.strict
@@ -172,8 +182,8 @@ const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
                   Issue.Entity({ reference, reason, offset: span.start + relativeOffset, limit }),
                 )
               : Result.succeed(raw),
-        ),
-      ),
+        );
+      }),
       Parser.cut,
     );
 };
@@ -238,28 +248,95 @@ const strayLessThan = (cfg: EntityConfig): P<Step> =>
     text,
   );
 
-/** `<name attr=value … >` or `/>`. */
-const startTag = (cfg: EntityConfig): P<Step> => {
+/**
+ * Attribute values in double and single quotes, keyed by the opening quote.
+ * The next character decides; an unclosed quote is not retried unquoted.
+ */
+const quotedValues = (value: (p: Parser.Parser<string>) => P<string>) => ({
+  '"': Parser.delimited(Token.literal('"'), value(Token.takeTill('"')), Token.literal('"')),
+  "'": Parser.delimited(Token.literal("'"), value(Token.takeTill("'")), Token.literal("'")),
+});
+
+/**
+ * `p`'s match, failing (cut) where it stops being an XML `Name` (§2.3). `p`
+ * must not fail (other than for lack of input): its failure would be a cut too.
+ */
+const validName =
+  (context: string) =>
+  (p: Parser.Parser<string>): P<string> =>
+    Parser.withSpan(p).pipe(
+      Parser.tryMap(([name, span]): Result.Result<string, Issue> => {
+        const at = invalidNameAt(name);
+        return at === -1
+          ? Result.succeed(name)
+          : Result.fail(Issue.Char({ context, offset: span.start + at }));
+      }),
+      Parser.cut,
+    );
+
+const startElement = (
+  [name, attributes, selfClosing]: readonly [string, ReadonlyArray<TokAttribute>, boolean],
+  start: number,
+  end: number,
+): Tok => ({ _tag: "StartElement", name, attributes, selfClosing, start, end });
+/**
+ * XML `<name attr="value" … >` or `/>` (§3.1): names are `Name`s, every
+ * attribute has `=` and a quoted value, and whitespace separates them.
+ */
+const xmlStartTag = (cfg: EntityConfig): P<Step> => {
   const value = decoded(cfg, true);
-  // The next character decides; an unclosed quote is not retried unquoted.
-  const doubleQuoted = Parser.delimited(
-    Token.literal('"'),
-    value(Token.takeTill('"')),
-    Token.literal('"'),
-  );
-  const singleQuoted = Parser.delimited(
-    Token.literal("'"),
-    value(Token.takeTill("'")),
-    Token.literal("'"),
-  );
-  const empty = Parser.succeed("");
-  const unquoted = cfg.strict
-    ? unexpected("reading an attribute value")
-    : value(Token.takeTill(ws + ">", { min: 1 }));
   const attrValue: P<string> = Parser.dispatch(
     nextChar,
-    { '"': doubleQuoted, "'": singleQuoted, ">": empty },
-    unquoted,
+    quotedValues(value),
+    unexpected("reading an attribute value (it must be quoted)"),
+  );
+  const eq = Parser.alt(
+    Parser.delimited(S0, Token.literal("="), S0),
+    unexpected("after an attribute name (`=` and a value must follow)"),
+  );
+  const attribute: P<TokAttribute> = Parser.withSpan(
+    Parser.seq(
+      // (Only an attribute starts with some character other than these.)
+      Parser.preceded(
+        Parser.peek(Token.noneOf(ws + "/>")),
+        validName("reading an attribute name")(Token.takeTill(ws + "=/>", { min: 1 })),
+      ),
+      Parser.preceded(eq, attrValue),
+    ),
+  ).pipe(
+    Parser.map(([[name, value], span]) => ({ name, value, start: span.start, end: span.end })),
+  );
+  const close = Parser.preceded(
+    S0,
+    Parser.alt(
+      Parser.as(gt, false),
+      Parser.as(Token.literal("/>"), true),
+      Parser.preceded(Token.literal("/"), unexpected("closing a self-closing tag")),
+      unexpected("reading a start tag (attributes must be separated by whitespace)"),
+    ),
+  );
+  return spanned(
+    Parser.seq(
+      Parser.preceded(
+        Token.literal("<"),
+        validName("reading an element name")(
+          Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeTill(ws + "/>"))),
+        ),
+      ),
+      Parser.repeat(Parser.preceded(S1, attribute)),
+      close,
+    ),
+    startElement,
+  );
+};
+
+/** `<name attr=value … >` or `/>`, as HTML reads it. */
+const startTag = (cfg: EntityConfig): P<Step> => {
+  const value = decoded(cfg, true);
+  const attrValue: P<string> = Parser.dispatch(
+    nextChar,
+    { ...quotedValues(value), ">": Parser.succeed("") },
+    value(Token.takeTill(ws + ">", { min: 1 })),
   );
   // An attribute's name runs to whitespace, `=`, `/` or `>`; its span takes
   // in the whitespace after a valueless one.
@@ -281,9 +358,7 @@ const startTag = (cfg: EntityConfig): P<Step> => {
   );
   // A `/` not before `>` is ignored in HTML.
   const strayslash = Parser.seq(Token.literal("/"), Parser.not(gt));
-  const slash: P<null> = cfg.strict
-    ? Parser.preceded(strayslash, unexpected("closing a self-closing tag"))
-    : Parser.as(strayslash, null);
+  const slash: P<null> = Parser.as(strayslash, null);
   const close = Parser.preceded(
     S0,
     Parser.alt(Parser.as(gt, false), Parser.as(Token.literal("/>"), true)),
@@ -294,17 +369,12 @@ const startTag = (cfg: EntityConfig): P<Step> => {
         Token.literal("<"),
         Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeTill(ws + "/>"))),
       ),
-      Parser.repeat(Parser.preceded(S0, Parser.alt(attribute, slash))),
+      Parser.map(Parser.repeat(Parser.preceded(S0, Parser.alt(attribute, slash))), (attributes) =>
+        attributes.filter((a) => a !== null),
+      ),
       close,
     ),
-    ([name, attributes, selfClosing], start, end) => ({
-      _tag: "StartElement",
-      name,
-      attributes: attributes.filter((a) => a !== null),
-      selfClosing,
-      start,
-      end,
-    }),
+    startElement,
   );
 };
 
@@ -389,11 +459,17 @@ const commentAtEof: Parser.Parser<string> = Parser.terminated(Token.rest, eof).p
   ),
 );
 
+/** XML: comment data up to `-->`, with no `--` in it (§2.5). */
+const xmlCommentBody: P<string> = Parser.terminated(
+  Token.takeUntil("--"),
+  Parser.alt(Token.literal("-->"), unexpected("reading a comment (only `-->` may contain `--`)")),
+);
+
 const comment = (strict: boolean): P<Step> =>
   spanned(
     Parser.preceded(
       Token.literal("<!--"),
-      strict ? commentBody : Parser.alt(commentBody, commentAtEof),
+      strict ? xmlCommentBody : Parser.alt(commentBody, commentAtEof),
     ),
     commentTok,
   );
@@ -678,7 +754,7 @@ const dispatchMarkup = (
 const makeGrammars = (cfg: EntityConfig): Grammars => {
   // (With a DTD, `textRun` also produces entity references.)
   const textToken = textRun(cfg);
-  const start = startTag(cfg);
+  const start = cfg.strict ? xmlStartTag(cfg) : startTag(cfg);
   const tagOpen = Parser.seq(Token.literal("<"), Token.oneOf(nameStart));
   let data: P<Step>;
   if (cfg.strict) {

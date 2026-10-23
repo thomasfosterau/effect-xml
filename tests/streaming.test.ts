@@ -47,7 +47,7 @@ describe("Sax — true incremental streaming", () => {
       ["<a><!", "-- c --></a>"],
       ["<a><!-", "- c --></a>"],
       ["<a><![CDA", "TA[x]]></a>"],
-      ["<a>x]", "]></a>"], // not a real CDATA close, just text "x]]>"
+      ["<a>x]", "]y</a>"], // not a CDATA close, just text "x]]y"
       ["<a><?pi da", "ta?></a>"],
       ["<a/", ">"],
       ["<a></a", ">"],
@@ -58,6 +58,22 @@ describe("Sax — true incremental streaming", () => {
         (chunks) =>
           Effect.zip(tokenizeChunks([chunks.join("")]), tokenizeChunks(chunks)).pipe(
             Effect.map(([joined, split]) => expect(split).toStrictEqual(joined)),
+          ),
+        { concurrency: 1, discard: true },
+      ),
+    );
+  });
+
+  test("a character XML does not allow fails the same way for every chunk size", async () => {
+    const input = "<a><b>x</b>y\u000Cz</a>";
+    const whole = await Effect.runPromise(Effect.flip(tokenizeChunks([input])));
+    expect(whole.message).toContain("at 1:13");
+    await Effect.runPromise(
+      Effect.forEach(
+        Arr.range(1, input.length),
+        (size) =>
+          Effect.flip(tokenizeChunks(splitEvery(input, size))).pipe(
+            Effect.map((error) => expect(error).toStrictEqual(whole)),
           ),
         { concurrency: 1, discard: true },
       ),

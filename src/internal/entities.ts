@@ -93,6 +93,15 @@ export interface EntityResolver {
 const MAX_CODE_POINT = 0x10ffff;
 const isSurrogate = (cp: number): boolean => cp >= 0xd800 && cp <= 0xdfff;
 
+/** XML 1.0 `Char` (§2.2): what a character reference may refer to. */
+export const isXmlChar = (cp: number): boolean =>
+  cp === 0x9 ||
+  cp === 0xa ||
+  cp === 0xd ||
+  (cp >= 0x20 && cp <= 0xd7ff) ||
+  (cp >= 0xe000 && cp <= 0xfffd) ||
+  (cp >= 0x10000 && cp <= MAX_CODE_POINT);
+
 // WHATWG numeric-reference replacements for the Windows-1252 range 0x80–0x9F.
 interface CodePointRemap {
   readonly [codePoint: number]: number;
@@ -165,18 +174,25 @@ const bad = (
     : Parser.as(ampersand, "&");
 
 /**
- * `&#…;` / `&#x…;`. Without `legacy` (XML) the `;` is required; with it,
- * WHATWG rules apply: the `;` is optional and 0x80–0x9F map as Windows-1252.
- * An unrepresentable code point is an error in strict mode, U+FFFD otherwise.
+ * `&#…;` / `&#x…;`. Without `legacy` (XML) the `;` is required, the `x` is
+ * lower case and the code point must be a `Char` (§4.1); with it, WHATWG
+ * rules apply: `X` is allowed, the `;` is optional and 0x80–0x9F map as
+ * Windows-1252. An unrepresentable code point is an error in strict mode,
+ * U+FFFD otherwise.
  */
 const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part> => {
   const value = Parser.preceded(
     Token.literal("&#"),
     Parser.alt(
-      Parser.map(Parser.preceded(Token.oneOf("xX"), hexDigits), (d) => parseInt(d, 16)),
+      Parser.map(Parser.preceded(Token.oneOf(lenient ? "xX" : "x"), hexDigits), (d) =>
+        parseInt(d, 16),
+      ),
       Parser.map(digits, (d) => parseInt(d, 10)),
     ),
   );
+  const representable = lenient
+    ? (cp: number) => !(Number.isNaN(cp) || cp > MAX_CODE_POINT || isSurrogate(cp) || cp === 0)
+    : isXmlChar;
   const reference = Parser.seq(
     Parser.location,
     Parser.withTaken(Parser.terminated(value, lenient ? Parser.optional(semicolon) : semicolon)),
@@ -184,8 +200,7 @@ const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part
   return Parser.alt(
     Parser.map(reference, ([relativeOffset, [n, reference]]): Part => {
       const cp = lenient ? (WIN1252[n] ?? n) : n;
-      if (!(Number.isNaN(cp) || cp > MAX_CODE_POINT || isSurrogate(cp) || cp === 0))
-        return String.fromCodePoint(cp);
+      if (representable(cp)) return String.fromCodePoint(cp);
       return strict ? { reference, reason: "code point out of range", relativeOffset } : "\uFFFD";
     }),
     bad(strict, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const)),

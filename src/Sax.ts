@@ -255,7 +255,7 @@ export const tokenize =
     const opts = resolveSaxOptions(options);
     return Stream.suspend(() => {
       const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined;
-      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities, dtd });
+      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities, dtd, content: false });
       const expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
       const guard = new Guard(opts.limits, opts.mode === "xml");
       /** Interpret the DTD-related outputs (with `dtd: "internal"`). */
