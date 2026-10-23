@@ -159,7 +159,7 @@ describe("XML well-formedness", () => {
       ["<a b=c></a>", "at 1:6 while reading an attribute value"],
       [`<a b="<"></a>`, `"<" at 1:7 while reading an attribute value`],
       [`<a b="1"c="2"></a>`, "at 1:9 while reading a start tag"],
-      [`<a b="1" "2"></a>`, "at 1:10 while reading an attribute name"],
+      [`<a b="1" "2"="3"></a>`, "at 1:10 while reading an attribute name"],
       [`<a 1="2"></a>`, `"1" at 1:4 while reading an attribute name`],
     ]));
 

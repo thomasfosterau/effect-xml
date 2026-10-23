@@ -257,28 +257,38 @@ const quotedValues = (value: (p: Parser.Parser<string>) => P<string>) => ({
   "'": Parser.delimited(Token.literal("'"), value(Token.takeTill("'")), Token.literal("'")),
 });
 
-/**
- * `p`'s match, failing (cut) where it stops being an XML `Name` (§2.3). `p`
- * must not fail (other than for lack of input): its failure would be a cut too.
- */
-const validName =
-  (context: string) =>
-  (p: Parser.Parser<string>): P<string> =>
-    Parser.withSpan(p).pipe(
-      Parser.tryMap(([name, span]): Result.Result<string, Issue> => {
-        const at = invalidNameAt(name);
-        return at === -1
-          ? Result.succeed(name)
-          : Result.fail(Issue.Char({ context, offset: span.start + at }));
-      }),
-      Parser.cut,
-    );
-
 const startElement = (
   [name, attributes, selfClosing]: readonly [string, ReadonlyArray<TokAttribute>, boolean],
   start: number,
   end: number,
 ): Tok => ({ _tag: "StartElement", name, attributes, selfClosing, start, end });
+
+/**
+ * The start tag read as `parts`, failing where its element name or one of
+ * its attribute names stops being an XML `Name` (§2.3). Checked once the
+ * whole tag has been read: one step per tag on the hot path.
+ */
+const validNames = (
+  parts: readonly [string, ReadonlyArray<TokAttribute>, boolean],
+  start: number,
+  end: number,
+): Result.Result<Step, Issue> => {
+  const [name, attributes] = parts;
+  // The element name follows the `<`.
+  const at = invalidNameAt(name);
+  if (at !== -1)
+    return Result.fail(Issue.Char({ context: "reading an element name", offset: start + 1 + at }));
+  const attribute = attributes.find((a) => invalidNameAt(a.name) !== -1);
+  return attribute === undefined
+    ? Result.succeed([startElement(parts, start, end)])
+    : Result.fail(
+        Issue.Char({
+          context: "reading an attribute name",
+          offset: attribute.start + invalidNameAt(attribute.name),
+        }),
+      );
+};
+
 /**
  * XML `<name attr="value" … >` or `/>` (§3.1): names are `Name`s, every
  * attribute has `=` and a quoted value, and whitespace separates them.
@@ -297,10 +307,7 @@ const xmlStartTag = (cfg: EntityConfig): P<Step> => {
   const attribute: P<TokAttribute> = Parser.withSpan(
     Parser.seq(
       // (Only an attribute starts with some character other than these.)
-      Parser.preceded(
-        Parser.peek(Token.noneOf(ws + "/>")),
-        validName("reading an attribute name")(Token.takeTill(ws + "=/>", { min: 1 })),
-      ),
+      Parser.preceded(Parser.peek(Token.noneOf(ws + "/>")), Token.takeTill(ws + "=/>", { min: 1 })),
       Parser.preceded(eq, attrValue),
     ),
   ).pipe(
@@ -315,19 +322,18 @@ const xmlStartTag = (cfg: EntityConfig): P<Step> => {
       unexpected("reading a start tag (attributes must be separated by whitespace)"),
     ),
   );
-  return spanned(
+  const tag = Parser.withSpan(
     Parser.seq(
       Parser.preceded(
         Token.literal("<"),
-        validName("reading an element name")(
-          Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeTill(ws + "/>"))),
-        ),
+        Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeTill(ws + "/>"))),
       ),
       Parser.repeat(Parser.preceded(S1, attribute)),
       close,
     ),
-    startElement,
   );
+  // (The data grammar cuts at a start tag, so a failure here is fatal.)
+  return Parser.tryMap(tag, ([parts, span]) => validNames(parts, span.start, span.end));
 };
 
 /** `<name attr=value … >` or `/>`, as HTML reads it. */
