@@ -44,20 +44,16 @@ const checkPrefixed = (
   prefix: string,
   unbinding: boolean,
 ): Option.Option<InvalidNamespace> => {
-  const reserved = a.value === Namespaces.xml || a.value === Namespaces.xmlns;
-  const reason =
-    prefix === "xmlns"
-      ? "the xmlns prefix can't be declared"
-      : prefix === "xml"
-        ? a.value === Namespaces.xml
-          ? null
-          : `the xml prefix can only be bound to ${Namespaces.xml}`
-        : reserved
-          ? `no other prefix can be bound to ${a.value}`
-          : a.value === "" && !unbinding
-            ? "a prefix can't be undeclared in XML 1.0"
-            : null;
-  return reason === null ? Option.none() : invalid(a.name, reason, a.span.start);
+  const fail = (reason: string) => invalid(a.name, reason, a.span.start);
+  if (prefix === "xmlns") return fail("the xmlns prefix can't be declared");
+  if (prefix === "xml")
+    return a.value === Namespaces.xml
+      ? Option.none()
+      : fail(`the xml prefix can only be bound to ${Namespaces.xml}`);
+  if (a.value === Namespaces.xml || a.value === Namespaces.xmlns)
+    return fail(`no other prefix can be bound to ${a.value}`);
+  if (a.value === "" && !unbinding) return fail("a prefix can't be undeclared in XML 1.0");
+  return Option.none();
 };
 
 /**
