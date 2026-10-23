@@ -14,16 +14,19 @@ import type { Attribute } from "../Sax.ts";
 import { declaredNames } from "./dtd.ts";
 import { isQName } from "./names.ts";
 
-const invalid = (name: string, reason: string, position: Position): InvalidNamespace =>
-  new InvalidNamespace({ name, reason, position });
+const invalid = (
+  name: string,
+  reason: string,
+  position: Position,
+): Option.Option<InvalidNamespace> => Option.some(new InvalidNamespace({ name, reason, position }));
 
 /** A start tag's name is a `QName`, without the reserved `xmlns` prefix (§3). */
-const checkElementName = (name: string, position: Position): InvalidNamespace | null => {
+const checkElementName = (name: string, position: Position): Option.Option<InvalidNamespace> => {
   if (!isQName(name))
     return invalid(name, "a colon may only separate a prefix from a local name", position);
   if (name.startsWith("xmlns:"))
     return invalid(name, "no element may have the prefix xmlns", position);
-  return null;
+  return Option.none();
 };
 
 /**
@@ -31,26 +34,28 @@ const checkElementName = (name: string, position: Position): InvalidNamespace | 
  * declaration respects the reserved prefixes and namespaces (§3) and, in
  * XML 1.0, doesn't undeclare a prefix (§5: `xmlns:p=""` is XML 1.1's).
  */
-const checkAttribute = (a: Attribute, unbinding: boolean): InvalidNamespace | null => {
+const checkAttribute = (a: Attribute, unbinding: boolean): Option.Option<InvalidNamespace> => {
+  // The common case, an unprefixed name other than xmlns, has nothing to check.
+  if (!a.name.includes(":") && a.name !== "xmlns") return Option.none();
   const position = a.span.start;
   if (!isQName(a.name))
     return invalid(a.name, "a colon may only separate a prefix from a local name", position);
   if (a.name === "xmlns")
     return a.value === Namespaces.xml || a.value === Namespaces.xmlns
       ? invalid(a.name, `${a.value} can't be the default namespace`, position)
-      : null;
-  if (!a.name.startsWith("xmlns:")) return null;
+      : Option.none();
+  if (!a.name.startsWith("xmlns:")) return Option.none();
   const prefix = a.name.slice(6);
   if (prefix === "xmlns") return invalid(a.name, "the xmlns prefix can't be declared", position);
   if (prefix === "xml")
     return a.value === Namespaces.xml
-      ? null
+      ? Option.none()
       : invalid(a.name, `the xml prefix can only be bound to ${Namespaces.xml}`, position);
   if (a.value === Namespaces.xml || a.value === Namespaces.xmlns)
     return invalid(a.name, `no other prefix can be bound to ${a.value}`, position);
   if (a.value === "" && !unbinding)
     return invalid(a.name, "a prefix can't be undeclared in XML 1.0", position);
-  return null;
+  return Option.none();
 };
 
 /**
@@ -63,12 +68,11 @@ export const checkStartTag = (
   attributes: ReadonlyArray<Attribute>,
   position: Position,
   unbinding: boolean,
-): InvalidNamespace | null => {
+): Option.Option<InvalidNamespace> => {
   const element = checkElementName(name, position);
-  if (element !== null) return element;
-  return Option.getOrNull(
-    Arr.findFirst(attributes, (a) => Option.fromNullishOr(checkAttribute(a, unbinding))),
-  );
+  return Option.isSome(element)
+    ? element
+    : Arr.findFirst(attributes, (a) => checkAttribute(a, unbinding));
 };
 
 /** A processing instruction target, entity or notation name has no colon (§7). */
@@ -76,15 +80,16 @@ export const checkNoColon = (
   name: string,
   what: string,
   position: Position,
-): InvalidNamespace | null =>
-  name.includes(":") ? invalid(name, `${what} can't contain a colon`, position) : null;
+): Option.Option<InvalidNamespace> =>
+  name.includes(":") ? invalid(name, `${what} can't contain a colon`, position) : Option.none();
 
-/** The first entity or notation name with a colon in a DOCTYPE's internal subset (§7). */
-export const checkSubset = (subset: string | null, position: Position): InvalidNamespace | null =>
-  subset === null
-    ? null
-    : Option.getOrNull(
-        Arr.findFirst(declaredNames(subset), (name) =>
-          Option.fromNullishOr(checkNoColon(name, "an entity or notation name", position)),
-        ),
-      );
+/**
+ * The first entity or notation name with a colon in a DOCTYPE's internal
+ * subset (§7). The subset is parsed again only if it has a colon at all.
+ */
+export const checkSubset = (subset: string, position: Position): Option.Option<InvalidNamespace> =>
+  subset.includes(":")
+    ? Arr.findFirst(declaredNames(subset), (name) =>
+        checkNoColon(name, "an entity or notation name", position),
+      )
+    : Option.none();

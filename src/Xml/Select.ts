@@ -227,10 +227,14 @@ class Selector {
     Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>) =>
       this.append(new XmlComment({ data: ev.data })),
     ProcessingInstruction: (ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>) =>
-      checkNoColon(ev.target, "a processing instruction target", ev.span.start) ??
-      this.append(new XmlProcessingInstruction({ target: ev.target, data: ev.data })),
+      Option.getOrElse(
+        checkNoColon(ev.target, "a processing instruction target", ev.span.start),
+        () => this.append(new XmlProcessingInstruction({ target: ev.target, data: ev.data })),
+      ),
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>) =>
-      checkSubset(ev.internalSubset, ev.span.start),
+      ev.internalSubset === null
+        ? null
+        : Option.getOrNull(checkSubset(ev.internalSubset, ev.span.start)),
     XmlDeclaration: (ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>) => {
       // Only an XML 1.1 document may undeclare a prefix with `xmlns:p=""`.
       this.unbinding = ev.version === "1.1";
@@ -245,7 +249,7 @@ class Selector {
 
   private start(ev: Extract<SaxEvent, { _tag: "StartElement" }>): XmlElement | SaxError | null {
     const invalid = checkStartTag(ev.name, ev.attributes, ev.span.start, this.unbinding);
-    if (invalid !== null) return invalid;
+    if (Option.isSome(invalid)) return invalid.value;
     const bindings = Arr.reduce(ev.attributes, HashMap.empty<string, string>(), (acc, a) =>
       a.name === "xmlns"
         ? HashMap.set(acc, "", a.value)

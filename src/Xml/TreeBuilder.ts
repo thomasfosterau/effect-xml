@@ -178,8 +178,8 @@ class Builder {
     ): Effect.Effect<void, SaxError> => {
       const error = this.namespaces
         ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
-        : null;
-      if (error !== null) return Effect.fail(error);
+        : Option.none();
+      if (Option.isSome(error)) return Effect.fail(error.value);
       return this.appendChild(
         new XmlProcessingInstruction({ target: ev.target, data: ev.data }),
         ev.span.start,
@@ -196,8 +196,11 @@ class Builder {
       return Effect.void;
     },
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>): Effect.Effect<void, SaxError> => {
-      const error = this.namespaces ? checkSubset(ev.internalSubset, ev.span.start) : null;
-      if (error !== null) return Effect.fail(error);
+      const error =
+        this.namespaces && ev.internalSubset !== null
+          ? checkSubset(ev.internalSubset, ev.span.start)
+          : Option.none();
+      if (Option.isSome(error)) return Effect.fail(error.value);
       this.doctype = new XmlDoctype({
         name: ev.name,
         publicId: ev.publicId,
@@ -214,8 +217,8 @@ class Builder {
     const position = ev.span.start;
     const invalid = this.namespaces
       ? checkStartTag(ev.name, ev.attributes, position, this.unbinding)
-      : null;
-    if (invalid !== null) return Effect.fail(invalid);
+      : Option.none();
+    if (Option.isSome(invalid)) return Effect.fail(invalid.value);
     // This element's own xmlns declarations are in scope for its name and attributes.
     const bindings = this.collectBindings(ev.attributes);
     // In document order: the first duplicate or unbound prefix is the one reported.
