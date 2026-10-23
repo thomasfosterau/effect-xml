@@ -152,7 +152,7 @@ const PITarget = Parser.flatMap(Parser.peek(Name), (name) =>
 ).pipe(Parser.expected("processing instruction target"));
 
 /** `(S (Char* - (Char* '?>' Char*)))? '?>'` */
-export const PIRest: Parser.Parser<string> = Parser.terminated(
+const PIRest: Parser.Parser<string> = Parser.terminated(
   Parser.alt(Parser.preceded(S, Token.takeUntil("?>")), Parser.succeed("")),
   Parser.cut(Token.literal("?>")),
 );
@@ -190,7 +190,7 @@ export const PubidLiteral: Parser.Parser<string> = quoted((q) =>
   Token.takeWhile(pubidChars(q)),
 ).pipe(Parser.expected("public identifier"));
 
-export interface ExternalId {
+interface ExternalId {
   readonly publicId: string | null;
   readonly systemId: string;
 }
