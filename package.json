@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.schemastore.org/package",
   "name": "@thomasfosterau/effect-xml",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Type-safe, streaming XML & HTML parsing for the Effect ecosystem: an incremental SAX interface plus xml5ever/html5ever-style parsers.",
   "keywords": [
     "effect",
