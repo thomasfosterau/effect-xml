@@ -52,7 +52,7 @@ catalog:
   # refuses to run coverage on a mismatch.
   "@vitest/coverage-istanbul": 5.0.5
   effect: 4.0.5
-  fallow: 3.34.1
+  fallow: 3.35.0
   # Runs docgen's compiled examples and `vp run example`.
   tsx: ^4.23.15
   # TypeScript 6/7 side-by-side: TS7 (the native Go compiler) ships no JS API
