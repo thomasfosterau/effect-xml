@@ -22,7 +22,7 @@ catalog:
   "@changesets/cli": ^3.0.3
   # Compiles AND RUNS every JSDoc `@example` (the `docgen` task); needs `tsx`
   # and a TypeScript JS API — the TS6 alias below satisfies its peer.
-  "@effect/docgen": ^4.0.5
+  "@effect/docgen": ^4.0.6
   "@effect/language-service": ^0.87.5
   # Tests only: the conformance gates read their fixtures' bytes through the
   # `FileSystem` service (`NodeFileSystem.layer`). Released in lockstep with
