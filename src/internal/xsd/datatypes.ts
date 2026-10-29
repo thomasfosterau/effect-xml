@@ -777,12 +777,14 @@ export const identityKey = (
   raw: string,
   context: ValueContext,
 ): Result.Result<string, string> => {
-  if (checker.kind === "union")
-    return Arr.reduce(
-      checker.members ?? [],
-      Result.fail<string, string>(`${quote(raw)} is not valid for any member of the union`),
-      (acc, member) => (Result.isSuccess(acc) ? acc : identityKey(member, raw, context)),
+  if (checker.kind === "union") {
+    const none: Result.Result<string, string> = Result.fail(
+      `${quote(raw)} is not valid for any member of the union`,
     );
+    return Arr.reduce(checker.members ?? [], none, (acc, member) =>
+      Result.isSuccess(acc) ? acc : identityKey(member, raw, context),
+    );
+  }
   return Result.flatMap(decode(checker, raw, context), (value) => {
     const item = checker.item;
     if (checker.kind === "list" && item !== undefined && Arr.isArray(value)) {

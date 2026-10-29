@@ -28,7 +28,7 @@ export interface Typed {
 }
 
 /** Finds the simple type of a selected attribute or element, if it has one. */
-export type TypeOf = (node: XPathNode) => Typed | undefined;
+export type TypeOf = (node: XPathNode) => Option.Option<Typed>;
 
 /** One field's value: its identity in the value space, and how to show it. */
 interface FieldValue {
@@ -84,10 +84,10 @@ const fieldValue = (node: XPathNode, typeOf: TypeOf): FieldValue => {
   const shown = normalize(raw, "collapse");
   const typed = typeOf(node);
   const untyped = `anySimpleType:${shown}`;
-  const key =
-    typed === undefined
-      ? untyped
-      : Result.getOrElse(identityKey(typed.checker, raw, typed.context), () => untyped);
+  const key = Option.match(typed, {
+    onNone: () => untyped,
+    onSome: (t) => Result.getOrElse(identityKey(t.checker, raw, t.context), () => untyped),
+  });
   return { key, shown };
 };
 

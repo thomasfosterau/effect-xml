@@ -198,7 +198,7 @@ export class Validator {
   private readonly ids = MutableHashSet.empty<string>();
   /** The simple types of DOM nodes built for identity constraints, for comparing their fields. */
   private readonly types = new WeakMap<object, Typed>();
-  private readonly typeOf: TypeOf = (node) => this.types.get(node);
+  private readonly typeOf: TypeOf = (node) => Option.fromUndefinedOr(this.types.get(node));
   private readonly refs: Array<{
     readonly id: string;
     readonly position: Position;
