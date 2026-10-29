@@ -6,7 +6,10 @@
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
  * stream (whole string and 64 KiB chunks), as bytes, as a DOM, with
  * streaming selection of rows, and validated against a schema for the
- * worksheet (as events, and as typed values).
+ * worksheet (as events, and as typed values). HTML is measured with
+ * `Html.parseDocument` and `Html.parseFragment` on a generated page that
+ * exercises formatting elements, implied end tags, tables, foreign content,
+ * entities and CRLF line ends (the input of #13).
  *
  * Other parsers are compared when they are installed, without being
  * dependencies of this package: `pnpm add -D saxes sax fast-xml-parser`
@@ -17,7 +20,7 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
 import * as Stream from "effect/Stream";
-import { Sax, Xml, Xsd } from "../src/index.ts";
+import { Html, Sax, Xml, Xsd } from "../src/index.ts";
 
 const SML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const megabytes = Number(process.argv[2] ?? 8);
@@ -71,7 +74,12 @@ const input = sheet(megabytes * 1024 * 1024);
 const bytes = new TextEncoder().encode(input);
 const chunks = input.match(/[\s\S]{1,65536}/g) ?? [];
 
-const time = async (name: string, run: () => void | Promise<void>, runs = 5) => {
+const time = async (
+  name: string,
+  run: () => void | Promise<void>,
+  runs = 5,
+  size = input.length,
+) => {
   await run(); // warm up
   const samples: Array<number> = [];
   for (let i = 0; i < runs; i++) {
@@ -80,7 +88,7 @@ const time = async (name: string, run: () => void | Promise<void>, runs = 5) => 
     samples.push(performance.now() - start);
   }
   const median = Arr.sort(samples, Order.Number)[Math.floor(samples.length / 2)] ?? 0;
-  const mbps = input.length / 1024 / 1024 / (median / 1000);
+  const mbps = size / 1024 / 1024 / (median / 1000);
   console.log(
     `${name.padEnd(36)} ${median.toFixed(0).padStart(6)} ms  ${mbps.toFixed(1).padStart(6)} MB/s`,
   );
@@ -124,6 +132,36 @@ await time("effect-xml XSD events (Xsd.validate)", () =>
 );
 await time("effect-xml XSD values (Xsd.parse)", () =>
   Effect.runPromise(Effect.asVoid(Xsd.parse(model, input))),
+);
+
+// The same megabytes of HTML: a block that runs the adoption agency
+// (misnested <b>/<i>), implied end tags (<p>, <td>), table insertion modes,
+// SVG foreign content, a character reference and CRLF line ends.
+const htmlBlock = (n: number): string =>
+  `<div class="x"><p>Hello <b>world <i>${n}</b> &amp; more</i></p>` +
+  `<table><tr><td>x<td>y</table><svg><rect/></svg></div>\r\n`;
+const html = ((): string => {
+  const blocks: Array<string> = [];
+  let size = 0;
+  for (let n = 0; size < megabytes * 1024 * 1024; n++) {
+    const block = htmlBlock(n);
+    blocks.push(block);
+    size += block.length;
+  }
+  return `<!DOCTYPE html><html><head><title>bench</title></head><body>${blocks.join("")}</body></html>`;
+})();
+console.log("");
+await time(
+  "effect-xml HTML (Html.parseDocument)",
+  () => Effect.runPromise(Effect.asVoid(Html.parseDocument(html))),
+  5,
+  html.length,
+);
+await time(
+  "effect-xml HTML (Html.parseFragment)",
+  () => Effect.runPromise(Effect.asVoid(Html.parseFragment(html))),
+  5,
+  html.length,
 );
 
 const saxes = await optional("saxes");
