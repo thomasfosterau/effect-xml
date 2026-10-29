@@ -375,8 +375,20 @@ order.customer.$type; // "{urn:example:order}Person" | "{urn:example:order}Compa
 | `Xsd.parseStream(model, options?)`, `parseBytesStream` | `(Stream<string \| Uint8Array>) => Effect<Validated, …>` |
 | `Xsd.decode(model, options?)` | `(Stream<SaxEvent>) => Effect<Validated, …>` |
 | `Xsd.validate(model, options?)` | `(Stream<SaxEvent>) => Stream<SaxEvent, …>`: the events, failing at the first violation |
-| `Xsd.parser<A>(model, element)` | a `Parser<A>` (`parse`, `parseBytes`, `parseStream`, `parseBytesStream`, `decode`) for one root element |
+| `Xsd.select(model, path, options?)` | `(Stream<SaxEvent>) => Stream<XsdValue, …>`: the value of each element matching `path`, as soon as it ends |
+| `Xsd.parser<A>(model, element)` | a `Parser<A>` (`parse`, `parseBytes`, `parseStream`, `parseBytesStream`, `decode`, `select<B>`) for one root element |
 | `Xsd.generate(model, options?)` | `Effect<string, XsdSchemaError>`: a TypeScript module (`importFrom`, `roots`, `source`) |
+
+**Streaming records.** `Xsd.select` decodes a large document in constant memory: it validates the whole document as `Xsd.decode` does, but emits the typed value of each element matching a [streamable path](#streaming-selection) when it ends, and drops it instead of adding it to its parent. A generated parser's `select` types the values:
+
+```ts
+const lines = Stream.fromIterable(chunks).pipe(
+  Sax.tokenize(),
+  Order.order.select<Order.Line>("o:order/o:line", { namespaces: { o: "urn:example:order" } }),
+); // Stream<Order.Line, Xsd.XsdError | XPathError>
+```
+
+The stream fails at the first violation anywhere in the document. A streamed child's property in its parent stays an empty array (or is left out, for a child that occurs at most once), and an element inside an identity-constraint scope is held until that scope's element ends and its constraints hold.
 
 Options for parsing are the SAX ones that apply to XML (`entities`, `limits`, `dtd`, `encoding`) and `root`, the expanded name (`{namespace}local`) the document element must have.
 
