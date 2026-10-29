@@ -5,9 +5,11 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Record from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
+import { localOf, namespaceOf } from "../internal/xsd/components.ts";
 import { Runtime } from "../internal/xsd/runtime.ts";
 import { compileStreamable } from "../internal/streamPath.ts";
 import { Validator, type Failure } from "../internal/xsd/validator.ts";
@@ -300,12 +302,27 @@ export const parseBytesStream =
     input.pipe(Sax.tokenizeBytes(saxOptions(options)), decode(model, options));
 
 /**
- * A parser for documents whose root is one global element, producing values of type `A`.
+ * Streams of a parser's repeated root children: each property streams out
+ * the typed values of one child element of the document element (see
+ * {@link select}), typed by `S`'s property of the same name.
  *
  * @since 0.3.0
  * @category parsing
  */
-export interface Parser<A> {
+export type Streams<S> = {
+  readonly [K in keyof S]: <E, R>(
+    events: Stream.Stream<Sax.SaxEvent, E, R>,
+  ) => Stream.Stream<S[K], E | XsdError | XPathError, R>;
+};
+
+/**
+ * A parser for documents whose root is one global element, producing values
+ * of type `A`, with a typed stream per child element named in `S`.
+ *
+ * @since 0.3.0
+ * @category parsing
+ */
+export interface Parser<A, S = Record<string, never>> {
   /** The root element's expanded name. */
   readonly element: string;
   readonly parse: (input: string, options?: ParseOptions) => Effect.Effect<A, XsdError>;
@@ -330,11 +347,37 @@ export interface Parser<A> {
   ) => <E, R>(
     events: Stream.Stream<Sax.SaxEvent, E, R>,
   ) => Stream.Stream<B, E | XsdError | XPathError, R>;
+  /**
+   * A stream per child element passed to {@link parser}: `streams.line`
+   * streams out each `line` child of the document element, as
+   * `stream("/order/line")` does. `Xsd.generate` writes one for every child
+   * element of a root that can occur more than once.
+   */
+  readonly streams: Streams<S>;
 }
+
+/** The child path `/root/child` of two expanded names, with the namespaces it uses. */
+const childPath = (
+  root: string,
+  child: string,
+): readonly [string, Readonly<Record<string, string>>] => {
+  const step = (name: string, prefix: string): readonly [string, Record<string, string>] => {
+    const namespace = namespaceOf(name);
+    const local = localOf(name);
+    return namespace === "" ? [local, {}] : [`${prefix}:${local}`, { [prefix]: namespace }];
+  };
+  const [r, rootNs] = step(root, "r");
+  const [c, childNs] = step(child, "c");
+  return [`/${r}/${c}`, { ...rootNs, ...childNs }];
+};
 
 /**
  * A parser for documents rooted at the global element `element` (an expanded
  * name), whose values are typed `A`.
+ *
+ * `streams` names child elements of the document element (property to
+ * expanded name) to stream out one at a time, typed by `S`: see
+ * {@link Parser.streams}.
  *
  * `A` is the caller's claim about the values the element's type produces;
  * `Xsd.generate` writes these types from the same model, so a generated
@@ -343,7 +386,11 @@ export interface Parser<A> {
  * @since 0.3.0
  * @category parsing
  */
-export const parser = <A = XsdValue>(model: Model, element: string): Parser<A> => {
+export const parser = <A = XsdValue, S = Record<string, never>>(
+  model: Model,
+  element: string,
+  streams?: { readonly [K in keyof S]: string },
+): Parser<A, S> => {
   const rooted = (options: ParseOptions | undefined): ParseOptions => ({
     ...options,
     root: element,
@@ -352,6 +399,21 @@ export const parser = <A = XsdValue>(model: Model, element: string): Parser<A> =
   // values its type describes; `A` is that description, written by the caller
   // (or by `Xsd.generate`) from the same model.
   const value = (v: Validated): A => v.value as A;
+  const stream =
+    <B = XsdValue>(path: string | Path, options?: CompileOptions) =>
+    <E, R>(events: Stream.Stream<Sax.SaxEvent, E, R>) =>
+      Stream.map(
+        select(model, path, { ...options, root: element })(events),
+        // SAFETY: as for `value`: `B` is the caller's description of the
+        // type of the elements `path` selects, from the same model.
+        (v) => v as B,
+      );
+  // SAFETY: one entry per key of `streams`, which the signature ties to the
+  // keys of `S`; each streams the child its type `S[K]` describes.
+  const named = Record.map(streams ?? {}, (child: string) => {
+    const [path, namespaces] = childPath(element, child);
+    return stream(path, { namespaces });
+  }) as Streams<S>;
   return {
     element,
     parse: (input, options) => Effect.map(parse(model, input, rooted(options)), value),
@@ -361,14 +423,7 @@ export const parser = <A = XsdValue>(model: Model, element: string): Parser<A> =
     parseBytesStream: (options) => (input) =>
       Effect.map(parseBytesStream(model, rooted(options))(input), value),
     decode: (events) => Effect.map(decode(model, { root: element })(events), value),
-    stream:
-      <B = XsdValue>(path: string | Path, options?: CompileOptions) =>
-      <E, R>(events: Stream.Stream<Sax.SaxEvent, E, R>) =>
-        Stream.map(
-          select(model, path, { ...options, root: element })(events),
-          // SAFETY: as for `value`: `B` is the caller's description of the
-          // type of the elements `path` selects, from the same model.
-          (v) => v as B,
-        ),
+    stream,
+    streams: named,
   };
 };
