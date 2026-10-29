@@ -200,6 +200,11 @@ export interface SaxOptions {
    * an error.
    */
   readonly dtd?: "ignore" | "internal" | undefined;
+  /**
+   * HTML only: the scripting flag (default `false`). When set, `<noscript>`
+   * content is raw text, as a browser with scripting enabled reads it.
+   */
+  readonly scripting?: boolean | undefined;
 }
 
 /** @internal */
@@ -210,6 +215,7 @@ export interface ResolvedOptions {
   readonly dropWhitespaceOnlyText: boolean;
   readonly limits: Limits;
   readonly dtd: "ignore" | "internal";
+  readonly scripting: boolean;
 }
 
 /** @internal */
@@ -222,6 +228,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     dropWhitespaceOnlyText: options?.dropWhitespaceOnlyText ?? false,
     limits: resolveLimits(options?.limits),
     dtd: options?.dtd ?? "ignore",
+    scripting: options?.scripting ?? false,
   };
 };
 
@@ -255,7 +262,13 @@ export const tokenize =
     const opts = resolveSaxOptions(options);
     return Stream.suspend(() => {
       const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined;
-      const lexer = new Lexer({ mode: opts.mode, entities: opts.entities, dtd, content: false });
+      const lexer = new Lexer({
+        mode: opts.mode,
+        entities: opts.entities,
+        dtd,
+        content: false,
+        scripting: opts.scripting,
+      });
       const expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
       const guard = new Guard(opts.limits, opts.mode === "xml");
       /** Interpret the DTD-related outputs (with `dtd: "internal"`). */

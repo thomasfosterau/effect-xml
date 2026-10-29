@@ -6,7 +6,7 @@ Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.websit
 | --- | --- | --- |
 | **`Sax`** | `@thomasfosterau/effect-xml/Sax` | An incremental, chunk-boundary-safe tokenizer exposed as a `Stream` of typed events. |
 | **`Xml`** | `@thomasfosterau/effect-xml/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
-| **`Html`** | `@thomasfosterau/effect-xml/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, passing all 1368 runnable html5lib tree-construction cases) and a lenient fragment builder. |
+| **`Html`** | `@thomasfosterau/effect-xml/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, and `parseDocumentFragment` for the fragment case, passing all 1405 html5lib tree-construction cases) and a lenient fragment builder. |
 | **`Xsd`** | `@thomasfosterau/effect-xml/Xsd` | XML Schema 1.0: compile a schema, then validate documents as they stream (failing at the first violation) into typed values, or generate a typed parser module from it. |
 
 Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `@thomasfosterau/effect-xml` re-exports every layer as a namespace plus the shared errors, names and positions.
@@ -237,6 +237,11 @@ import { Html, Xml } from "@thomasfosterau/effect-xml";
 const doc = Effect.runSync(Html.parseDocument("<b>1<i>2</b>3</i>"));
 Xml.serialize(doc.root); // <html><head/><body><b>1<i>2</i></b><i>3</i></body></html>
 
+// A fragment parsed as a browser's `innerHTML` setter parses it: the
+// context element picks the insertion mode and the tokenizer state.
+const cells = Effect.runSync(Html.parseDocumentFragment("<td>a<td>b", { context: "tr" }));
+Html.serializeFragment(cells); // <td>a</td><td>b</td>
+
 // A lenient fragment (a forest of nodes); never fails on malformed markup.
 const nodes = Effect.runSync(
   Html.parseFragment("<p>Hi <b>there<br>!</p><script>if (a<b){}</script>"),
@@ -247,6 +252,7 @@ const nodes = Effect.runSync(
 | --- | --- |
 | `Html.parseDocument(input, options?)` | `Effect<XmlDocument, SaxError>` — WHATWG tree construction |
 | `Html.parseDocumentStream(options?)` | `(Stream<string, E, R>) => Effect<XmlDocument, SaxError \| E, R>` |
+| `Html.parseDocumentFragment(input, options?)` | `Effect<ReadonlyArray<XmlNode>, SaxError>` — the WHATWG fragment parsing algorithm in `options.context` (a tag name such as `"td"` or `"textarea"`, or `"svg <name>"` / `"math <name>"`; default `"body"`) |
 | `Html.parseFragment(input, options?)`, `Html.parseFragmentStream(options?)` | `Effect<ReadonlyArray<XmlNode>, …>` — lenient forest |
 | `Html.tokenize(options?)`, `Html.tokenizeString(input, options?)`, `Html.events(input, options?)` | HTML-mode SAX streams |
 | `Html.HTML_NS`, `SVG_NS`, `MATHML_NS`, `XLINK_NS`, `XML_NS`, `XMLNS_NS` | namespace URIs |
@@ -459,6 +465,8 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 | `limits` | all | see [Resource limits](#resource-limits) | the limits left out keep their defaults |
 | `dtd` | `Sax`, `Xml` | `"ignore"` | `"internal"` interprets the internal subset (see [DTD internal subset](#dtd-internal-subset-opt-in)) |
 | `encoding` | the `*Bytes` entry points | detected | an external encoding hint; overrides the declaration, not a BOM |
+| `scripting` | `Html` (and `Sax.tokenize` in HTML mode) | `false` | the HTML scripting flag: when `true`, `<noscript>` content is raw text, as in a browser with scripting enabled |
+| `context` | `Html.parseDocumentFragment` | `"body"` | the context element of the fragment parse |
 
 ## Names and positions
 

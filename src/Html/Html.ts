@@ -8,7 +8,12 @@ import { decodeOptions } from "../Sax.ts";
 import type { SaxError } from "../Error.ts";
 import type { XmlDocument, XmlNode } from "../Xml/Node.ts";
 import { buildFragment } from "./TreeBuilder.ts";
-import { buildDocument, buildDocumentString } from "./TreeConstruction.ts";
+import {
+  buildDocument,
+  buildDocumentString,
+  buildFragmentString,
+  parseFragmentContext,
+} from "./TreeConstruction.ts";
 import { tokenize, tokenizeString, type HtmlOptions } from "./Tokenizer.ts";
 import type { SaxEvent } from "../Sax.ts";
 
@@ -69,6 +74,57 @@ export const parseDocument = (
   input: string,
   options?: HtmlOptions,
 ): Effect.Effect<XmlDocument, SaxError> => buildDocumentString(input, options);
+
+/**
+ * Options for {@link parseDocumentFragment}: the HTML options plus the
+ * context element.
+ *
+ * @since 0.3.0
+ * @category options
+ */
+export interface HtmlFragmentOptions extends HtmlOptions {
+  /**
+   * The element the fragment is parsed into, as a tag name (`"td"`,
+   * `"textarea"`), or `"svg <name>"` / `"math <name>"` for a foreign one.
+   * Defaults to `"body"`.
+   */
+  readonly context?: string | undefined;
+}
+
+/**
+ * Parse an HTML fragment with the WHATWG fragment parsing algorithm: the
+ * nodes a browser's `innerHTML` setter puts in the `context` element. The
+ * context decides the tokenizer's initial state (a `textarea` or `title`
+ * reads everything as text, a `script` or `style` as raw text) and the
+ * insertion mode (in a `tr`, a `<td>` is a cell; in a `div` it is dropped).
+ * Unlike the lenient {@link parseFragment}, the result is exactly what a
+ * browser builds. Never fails on malformed markup; the error channel carries
+ * only resource-limit failures.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import { Html } from "@thomasfosterau/effect-xml"
+ *
+ * const cells = Effect.runSync(
+ *   Html.parseDocumentFragment("<td>a<td>b", { context: "tr" }),
+ * )
+ * console.log(Html.serializeFragment(cells)) // <td>a</td><td>b</td>
+ *
+ * const text = Effect.runSync(
+ *   Html.parseDocumentFragment("<b>not markup</b>", { context: "textarea" }),
+ * )
+ * console.log(text.length) // 1 (a single text node)
+ * ```
+ *
+ * @since 0.3.0
+ * @category parsing
+ */
+export const parseDocumentFragment = (
+  input: string,
+  options?: HtmlFragmentOptions,
+): Effect.Effect<ReadonlyArray<XmlNode>, SaxError> =>
+  buildFragmentString(input, parseFragmentContext(options?.context ?? "body"), options);
 
 /**
  * Parse a stream of HTML chunks into a full document.
