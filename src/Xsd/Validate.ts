@@ -5,16 +5,15 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { Runtime } from "../internal/xsd/runtime.ts";
-import { toStreamSteps } from "../internal/streamPath.ts";
+import { compileStreamable } from "../internal/streamPath.ts";
 import { Validator, type Failure } from "../internal/xsd/validator.ts";
 import type { Limits } from "../Limits.ts";
 import * as Sax from "../Sax.ts";
-import { compile, XPathError, type CompileOptions, type Path } from "../Xml/XPath.ts";
+import type { CompileOptions, Path, XPathError } from "../Xml/XPath.ts";
 import type { XsdSchemaError, XsdValidationError } from "./Error.ts";
 import type { Model } from "./Model.ts";
 import type { Validated, XsdValue } from "./Value.ts";
@@ -202,14 +201,12 @@ export const select =
     events: Stream.Stream<Sax.SaxEvent, E, R>,
   ): Stream.Stream<XsdValue, E | XsdError | XPathError, R> =>
     Stream.suspend((): Stream.Stream<XsdValue, E | XsdError | XPathError, R> => {
-      const compiled = Predicate.isString(path) ? compile(path, options) : Result.succeed(path);
-      if (Result.isFailure(compiled)) return Stream.fail(compiled.failure);
-      const steps = toStreamSteps(compiled.success);
-      if (Predicate.isString(steps))
-        return Stream.fail(
-          new XPathError({ expression: compiled.success.expression, offset: 0, reason: steps }),
-        );
-      const validator = new Validator(runtimeOf(model), { root: options?.root, select: steps });
+      const steps = compileStreamable(path, options);
+      if (Result.isFailure(steps)) return Stream.fail(steps.failure);
+      const validator = new Validator(runtimeOf(model), {
+        root: options?.root,
+        select: steps.success,
+      });
       // Each chunk of events becomes the values it completed, then its failure if it has one.
       const body = Stream.mapArray(events, (chunk) => {
         const failure = acceptAll(validator, chunk);
@@ -327,7 +324,7 @@ export interface Parser<A> {
    * {@link select}), typed `B`: the caller's claim about the type of the
    * elements the path selects.
    */
-  readonly select: <B = XsdValue>(
+  readonly stream: <B = XsdValue>(
     path: string | Path,
     options?: CompileOptions,
   ) => <E, R>(
@@ -364,7 +361,7 @@ export const parser = <A = XsdValue>(model: Model, element: string): Parser<A> =
     parseBytesStream: (options) => (input) =>
       Effect.map(parseBytesStream(model, rooted(options))(input), value),
     decode: (events) => Effect.map(decode(model, { root: element })(events), value),
-    select:
+    stream:
       <B = XsdValue>(path: string | Path, options?: CompileOptions) =>
       <E, R>(events: Stream.Stream<Sax.SaxEvent, E, R>) =>
         Stream.map(

@@ -20,7 +20,6 @@ import * as Data from "effect/Data";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import {
@@ -38,7 +37,7 @@ import type { SaxEvent } from "../Sax.ts";
 import {
   advance,
   selects,
-  toStreamSteps,
+  compileStreamable,
   type StepLevel,
   type StreamStep,
 } from "../internal/streamPath.ts";
@@ -51,7 +50,7 @@ import {
   XmlText,
   type XmlNode,
 } from "./Node.ts";
-import { compile, XPathError, type CompileOptions, type Path } from "./XPath.ts";
+import { XPathError, type CompileOptions, type Path } from "./XPath.ts";
 
 interface Level extends StepLevel {
   readonly rawName: string;
@@ -263,15 +262,9 @@ export const select =
     events: Stream.Stream<SaxEvent, E, R>,
   ): Stream.Stream<XmlElement, E | SaxError | XPathError, R> =>
     Stream.suspend((): Stream.Stream<XmlElement, E | SaxError | XPathError, R> => {
-      const compiled = Predicate.isString(path) ? compile(path, options) : Result.succeed(path);
-      if (Result.isFailure(compiled)) return Stream.fail(compiled.failure);
-      const steps = toStreamSteps(compiled.success);
-      if (Predicate.isString(steps)) {
-        return Stream.fail(
-          new XPathError({ expression: compiled.success.expression, offset: 0, reason: steps }),
-        );
-      }
-      const selector = new Selector(steps);
+      const steps = compileStreamable(path, options);
+      if (Result.isFailure(steps)) return Stream.fail(steps.failure);
+      const selector = new Selector(steps.success);
       const body = events.pipe(
         Stream.flatMap((ev) => {
           const out = selector.accept(ev);

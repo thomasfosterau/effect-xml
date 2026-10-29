@@ -376,15 +376,15 @@ order.customer.$type; // "{urn:example:order}Person" | "{urn:example:order}Compa
 | `Xsd.decode(model, options?)` | `(Stream<SaxEvent>) => Effect<Validated, …>` |
 | `Xsd.validate(model, options?)` | `(Stream<SaxEvent>) => Stream<SaxEvent, …>`: the events, failing at the first violation |
 | `Xsd.select(model, path, options?)` | `(Stream<SaxEvent>) => Stream<XsdValue, …>`: the value of each element matching `path`, as soon as it ends |
-| `Xsd.parser<A>(model, element)` | a `Parser<A>` (`parse`, `parseBytes`, `parseStream`, `parseBytesStream`, `decode`, `select<B>`) for one root element |
+| `Xsd.parser<A>(model, element)` | a `Parser<A>` (`parse`, `parseBytes`, `parseStream`, `parseBytesStream`, `decode`, `stream<B>`) for one root element |
 | `Xsd.generate(model, options?)` | `Effect<string, XsdSchemaError>`: a TypeScript module (`importFrom`, `roots`, `source`) |
 
-**Streaming records.** `Xsd.select` decodes a large document in constant memory: it validates the whole document as `Xsd.decode` does, but emits the typed value of each element matching a [streamable path](#streaming-selection) when it ends, and drops it instead of adding it to its parent. A generated parser's `select` types the values:
+**Streaming records.** `Xsd.select` decodes a large document in constant memory: it validates the whole document as `Xsd.decode` does, but emits the typed value of each element matching a [streamable path](#streaming-selection) when it ends, and drops it instead of adding it to its parent. A generated parser's `stream` types the values:
 
 ```ts
 const lines = Stream.fromIterable(chunks).pipe(
   Sax.tokenize(),
-  Order.order.select<Order.Line>("o:order/o:line", { namespaces: { o: "urn:example:order" } }),
+  Order.order.stream<Order.Line>("o:order/o:line", { namespaces: { o: "urn:example:order" } }),
 ); // Stream<Order.Line, Xsd.XsdError | XPathError>
 ```
 

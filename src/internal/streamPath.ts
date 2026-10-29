@@ -10,7 +10,16 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import { Cursor } from "../Xml/Cursor.ts";
 import type { XmlElement } from "../Xml/Node.ts";
-import { test, type Expr, type NodeTest, type Path } from "../Xml/XPath.ts";
+import * as Result from "effect/Result";
+import {
+  compile,
+  test,
+  XPathError,
+  type CompileOptions,
+  type Expr,
+  type NodeTest,
+  type Path,
+} from "../Xml/XPath.ts";
 
 export interface StreamStep {
   /** Relative to the previous step's element (or the document node, for the first). */
@@ -47,7 +56,7 @@ const streamable = (e: Expr, top: boolean): boolean =>
   });
 
 /** The streamable form of a path, or why it has none. */
-export const toStreamSteps = (path: Path): ReadonlyArray<StreamStep> | string => {
+const toStreamSteps = (path: Path): ReadonlyArray<StreamStep> | string => {
   // Each step either folds into the next (`//`), becomes a stream step, or is
   // why the path can't be streamed (which stops the fold).
   type State = {
@@ -87,6 +96,24 @@ export const toStreamSteps = (path: Path): ReadonlyArray<StreamStep> | string =>
   if (Arr.isReadonlyArrayEmpty(folded.out)) return "the path selects no elements";
   return folded.out;
 };
+
+/**
+ * Compile a path (or take a compiled one) and check it can be streamed: its
+ * steps, or the `XPathError` that says why not.
+ */
+export const compileStreamable = (
+  path: string | Path,
+  options: CompileOptions | undefined,
+): Result.Result<ReadonlyArray<StreamStep>, XPathError> =>
+  Result.flatMap(
+    Predicate.isString(path) ? compile(path, options) : Result.succeed(path),
+    (compiled) => {
+      const steps = toStreamSteps(compiled);
+      return Predicate.isString(steps)
+        ? Result.fail(new XPathError({ expression: compiled.expression, offset: 0, reason: steps }))
+        : Result.succeed(steps);
+    },
+  );
 
 /** Which steps an element matched, and which it or an ancestor matched. */
 export interface StepLevel {

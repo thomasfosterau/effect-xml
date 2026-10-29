@@ -804,7 +804,7 @@ describe("Xsd.select", () => {
       Effect.runSync(
         Stream.make(doc).pipe(
           Sax.tokenize(),
-          parser.select<{ readonly r: number }>(path, ns),
+          parser.stream<{ readonly r: number }>(path, ns),
           Stream.runCollect,
         ),
       );

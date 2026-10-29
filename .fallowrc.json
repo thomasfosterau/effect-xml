@@ -12,6 +12,7 @@
     "bench/parse.ts",
     "vite.config.ts"
   ],
+  "ignoreExports": [{ "file": "src/Xsd/Validate.ts", "exports": ["select"] }],
   "ignorePatterns": ["**/dist/**", "**/docs/**", "**/coverage/**", "tests/fixtures/**"],
   "ignoreDependencies": [
     "@types/node",
