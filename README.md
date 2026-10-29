@@ -112,6 +112,25 @@ const encoded = Schema.encodeSync(Xml.XmlElement)(el); // plain data
 const back = Schema.decodeSync(Xml.XmlElement)(encoded); // real instances again
 ```
 
+### Recovering from malformed XML
+
+`{ recover: true }` (on `Xml.parse`, `parseStream`, `parseBytes` and `parseBytesStream`) repairs a malformed document instead of failing, XML5-style:
+
+```ts
+import * as Effect from "effect/Effect";
+import { Xml } from "@thomasfosterau/effect-xml";
+
+const doc = Effect.runSync(Xml.parse("<a><b>one</a><c>two", { recover: true }));
+Xml.serializeDocument(doc); // <a><b>one</b><c>two</c></a>
+```
+
+- An end tag closes the open elements up to the nearest one it names, and is ignored when none matches. Elements still open at the end are closed.
+- The root is never closed early. Elements and character data after its end tag go under it. Whitespace, comments and PIs after it keep their place, so a document that needs no repair parses exactly as it does strictly.
+- Character data before the root opens a synthesized `<root>` element, and a document with no element gets an empty one.
+- A repeated attribute keeps its first value, and a prefix with no binding leaves the name without a namespace. The Namespaces in XML checks are not applied.
+
+The repairs happen in the tree builder. Tokenizer errors (an unescaped `<` or `&`, an unquoted attribute value), resource limits and encoding errors still fail.
+
 The XML tree builder is strict: it enforces matched tags, a single root and unique attributes, and resolves namespace prefixes into `QName.namespace` (the default namespace does not apply to attributes, per Namespaces in XML §6.2). With namespace processing on (the default, and always in `Sax.select`), it also enforces the constraints of Namespaces in XML 1.0: names are `QName`s, no two attributes share an expanded name (`DuplicateAttribute`), the reserved `xml` and `xmlns` prefixes and namespaces are used only as allowed, `xmlns:p=""` is accepted only in an XML 1.1 document, and processing instruction targets and entity and notation names have no colon (`InvalidNamespace`).
 
 ## Navigating by namespace
@@ -456,6 +475,7 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 | `whitespace` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `"preserve"` | or `"collapse"` (runs of whitespace become one space, trimmed) |
 | `dropWhitespaceOnlyText` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `false` | drop text events / nodes that are only whitespace |
 | `namespaces` | `Xml` | `true` | resolve prefixes to URIs; when `false`, names keep their prefix and `namespace` is `null` |
+| `recover` | `Xml` | `false` | repair a malformed document instead of failing (see [Recovering from malformed XML](#recovering-from-malformed-xml)) |
 | `limits` | all | see [Resource limits](#resource-limits) | the limits left out keep their defaults |
 | `dtd` | `Sax`, `Xml` | `"ignore"` | `"internal"` interprets the internal subset (see [DTD internal subset](#dtd-internal-subset-opt-in)) |
 | `encoding` | the `*Bytes` entry points | detected | an external encoding hint; overrides the declaration, not a BOM |
