@@ -6,6 +6,7 @@
 import * as Arr from "effect/Array";
 import * as HashSet from "effect/HashSet";
 import * as Match from "effect/Match";
+import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import { Cursor } from "../Xml/Cursor.ts";
 import type { XmlElement } from "../Xml/Node.ts";
@@ -111,27 +112,40 @@ const matches = (step: StreamStep, element: XmlElement): boolean => {
 };
 
 /**
- * The steps an element matches, given its parent's level (`undefined` for the
- * document element). `element` is built only when a step can apply to it;
+ * The steps an element matches, given its parent's level (`None` for the
+ * document element). `element` is built at most once, and only when a step can apply to it;
  * only its name and attributes are read.
  */
 export const advance = (
   steps: ReadonlyArray<StreamStep>,
-  parent: StepLevel | undefined,
+  parent: Option.Option<StepLevel>,
   element: () => XmlElement,
 ): StepLevel => {
+  let built: Option.Option<XmlElement> = Option.none();
+  const once = (): XmlElement =>
+    Option.getOrElse(built, () => {
+      const made = element();
+      built = Option.some(made);
+      return made;
+    });
   const matched = HashSet.fromIterable(
     Arr.flatMap(steps, (step, i) => {
       const after =
         i === 0
-          ? step.axis === "descendant" || parent === undefined
-          : step.axis === "child"
-            ? parent !== undefined && HashSet.has(parent.matched, i - 1)
-            : parent !== undefined && HashSet.has(parent.reached, i - 1);
-      return after && matches(step, element()) ? [i] : [];
+          ? step.axis === "descendant" || Option.isNone(parent)
+          : Option.exists(parent, (p) =>
+              HashSet.has(step.axis === "child" ? p.matched : p.reached, i - 1),
+            );
+      return after && matches(step, once()) ? [i] : [];
     }),
   );
-  return { matched, reached: HashSet.union(parent?.reached ?? HashSet.empty(), matched) };
+  return {
+    matched,
+    reached: HashSet.union(
+      Option.match(parent, { onNone: HashSet.empty<number>, onSome: (p) => p.reached }),
+      matched,
+    ),
+  };
 };
 
 /** Whether a level matched the whole path. */

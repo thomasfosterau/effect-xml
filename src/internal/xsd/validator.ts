@@ -378,7 +378,7 @@ export class Validator {
     }
     const level = advance(
       this.steps,
-      Option.getOrUndefined(Option.flatMap(Option.fromUndefinedOr(parent), (p) => p.level)),
+      Option.flatMap(Option.fromUndefinedOr(parent), (p) => p.level),
       () =>
         new XmlElement({
           name: toQName(opening.name),

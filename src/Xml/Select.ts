@@ -174,7 +174,7 @@ class Selector {
       this.capture.push({ name, attributes, children: [] });
     } else {
       const element = new XmlElement({ name, attributes, children: [] });
-      const level = advance(this.steps, this.levels.at(-1), () => element);
+      const level = advance(this.steps, Option.fromUndefinedOr(this.levels.at(-1)), () => element);
       this.levels.push({ rawName: ev.name, bindings, ...level });
       if (selects(this.steps, level)) {
         this.captureDepth = this.levels.length - 1;
