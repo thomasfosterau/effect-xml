@@ -55,6 +55,12 @@ export interface SimpleChecker {
   readonly kind: Kind;
   readonly whiteSpace: WhiteSpace;
   readonly identity: Identity;
+  /**
+   * The local name of the primitive type an atomic type derives from (`decimal`
+   * for `int`, `string` for `token`); absent for lists and unions. Values of
+   * different primitive types are never equal.
+   */
+  readonly primitive?: string | undefined;
   /** For a list, its item type; for a union, its member types. */
   readonly item?: SimpleChecker | undefined;
   readonly members?: ReadonlyArray<SimpleChecker> | undefined;
@@ -700,11 +706,12 @@ export const restrict = (
 
 /** The checker for a built-in type, if `key` names one. */
 export const builtinChecker = (key: string): Option.Option<SimpleChecker> =>
-  Option.map(builtinOf(key), ([, b]) => {
+  Option.map(builtinOf(key), ([local, b]) => {
     const atomic: SimpleChecker = {
       kind: b.kind,
       whiteSpace: b.whiteSpace,
       identity: b.identity ?? "none",
+      primitive: primitiveOf(local),
       check: b.check,
       compare: b.compare,
     };
@@ -729,7 +736,64 @@ const builtinOfLocal = (local: string): SimpleChecker => {
     kind: b?.kind ?? "string",
     whiteSpace: b?.whiteSpace ?? "preserve",
     identity: b?.identity ?? "none",
+    primitive: primitiveOf(builtins[local] === undefined ? "string" : local),
     check: b?.check ?? anyString,
     compare: b?.compare ?? incomparable,
   };
+};
+
+/**
+ * The primitive type a built-in type derives from, by local name: the last
+ * type before `anySimpleType` on its chain of bases.
+ */
+const primitiveOf = (local: string): string => {
+  const base = builtins[local]?.base;
+  return base === undefined || base === "anySimpleType" || base === "anyType"
+    ? local
+    : primitiveOf(base);
+};
+
+const hex = (bytes: Uint8Array): string =>
+  Arr.map(Arr.fromIterable(bytes), (b) => b.toString(16).padStart(2, "0")).join("");
+
+/** The canonical form of an atomic value, the same for every lexical form of it. */
+const canonical = (value: SimpleValue): string => {
+  if (BigDecimal.isBigDecimal(value)) return BigDecimal.format(BigDecimal.normalize(value));
+  if (value instanceof Uint8Array) return hex(value);
+  return String(value);
+};
+
+/**
+ * The identity of a raw value as `checker` decodes it, for comparing
+ * identity-constraint fields (XSD 1.0 §3.11.4): equal exactly when the values
+ * are equal in their value space. Values of different primitive types differ
+ * however they are written (`decimal` covers every integer type, so `1.0`, `1`
+ * and an `xs:int` `01` are one value); a list is its items' identities; a
+ * union value takes the identity of the first member type that accepts it.
+ * Dates, times and durations are compared by their normalized lexical form.
+ */
+export const identityKey = (
+  checker: SimpleChecker,
+  raw: string,
+  context: ValueContext,
+): Result.Result<string, string> => {
+  if (checker.kind === "union")
+    return Arr.reduce(
+      checker.members ?? [],
+      Result.fail<string, string>(`${quote(raw)} is not valid for any member of the union`),
+      (acc, member) => (Result.isSuccess(acc) ? acc : identityKey(member, raw, context)),
+    );
+  return Result.flatMap(decode(checker, raw, context), (value) => {
+    const item = checker.item;
+    if (checker.kind === "list" && item !== undefined && Arr.isArray(value)) {
+      const tokens = normalize(raw, "collapse");
+      return Result.map(
+        Result.all(
+          Arr.map(tokens === "" ? [] : tokens.split(" "), (t) => identityKey(item, t, context)),
+        ),
+        (items) => `list(${items.join("\u0001")})`,
+      );
+    }
+    return Result.succeed(`${checker.primitive ?? checker.kind}:${canonical(value)}`);
+  });
 };

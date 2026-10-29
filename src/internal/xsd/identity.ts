@@ -3,8 +3,11 @@
  * the subtree of the element that declares them once it is complete.
  *
  * Selectors and fields are compiled with the library's XPath subset (a
- * selector's `|` alternatives one by one). Field values are compared as their
- * whitespace-collapsed strings. The key tables an element computes travel up
+ * selector's `|` alternatives one by one). Field values are compared as typed
+ * values in their value spaces (XSD 1.0 §3.11.4), through the simple type the
+ * validator checked the selected attribute or element against; a node with no
+ * simple type (one a wildcard matched, or a nilled element) is compared by its
+ * whitespace-collapsed string. The key tables an element computes travel up
  * to its ancestors, so a `keyref` can refer to a key declared on the same
  * element or a descendant of it.
  */
@@ -16,7 +19,22 @@ import * as Result from "effect/Result";
 import { XmlAttribute, XmlElement } from "../../Xml/Node.ts";
 import { compile, select, type Path, type XPathNode } from "../../Xml/XPath.ts";
 import type { IdentityConstraint } from "../../Xsd/Model.ts";
-import { normalize } from "./datatypes.ts";
+import { identityKey, normalize, type SimpleChecker, type ValueContext } from "./datatypes.ts";
+
+/** The simple type a node was validated against, with the namespaces in scope there. */
+export interface Typed {
+  readonly checker: SimpleChecker;
+  readonly context: ValueContext;
+}
+
+/** Finds the simple type of a selected attribute or element, if it has one. */
+export type TypeOf = (node: XPathNode) => Typed | undefined;
+
+/** One field's value: its identity in the value space, and how to show it. */
+interface FieldValue {
+  readonly key: string;
+  readonly shown: string;
+}
 
 /** The key sequences found so far, by constraint name. */
 export type Tables = MutableHashMap.MutableHashMap<string, ReadonlyArray<string>>;
@@ -61,11 +79,24 @@ const valueOf = (node: XPathNode): string =>
         ? node.data
         : "";
 
+const fieldValue = (node: XPathNode, typeOf: TypeOf): FieldValue => {
+  const raw = valueOf(node);
+  const shown = normalize(raw, "collapse");
+  const typed = typeOf(node);
+  const untyped = `anySimpleType:${shown}`;
+  const key =
+    typed === undefined
+      ? untyped
+      : Result.getOrElse(identityKey(typed.checker, raw, typed.context), () => untyped);
+  return { key, shown };
+};
+
 /** The key sequence of one selected element: a value per field, `None` where a field is absent. */
 const keyOf = (
   c: Compiled,
   element: XmlElement,
-): Result.Result<ReadonlyArray<Option.Option<string>>, string> =>
+  typeOf: TypeOf,
+): Result.Result<ReadonlyArray<Option.Option<FieldValue>>, string> =>
   Result.all(
     Arr.map(c.fields, (field) => {
       const nodes = select(field, element);
@@ -74,16 +105,18 @@ const keyOf = (
         return Result.fail(
           `the field ${field.expression} of ${c.constraint.name} selects more than one node`,
         );
-      return Result.succeed(
-        Option.map(Option.fromNullishOr(first), (n) => normalize(valueOf(n), "collapse")),
-      );
+      return Result.succeed(Option.map(Option.fromNullishOr(first), (n) => fieldValue(n, typeOf)));
     }),
   );
 
 const ok: Result.Result<void, string> = Result.void;
 const noRows: Result.Result<ReadonlyArray<string>, string> = Result.succeed([]);
 
-const encode = (values: ReadonlyArray<string>): string => values.join("\u0000");
+const encode = (values: ReadonlyArray<FieldValue>): string =>
+  Arr.map(values, (v) => v.key).join("\u0000");
+
+const show = (values: ReadonlyArray<FieldValue>): string =>
+  Arr.map(values, (v) => v.shown).join(", ");
 
 const selected = (c: Compiled, scope: XmlElement): ReadonlyArray<XmlElement> =>
   Arr.flatMap(c.selectors, (s) =>
@@ -91,10 +124,14 @@ const selected = (c: Compiled, scope: XmlElement): ReadonlyArray<XmlElement> =>
   );
 
 /** The table of a key or unique constraint over `scope`, or why it is violated. */
-const table = (c: Compiled, scope: XmlElement): Result.Result<ReadonlyArray<string>, string> =>
+const table = (
+  c: Compiled,
+  scope: XmlElement,
+  typeOf: TypeOf,
+): Result.Result<ReadonlyArray<string>, string> =>
   Arr.reduce(selected(c, scope), noRows, (acc, element) =>
     Result.flatMap(acc, (rows) =>
-      Result.flatMap(keyOf(c, element), (key) => {
+      Result.flatMap(keyOf(c, element, typeOf), (key) => {
         const values = Arr.getSomes(key);
         if (values.length < key.length) {
           return Predicate.isTagged(c.constraint, "Key")
@@ -103,7 +140,7 @@ const table = (c: Compiled, scope: XmlElement): Result.Result<ReadonlyArray<stri
         }
         const encoded = encode(values);
         return rows.includes(encoded)
-          ? Result.fail(`the value ${values.join(", ")} is not unique for ${c.constraint.name}`)
+          ? Result.fail(`the value ${show(values)} is not unique for ${c.constraint.name}`)
           : Result.succeed([...rows, encoded]);
       }),
     ),
@@ -113,6 +150,7 @@ const checkReferences = (
   c: Compiled,
   scope: XmlElement,
   tables: Tables,
+  typeOf: TypeOf,
 ): Result.Result<void, string> => {
   const refer = c.constraint.refer ?? "";
   const known = Option.getOrElse(
@@ -121,14 +159,12 @@ const checkReferences = (
   );
   return Arr.reduce(selected(c, scope), ok, (acc, element) =>
     Result.flatMap(acc, () =>
-      Result.flatMap(keyOf(c, element), (key) => {
+      Result.flatMap(keyOf(c, element, typeOf), (key) => {
         const values = Arr.getSomes(key);
         if (values.length < key.length) return ok;
         return known.includes(encode(values))
           ? ok
-          : Result.fail(
-              `the value ${values.join(", ")} of ${c.constraint.name} refers to no ${refer}`,
-            );
+          : Result.fail(`the value ${show(values)} of ${c.constraint.name} refers to no ${refer}`);
       }),
     ),
   );
@@ -137,11 +173,14 @@ const checkReferences = (
 /**
  * Evaluate an element's constraints over its subtree. `tables` holds the
  * tables its descendants computed; the element's own are added to it.
+ * `typeOf` gives the simple type of a selected node, so fields compare as
+ * typed values.
  */
 export const evaluate = (
   constraints: ReadonlyArray<IdentityConstraint>,
   scope: XmlElement,
   tables: Tables,
+  typeOf: TypeOf,
 ): Result.Result<void, string> =>
   Result.flatMap(Result.all(Arr.map(constraints, compiled)), (all) => {
     const refs = Arr.filter(all, (c) => Predicate.isTagged(c.constraint, "KeyRef"));
@@ -149,14 +188,14 @@ export const evaluate = (
     return Result.flatMap(
       Arr.reduce(keys, ok, (acc, c) =>
         Result.flatMap(acc, () =>
-          Result.map(table(c, scope), (rows) => {
+          Result.map(table(c, scope, typeOf), (rows) => {
             MutableHashMap.set(tables, c.constraint.name, rows);
           }),
         ),
       ),
       () =>
         Arr.reduce(refs, ok, (acc, c) =>
-          Result.flatMap(acc, () => checkReferences(c, scope, tables)),
+          Result.flatMap(acc, () => checkReferences(c, scope, tables, typeOf)),
         ),
     );
   });
