@@ -6,13 +6,14 @@
  * optionally, performing namespace resolution so that every {@link QName} carries
  * its resolved URI.
  *
- * This is the bridge from the SAX layer to the DOM, and the foundation the
- * forthcoming xml5ever tree-construction phase builds on (it already centralizes
- * the open-element stack and namespace scoping).
+ * This is the bridge from the SAX layer to the DOM. With `recover: true` it
+ * repairs a malformed document instead (XML5-style, after xml5ever) on the
+ * same open-element stack and namespace scoping.
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as HashMap from "effect/HashMap";
+import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Predicate from "effect/Predicate";
@@ -35,6 +36,7 @@ import {
   XmlDeclaration,
   XmlDoctype,
   XmlDocument,
+  XmlAttribute,
   XmlElement,
   XmlProcessingInstruction,
   XmlText,
@@ -50,7 +52,30 @@ import {
 export interface BuildOptions {
   /** Resolve namespace prefixes to URIs (default `true`). When false, names keep their prefixes but `namespace` is `null`. */
   readonly namespaces?: boolean | undefined;
+  /**
+   * Repair the document instead of failing on a well-formedness error
+   * (default `false`), XML5-style:
+   *
+   * - an end tag closes the open elements up to the nearest one it matches,
+   *   and is ignored when none matches;
+   * - elements still open at the end of the input are closed;
+   * - the root element is never closed early: what follows its end tag
+   *   (text, elements, comments) is kept under it, so a second "root"
+   *   becomes the root's child;
+   * - character data before the root opens a synthesized `<root>` element,
+   *   and a document with no element at all gets an empty one;
+   * - a repeated attribute keeps its first value; a prefix with no binding
+   *   leaves the name without a namespace; the namespace well-formedness
+   *   checks (reserved prefixes, colons in names) are not applied.
+   *
+   * The tokenizer's own failures are not repaired (see {@link Sax.SaxOptions}),
+   * nor are resource limits or encoding errors.
+   */
+  readonly recover?: boolean | undefined;
 }
+
+/** The name of the root element a recovering parse synthesizes when the document has none. */
+const SYNTHESIZED_ROOT = "root";
 
 /** Namespace bindings an element declares: prefix (`""` for the default) to URI. */
 type Bindings = HashMap.HashMap<string, string>;
@@ -69,15 +94,21 @@ const matchSaxEvent = SaxEvent.$match;
 
 class Builder {
   private readonly namespaces: boolean;
+  private readonly recover: boolean;
   private readonly stack: Array<Frame> = [];
   /** The bindings of the open elements that declare namespaces, so lookups don't walk the whole stack. */
   private readonly scopes: Array<Bindings> = [];
   private readonly top: Array<XmlNode> = [];
   private declaration: XmlDeclaration | null = null;
   private doctype: XmlDoctype | null = null;
+  /** Recovery: whether the root's end tag has been seen (the root stays open). */
+  private rootEnded = false;
+  /** Recovery: comments and PIs after the root's end tag, which stay after the root. */
+  private readonly trailing: Array<XmlNode> = [];
 
   constructor(options: BuildOptions) {
     this.namespaces = options.namespaces ?? true;
+    this.recover = options.recover ?? false;
   }
 
   /** The URI `prefix` is bound to: `own` (the element being opened) first, then the open elements, innermost first. */
@@ -112,6 +143,7 @@ class Builder {
       return Result.succeed(new QName({ prefix: null, local: parsed.local, namespace: ns }));
     }
     const ns = this.resolvePrefix(parsed.prefix, own);
+    if (ns === null && this.recover) return Result.succeed(parsed);
     if (ns === null) {
       return Result.fail(
         new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position }),
@@ -132,9 +164,16 @@ class Builder {
   }
 
   private appendChild(node: XmlNode, position: Position): Effect.Effect<void, SaxError> {
+    if (this.recover && this.rootEnded && this.stack.length === 1 && this.afterRoot(node)) {
+      return Effect.void;
+    }
     const frame = this.stack.at(-1);
     if (frame !== undefined) {
       frame.children.push(node);
+      return Effect.void;
+    }
+    if (this.recover) {
+      this.appendTopLevel(node);
       return Effect.void;
     }
     // Top level: only elements, comments and PIs are allowed (plus whitespace text).
@@ -154,6 +193,54 @@ class Builder {
     }
     this.top.push(node);
     return Effect.void;
+  }
+
+  /**
+   * Recovery, with no element open (so no root yet: a recovering parse keeps
+   * the root open to the end). A whitespace-only text node is dropped, other
+   * character data opens a synthesized root, and an element (a self-closing
+   * one) becomes the root and stays open; comments and PIs stay top-level.
+   */
+  private appendTopLevel(node: XmlNode): void {
+    if (isText(node) || Predicate.isTagged(node, "XmlCData")) {
+      if (isText(node) && /^\s*$/.test(node.data)) return;
+      this.openRoot(synthesizedRoot());
+      this.stack.at(-1)?.children.push(node);
+    } else if (isElement(node)) {
+      // A self-closing root: complete, but kept open for what follows it.
+      this.openRoot(node);
+      this.rootEnded = true;
+    } else {
+      this.top.push(node);
+    }
+  }
+
+  /**
+   * Recovery, after the root's end tag: what a well-formed document may have
+   * there keeps its place (whitespace is dropped, comments and PIs follow the
+   * root), so a document that needs no repair parses as it would strictly.
+   * Whether `node` was placed; anything else goes under the root.
+   */
+  private afterRoot(node: XmlNode): boolean {
+    if (isText(node)) return /^\s*$/.test(node.data);
+    if (
+      Predicate.isTagged(node, "XmlComment") ||
+      Predicate.isTagged(node, "XmlProcessingInstruction")
+    ) {
+      this.trailing.push(node);
+      return true;
+    }
+    return false;
+  }
+
+  /** Open `element` (with its children so far) as the root, which recovery never closes early. */
+  private openRoot(element: XmlElement): void {
+    this.stack.push({
+      element,
+      children: [...element.children],
+      bindings: HashMap.empty(),
+      rawName: element.name.qualified,
+    });
   }
 
   accept(ev: SaxEvent): Effect.Effect<void, SaxError> {
@@ -176,9 +263,10 @@ class Builder {
     ProcessingInstruction: (
       ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>,
     ): Effect.Effect<void, SaxError> => {
-      const error = this.namespaces
-        ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
-        : Option.none();
+      const error =
+        this.namespaces && !this.recover
+          ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
+          : Option.none();
       if (Option.isSome(error)) return Effect.fail(error.value);
       return this.appendChild(
         new XmlProcessingInstruction({ target: ev.target, data: ev.data }),
@@ -197,7 +285,7 @@ class Builder {
     },
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>): Effect.Effect<void, SaxError> => {
       const error =
-        this.namespaces && ev.internalSubset !== null
+        this.namespaces && !this.recover && ev.internalSubset !== null
           ? checkSubset(ev.internalSubset, ev.span.start)
           : Option.none();
       if (Option.isSome(error)) return Effect.fail(error.value);
@@ -215,16 +303,18 @@ class Builder {
     ev: Extract<SaxEvent, { _tag: "StartElement" }>,
   ): Effect.Effect<void, SaxError> {
     const position = ev.span.start;
-    const invalid = this.namespaces
-      ? checkStartTag(ev.name, ev.attributes, position, this.unbinding)
-      : Option.none();
+    const invalid =
+      this.namespaces && !this.recover
+        ? checkStartTag(ev.name, ev.attributes, position, this.unbinding)
+        : Option.none();
     if (Option.isSome(invalid)) return Effect.fail(invalid.value);
     // This element's own xmlns declarations are in scope for its name and attributes.
     const bindings = this.collectBindings(ev.attributes);
     // In document order: the first duplicate or unbound prefix is the one reported.
-    const attributes = resolveAttributes(ev.name, ev.attributes, (name, at) =>
-      this.resolve(name, true, at, bindings),
-    );
+    const resolveAttribute = (name: string, at: Position) => this.resolve(name, true, at, bindings);
+    const attributes = this.recover
+      ? Result.succeed(recoverAttributes(ev.attributes, resolveAttribute))
+      : resolveAttributes(ev.name, ev.attributes, resolveAttribute);
     const opened = Result.flatMap(this.resolve(ev.name, false, position, bindings), (name) =>
       Result.map(attributes, (attributes) => ({ name, attributes })),
     );
@@ -248,6 +338,10 @@ class Builder {
   }
 
   private endElement(rawName: string, position: Position): Effect.Effect<void, SaxError> {
+    if (this.recover) {
+      this.recoverEndTag(rawName);
+      return Effect.void;
+    }
     const frame = this.stack.pop();
     if (frame !== undefined && !HashMap.isEmpty(frame.bindings)) this.scopes.pop();
     if (frame === undefined) {
@@ -258,15 +352,49 @@ class Builder {
         new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position }),
       );
     }
-    const finished = new XmlElement({
-      name: frame.element.name,
-      attributes: frame.element.attributes,
-      children: frame.children,
-    });
-    return this.appendChild(finished, position);
+    return this.appendChild(closed(frame), position);
+  }
+
+  /**
+   * Recovery: an end tag closes the open elements up to the nearest one it
+   * names (the root itself stays open), and is ignored when none matches.
+   */
+  private recoverEndTag(rawName: string): void {
+    Option.map(
+      Arr.findLastIndex(this.stack, (frame) => frame.rawName === rawName),
+      (index) => {
+        if (index === 0) this.rootEnded = true;
+        this.closeAbove(Math.max(index, 1));
+      },
+    );
+  }
+
+  /** Recovery: close the open elements above stack entry `depth - 1`, innermost first. */
+  private closeAbove(depth: number): void {
+    Arr.forEach(Array.from({ length: Math.max(this.stack.length - depth, 0) }), () =>
+      this.closeTop(),
+    );
+  }
+
+  /** Close the innermost open element into its parent (or the top level). */
+  private closeTop(): void {
+    const frame = this.stack.pop();
+    if (frame === undefined) return;
+    if (!HashMap.isEmpty(frame.bindings)) this.scopes.pop();
+    const node = closed(frame);
+    const parent = this.stack.at(-1);
+    if (parent === undefined) this.top.push(node);
+    else parent.children.push(node);
   }
 
   finish(position: Position): Effect.Effect<XmlDocument, SaxError> {
+    if (this.recover) {
+      if (!Arr.isReadonlyArrayNonEmpty(this.stack) && !this.top.some(isElement)) {
+        this.openRoot(synthesizedRoot());
+      }
+      this.closeAbove(0);
+      this.top.push(...this.trailing);
+    }
     const open = this.stack.at(-1);
     if (open !== undefined) {
       return Effect.fail(
@@ -290,6 +418,39 @@ class Builder {
     );
   }
 }
+
+/** The element an open frame becomes once it is closed. */
+const closed = (frame: Frame): XmlElement =>
+  new XmlElement({
+    name: frame.element.name,
+    attributes: frame.element.attributes,
+    children: frame.children,
+  });
+
+/** A recovering parse's root for a document that has none. */
+const synthesizedRoot = (): XmlElement =>
+  new XmlElement({ name: QName.fromRaw(SYNTHESIZED_ROOT), attributes: [], children: [] });
+
+/**
+ * Recovery: resolve the attributes, dropping each one whose raw name, or
+ * expanded name, an earlier one already has (the first one wins). A name that
+ * cannot be resolved keeps its prefix and no namespace.
+ */
+const recoverAttributes = (
+  attributes: ReadonlyArray<Attribute>,
+  resolve: (name: string, position: Position) => Result.Result<QName, SaxError>,
+): Array<XmlAttribute> => {
+  const seen = MutableHashSet.empty<string>();
+  return Arr.reduce(attributes, Arr.empty<XmlAttribute>(), (list, a) => {
+    const name = Result.getOrElse(resolve(a.name, a.span.start), () => QName.fromRaw(a.name));
+    // An expanded-name key has a space, which no raw name has, so the two never collide.
+    const keys = name.namespace === null ? [a.name] : [a.name, `${name.namespace} ${name.local}`];
+    if (Arr.some(keys, (key) => MutableHashSet.has(seen, key))) return list;
+    Arr.forEach(keys, (key) => MutableHashSet.add(seen, key));
+    list.push(new XmlAttribute({ name, value: a.value }));
+    return list;
+  });
+};
 
 /**
  * Build a document from a stream of SAX events. The accumulated open-element
