@@ -749,20 +749,28 @@ class HtmlTreeBuilder {
 
   private resetInsertionMode(): void {
     this.mode = Option.getOrElse(
-      Arr.findLast(this.open, (el, index) => this.resetModeFor(el.name, index)),
+      Arr.findLast(this.open, (el, index) => this.resetModeAt(el, index)),
       (): Mode => "inBody",
     );
   }
 
+  /**
+   * The reset walk's step at stack entry `index`. In the fragment case the
+   * walk reaches the context element in place of the root (which is last):
+   * a foreign context selects nothing, a `frameset` one "in frameset".
+   */
+  private resetModeAt(el: MElement, index: number): Option.Option<Mode> {
+    const context = index === 0 ? this.context : null;
+    if (context === null) return this.resetModeFor(el.name, index);
+    if (context.ns !== HTML_NS) return Option.none();
+    if (context.name === "frameset") return Option.some("inFrameset");
+    return this.resetModeFor(context.name, index);
+  }
+
   /** The mode the "reset the insertion mode" walk selects at stack entry `index`, if any. */
   // (`RESET_MODES` holds the fixed name → mode steps of the reset algorithm.)
-  private resetModeFor(stackName: string, index: number): Option.Option<Mode> {
+  private resetModeFor(name: string, index: number): Option.Option<Mode> {
     const last = index === 0;
-    // In the fragment case the walk reaches the context element in place of the root.
-    const context = last ? this.context : null;
-    if (context !== null && context.ns !== HTML_NS) return Option.none();
-    const name = context === null ? stackName : context.name;
-    if (name === "frameset" && context !== null) return Option.some("inFrameset");
     if (name === "select") {
       // In a table (with no template in between), the select is "in select in table".
       const ancestor = Arr.findLast(
