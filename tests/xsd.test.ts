@@ -771,6 +771,18 @@ describe("Xsd streaming", () => {
     expect(v.value).toEqual(value(model, doc));
   });
 
+  test("a parser's streams, for children in no namespace", () => {
+    const parser = Xsd.parser<Xsd.XsdRecord, { readonly n: number }>(model, "r", { n: "n" });
+    const ns = Effect.runSync(
+      Stream.fromIterable(splitEvery(doc, 7)).pipe(
+        Sax.tokenize(),
+        parser.streams.n,
+        Stream.runCollect,
+      ),
+    );
+    expect(Array.from(ns)).toEqual(Array.from({ length: 20 }, (_, i) => i));
+  });
+
   test("bytes", () => {
     const v = Effect.runSync(Xsd.parseBytes(model, new TextEncoder().encode(doc)));
     expect(v.value).toEqual(value(model, doc));
@@ -995,7 +1007,20 @@ describe("Xsd.generate", () => {
     expect(source).toContain(
       `export const model2 = Xsd.parser<Base | (Derived & { readonly $type: "{urn:t}Derived" }) | null>(model, "{urn:t}model");`,
     );
-    expect(source).toContain(`export const thing = Xsd.parser<Thing>(model, "{urn:t}thing");`);
+    // A root with repeated children gets a stream for each.
+    expect(source).toContain(
+      [
+        `export const thing = Xsd.parser<`,
+        `  Thing,`,
+        `  {`,
+        `    /** Streams the <colour> children (colour). */`,
+        `    readonly colour: Colour;`,
+        `  }`,
+        `>(model, "{urn:t}thing", {`,
+        `  colour: "colour",`,
+        `});`,
+      ].join("\n"),
+    );
   });
 
   test("enumerations become literal unions where they can", () => {
@@ -1081,6 +1106,23 @@ describe("the generated example (examples/xsd)", () => {
     expect(line.price.currency).toBe("EUR");
     expect(BigDecimal.format(line.price.$value)).toBe("1.5");
     expect(Arr.map(order.$any, (e) => e.name.clark)).toEqual(["{urn:x}extra"]);
+  });
+
+  test("its parser streams the repeated children of the root", () => {
+    const line = (id: string, quantity: number) =>
+      `<line id="${id}"><sku>ABC-000${quantity}</sku><quantity>${quantity}</quantity><price>1</price></line>`;
+    const lines = Effect.runSync(
+      Sax.tokenizeString(
+        `<order xmlns="urn:example:order" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" number="1">
+           <customer xsi:type="Person"><name>A</name></customer><placed>2026-01-01T00:00:00Z</placed>
+           ${line("a", 1)}${line("b", 2)}</order>`,
+      ).pipe(Example.order.streams.line, Stream.runCollect),
+    );
+    const typed: ReadonlyArray<Example.Line> = Array.from(lines);
+    expect(Arr.map(typed, (l) => [l.id, l.quantity])).toEqual([
+      ["a", 1n],
+      ["b", 2n],
+    ]);
   });
 
   test("its unique constraint holds", () => {

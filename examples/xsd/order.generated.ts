@@ -360,4 +360,12 @@ export const model: Xsd.Model = {
 };
 
 /** A parser for documents whose root is <order> ({urn:example:order}order). */
-export const order = Xsd.parser<Order>(model, "{urn:example:order}order");
+export const order = Xsd.parser<
+  Order,
+  {
+    /** Streams the <line> children ({urn:example:order}line). */
+    readonly line: Line;
+  }
+>(model, "{urn:example:order}order", {
+  line: "{urn:example:order}line",
+});

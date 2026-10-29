@@ -1,6 +1,8 @@
 /**
  * Generating a TypeScript module from a compiled schema: an interface or type
- * alias per type, the model as a literal, and a typed parser per global element.
+ * alias per type, the model as a literal, and a typed parser per global element
+ * (with a typed stream, under `streams`, per child of the root element that can
+ * occur more than once).
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -9,7 +11,14 @@ import * as Predicate from "effect/Predicate";
 import * as Record from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { derivedTypes, localOf, typeOf, anyType, type Layout } from "../internal/xsd/components.ts";
+import {
+  derivedTypes,
+  localOf,
+  typeOf,
+  anyType,
+  type ElementSlot,
+  type Layout,
+} from "../internal/xsd/components.ts";
 import { normalize, type SimpleChecker } from "../internal/xsd/datatypes.ts";
 import { quote } from "../internal/quote.ts";
 import { Runtime } from "../internal/xsd/runtime.ts";
@@ -335,11 +344,44 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
     ]),
     moduleBindings.length,
   );
-  const parsers = Arr.map(
-    parserNames,
-    ([key, name]) =>
-      `/** A parser for documents whose root is <${localOf(key)}> (${key}). */\nexport const ${name} = Xsd.parser<${elementRef(key)}>(model, ${quote(key)});`,
-  );
+  /** The child elements of a root that can occur more than once: the ones it gets a stream for. */
+  const repeated = (key: string): ReadonlyArray<ElementSlot> =>
+    Option.match(runtime.element(key), {
+      onNone: () => [],
+      onSome: (decl) =>
+        Result.match(runtime.type(decl.type), {
+          onFailure: () => [],
+          onSuccess: (rt) =>
+            Predicate.isTagged(rt, "Complex")
+              ? Arr.filter(rt.layout.elements, (slot) => slot.cardinality === "many")
+              : [],
+        }),
+    });
+  const parsers = Arr.map(parserNames, ([key, name]) => {
+    const doc = `/** A parser for documents whose root is <${localOf(key)}> (${key}). */`;
+    const slots = repeated(key);
+    if (Arr.isReadonlyArrayEmpty(slots))
+      return `${doc}\nexport const ${name} = Xsd.parser<${elementRef(key)}>(model, ${quote(key)});`;
+    const types = Arr.map(slots, (slot) => {
+      const ts = Arr.dedupe(Arr.map(slot.elements, elementRef)).join(" | ");
+      return `    /** Streams the <${localOf(slot.name)}> children (${slot.name}). */\n    readonly ${propertyKey(slot.property)}: ${ts};`;
+    });
+    const children = Arr.map(
+      slots,
+      (slot) => `  ${propertyKey(slot.property)}: ${quote(slot.name)},`,
+    );
+    return [
+      doc,
+      `export const ${name} = Xsd.parser<`,
+      `  ${elementRef(key)},`,
+      `  {`,
+      ...types,
+      `  }`,
+      `>(model, ${quote(key)}, {`,
+      ...children,
+      `});`,
+    ].join("\n");
+  });
 
   const library = options?.importFrom ?? "@thomasfosterau/effect-xml";
   const header = [
