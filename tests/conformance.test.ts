@@ -2,12 +2,13 @@
  * Conformance gate against the official html5lib `tree-construction` tests
  * (vendored under `tests/fixtures/html5lib/`).
  *
- * `Html.parseDocument` does not yet implement template/foreign insertion modes
- * (and a number of tokenizer edge states), so 100% is not expected. Instead this
- * asserts a pass-count **baseline**: the count may go up freely, but a
- * regression fails the build. Update `BASELINE` upward whenever a change
- * improves the pass rate. Every `.dat` file in the fixtures directory is picked
- * up automatically.
+ * Every case runs: documents through `Html.parseDocument`, `#document-fragment`
+ * cases through `Html.parseDocumentFragment` in their context element, and
+ * `#script-on` cases with the scripting flag set. This asserts a pass-count
+ * **baseline**: the count may go up freely, but a regression fails the build.
+ * Update `BASELINE` upward whenever a change improves the pass rate (and
+ * `RUNNABLE` when fixtures are added). Every `.dat` file in the fixtures
+ * directory is picked up automatically.
  */
 /// <reference types="vite-plus/client" />
 import { describe, expect, test } from "vite-plus/test";
@@ -20,7 +21,14 @@ import * as Order from "effect/Order";
 import * as Predicate from "effect/Predicate";
 import * as Record from "effect/Record";
 import { Html } from "../src/index.ts";
-import { type Html5libTest, isUnsupported, parseDat, serializeTree } from "./support/html5lib.ts";
+import * as Option from "effect/Option";
+import type { SaxError } from "../src/Error.ts";
+import {
+  type Html5libTest,
+  parseDat,
+  serializeFragment,
+  serializeTree,
+} from "./support/html5lib.ts";
 
 /** Every `.dat` fixture's text, keyed by its path relative to this file. */
 const SOURCES = import.meta.glob<string>("./fixtures/html5lib/*.dat", {
@@ -45,16 +53,32 @@ const FILES: ReadonlyArray<Fixture> = Arr.sort(
 );
 
 // Observed pass count over the runnable (supported-feature) subset.
-const BASELINE = 1368;
-const RUNNABLE = 1368;
+const BASELINE = 1405;
+const RUNNABLE = 1405;
 
-/** A file's cases that exercise only supported features. */
-const runnableTests = (content: string): ReadonlyArray<Html5libTest> =>
-  Arr.filter(parseDat(content), (t) => !isUnsupported(t));
+/** A file's cases. */
+const runnableTests = (content: string): ReadonlyArray<Html5libTest> => parseDat(content);
+
+/**
+ * Parse a case as html5lib says: a `#document-fragment` case in its context
+ * element, a `#script-on` case with scripting enabled (a case with neither
+ * script flag runs with scripting off), and render the result in html5lib
+ * notation.
+ */
+const parseCase = (t: Html5libTest): Effect.Effect<string, SaxError> => {
+  const scripting = t.scriptMode === "on";
+  return Option.match(t.fragmentContext, {
+    onNone: () => Html.parseDocument(t.data, { scripting }).pipe(Effect.map(serializeTree)),
+    onSome: (context) =>
+      Html.parseDocumentFragment(t.data, { context, scripting }).pipe(
+        Effect.map(serializeFragment),
+      ),
+  });
+};
 
 /** Our tree for a case in html5lib notation, or `THREW: <message>` when parsing failed. */
 const render = (t: Html5libTest): string =>
-  Exit.match(Effect.runSyncExit(Html.parseDocument(t.data).pipe(Effect.map(serializeTree))), {
+  Exit.match(Effect.runSyncExit(parseCase(t)), {
     onSuccess: (tree) => tree,
     onFailure: (cause) => {
       const error = Cause.squash(cause);
@@ -90,11 +114,8 @@ describe("html5lib tree-construction conformance", () => {
     await Effect.runPromise(
       Effect.forEach(
         Arr.flatMap(FILES, ({ content }) => runnableTests(content)),
-        // Should always produce an <html>-rooted document, even for malformed input.
-        (t) =>
-          Html.parseDocument(t.data).pipe(
-            Effect.map((doc) => expect(doc.root.name.local).toBe("html")),
-          ),
+        // Should always produce a tree, even for malformed input.
+        (t) => Effect.asVoid(parseCase(t)),
         { concurrency: 1, discard: true },
       ),
     );

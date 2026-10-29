@@ -580,6 +580,44 @@ type SaxHandlers = {
   readonly [Tag in SaxEvent["_tag"]]: (ev: Extract<SaxEvent, { _tag: Tag }>) => void;
 };
 
+/** What a tree builder is set up with besides the input. */
+interface BuilderOptions {
+  readonly limits?: Limits | undefined;
+  /** The scripting flag: `<noscript>` content is raw text when set. */
+  readonly scripting?: boolean | undefined;
+  /** The fragment parsing context element; absent for a whole document. */
+  readonly context?: FragmentContext | undefined;
+}
+
+/**
+ * The context element of an HTML fragment parse: a local name and its
+ * namespace (HTML unless written `svg <name>` or `math <name>`).
+ *
+ * @since 0.3.0
+ * @category models
+ */
+export interface FragmentContext {
+  readonly name: string;
+  readonly ns: string;
+}
+
+/**
+ * Read a context element as html5lib's `#document-fragment` lines and the
+ * `context` option spell it: `td`, `svg path`, `math mi`. HTML names are
+ * case-insensitive.
+ *
+ * @since 0.3.0
+ * @category parsing
+ */
+export const parseFragmentContext = (spec: string): FragmentContext => {
+  const [first = "", second] = spec.trim().split(/\s+/);
+  if (second !== undefined && first.toLowerCase() === "svg") return { name: second, ns: SVG_NS };
+  if (second !== undefined && first.toLowerCase() === "math") {
+    return { name: second.toLowerCase(), ns: MATHML_NS };
+  }
+  return { name: first.toLowerCase(), ns: HTML_NS };
+};
+
 class HtmlTreeBuilder {
   private mode: Mode = "initial";
   private readonly open: Array<MElement> = [];
@@ -606,15 +644,61 @@ class HtmlTreeBuilder {
   /** Where the token being processed starts, for limit failures. */
   private position: Position = origin;
   private readonly limits: Limits;
+  private readonly scripting: boolean;
+  /** The fragment case's context element (never inserted); `null` for a document. */
+  private readonly context: MElement | null;
 
-  constructor(limits: Limits = defaultLimits) {
-    this.limits = limits;
+  constructor(options: BuilderOptions = {}) {
+    this.limits = options.limits ?? defaultLimits;
+    this.scripting = options.scripting ?? false;
+    this.context =
+      options.context === undefined
+        ? null
+        : mkElement(options.context.name, [], options.context.ns);
+    if (this.context !== null) this.startFragment(this.context);
+  }
+
+  /**
+   * The fragment case's set-up (WHATWG "parsing HTML fragments", steps 5–11):
+   * a root `html` element alone on the stack, a template insertion mode when
+   * the context is a template, and the insertion mode reset from the context.
+   * The document is in no-quirks mode. Unless the reset selects "before head"
+   * (an `html` context), the root stands in for the body, so nothing
+   * synthesizes `<head>` / `<body>` around the fragment.
+   */
+  private startFragment(context: MElement): void {
+    const root = mkElement("html", []);
+    this.topLevel.push(root);
+    this.open.push(root);
+    this.htmlEl = root;
+    this.quirks = false;
+    if (isHtmlTemplate(context)) this.templateModes.push("inTemplate");
+    this.resetInsertionMode();
+    if (this.mode !== "beforeHead") this.bodyEl = root;
+  }
+
+  /** Whether `el` is the fragment root standing in for the body. */
+  private isFragmentBody(el: MElement): boolean {
+    return this.context !== null && el === this.htmlEl && el === this.bodyEl;
+  }
+
+  /** Whether an element of this name holds raw text (or rcdata) content. */
+  private isRawTextName(name: string): boolean {
+    return isIn(RAW_TEXT, name) || isIn(RCDATA, name) || (this.scripting && name === "noscript");
   }
 
   // --- stack helpers -------------------------------------------------------
 
   private get current(): MElement | null {
     return this.open.at(-1) ?? null;
+  }
+
+  /**
+   * The adjusted current node: the context element when the fragment root is
+   * alone on the stack, otherwise the current node.
+   */
+  private get adjustedCurrent(): MElement | null {
+    return this.context !== null && this.open.length === 1 ? this.context : this.current;
   }
 
   /** Whether a template is open (one template insertion mode per open <template>). */
@@ -665,9 +749,22 @@ class HtmlTreeBuilder {
 
   private resetInsertionMode(): void {
     this.mode = Option.getOrElse(
-      Arr.findLast(this.open, (el, index) => this.resetModeFor(el.name, index)),
+      Arr.findLast(this.open, (el, index) => this.resetModeAt(el, index)),
       (): Mode => "inBody",
     );
+  }
+
+  /**
+   * The reset walk's step at stack entry `index`. In the fragment case the
+   * walk reaches the context element in place of the root (which is last):
+   * a foreign context selects nothing, a `frameset` one "in frameset".
+   */
+  private resetModeAt(el: MElement, index: number): Option.Option<Mode> {
+    const context = index === 0 ? this.context : null;
+    if (context === null) return this.resetModeFor(el.name, index);
+    if (context.ns !== HTML_NS) return Option.none();
+    if (context.name === "frameset") return Option.some("inFrameset");
+    return this.resetModeFor(context.name, index);
   }
 
   /** The mode the "reset the insertion mode" walk selects at stack entry `index`, if any. */
@@ -811,7 +908,7 @@ class HtmlTreeBuilder {
     },
     XmlDeclaration: () => undefined,
     CData: (ev) => {
-      const cur = this.current;
+      const cur = this.adjustedCurrent;
       if (cur !== null && cur.ns !== HTML_NS) {
         // Foreign content: a real CDATA section is character data.
         if (Str.isNonEmpty(ev.data)) this.insertText(ev.data);
@@ -821,7 +918,7 @@ class HtmlTreeBuilder {
       }
     },
     Text: (ev) => {
-      const node = this.current;
+      const node = this.adjustedCurrent;
       if (node !== null && this.usesForeignRules(node, "char")) this.foreignText(ev.data);
       else this.onText(ev.data);
     },
@@ -832,7 +929,7 @@ class HtmlTreeBuilder {
         value: a.value,
       }));
       this.selfClosing = ev.selfClosing;
-      const node = this.current;
+      const node = this.adjustedCurrent;
       if (node !== null && this.usesForeignRules(node, "start", name)) {
         this.foreignStart(node, name, attrs);
       } else {
@@ -841,7 +938,7 @@ class HtmlTreeBuilder {
     },
     EndElement: (ev) => {
       const name = ev.name.toLowerCase();
-      const node = this.current;
+      const node = this.adjustedCurrent;
       if (node !== null && this.usesForeignRules(node, "end", name)) this.foreignEnd(name);
       else this.onEnd(name);
     },
@@ -869,7 +966,7 @@ class HtmlTreeBuilder {
    * element that is not an integration point). Used by the coupled driver.
    */
   currentIsForeignContent(): boolean {
-    const c = this.current;
+    const c = this.adjustedCurrent;
     return (
       c !== null && c.ns !== HTML_NS && !this.isHTMLIntegrationPoint(c) && !this.isMathMLTextIP(c)
     );
@@ -881,7 +978,7 @@ class HtmlTreeBuilder {
    * dispatcher).
    */
   private usesForeignRules(
-    node: MElement, // the adjusted current node (no fragment context here)
+    node: MElement, // the adjusted current node
     kind: "start" | "end" | "char",
     startName?: string,
   ): boolean {
@@ -989,6 +1086,8 @@ class HtmlTreeBuilder {
   }
 
   private ensureBody(): void {
+    // (A fragment root standing in for the body is already in place.)
+    if (this.bodyEl !== null) return;
     this.ensureHtml();
     if (this.headEl === null) this.ensureHead();
     if (this.bodyEl === null) {
@@ -1018,7 +1117,7 @@ class HtmlTreeBuilder {
     // Text whose current node is a raw-text/rcdata element (script, style,
     // title, textarea, noframes, …) is that element's content regardless of mode.
     const open = this.current;
-    if (open !== null && (isIn(RAW_TEXT, open.name) || isIn(RCDATA, open.name))) {
+    if (open !== null && this.isRawTextName(open.name)) {
       this.insertText(data);
       return;
     }
@@ -1073,6 +1172,7 @@ class HtmlTreeBuilder {
   private throughSpine(data: string): Option.Option<string> {
     const cur = this.current;
     if (cur !== null && cur.name !== "html" && cur.name !== "head") return Option.some(data);
+    if (cur !== null && this.isFragmentBody(cur)) return Option.some(data);
     const inHead = cur !== null && cur.name === "head";
     if (/^[\t\n\f\r ]*$/.test(data)) {
       this.placeSpineWhitespace(data, inHead);
@@ -1213,8 +1313,9 @@ class HtmlTreeBuilder {
       // In head (scripting disabled), <noscript> opens "in head noscript".
       if (this.bodyEl === null && this.mode !== "afterHead") this.ensureHead();
       if (this.mode === "inHead") {
+        // With scripting enabled it is a raw text element instead.
         this.insertElement("noscript", attrs);
-        this.mode = "inHeadNoscript";
+        if (!this.scripting) this.mode = "inHeadNoscript";
         return;
       }
       // in body: a generic element
@@ -1853,7 +1954,7 @@ class HtmlTreeBuilder {
     this.ignoreLeadingNewline = false;
     // A matching raw-text/rcdata element (e.g. </noframes>) is always popped,
     // even in frameset modes where other end tags are ignored.
-    if ((isIn(RAW_TEXT, name) || isIn(RCDATA, name)) && this.current?.name === name) {
+    if (this.isRawTextName(name) && this.current?.name === name) {
       this.open.pop();
       return;
     }
@@ -2466,18 +2567,36 @@ class HtmlTreeBuilder {
     Arr.forEach(Arr.filter(this.topLevel, isElementNode), visit);
   }
 
-  finish(): XmlDocument {
+  /** The end-of-input steps both {@link finish} and {@link finishFragment} take first. */
+  private closeAtEof(): void {
     // Close any templates still open at EOF (the "in template" EOF rule) so a
     // synthesized body never lands inside template contents. Only HTML templates
     // carry a template insertion mode (a foreign <svg template> does not).
-    // Each template insertion mode closes one open HTML <template>.
-    Arr.forEach(this.templateModes, () => popThrough(this.open, isHtmlTemplate));
+    // Each template insertion mode closes one open HTML <template> (a template
+    // fragment context has a mode but no element, so it closes nothing).
+    Arr.forEach(this.templateModes, () => {
+      if (Arr.some(this.open, isHtmlTemplate)) popThrough(this.open, isHtmlTemplate);
+    });
     this.templateModes.splice(0);
 
     // An unclosed raw-text/rcdata element (e.g. <script> with no </script>) is
     // popped at EOF (the "text" insertion mode's EOF rule) so that nothing nests
     // inside it.
-    popWhile(this.open, (el) => isIn(RAW_TEXT, el.name) || isIn(RCDATA, el.name));
+    popWhile(this.open, (el) => this.isRawTextName(el.name));
+  }
+
+  /** The fragment case's result: the root element's children (WHATWG step 15). */
+  finishFragment(): ReadonlyArray<XmlNode> {
+    this.closeAtEof();
+    this.populateSelectedContent();
+    const root = this.htmlEl;
+    if (root === null) return [];
+    const built = toXmlNode(root);
+    return built instanceof XmlElement ? built.children : [];
+  }
+
+  finish(): XmlDocument {
+    this.closeAtEof();
 
     // Ensure a minimal valid document exists (but never add a <body> to a
     // frameset document).
@@ -2604,41 +2723,62 @@ const toXmlNode = (root: MNode): XmlNode => {
  */
 export const buildDocument = <E, R>(
   events: Stream.Stream<SaxEvent, E, R>,
-  options?: { readonly limits?: Partial<Limits> | undefined },
+  options?: {
+    readonly limits?: Partial<Limits> | undefined;
+    readonly scripting?: boolean | undefined;
+  },
 ): Effect.Effect<XmlDocument, SaxError | E, R> =>
   Effect.gen(function* () {
-    const builder = new HtmlTreeBuilder(resolveLimits(options?.limits));
+    const builder = new HtmlTreeBuilder({
+      limits: resolveLimits(options?.limits),
+      scripting: options?.scripting,
+    });
     yield* acceptAll(events, (ev) => builder.accept(ev));
     return builder.finish();
   });
 
+/** Options for the coupled string drivers. */
+interface StringBuildOptions {
+  readonly entities?: Record<string, string> | undefined;
+  readonly limits?: Partial<Limits> | undefined;
+  readonly scripting?: boolean | undefined;
+}
+
 /**
- * Build an HTML document from a string with the tokenizer and tree builder
- * coupled: after each event the builder tells the tokenizer whether it is inside
- * foreign content, so raw-text/rcdata elements (title/style/script/textarea/
- * plaintext) inside SVG/MathML are parsed as ordinary elements.
- *
- * @since 0.2.0
- * @category parsing
+ * Run the tokenizer and a tree builder over a string in lockstep: after each
+ * event the builder tells the tokenizer whether it is inside foreign content,
+ * so raw-text/rcdata elements (title/style/script/textarea/plaintext) inside
+ * SVG/MathML are parsed as ordinary elements.
  */
-export const buildDocumentString = (
+const runCoupled = <A>(
   input: string,
-  options?: {
-    readonly entities?: Record<string, string> | undefined;
-    readonly limits?: Partial<Limits> | undefined;
-  },
-): Effect.Effect<XmlDocument, SaxError> =>
+  options: StringBuildOptions | undefined,
+  context: FragmentContext | undefined,
+  result: (builder: HtmlTreeBuilder) => A,
+): Effect.Effect<A, SaxError> =>
   Effect.suspend(() => {
     const opts = resolveSaxOptions({
       mode: "html",
       entities: options?.entities,
       limits: options?.limits,
+      scripting: options?.scripting,
     });
-    const lexer = new Lexer({ mode: "html", entities: opts.entities, content: false });
+    const lexer = new Lexer({
+      mode: "html",
+      entities: opts.entities,
+      content: false,
+      scripting: opts.scripting,
+    });
     const guard = new Guard(opts.limits, false);
-    const builder = new HtmlTreeBuilder(opts.limits);
+    const builder = new HtmlTreeBuilder({
+      limits: opts.limits,
+      scripting: opts.scripting,
+      context,
+    });
     const over = guard.input(input.length, lexer);
     if (over !== null) return Effect.fail(over);
+    if (context !== undefined && context.ns === HTML_NS) lexer.startInContext(context.name);
+    lexer.suppressRawText = builder.currentIsForeignContent();
     // One token at a time, so the builder can switch raw text off in between.
     lexer.push(input);
     lexer.close();
@@ -2653,5 +2793,35 @@ export const buildDocumentString = (
         lexer.suppressRawText = builder.currentIsForeignContent();
       }
     }
-    return Effect.succeed(builder.finish());
+    return Effect.succeed(result(builder));
   });
+
+/**
+ * Build an HTML document from a string with the tokenizer and tree builder
+ * coupled: after each event the builder tells the tokenizer whether it is inside
+ * foreign content, so raw-text/rcdata elements (title/style/script/textarea/
+ * plaintext) inside SVG/MathML are parsed as ordinary elements.
+ *
+ * @since 0.2.0
+ * @category parsing
+ */
+export const buildDocumentString = (
+  input: string,
+  options?: StringBuildOptions,
+): Effect.Effect<XmlDocument, SaxError> =>
+  runCoupled(input, options, undefined, (builder) => builder.finish());
+
+/**
+ * Parse an HTML fragment from a string with the WHATWG fragment parsing
+ * algorithm, in the given context element: the nodes a browser's
+ * `innerHTML` setter would put in that element.
+ *
+ * @since 0.3.0
+ * @category parsing
+ */
+export const buildFragmentString = (
+  input: string,
+  context: FragmentContext,
+  options?: StringBuildOptions,
+): Effect.Effect<ReadonlyArray<XmlNode>, SaxError> =>
+  runCoupled(input, options, context, (builder) => builder.finishFragment());

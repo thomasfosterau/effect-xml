@@ -133,13 +133,13 @@ const serializeDoctype = (d: XmlDoctype): string =>
     : "") +
   ">";
 
+/** Serialize a parsed fragment (the context element's children) into html5lib's notation. */
+export const serializeFragment = (nodes: ReadonlyArray<XmlNode>): string =>
+  serializeChildren(nodes, 0).join("\n");
+
 /** Serialize a parsed document into html5lib's `#document` notation. */
 export const serializeTree = (doc: XmlDocument): string =>
   [
     ...(doc.doctype ? [serializeDoctype(doc.doctype)] : []),
     ...serializeChildren(doc.children, 0),
   ].join("\n");
-
-/** Whether a test exercises features we don't yet implement (so it's excluded from the gate). */
-export const isUnsupported = (t: Html5libTest): boolean =>
-  Option.isSome(t.fragmentContext) || t.scriptMode === "on";

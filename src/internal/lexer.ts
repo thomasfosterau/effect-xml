@@ -146,6 +146,11 @@ export interface LexerOptions {
    * document, so references and CDATA sections may appear at its top level.
    */
   readonly content: boolean;
+  /**
+   * HTML: the scripting flag. When set, `<noscript>` content is raw text, as
+   * a browser with scripting enabled reads it.
+   */
+  readonly scripting?: boolean | undefined;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -164,7 +169,8 @@ const RAW_KINDS = HashMap.make<ReadonlyArray<readonly [string, RawKind | "plaint
 type LexState =
   | { readonly _tag: "Data" }
   | { readonly _tag: "Raw"; readonly name: string; readonly kind: RawKind }
-  | { readonly _tag: "Plaintext" };
+  | { readonly _tag: "Plaintext" }
+  | { readonly _tag: "RcdataToEnd" };
 const LexState = Data.taggedEnum<LexState>();
 
 const matchState = LexState.$match;
@@ -177,6 +183,7 @@ const matchState = LexState.$match;
 const FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/;
 const DATA: LexState = LexState.Data();
 const PLAINTEXT: LexState = LexState.Plaintext();
+const RCDATA_TO_END: LexState = LexState.RcdataToEnd();
 
 // -----------------------------------------------------------------------------
 // Positions
@@ -308,6 +315,25 @@ export class Lexer {
    * NOT switched into their raw tokenizer state (used inside foreign content).
    */
   suppressRawText = false;
+
+  /** The raw tokenizer state an HTML start tag of this name switches to, if any. */
+  private rawKind(name: string): Option.Option<RawKind | "plaintext"> {
+    return name === "noscript" && this.options.scripting === true
+      ? Option.some("rawtext")
+      : HashMap.get(RAW_KINDS, name);
+  }
+
+  /**
+   * HTML fragment parsing: set the initial tokenizer state from the context
+   * element (WHATWG "parsing HTML fragments", step 4). No start tag has been
+   * emitted, so no end tag is appropriate: a raw-text context reads everything
+   * to EOF as text (rcdata with its character references decoded).
+   */
+  startInContext(name: string): void {
+    Option.map(this.rawKind(name), (kind) => {
+      this.state = kind === "rcdata" ? RCDATA_TO_END : PLAINTEXT;
+    });
+  }
 
   private readonly options: LexerOptions;
 
@@ -486,7 +512,7 @@ export class Lexer {
       // In HTML, certain elements switch the tokenizer into a raw mode — unless
       // we are inside foreign (SVG/MathML) content.
       const name = t.name.toLowerCase();
-      Option.map(HashMap.get(RAW_KINDS, name), (kind) => {
+      Option.map(this.rawKind(name), (kind) => {
         this.state = kind === "plaintext" ? PLAINTEXT : LexState.Raw({ name, kind });
       });
     }
@@ -611,6 +637,7 @@ export class Lexer {
     Data: () => this.grammars.data,
     Raw: ({ name, kind }: Extract<LexState, { _tag: "Raw" }>) => this.grammars.raw(name, kind),
     Plaintext: () => this.grammars.plaintext,
+    RcdataToEnd: () => this.grammars.rcdataToEnd,
   };
 
   /** The error for the first character XML does not allow (the token at the cursor takes it in). */

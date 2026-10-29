@@ -725,6 +725,12 @@ export interface Grammars {
   /** The contents and end tag of a raw text element. */
   readonly raw: (name: string, kind: RawKind) => P<Step>;
   readonly plaintext: P<Step>;
+  /**
+   * Rcdata with no appropriate end tag (an HTML fragment parsed in a
+   * `<title>` / `<textarea>` context): everything to EOF is text, with
+   * character references decoded.
+   */
+  readonly rcdataToEnd: P<Step>;
 }
 
 /**
@@ -816,7 +822,16 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
       return g;
     });
   };
-  return { data: Compiler.jit(data), raw, plaintext: Compiler.jit(plaintext) };
+  const rcdataToEnd: P<Step> = Parser.map(
+    Parser.withSpan(Parser.terminated(decoded(cfg, false)(Token.rest), eof)),
+    ([data, span]) => (data === "" ? none : [text(data, span.start, span.end)]),
+  );
+  return {
+    data: Compiler.jit(data),
+    raw,
+    plaintext: Compiler.jit(plaintext),
+    rcdataToEnd: Compiler.jit(rcdataToEnd),
+  };
 };
 
 const cache = new WeakMap<Record<string, string>, { xml?: Grammars; html?: Grammars }>();
