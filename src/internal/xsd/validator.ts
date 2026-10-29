@@ -535,6 +535,7 @@ export class Validator {
 
   private readonly qnameChecker: SimpleChecker = {
     kind: "qname",
+    primitive: "QName",
     whiteSpace: "collapse",
     identity: "none",
     check: (s, context) => {

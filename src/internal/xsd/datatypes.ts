@@ -57,10 +57,10 @@ export interface SimpleChecker {
   readonly identity: Identity;
   /**
    * The local name of the primitive type an atomic type derives from (`decimal`
-   * for `int`, `string` for `token`); absent for lists and unions. Values of
+   * for `int`, `string` for `token`); `list` or `union` for those. Values of
    * different primitive types are never equal.
    */
-  readonly primitive?: string | undefined;
+  readonly primitive: string;
   /** For a list, its item type; for a union, its member types. */
   readonly item?: SimpleChecker | undefined;
   readonly members?: ReadonlyArray<SimpleChecker> | undefined;
@@ -522,6 +522,7 @@ const noMember = (s: string): Result.Result<SimpleValue, string> =>
 /** A list of `item`: whitespace-separated items, each checked on its own. */
 export const listOf = (item: SimpleChecker): SimpleChecker => ({
   kind: "list",
+  primitive: "list",
   whiteSpace: "collapse",
   identity: item.identity === "IDREF" ? "IDREFS" : "none",
   item,
@@ -540,6 +541,7 @@ export const listOf = (item: SimpleChecker): SimpleChecker => ({
 /** A union of `members`: the first member type a value is valid for decides it. */
 export const unionOf = (members: ReadonlyArray<SimpleChecker>): SimpleChecker => ({
   kind: "union",
+  primitive: "union",
   whiteSpace: "preserve",
   identity: "none",
   members,
@@ -796,6 +798,6 @@ export const identityKey = (
         (items) => `list(${items.join("\u0001")})`,
       );
     }
-    return Result.succeed(`${checker.primitive ?? checker.kind}:${canonical(value)}`);
+    return Result.succeed(`${checker.primitive}:${canonical(value)}`);
   });
 };
