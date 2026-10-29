@@ -79,8 +79,9 @@ const errorDemo = Effect.fn("errorDemo")(function* () {
   );
 });
 
-// 5. XML Schema: a parser generated from examples/xsd/order.xsd (see
-// examples/xsd/generate.ts) validates as it streams and returns typed values.
+// 5. XML Schema: a parser generated from examples/xsd/order.xsd (by the
+// `effect-xml-xsd generate` command, packages/cli) validates as it streams and
+// returns typed values.
 const xsdDemo = Effect.fn("xsdDemo")(function* () {
   yield* Console.log("\n# 5. Parsers generated from an XML Schema");
   const order = yield* Order.order.parse(

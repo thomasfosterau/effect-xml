@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Effect-TS/language-service/refs/heads/main/schema.json",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // Type-check against the library's sources, as the root's tests do, so
+    // no build is needed first; the published bin imports the built package.
+    "paths": {
+      "@thomasfosterau/effect-xml": ["../../src/index.ts"]
+    }
+  },
+  "include": ["src", "tests", "vite.config.ts", "package.json"]
+}

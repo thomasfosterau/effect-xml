@@ -1,0 +1,43 @@
+{
+  "$schema": "https://www.schemastore.org/package",
+  "name": "@thomasfosterau/effect-xml-cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Command-line tools for @thomasfosterau/effect-xml: generate typed parser modules from XML Schemas.",
+  "keywords": [
+    "cli",
+    "codegen",
+    "effect",
+    "xml",
+    "xml-schema",
+    "xsd"
+  ],
+  "homepage": "https://github.com/thomasfosterau/effect-xml/tree/trunk/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/thomasfosterau/effect-xml/issues"
+  },
+  "license": "MIT",
+  "author": "Thomas Foster <me@thomasfoster.au>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thomasfosterau/effect-xml.git",
+    "directory": "packages/cli"
+  },
+  "bin": {
+    "effect-xml-xsd": "./dist/main.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@thomasfosterau/effect-parse": "catalog:",
+    "@thomasfosterau/effect-xml": "workspace:^",
+    "effect": "catalog:"
+  }
+}

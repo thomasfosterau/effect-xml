@@ -358,7 +358,11 @@ const program = Effect.gen(function* () {
 });
 ```
 
-**Generated parsers.** `Xsd.generate(model)` writes a TypeScript module with a type per schema type, the compiled model as a literal (nothing is compiled at run time) and a parser per global element; [examples/xsd](examples/xsd) has a schema, the module generated from it and the [script](examples/xsd/generate.ts) that does it:
+**Generated parsers.** `Xsd.generate(model)` writes a TypeScript module with a type per schema type, the compiled model as a literal (nothing is compiled at run time) and a parser per global element; [examples/xsd](examples/xsd) has a schema and the module generated from it. The [`effect-xml-xsd`](packages/cli) command-line tool (`@thomasfosterau/effect-xml-cli`) reads a schema file, resolves its includes and imports, and writes the module, with a `--check` mode for CI:
+
+```sh
+effect-xml-xsd generate schemas/order.xsd -o src/order.generated.ts [--import-from <module>] [--root <expanded name> …] [--remote] [--check]
+```
 
 ```ts
 import * as Order from "./order.generated.ts";

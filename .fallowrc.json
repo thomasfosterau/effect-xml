@@ -8,7 +8,9 @@
     "src/Xsd/index.ts",
     "tests/**/*.test.ts",
     "examples/usage.ts",
-    "examples/xsd/generate.ts",
+    "packages/cli/src/main.ts",
+    "packages/cli/tests/**/*.test.ts",
+    "packages/cli/vite.config.ts",
     "bench/parse.ts",
     "vite.config.ts"
   ],

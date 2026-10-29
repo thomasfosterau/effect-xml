@@ -967,7 +967,7 @@ describe("the generated example (examples/xsd)", () => {
     const source = Effect.runSync(
       Xsd.generate(model, { importFrom: "../../src/index.ts", source: "order.xsd" }),
     );
-    // Regenerate with: vp exec tsx examples/xsd/generate.ts examples/xsd/order.xsd examples/xsd/order.generated.ts ../../src/index.ts
+    // Regenerate with the CLI (packages/cli): effect-xml-xsd generate examples/xsd/order.xsd -o examples/xsd/order.generated.ts --import-from ../../src/index.ts
     expect(source).toBe(generated);
   });
 
