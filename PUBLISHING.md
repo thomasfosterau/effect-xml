@@ -1,6 +1,8 @@
 # Publishing & releases
 
-Releases are automated with [Changesets](https://github.com/changesets/changesets) and published to npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) — there is no `NPM_TOKEN`. See [SECURITY.md](./SECURITY.md) for the security rationale behind the pipeline. (Copied from the effect-web library and adapted to a single package at the repository root.)
+Releases are automated with [Changesets](https://github.com/changesets/changesets) and published to npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) — there is no `NPM_TOKEN`. See [SECURITY.md](./SECURITY.md) for the security rationale behind the pipeline. (Copied from the effect-web library and adapted to the library at the repository root.)
+
+**`@thomasfosterau/effect-xml-cli`** (`packages/cli`) is `"private": true` for now, so Changesets versions it but nothing publishes it and `scripts/release.sh` handles only the library. To start publishing it: bootstrap and configure a trusted publisher for it as in steps 2–3 below, remove `"private": true`, and extend `scripts/release.sh` to publish `packages/cli` the same way (skip an already-published version, `pnpm publish` from the package directory so `workspace:^` is rewritten to the library's version).
 
 ## The release flow
 

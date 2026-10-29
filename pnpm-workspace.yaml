@@ -1,4 +1,6 @@
-# pnpm workspace — the single published package `@thomasfosterau/effect-xml` at the root.
+# pnpm workspace — the library `@thomasfosterau/effect-xml` at the root, and
+# its command-line tool `@thomasfosterau/effect-xml-cli` in `packages/cli`
+# (kept apart so the library stays platform-neutral and side-effect free).
 #
 # The `catalog:` protocol pins versions that MUST be singletons. Effect
 # especially: two copies of `effect` break Context / Layer / Schema identity
@@ -14,6 +16,9 @@
 # Versions follow the effect-web library's catalog (the family's library
 # reference) wherever the two overlap (effect, vite-plus, the TypeScript 6/7
 # pair, @effect/tsgo, the Effect oxlint plugin, fallow).
+
+packages:
+  - packages/*
 
 catalogMode: strict
 

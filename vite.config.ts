@@ -1,9 +1,11 @@
 /**
- * The one Vite+ configuration for this single-package repo: the repo-wide
+ * The root Vite+ configuration: the repo-wide
  * format / lint / staged passes (read statically by `vp fmt` / `vp lint` /
  * `vp staged`), the task graph (`check`, `build`, `test:unit`,
  * `test:coverage`, `docgen`, `example`), the `vp pack` (tsdown) settings and
- * the vitest / coverage settings.
+ * the vitest / coverage settings for the library at the root. The
+ * command-line package in `packages/cli` has its own tasks and build in its
+ * `vite.config.ts`, and shares the format and lint passes here.
  *
  * Adapted from the effect-web library's root `vite.config.ts` and
  * `vite.package.ts` (the family's library reference), collapsed into one file
@@ -27,6 +29,12 @@ import effect from "@mpsuesser/oxlint-plugin-effect";
 const cacheInputs = [{ auto: true }, "!node_modules/**", "!docs/**", "pnpm-lock.yaml"];
 
 const maxWorkers = process.env.VITEST_MAX_WORKERS;
+
+/**
+ * A task of the command-line package (`packages/cli`), which the root's
+ * `check`, `build` and `test:unit` run too, so CI's root tasks cover it.
+ */
+const cli = (task: string): string => `@thomasfosterau/effect-xml-cli#${task}`;
 
 export default defineConfig({
   // Staged-file checks run by `vp staged` (pre-commit).
@@ -224,7 +232,7 @@ export default defineConfig({
       },
       // Test fixtures are the seams under test, not domain code.
       {
-        files: ["tests/**/*.ts"],
+        files: ["tests/**/*.ts", "packages/*/tests/**/*.ts"],
         rules: {
           // A test IS the boundary the rule sends execution to: each case
           // runs its program with `Effect.runPromise` / `runSync`.
@@ -255,6 +263,7 @@ export default defineConfig({
       // the tests and the example under tsconfig.test.json.
       check: {
         command: "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+        dependsOn: [cli("check")],
         cache: { input: cacheInputs, output: [] },
       },
       // The published artifact: one ESM bundle + declaration file per entry
@@ -262,10 +271,12 @@ export default defineConfig({
       // false` is a claim about this output: no top-level statements.
       build: {
         command: "vp pack",
+        dependsOn: [cli("build")],
         cache: { input: cacheInputs, output: ["dist/**"] },
       },
       "test:unit": {
         command: "vp test run",
+        dependsOn: [cli("test:unit")],
         cache: { env: ["VITEST_MAX_WORKERS", "NODE_OPTIONS"], input: cacheInputs, output: [] },
       },
       // The unit suite under one Istanbul coverage map

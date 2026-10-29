@@ -2,7 +2,7 @@
 
 `CLAUDE.md` is a symlink to this file. Project conventions live here; personal style preferences live in user memory.
 
-This repo publishes one npm package, `@thomasfosterau/effect-xml`, from the repository root: type-safe, streaming XML and HTML parsing for Effect. It has three layers, each usable on its own and each a thin composition of the one below, plus XML Schema validation (`Xsd`) on top of the SAX stream:
+This repo publishes `@thomasfosterau/effect-xml` from the repository root: type-safe, streaming XML and HTML parsing for Effect. A second workspace package, `@thomasfosterau/effect-xml-cli` (`packages/cli`, `"private": true` until its npm setup is done, see [PUBLISHING.md](PUBLISHING.md)), ships the `effect-xml-xsd` command (`generate`, built on `effect/cli` and `@effect/platform-node`), so the library itself stays platform-neutral and side-effect free. It has three layers, each usable on its own and each a thin composition of the one below, plus XML Schema validation (`Xsd`) on top of the SAX stream:
 
 ```
 input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree builder ──▶ XmlDocument
@@ -32,7 +32,8 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 - **`src/internal/htmlEntities.generated.ts` is generated data** (the WHATWG named-reference table); don't hand-edit entries.
 - **`"sideEffects": false` is a claim about `dist/`.** Every emitted module must be pure declarations: no top-level statements with effects.
 - **`vp run docgen` executes your examples.** `@effect/docgen` compiles every JSDoc `@example` and runs it under `tsx`, importing `@thomasfosterau/effect-xml` by name through `dist/` (`"runExamples": true` in `docgen.json`). An example must be a fenced ` ```ts ` block inside `@example` (docgen silently skips bare code), must import everything it uses, must not use `declare const`, and must not throw.
-- **`effect` and `@thomasfosterau/effect-parse` are peers, never dependencies.** Two copies of `effect` break `Schema` / `Context` identity; the consumer owns the singleton.
+- **`effect` and `@thomasfosterau/effect-parse` are peers, never dependencies** of the library. Two copies of `effect` break `Schema` / `Context` identity; the consumer owns the singleton. The CLI package is an application, so it depends on them (and on `@effect/platform-node`) directly.
+- **`packages/cli` is the only Node-specific code.** Nothing under `src/` may import a platform package or `node:*`; anything that needs a runtime goes in the CLI. Its `check`, `build` and `test:unit` run as part of the root tasks of the same name (`dependsOn` in the root `vite.config.ts`), and its type check and tests resolve the library to `src/`, so neither needs a build first.
 
 ## Conventions
 
@@ -48,9 +49,9 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 ## Commands
 
 - `pnpm install` — dependencies plus the Vite+ git hooks (pre-commit runs `vp staged`: format + lint on staged files) and the `prepare` step that patches the native `tsc` / `oxlint` with `@effect/tsgo`. No pre-push hook: run the gates yourself.
-- `vp check` — format + lint (Oxfmt + Oxlint with the Effect presets). `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`. They are different commands.
-- `vp run test:unit` — the unit suite, including the html5lib conformance gate.
-- `vp run build` — `vp pack` → `dist/` (one ESM bundle + `.d.ts` per entry).
+- `vp check` — format + lint (Oxfmt + Oxlint with the Effect presets). `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`, plus `packages/cli`'s. They are different commands.
+- `vp run test:unit` — the unit suite, including the html5lib conformance gate, and `packages/cli`'s.
+- `vp run build` — `vp pack` → `dist/` (one ESM bundle + `.d.ts` per entry), and `packages/cli/dist/main.js` (the `effect-xml-xsd` executable).
 - `vp run docgen` — compiles and runs every `@example` against `dist/`, writes the (git-ignored) API reference to `docs/`.
 - `vp run test:coverage` — the suite under an Istanbul map at `coverage/coverage-final.json`, which `fallow audit` reads.
 - `vp run example` — the tour in `examples/usage.ts`.
