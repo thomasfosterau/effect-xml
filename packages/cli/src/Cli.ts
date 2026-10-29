@@ -15,11 +15,8 @@ import { generate as run } from "./Generate.ts";
 /**
  * `effect-xml-xsd generate <schema.xsd> -o <out.ts>`: compile a schema and
  * write the typed parser module `Xsd.generate` makes from it.
- *
- * @since 0.1.0
- * @category commands
  */
-export const generate = Command.make(
+const generate = Command.make(
   "generate",
   {
     schema: Argument.String("schema").pipe(

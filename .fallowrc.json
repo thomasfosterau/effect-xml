@@ -30,7 +30,9 @@
     "@changesets/cli",
     "@changesets/changelog-github",
     "@vitest/coverage-istanbul",
-    "fallow"
+    "fallow",
+    "@thomasfosterau/effect-parse",
+    "@thomasfosterau/effect-xml"
   ],
   "rules": {
     "unused-files": "error",

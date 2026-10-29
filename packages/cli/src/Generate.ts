@@ -70,13 +70,8 @@ export class StaleOutput extends Schema.TaggedError<StaleOutput>()("StaleOutput"
   }
 }
 
-/**
- * What {@link generate} did: wrote the module, or (in check mode) found it up to date.
- *
- * @since 0.1.0
- * @category models
- */
-export type Outcome = "written" | "unchanged";
+/** What {@link generate} did: wrote the module, or (in check mode) found it up to date. */
+type Outcome = "written" | "unchanged";
 
 const remote = /^https?:/i;
 
