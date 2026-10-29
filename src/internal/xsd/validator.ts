@@ -50,6 +50,7 @@ import {
   type ValueContext,
 } from "./datatypes.ts";
 import { evaluate, type Tables } from "./identity.ts";
+import { advance, selects, type StepLevel, type StreamStep } from "../streamPath.ts";
 import type { ComplexRuntime, Runtime, TypeRuntime } from "./runtime.ts";
 
 /** Anything that stops validation. */
@@ -82,6 +83,14 @@ class Frame {
   readonly domAttributes: ReadonlyArray<XmlAttribute>;
   /** Key tables of identity constraints, when inside an element that declares some. */
   readonly tables: Tables | undefined;
+  /** The path steps it matched, when selecting (see {@link ValidatorOptions.select}). */
+  level: Option.Option<StepLevel> = Option.none();
+  /** Whether it matched the whole selection path, so its value is emitted, not delivered. */
+  selected = false;
+  /** Whether it is inside a selected element, where nothing is selected again. */
+  captured = false;
+  /** Selected values held until this element, an identity-constraint scope, closes. */
+  held: Option.Option<Array<XsdValue>> = Option.none();
 
   constructor(init: {
     readonly via: Frame["via"];
@@ -171,12 +180,21 @@ type Event<Tag extends SaxEvent["_tag"]> = Extract<SaxEvent, { readonly _tag: Ta
 export interface ValidatorOptions {
   /** The expanded name the document element must have. */
   readonly root?: string | undefined;
+  /**
+   * The elements to stream out: each one matching these steps is emitted
+   * (see {@link Validator.drain}) once it is complete, instead of becoming
+   * part of its parent's value.
+   */
+  readonly select?: ReadonlyArray<StreamStep> | undefined;
 }
 
 export class Validator {
   private readonly runtime: Runtime;
   private readonly root: string | undefined;
+  private readonly steps: ReadonlyArray<StreamStep>;
   private readonly frames: Array<Frame> = [];
+  /** Selected values completed and ready to emit. */
+  private emitted: Array<XsdValue> = [];
   private readonly ids = MutableHashSet.empty<string>();
   private readonly refs: Array<{
     readonly id: string;
@@ -191,6 +209,14 @@ export class Validator {
   constructor(runtime: Runtime, options?: ValidatorOptions) {
     this.runtime = runtime;
     this.root = options?.root;
+    this.steps = options?.select ?? [];
+  }
+
+  /** The selected values completed since the last call, in document order. */
+  drain(): ReadonlyArray<XsdValue> {
+    const out = this.emitted;
+    this.emitted = [];
+    return out;
   }
 
   /** The document's value, once {@link finish} has succeeded. */
@@ -338,7 +364,53 @@ export class Validator {
           ? this.open(opening, "wildcard", undefined, true)
           : this.startChild(opening, parent, parent.type);
     if (out !== null) return out;
+    this.track(opening, parent);
     return ev.selfClosing ? this.end(ev.name, ev.span.start) : null;
+  }
+
+  /** Match the element just opened against the selection path. */
+  private track(opening: Opening, parent: Frame | undefined): void {
+    const frame = this.frames.at(-1);
+    if (frame === undefined || Arr.isReadonlyArrayEmpty(this.steps)) return;
+    if (parent !== undefined && (parent.selected || parent.captured)) {
+      frame.captured = true;
+      return;
+    }
+    const level = advance(
+      this.steps,
+      Option.flatMap(Option.fromUndefinedOr(parent), (p) => p.level),
+      () =>
+        new XmlElement({
+          name: toQName(opening.name),
+          attributes: Result.getOrElse(this.domAttributes(opening.ev, opening.bindings), () => []),
+          children: [],
+        }),
+    );
+    frame.level = Option.some(level);
+    frame.selected = selects(this.steps, level);
+  }
+
+  /**
+   * Emit a selected value, or hold it while it is inside an element that
+   * declares identity constraints: a later violation in that scope would make
+   * the value part of an invalid document.
+   */
+  private emit(values: ReadonlyArray<XsdValue>): void {
+    if (Arr.isReadonlyArrayEmpty(values)) return;
+    const scope = Arr.findLast(this.frames, (f) => f.decl?.constraints !== undefined);
+    if (Option.isNone(scope)) {
+      this.emitted.push(...values);
+      return;
+    }
+    const frame = scope.value;
+    Option.match(frame.held, {
+      onNone: () => {
+        frame.held = Option.some([...values]);
+      },
+      onSome: (held) => {
+        held.push(...values);
+      },
+    });
   }
 
   private startRoot(opening: Opening): Failure | null {
@@ -856,14 +928,17 @@ export class Validator {
       Option.filter(element, () => frame.type === undefined || frame.via === "wildcard"),
       () => value,
     );
+    Option.map(frame.held, (held) => this.emit(held));
     if (parent === undefined) {
+      if (frame.selected) this.emit([kept]);
       this.done = Option.some({ name: frame.key, value: kept });
       return;
     }
     if (parent.tables !== undefined && frame.tables !== undefined)
       merge(parent.tables, frame.tables);
     Option.map(element, (el) => parent.dom?.push(el));
-    deliver(parent, frame, kept);
+    if (frame.selected) this.emit([kept]);
+    else deliver(parent, frame, kept);
   }
 
   /** Check that an element's content is complete, and build its value. */

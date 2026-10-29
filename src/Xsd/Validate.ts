@@ -5,12 +5,15 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { Runtime } from "../internal/xsd/runtime.ts";
+import { compileStreamable } from "../internal/streamPath.ts";
 import { Validator, type Failure } from "../internal/xsd/validator.ts";
 import type { Limits } from "../Limits.ts";
 import * as Sax from "../Sax.ts";
+import type { CompileOptions, Path, XPathError } from "../Xml/XPath.ts";
 import type { XsdSchemaError, XsdValidationError } from "./Error.ts";
 import type { Model } from "./Model.ts";
 import type { Validated, XsdValue } from "./Value.ts";
@@ -127,6 +130,102 @@ export const decode =
     });
 
 /**
+ * Options for {@link select}: the validation options, plus the namespace
+ * prefixes a string path is compiled with.
+ *
+ * @since 0.3.0
+ * @category options
+ */
+export interface SelectOptions extends ValidateOptions, CompileOptions {}
+
+/**
+ * Validate a stream of SAX events against a schema, streaming out the typed
+ * value of each element that matches `path` as soon as it is complete.
+ *
+ * This is how a large document is decoded in constant memory: each `row` of a
+ * worksheet or `entry` of a feed is emitted and dropped, rather than kept in
+ * the document's value. The whole document is still validated, and the
+ * stream fails at the first violation anywhere in it, so values emitted
+ * before a violation came from a document later found invalid.
+ *
+ * `path` is the streamable part of the XPath subset, as for `Sax.select`:
+ * child (`/`) and descendant (`//`) steps with element name tests, and
+ * predicates on the element's own attributes and name. A match inside a
+ * selected element is part of its value, not emitted again.
+ *
+ * A selected element is not delivered to its parent, so the parent's value
+ * changes shape in one way: a property for a repeated child stays an empty
+ * array (so the generated types still hold), and a property for a child that
+ * occurs at most once is left out.
+ *
+ * An element inside an identity-constraint scope (a `unique`, `key` or
+ * `keyref` declared on it or an ancestor) is held until that scope's element
+ * ends and its constraints hold, and then emitted.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import * as Stream from "effect/Stream"
+ * import { Sax, Xsd } from "@thomasfosterau/effect-xml"
+ *
+ * const model = Effect.runSync(
+ *   Xsd.compile(`
+ *     <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+ *       <xs:element name="feed">
+ *         <xs:complexType>
+ *           <xs:sequence>
+ *             <xs:element name="entry" maxOccurs="unbounded">
+ *               <xs:complexType><xs:attribute name="n" type="xs:int"/></xs:complexType>
+ *             </xs:element>
+ *           </xs:sequence>
+ *         </xs:complexType>
+ *       </xs:element>
+ *     </xs:schema>`)
+ * )
+ *
+ * const entries = Stream.make(`<feed><entry n="1"/><entry n="2"/></feed>`).pipe(
+ *   Sax.tokenize(),
+ *   Xsd.select(model, "/feed/entry"),
+ *   Stream.runCollect
+ * )
+ *
+ * console.log(Effect.runSync(entries)) // [{ n: 1 }, { n: 2 }]
+ * ```
+ *
+ * @since 0.3.0
+ * @category validating
+ */
+export const select =
+  (model: Model, path: string | Path, options?: SelectOptions) =>
+  <E, R>(
+    events: Stream.Stream<Sax.SaxEvent, E, R>,
+  ): Stream.Stream<XsdValue, E | XsdError | XPathError, R> =>
+    Stream.suspend((): Stream.Stream<XsdValue, E | XsdError | XPathError, R> => {
+      const steps = compileStreamable(path, options);
+      if (Result.isFailure(steps)) return Stream.fail(steps.failure);
+      const validator = new Validator(runtimeOf(model), {
+        root: options?.root,
+        select: steps.success,
+      });
+      // Each chunk of events becomes the values it completed, then its failure if it has one.
+      const body = Stream.mapArray(events, (chunk) => {
+        const failure = acceptAll(validator, chunk);
+        return [{ values: validator.drain(), failure }] as const;
+      }).pipe(
+        Stream.flatMap(({ values, failure }) =>
+          failure === null
+            ? Stream.fromIterable(values)
+            : Stream.concat(Stream.fromIterable(values), Stream.fail(failure)),
+        ),
+      );
+      const tail = Stream.suspend(() => {
+        const failure = validator.finish();
+        return failure === null ? Stream.fromIterable(validator.drain()) : Stream.fail(failure);
+      });
+      return Stream.concat(body, tail);
+    });
+
+/**
  * Parse and validate an XML string against a schema, building its typed value.
  *
  * @example
@@ -220,6 +319,17 @@ export interface Parser<A> {
   readonly decode: <E, R>(
     events: Stream.Stream<Sax.SaxEvent, E, R>,
   ) => Effect.Effect<A, E | XsdError, R>;
+  /**
+   * Stream out the values of the elements matching `path` (see
+   * {@link select}), typed `B`: the caller's claim about the type of the
+   * elements the path selects.
+   */
+  readonly stream: <B = XsdValue>(
+    path: string | Path,
+    options?: CompileOptions,
+  ) => <E, R>(
+    events: Stream.Stream<Sax.SaxEvent, E, R>,
+  ) => Stream.Stream<B, E | XsdError | XPathError, R>;
 }
 
 /**
@@ -251,5 +361,14 @@ export const parser = <A = XsdValue>(model: Model, element: string): Parser<A> =
     parseBytesStream: (options) => (input) =>
       Effect.map(parseBytesStream(model, rooted(options))(input), value),
     decode: (events) => Effect.map(decode(model, { root: element })(events), value),
+    stream:
+      <B = XsdValue>(path: string | Path, options?: CompileOptions) =>
+      <E, R>(events: Stream.Stream<Sax.SaxEvent, E, R>) =>
+        Stream.map(
+          select(model, path, { ...options, root: element })(events),
+          // SAFETY: as for `value`: `B` is the caller's description of the
+          // type of the elements `path` selects, from the same model.
+          (v) => v as B,
+        ),
   };
 };

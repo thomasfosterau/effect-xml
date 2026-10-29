@@ -719,6 +719,160 @@ describe("Xsd streaming", () => {
   });
 });
 
+describe("Xsd.select", () => {
+  const model = compile(
+    schema(
+      `<xs:element name="sheet"><xs:complexType><xs:sequence>
+        <xs:element name="title" type="xs:string"/>
+        <xs:element name="head" minOccurs="0"><xs:complexType>
+          <xs:attribute name="n" type="xs:int"/></xs:complexType></xs:element>
+        <xs:element name="row" maxOccurs="unbounded"><xs:complexType><xs:sequence>
+          <xs:element name="c" type="xs:int" maxOccurs="unbounded"/>
+        </xs:sequence><xs:attribute name="r" type="xs:int"/><xs:attribute name="hidden" type="xs:boolean"/>
+        </xs:complexType></xs:element>
+      </xs:sequence></xs:complexType></xs:element>
+      <xs:element name="keyed"><xs:complexType><xs:sequence>
+        <xs:element name="group" maxOccurs="unbounded"><xs:complexType><xs:sequence>
+          <xs:element name="item" maxOccurs="unbounded"><xs:complexType>
+            <xs:attribute name="id" type="xs:int"/></xs:complexType></xs:element>
+        </xs:sequence></xs:complexType>
+        <xs:unique name="id"><xs:selector xpath="s:item"/><xs:field xpath="@id"/></xs:unique>
+        </xs:element>
+      </xs:sequence></xs:complexType></xs:element>`,
+      `targetNamespace="urn:s" xmlns:s="urn:s" elementFormDefault="qualified"`,
+    ),
+  );
+  const ns = { namespaces: { s: "urn:s" } };
+  const rows = (n: number) =>
+    Array.from({ length: n }, (_, i) => `<row r="${i + 1}"><c>${i}</c><c>0${i}</c></row>`).join("");
+  const sheet = (body: string) => `<sheet xmlns="urn:s"><title>T</title>${body}</sheet>`;
+  const selected = (doc: string, path: string, size = 64) =>
+    Effect.runSync(
+      Stream.fromIterable(splitEvery(doc, size)).pipe(
+        Sax.tokenize(),
+        Xsd.select(model, path, ns),
+        Stream.runCollect,
+      ),
+    );
+
+  test.each([1, 5, 64])("emits each selected element's value (chunks of %i)", (size) => {
+    expect(selected(sheet(rows(3)), "/s:sheet/s:row", size)).toEqual([
+      { r: 1, c: [0, 0] },
+      { r: 2, c: [1, 1] },
+      { r: 3, c: [2, 2] },
+    ]);
+  });
+
+  test("predicates on attributes and descendant steps", () => {
+    const doc = sheet(`<row r="1" hidden="true"><c>1</c></row><row r="2"><c>2</c></row>`);
+    expect(selected(doc, "//s:row[not(@hidden)]")).toEqual([{ r: 2, c: [2] }]);
+    expect(selected(doc, "//s:c")).toEqual([1, 2]);
+  });
+
+  test("a selected element is left out of its parent's value", () => {
+    const events: Array<Xsd.XsdValue> = [];
+    const program = Stream.make(sheet(`<head n="1"/>${rows(2)}`)).pipe(
+      Sax.tokenize(),
+      Xsd.select(model, "/s:sheet/s:row | /s:sheet/s:head", ns),
+      Stream.runForEach((v) => Effect.sync(() => events.push(v))),
+    );
+    const failed = Effect.runSync(Effect.flip(program));
+    // A union is not streamable.
+    expect(failed._tag).toBe("XPathError");
+    const root = Effect.runSync(
+      Stream.make(sheet(`<head n="1"/>${rows(2)}`)).pipe(
+        Sax.tokenize(),
+        Xsd.select(model, "/s:sheet", ns),
+        Stream.runCollect,
+      ),
+    );
+    // Selecting the document element emits the whole value.
+    expect(record(root[0] ?? null)).toEqual({
+      title: "T",
+      head: { n: 1 },
+      row: [
+        { r: 1, c: [0, 0] },
+        { r: 2, c: [1, 1] },
+      ],
+    });
+  });
+
+  test("the parent's array stays empty and a single child is left out", () => {
+    const parser = Xsd.parser<Xsd.XsdRecord>(model, "{urn:s}sheet");
+    const doc = sheet(`<head n="1"/>${rows(2)}`);
+    const run = (path: string) =>
+      Effect.runSync(
+        Stream.make(doc).pipe(
+          Sax.tokenize(),
+          parser.stream<{ readonly r: number }>(path, ns),
+          Stream.runCollect,
+        ),
+      );
+    expect(run("s:sheet/s:row").map((r) => r.r)).toEqual([1, 2]);
+    expect(run("s:sheet/s:head")).toEqual([{ n: 1 }]);
+  });
+
+  test("fails at the first violation, after emitting what came before it", () => {
+    const seen: Array<Xsd.XsdValue> = [];
+    const failed = Effect.runSync(
+      Effect.flip(
+        Stream.make(sheet(`${rows(2)}<row r="x"/>${rows(2)}`)).pipe(
+          Sax.tokenize(),
+          Xsd.select(model, "/s:sheet/s:row", ns),
+          Stream.runForEach((v) => Effect.sync(() => seen.push(v))),
+        ),
+      ),
+    );
+    expect(failed._tag).toBe("XsdValidationError");
+    expect(seen).toHaveLength(2);
+  });
+
+  test("the root option applies", () => {
+    const failed = Effect.runSync(
+      Effect.flip(
+        Stream.make(sheet(rows(1))).pipe(
+          Sax.tokenize(),
+          Xsd.select(model, "//s:row", { ...ns, root: "{urn:s}keyed" }),
+          Stream.runDrain,
+        ),
+      ),
+    );
+    expect(failed._tag).toBe("XsdValidationError");
+  });
+
+  test("elements in an identity-constraint scope are emitted when it closes", () => {
+    const doc = `<keyed xmlns="urn:s"><group><item id="1"/><item id="2"/></group><group><item id="3"/><item id="3"/></group></keyed>`;
+    const seen: Array<Xsd.XsdValue> = [];
+    const failed = Effect.runSync(
+      Effect.flip(
+        Stream.make(doc).pipe(
+          Sax.tokenize(),
+          Xsd.select(model, "//s:item", ns),
+          Stream.runForEach((v) => Effect.sync(() => seen.push(v))),
+        ),
+      ),
+    );
+    expect(failed._tag).toBe("XsdValidationError");
+    // The first group's items were released when it closed; the second's never were.
+    expect(seen).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  test("an invalid or unstreamable path fails the stream", () => {
+    const fail = (path: string) =>
+      Effect.runSync(
+        Effect.flip(
+          Stream.make(sheet(rows(1))).pipe(
+            Sax.tokenize(),
+            Xsd.select(model, path, ns),
+            Stream.runDrain,
+          ),
+        ),
+      );
+    expect(fail("s:sheet/s:row[1]")._tag).toBe("XPathError");
+    expect(fail("s:sheet/(")._tag).toBe("XPathError");
+  });
+});
+
 describe("Xsd.generate", () => {
   const model = compile(
     schema(
