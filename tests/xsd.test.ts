@@ -643,6 +643,92 @@ describe("Xsd.parse — identity constraints", () => {
   });
 });
 
+describe("Xsd.parse — identity constraints compare typed values", () => {
+  const model = compile(
+    schema(
+      `<xs:element name="shop"><xs:complexType><xs:sequence>
+        <xs:element name="item" minOccurs="0" maxOccurs="unbounded"><xs:complexType>
+          <xs:sequence><xs:element name="code" type="xs:int"/></xs:sequence>
+          <xs:attribute name="price" type="xs:decimal"/>
+        </xs:complexType></xs:element>
+        <xs:element name="order" minOccurs="0" maxOccurs="unbounded"><xs:complexType>
+          <xs:attribute name="code" type="xs:int"/></xs:complexType></xs:element>
+        <xs:element name="a" minOccurs="0" maxOccurs="unbounded"><xs:complexType>
+          <xs:attribute name="k" type="xs:string"/></xs:complexType></xs:element>
+        <xs:element name="b" minOccurs="0" maxOccurs="unbounded"><xs:complexType>
+          <xs:attribute name="k" type="xs:int"/></xs:complexType></xs:element>
+      </xs:sequence></xs:complexType>
+      <xs:key name="code"><xs:selector xpath="item"/><xs:field xpath="code"/></xs:key>
+      <xs:unique name="price"><xs:selector xpath="item"/><xs:field xpath="@price"/></xs:unique>
+      <xs:keyref name="ordered" refer="code"><xs:selector xpath="order"/><xs:field xpath="@code"/></xs:keyref>
+      <xs:unique name="k"><xs:selector xpath="a|b"/><xs:field xpath="@k"/></xs:unique>
+      </xs:element>`,
+    ),
+  );
+  const shop = (body: string) => `<shop>${body}</shop>`;
+  const accepts = (body: string) =>
+    Result.isSuccess(Effect.runSync(Effect.result(Xsd.parse(model, shop(body)))));
+
+  test("decimal 1.0 and 1 are the same value under a unique", () => {
+    const e = validation(
+      invalid(
+        model,
+        shop(`<item price="1.0"><code>1</code></item><item price="1"><code>2</code></item>`),
+      ),
+    );
+    expect(e.rule).toBe("IdentityConstraint");
+    expect(e.reason).toContain("not unique for price");
+  });
+
+  test("int 01 and 1 are the same value, so the same key", () => {
+    const e = validation(
+      invalid(model, shop(`<item><code>01</code></item><item><code> 1 </code></item>`)),
+    );
+    expect(e.reason).toContain("not unique for code");
+  });
+
+  test("a keyref int 01 matches a key 1", () => {
+    expect(accepts(`<item><code>1</code></item><order code="01"/><order code="+1"/>`)).toBe(true);
+    expect(accepts(`<item><code>1</code></item><order code="2"/>`)).toBe(false);
+  });
+
+  test("a string 1 and an int 1 are different values", () => {
+    expect(accepts(`<a k="1"/><b k="1"/>`)).toBe(true);
+    expect(accepts(`<b k="1"/><b k="01"/>`)).toBe(false);
+    expect(accepts(`<a k="1"/><a k="1"/>`)).toBe(false);
+  });
+
+  test("a string value keeps its whitespace", () => {
+    expect(accepts(`<a k="x"/><a k=" x"/>`)).toBe(true);
+  });
+
+  test("lists, unions and binary values compare by value", () => {
+    const typed = compile(
+      schema(
+        `<xs:simpleType name="ints"><xs:list itemType="xs:int"/></xs:simpleType>
+        <xs:simpleType name="either"><xs:union memberTypes="xs:int xs:string"/></xs:simpleType>
+        <xs:element name="r"><xs:complexType><xs:sequence>
+          <xs:element name="e" maxOccurs="unbounded"><xs:complexType>
+            <xs:attribute name="l" type="ints"/><xs:attribute name="u" type="either"/>
+            <xs:attribute name="h" type="xs:hexBinary"/>
+          </xs:complexType></xs:element>
+        </xs:sequence></xs:complexType>
+        <xs:unique name="l"><xs:selector xpath="e"/><xs:field xpath="@l"/></xs:unique>
+        <xs:unique name="u"><xs:selector xpath="e"/><xs:field xpath="@u"/></xs:unique>
+        <xs:unique name="h"><xs:selector xpath="e"/><xs:field xpath="@h"/></xs:unique>
+        </xs:element>`,
+      ),
+    );
+    const ok = (body: string) =>
+      Result.isSuccess(Effect.runSync(Effect.result(Xsd.parse(typed, `<r>${body}</r>`))));
+    expect(ok(`<e l="1 2"/><e l="01  2"/>`)).toBe(false);
+    expect(ok(`<e l="1 2"/><e l="2 1"/>`)).toBe(true);
+    expect(ok(`<e u="1"/><e u="01"/>`)).toBe(false);
+    expect(ok(`<e u="a"/><e u="b"/>`)).toBe(true);
+    expect(ok(`<e h="0A"/><e h="0a"/>`)).toBe(false);
+  });
+});
+
 describe("Xsd.parse — well-formedness and roots", () => {
   const model = compile(
     schema(`<xs:element name="a" type="xs:string"/><xs:element name="b" type="xs:int"/>`),

@@ -49,7 +49,7 @@ import {
   type SimpleValue,
   type ValueContext,
 } from "./datatypes.ts";
-import { evaluate, type Tables } from "./identity.ts";
+import { evaluate, type Tables, type Typed, type TypeOf } from "./identity.ts";
 import { advance, selects, type StepLevel, type StreamStep } from "../streamPath.ts";
 import type { ComplexRuntime, Runtime, TypeRuntime } from "./runtime.ts";
 
@@ -196,6 +196,9 @@ export class Validator {
   /** Selected values completed and ready to emit. */
   private emitted: Array<XsdValue> = [];
   private readonly ids = MutableHashSet.empty<string>();
+  /** The simple types of DOM nodes built for identity constraints, for comparing their fields. */
+  private readonly types = new WeakMap<object, Typed>();
+  private readonly typeOf: TypeOf = (node) => Option.fromUndefinedOr(this.types.get(node));
   private readonly refs: Array<{
     readonly id: string;
     readonly position: Position;
@@ -532,6 +535,7 @@ export class Validator {
 
   private readonly qnameChecker: SimpleChecker = {
     kind: "qname",
+    primitive: "QName",
     whiteSpace: "collapse",
     identity: "none",
     check: (s, context) => {
@@ -898,11 +902,37 @@ export class Validator {
       (children) =>
         new XmlElement({ name: toQName(frame.name), attributes: frame.domAttributes, children }),
     );
+    Option.map(element, (el) => this.recordTypes(frame, el));
     const violated = this.constraints(frame, element, position);
     if (violated !== null) return violated;
     this.frames.pop();
     this.close(frame, element, value.success);
     return null;
+  }
+
+  /** Remember the simple types of a DOM element and its attributes, for identity constraints. */
+  private recordTypes(frame: Frame, element: XmlElement): void {
+    const type = frame.type;
+    if (type === undefined) return;
+    const context = this.contextOf(frame.bindings);
+    const content = Predicate.isTagged(type, "Simple") ? Option.some(type.checker) : type.simple;
+    if (!frame.nil) Option.map(content, (checker) => this.types.set(element, { checker, context }));
+    if (Predicate.isTagged(type, "Simple")) return;
+    Arr.forEach(element.attributes, (attribute) => {
+      const key = clark(attribute.name.namespace ?? "", attribute.name.local);
+      const checker = Option.orElse(
+        Option.map(Record.get(type.attributes, key), (rule) => rule.checker),
+        () =>
+          Option.flatMap(
+            Option.filter(type.wildcard, (w) => w.process !== "skip"),
+            () =>
+              Option.flatMap(Record.get(this.runtime.model.attributes, key), (decl) =>
+                Result.getSuccess(this.runtime.checker(decl.type)),
+              ),
+          ),
+      );
+      Option.map(checker, (c) => this.types.set(attribute, { checker: c, context }));
+    });
   }
 
   /** Evaluate the identity constraints an element declares, over its subtree. */
@@ -914,7 +944,7 @@ export class Validator {
     const constraints = frame.decl?.constraints;
     if (constraints === undefined || Option.isNone(element) || frame.tables === undefined)
       return null;
-    return Result.match(evaluate(constraints, element.value, frame.tables), {
+    return Result.match(evaluate(constraints, element.value, frame.tables, this.typeOf), {
       onFailure: (reason) => this.invalid("IdentityConstraint", reason, position),
       onSuccess: () => null,
     });
