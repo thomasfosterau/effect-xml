@@ -131,14 +131,14 @@ const unitSize = (family: Family): number =>
   family.startsWith("utf-32") ? 4 : family.startsWith("utf-16") ? 2 : 1;
 
 /**
- * Read code units of a family as characters, enough to parse the (ASCII-only)
- * XML declaration. Non-ASCII units become U+FFFD; they cannot occur in a
- * well-formed declaration.
+ * Read code units of a family as characters (at most `max` of them), enough
+ * to parse the (ASCII-only) XML declaration. Non-ASCII units become U+FFFD;
+ * they cannot occur in a well-formed declaration.
  */
-const readAscii = (b: Uint8Array, family: Family, from: number): string => {
+const readAscii = (b: Uint8Array, family: Family, from: number, max = Infinity): string => {
   const size = unitSize(family);
   const little = family.endsWith("le");
-  const count = Math.max(0, Math.floor((b.length - from) / size));
+  const count = Math.min(max, Math.max(0, Math.floor((b.length - from) / size)));
   const byte = (i: number): number => b[i] ?? 0;
   // The code unit at `i`, from `size` bytes in the family's byte order.
   const unitAt = (i: number): number =>
@@ -234,6 +234,19 @@ const resolveHint = (hint: string, family: Family): Detected | UnsupportedEncodi
 };
 
 /**
+ * The start of the input from `from` on, as {@link readAscii} reads it, far
+ * enough to hold an XML declaration. The first DECLARATION_WINDOW characters
+ * nearly always hold all of it, so the rest of a large first chunk is read
+ * only when they don't: reading it all costs far more than decoding it.
+ */
+const declarationText = (head: Uint8Array, family: Family, from: number): string => {
+  const window = readAscii(head, family, from, DECLARATION_WINDOW);
+  return window.indexOf("?>") !== -1 || !/^<\?xml[ \t\r\n]/.test(window)
+    ? window
+    : readAscii(head, family, from);
+};
+
+/**
  * Detect the encoding of an XML document from its first bytes (XML 1.0
  * Appendix F). Returns {@link NeedMore} until enough bytes are available;
  * pass `final` once `head` is the whole input.
@@ -254,7 +267,7 @@ export const sniffXml = (
   if (bom === null && options?.encoding !== undefined) return resolveHint(options.encoding, family);
 
   // Read the declaration in the detected family, once it is complete.
-  const text = readAscii(head, family, bom?.bomLength ?? 0);
+  const text = declarationText(head, family, bom?.bomLength ?? 0);
   if (!final && text.length < 6 && text === "<?xml".slice(0, text.length)) return NeedMore;
   if (!/^<\?xml[ \t\r\n]/.test(text))
     return bom ?? { encoding: family, bomLength: 0, source: "default" };
