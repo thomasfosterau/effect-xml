@@ -21,6 +21,7 @@
  */
 import { Ascii, Compiler, Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Data from "effect/Data";
+import { identity } from "effect/Function";
 import * as Result from "effect/Result";
 import { doctype as xmlDoctype, processingInstruction } from "./declarations.ts";
 import { decode, htmlLegacyEntities, type EntityLimit, type EntityTable } from "./entities.ts";
@@ -129,12 +130,19 @@ const unexpected = (context: string): P<never> =>
 
 const none: Step = [];
 
+/**
+ * What `p` matched and where, as one object: a `Parser.withSpan` would build
+ * a pair and a span for every token.
+ */
+const located = <A, E>(p: Parser.Parser<A, E>) =>
+  Parser.struct({ start: Parser.location, value: p, end: Parser.location });
+
 /** A token built from what `p` matched and where. */
 const spanned = <A, E>(
   p: Parser.Parser<A, E>,
   f: (a: A, start: number, end: number) => Tok,
 ): Parser.Parser<Step, E> =>
-  Parser.map(Parser.withSpan(p), ([a, span]) => [f(a, span.start, span.end)]);
+  Parser.map(located(p), ({ start, value, end }) => [f(value, start, end)]);
 
 // -----------------------------------------------------------------------------
 // Character references
@@ -167,25 +175,23 @@ const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
   const context = inAttribute
     ? "reading an attribute value (`<` must be escaped)"
     : "reading text (`]]>` must be escaped)";
-  return (p: Parser.Parser<string>): P<string> =>
-    Parser.withSpan(p).pipe(
-      Parser.tryMap(([raw, span]): Result.Result<string, Issue> => {
-        const at = banned === undefined ? -1 : raw.indexOf(banned);
-        if (at !== -1) return Result.fail(Issue.Char({ context, offset: span.start + at }));
-        // XML attribute-value normalization (§3.3.3): literal whitespace
-        // characters become spaces; those from character references stay.
-        return Result.orElse(
-          decode(normalizeWhitespace ? raw.replace(/[\t\n\r]/g, " ") : raw, options),
-          ({ reference, reason, relativeOffset, limit }) =>
-            cfg.strict
-              ? Result.fail(
-                  Issue.Entity({ reference, reason, offset: span.start + relativeOffset, limit }),
-                )
-              : Result.succeed(raw),
-        );
-      }),
-      Parser.cut,
+  const check = (start: number, raw: string): Result.Result<string, Issue> => {
+    const at = banned === undefined ? -1 : raw.indexOf(banned);
+    if (at !== -1) return Result.fail(Issue.Char({ context, offset: start + at }));
+    // XML attribute-value normalization (§3.3.3): literal whitespace
+    // characters become spaces; those from character references stay.
+    return Result.orElse(
+      decode(normalizeWhitespace ? raw.replace(/[\t\n\r]/g, " ") : raw, options),
+      ({ reference, reason, relativeOffset, limit }) =>
+        cfg.strict
+          ? Result.fail(Issue.Entity({ reference, reason, offset: start + relativeOffset, limit }))
+          : Result.succeed(raw),
     );
+  };
+  // (Where the text starts is all the check needs: `zipWith` hands it over
+  // without a pair and a span per run.)
+  return (p: Parser.Parser<string>): P<string> =>
+    Parser.zipWith(Parser.location, p, check).pipe(Parser.tryMap(identity), Parser.cut);
 };
 
 // -----------------------------------------------------------------------------
@@ -270,23 +276,21 @@ const startElement = (
 ): Tok => ({ _tag: "StartElement", name, attributes, selfClosing, start, end });
 
 /**
- * The start tag read as `parts`, failing where its element name or one of
+ * The start tag read, failing where its element name or one of
  * its attribute names stops being an XML `Name` (§2.3). Checked once the
  * whole tag has been read: one step per tag on the hot path.
  */
 const validNames = (
-  parts: readonly [string, ReadonlyArray<TokAttribute>, boolean],
-  start: number,
-  end: number,
+  tag: Extract<Tok, { readonly _tag: "StartElement" }>,
 ): Result.Result<Step, Issue> => {
-  const [name, attributes] = parts;
+  const { name, attributes, start } = tag;
   // The element name follows the `<`.
   const at = invalidNameAt(name);
   if (at !== -1)
     return Result.fail(Issue.Char({ context: "reading an element name", offset: start + 1 + at }));
   const attribute = attributes.find((a) => invalidNameAt(a.name) !== -1);
   return attribute === undefined
-    ? Result.succeed([startElement(parts, start, end)])
+    ? Result.succeed([tag])
     : Result.fail(
         Issue.Char({
           context: "reading an attribute name",
@@ -310,15 +314,17 @@ const xmlStartTag = (cfg: EntityConfig): P<Step> => {
     Parser.delimited(S0, Token.literal("="), S0),
     unexpected("after an attribute name (`=` and a value must follow)"),
   );
-  const attribute: P<TokAttribute> = Parser.withSpan(
-    Parser.seq(
-      // (Only an attribute starts with some character other than these.)
-      Parser.preceded(Parser.peek(Token.noneOf(ws + "/>")), Token.takeTill(ws + "=/>", { min: 1 })),
-      Parser.preceded(eq, attrValue),
+  // Built as the attribute itself, with no pairs or span in between.
+  const attribute: P<TokAttribute> = Parser.struct({
+    start: Parser.location,
+    // (Only an attribute starts with some character other than these.)
+    name: Parser.preceded(
+      Parser.peek(Token.noneOf(ws + "/>")),
+      Token.takeTill(ws + "=/>", { min: 1 }),
     ),
-  ).pipe(
-    Parser.map(([[name, value], span]) => ({ name, value, start: span.start, end: span.end })),
-  );
+    value: Parser.preceded(eq, attrValue),
+    end: Parser.location,
+  });
   const close = Parser.preceded(
     S0,
     Parser.alt(
@@ -328,11 +334,17 @@ const xmlStartTag = (cfg: EntityConfig): P<Step> => {
       unexpected("reading a start tag (attributes must be separated by whitespace)"),
     ),
   );
-  const tag = Parser.withSpan(
-    Parser.seq(startTagName, Parser.repeat(Parser.preceded(S1, attribute)), close),
-  );
+  // Built as the token itself, with no tuples or span in between.
+  const tag = Parser.struct({
+    _tag: Parser.succeed("StartElement" as const),
+    start: Parser.location,
+    name: startTagName,
+    attributes: Parser.repeat(Parser.preceded(S1, attribute)),
+    selfClosing: close,
+    end: Parser.location,
+  });
   // (The data grammar cuts at a start tag, so a failure here is fatal.)
-  return Parser.tryMap(tag, ([parts, span]) => validNames(parts, span.start, span.end));
+  return Parser.tryMap(tag, validNames);
 };
 
 /** `<name attr=value … >` or `/>`, as HTML reads it. */
@@ -345,22 +357,19 @@ const startTag = (cfg: EntityConfig): P<Step> => {
   );
   // An attribute's name runs to whitespace, `=`, `/` or `>`; its span takes
   // in the whitespace after a valueless one.
-  const attribute: P<TokAttribute | null> = Parser.withSpan(
-    Parser.seq(
-      Parser.taken(Parser.seq(Token.noneOf(ws + "/>"), Token.takeTill(ws + "=/>"))),
-      Parser.preceded(
-        S0,
-        Parser.optional(Parser.preceded(Parser.seq(Token.literal("="), S0), Parser.cut(attrValue))),
+  // (Built as the attribute itself, with no pairs or span in between.)
+  const attribute: P<TokAttribute | null> = Parser.struct({
+    start: Parser.location,
+    name: Parser.taken(Parser.seq(Token.noneOf(ws + "/>"), Token.takeTill(ws + "=/>"))),
+    value: Parser.preceded(
+      S0,
+      Parser.orElseSucceed(
+        Parser.preceded(Parser.seq(Token.literal("="), S0), Parser.cut(attrValue)),
+        () => "",
       ),
     ),
-  ).pipe(
-    Parser.map(([[name, value], span]) => ({
-      name,
-      value: value ?? "",
-      start: span.start,
-      end: span.end,
-    })),
-  );
+    end: Parser.location,
+  });
   // A `/` not before `>` is ignored in HTML.
   const strayslash = Parser.seq(Token.literal("/"), Parser.not(gt));
   const slash: P<null> = Parser.as(strayslash, null);

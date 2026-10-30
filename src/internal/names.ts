@@ -66,6 +66,8 @@ const nameStartClass =
 const nameCharClass = `${nameStartClass}\\-.0-9\u00B7\u0300-\u036F\u203F\u2040`;
 
 const nameRegExp = new RegExp(`^[${nameStartClass}][${nameCharClass}]*$`, "u");
+/** An ASCII `Name`: the ASCII part of the productions above. */
+const asciiNameRegExp = /^[A-Za-z_:][A-Za-z0-9_:.-]*$/;
 const nameStartRegExp = new RegExp(`^[${nameStartClass}]`, "u");
 const notNameCharRegExp = new RegExp(`[^${nameCharClass}]`, "u");
 
@@ -91,7 +93,9 @@ export const isQName = (name: string): boolean => {
  * the first character not allowed where it is, or -1 when `s` is a Name.
  */
 export const invalidNameAt = (s: string): number => {
-  if (nameRegExp.test(s)) return -1;
+  // Nearly every name is ASCII, which a plain class checks faster than the
+  // full productions with the `u` flag.
+  if (asciiNameRegExp.test(s) || nameRegExp.test(s)) return -1;
   if (!nameStartRegExp.test(s)) return 0;
   // The first character is a name start; one beyond the BMP takes two units.
   const first = s.codePointAt(0) ?? 0;
