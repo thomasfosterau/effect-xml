@@ -18,7 +18,7 @@
 
 import { defineConfig } from "vite-plus";
 import { recommended } from "@effect/tsgo/oxlint-presets";
-import effect from "@mpsuesser/oxlint-plugin-effect";
+import effect from "@enfect/oxlint";
 
 /**
  * Input fingerprint for the cached tasks: auto tracking minus node_modules

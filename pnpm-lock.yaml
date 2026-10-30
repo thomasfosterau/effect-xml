@@ -24,9 +24,9 @@ catalogs:
     '@effect/tsgo':
       specifier: 0.56.0
       version: 0.56.0
-    '@mpsuesser/oxlint-plugin-effect':
-      specifier: ^0.6.0
-      version: 0.6.0
+    '@enfect/oxlint':
+      specifier: ^0.9.0
+      version: 0.9.0
     '@thomasfosterau/effect-parse':
       specifier: ^0.4.0
       version: 0.4.0
@@ -79,9 +79,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.56.0
-      '@mpsuesser/oxlint-plugin-effect':
+      '@enfect/oxlint':
         specifier: 'catalog:'
-        version: 0.6.0
+        version: 0.9.0
       '@thomasfosterau/effect-parse':
         specifier: 'catalog:'
         version: 0.4.0(effect@4.0.5)
@@ -377,6 +377,9 @@ packages:
     resolution: {integrity: sha512-/S5G8RJjtaVjE/RhwFNTvWQwFAQyDGc+3Ig4Oynvlo3gJu8le4MUgM/DBjoiwkwBsQ+BhufGDCBpwojplerGlw==}
     hasBin: true
 
+  '@enfect/oxlint@0.9.0':
+    resolution: {integrity: sha512-xOKRAj9DmtVb5DqF/EznATObYldQBEWO2nmRYg7E+FxG258dsn5PHOODhakORbR0PVcs9VZ3MfvkuU0JSTRVbA==}
+
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
     engines: {node: '>=18'}
@@ -604,10 +607,6 @@ packages:
   '@manypkg/tools@2.1.2':
     resolution: {integrity: sha512-6QEf6yqFbETdwGITKq57aYoPfX/3K8XFNwsAlx0C1M7o8cb79sv1M3w+tWuWvIcSbNqrLF7OD7YpZMVVz335hQ==}
     engines: {node: '>=20.0.0'}
-
-  '@mpsuesser/oxlint-plugin-effect@0.6.0':
-    resolution: {integrity: sha512-q0QNOQxvOU/FLBsJI5qpAmnX7g8xzhfgKDzesDliqD1YIj18DBxal2x3IZIcjMupZf5uVhv8hu9p1p4PKF1teA==}
-    deprecated: 'Renamed to @enfect/oxlint: https://github.com/mpsuesser/enfect'
 
   '@oxc-project/runtime@0.154.0':
     resolution: {integrity: sha512-cBQNGoh659BNgvA8OC/e4BNDtFkv03dJaYdkp2adgOQNtISNAPQ+nB4S8XvWtNk7Xl+0g+7aa+iRGR25Xycd1Q==}
@@ -2466,6 +2465,12 @@ snapshots:
       '@effect/tsgo-win32-arm64': 0.56.0
       '@effect/tsgo-win32-x64': 0.56.0
 
+  '@enfect/oxlint@0.9.0':
+    dependencies:
+      '@oxlint/plugins': 1.89.0
+      effect: 4.0.5
+      effect-oxlint: 0.4.0(effect@4.0.5)
+
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
 
@@ -2603,12 +2608,6 @@ snapshots:
       jju: 1.4.0
       tinyglobby: 0.2.17
       yaml: 2.9.1
-
-  '@mpsuesser/oxlint-plugin-effect@0.6.0':
-    dependencies:
-      '@oxlint/plugins': 1.89.0
-      effect: 4.0.5
-      effect-oxlint: 0.4.0(effect@4.0.5)
 
   '@oxc-project/runtime@0.154.0': {}
 

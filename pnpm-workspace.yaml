@@ -45,11 +45,12 @@ catalog:
   # `components` table in node_modules/@effect/tsgo/dist/effect-tsgo.cjs
   # before bumping any of the three.
   "@effect/tsgo": 0.56.0
-  # 0.6.0 depends on `effect` 4.0.0 (exact) and runs on the workspace
+  # The Effect oxlint rules (renamed from `@mpsuesser/oxlint-plugin-effect`).
+  # 0.9.0 depends on `effect` 4.1.0 (exact) and runs on the workspace
   # singleton (the `effect` override below), so no scoped override is needed.
   # Its `vite.config.ts` load calls Effect APIs, so an `effect` bump re-runs
   # `vp check` against the plugin too.
-  "@mpsuesser/oxlint-plugin-effect": ^0.6.0
+  "@enfect/oxlint": ^0.9.0
   # Peer: the token, declaration and entity grammars are effect-parse parsers.
   "@thomasfosterau/effect-parse": ^0.4.0
   "@types/node": ^26.6.5
@@ -122,3 +123,6 @@ minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   # @thomasfosterau/* is first-party — exempt so our own releases install immediately.
   - "@thomasfosterau/*"
+  # The owner's call (2026-10-30): the Effect oxlint rules install as soon as
+  # they are released. Dev-only; never reaches the published package.
+  - "@enfect/*"

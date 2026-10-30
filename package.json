@@ -75,7 +75,7 @@
     "@effect/language-service": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/tsgo": "catalog:",
-    "@mpsuesser/oxlint-plugin-effect": "catalog:",
+    "@enfect/oxlint": "catalog:",
     "@thomasfosterau/effect-parse": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native": "catalog:",
