@@ -166,6 +166,20 @@ describe("XML encoding detection (Appendix F)", () => {
     });
     expect(Encoding.sniffXml(utf8(`<?xml version="1.0" enc`), false)).toBe(Encoding.NeedMore);
   });
+
+  test("sniffXml reads a declaration that runs past its first 4096 characters", () => {
+    const declaration = `<?xml version="1.0"${" ".repeat(5000)}encoding="windows-1252"?>`;
+    expect(Encoding.sniffXml(utf8(`${declaration}<a/>`), true)).toEqual({
+      encoding: "windows-1252",
+      bomLength: 0,
+      source: "declaration",
+    });
+    // A large first chunk is read only as far as the declaration needs.
+    const body = `<a>${"x".repeat(100_000)}</a>`;
+    expect(
+      Encoding.sniffXml(utf8(`<?xml version="1.0" encoding="windows-1252"?>${body}`), false),
+    ).toEqual({ encoding: "windows-1252", bomLength: 0, source: "declaration" });
+  });
 });
 
 describe("streaming byte input", () => {
