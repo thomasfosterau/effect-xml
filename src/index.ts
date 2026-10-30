@@ -56,6 +56,13 @@ export * as Html from "./Html/index.ts";
  */
 export * as Xsd from "./Xsd/index.ts";
 /**
+ * The XQuery and XPath Data Model (XDM 3.1) and the XQuery / XPath error.
+ *
+ * @since 0.3.0
+ * @category modules
+ */
+export * as XQuery from "./XQuery/index.ts";
+/**
  * Encoding detection (XML Appendix F and WHATWG sniffing) and byte decoding.
  *
  * @since 0.3.0

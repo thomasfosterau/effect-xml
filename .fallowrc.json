@@ -6,6 +6,7 @@
     "src/Xml/index.ts",
     "src/Html/index.ts",
     "src/Xsd/index.ts",
+    "src/XQuery/index.ts",
     "tests/**/*.test.ts",
     "examples/usage.ts",
     "packages/cli/src/main.ts",
@@ -61,7 +62,8 @@
           "src/{Encoding,Error,Limits,Name,Position,Sax,index}.ts",
           "src/Xml/**",
           "src/Html/**",
-          "src/Xsd/**"
+          "src/Xsd/**",
+          "src/XQuery/**"
         ]
       },
       {

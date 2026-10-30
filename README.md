@@ -8,6 +8,7 @@ Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.websit
 | **`Xml`** | `@thomasfosterau/effect-xml/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
 | **`Html`** | `@thomasfosterau/effect-xml/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, and `parseDocumentFragment` for the fragment case, passing all 1405 html5lib tree-construction cases) and a lenient fragment builder, all building an HTML DOM (`HtmlDocument`, `HtmlElement`, …) that `toXml` converts to the XML DOM. |
 | **`Xsd`** | `@thomasfosterau/effect-xml/Xsd` | XML Schema 1.0: compile a schema, then validate documents as they stream (failing at the first violation) into typed values, or generate a typed parser module from it. |
+| **`XQuery`** | `@thomasfosterau/effect-xml/XQuery` | XPath 3.1 and XQuery 3.1, in progress: so far the XDM 3.1 data model (nodes over the `Xml` DOM, typed atomic values, maps, arrays and function items) and `XQueryError`. |
 
 Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `@thomasfosterau/effect-xml` re-exports every layer as a namespace plus the shared errors, names and positions.
 
@@ -461,6 +462,24 @@ When names collide, later elements get `$2`, `$3`, … suffixes and attributes a
 **Not supported:** `xs:redefine` and the XSD 1.1 additions (`override`, assertions, type alternatives, open content) are rejected with an `XsdSchemaError`; schema-for-schemas checks such as Unique Particle Attribution and the derivation-by-restriction rules are not enforced (the first matching particle wins); identity-constraint fields compare as typed values (so `1.0` and `1` are one `xs:decimal`), but dates, times and durations by their lexical form, and a defaulted attribute that is absent from the document is not a field value; the element that declares the constraints is kept as a DOM until it ends.
 
 **Errors.** `XsdError` is `SaxError | XsdSchemaError | XsdValidationError`. An `XsdValidationError` has a `rule` (`UnexpectedElement`, `MissingElement`, `UnexpectedAttribute`, `MissingAttribute`, `UnexpectedText`, `InvalidValue`, `InvalidType`, `Nil` or `IdentityConstraint`), a `reason` (`<price> is not allowed here; expected <quantity>`), a `path` (`/order/line[2]`) and a `position`.
+
+## XQuery data model
+
+`XQuery` is growing into an XPath 3.1 and XQuery 3.1 engine, tested against the W3C QT3 suite. Its first part is the XQuery and XPath Data Model (XDM 3.1) the engine evaluates over: `XdmNode`s are handles on places in an `Xml` DOM, with identity, parents and document order (text and CDATA merge into XDM text nodes, namespace declarations become in-scope namespaces); `AtomicValue`s carry their `xs:` type from the `AtomicTypes` hierarchy; `MapItem`, `ArrayItem` and `FunctionItem` complete the items, and a `Sequence` is an array of them.
+
+```ts
+import * as Effect from "effect/Effect";
+import { Xml, XQuery } from "@thomasfosterau/effect-xml";
+
+const doc = XQuery.XdmNode.fromDocument(Effect.runSync(Xml.parse(`<n a="1">4<![CDATA[2]]></n>`)));
+doc.children[0]?.children.length; // 1: the text and the CDATA are one text node, "42"
+XQuery.atomize([doc]); // Success([xs:untypedAtomic "42"])
+XQuery.effectiveBooleanValue([XQuery.AtomicValue.string("")]); // Success(false)
+XQuery.fromLexical(XQuery.AtomicTypes.decimal, "01.50"); // Success(xs:decimal 1.5)
+XQuery.atomicString(XQuery.AtomicValue.double(1e7)); // "1.0E7"
+```
+
+Failures are `XQueryError`s: an `err:` QName `code` (`err:FORG0001`, `err:FOTY0013`, …), a `description`, an `offset` into the query and, from `fn:error`, a `value`.
 
 ## Typed errors
 
