@@ -8,7 +8,7 @@ import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import * as Xml from "../../src/Xml/index.ts";
+import * as Html from "../../src/Html/index.ts";
 
 /** The item at `index`, failing the test when there is none. */
 export const at = <T>(items: ReadonlyArray<T>, index: number): T => {
@@ -53,22 +53,35 @@ const findOrFail = <T>(items: ReadonlyArray<T>, predicate: (item: T) => boolean)
   return found.value;
 };
 
-export const isElement = Schema.is(Xml.XmlElement);
-export const isComment = Schema.is(Xml.XmlComment);
+export const isHtmlElement = Schema.is(Html.HtmlElement);
+export const isHtmlComment = Schema.is(Html.HtmlComment);
+export const isHtmlText = Schema.is(Html.HtmlText);
 
-/** The first direct child element with this local name. */
-export const child = (parent: Xml.XmlElement, local: string): Xml.XmlElement =>
-  findOrFail(parent.elements, (e) => e.name.local === local);
+/** The first direct child element of an HTML element with this name (in any namespace). */
+export const htmlChild = (parent: Html.HtmlElement, name: string): Html.HtmlElement =>
+  findOrFail(parent.elements, (e) => e.name === name);
 
-/** Depth-first (pre-order) search for an element with this local name. */
-const descendant = (root: Xml.XmlElement, local: string): Option.Option<Xml.XmlElement> =>
-  root.name.local === local
-    ? Option.some(root)
-    : Arr.findFirst(root.elements, (c) => descendant(c, local));
+/**
+ * The first element named `name` (in any namespace) at or under `root`, in
+ * document order (template contents included), failing the test when there
+ * is none. Walks without recursion.
+ */
+export const htmlDescendantOrFail = (root: Html.HtmlElement, name: string): Html.HtmlElement => {
+  const elements = Arr.unfold([root], (pending: ReadonlyArray<Html.HtmlElement>) =>
+    Arr.match(pending, {
+      onEmpty: () => Option.none(),
+      onNonEmpty: ([el, ...rest]) =>
+        Option.some([
+          el,
+          [...(el.content?.children ?? el.children).filter(isHtmlElement), ...rest],
+        ] as const),
+    }),
+  );
+  return findOrFail(elements, (el) => el.name === name);
+};
 
-/** {@link descendant}, failing the test when there is no such element. */
-export const descendantOrFail = (root: Xml.XmlElement, local: string): Xml.XmlElement => {
-  const found = descendant(root, local);
-  assert(Option.isSome(found), `expected a <${local}> element`);
-  return found.value;
+/** The contents of a `<template>`, failing the test for any other element. */
+export const templateContent = (template: Html.HtmlElement): ReadonlyArray<Html.HtmlNode> => {
+  assert.isNotNull(template.content, `<${template.name}> has no template contents`);
+  return template.content.children;
 };

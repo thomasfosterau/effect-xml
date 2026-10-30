@@ -10,15 +10,9 @@
  */
 
 import { tagSet } from "./tagSet.ts";
-import { MATHML_NS, SVG_NS, XLINK_NS, XML_NS, XMLNS_NS } from "../Html/Namespaces.ts";
-
-/** A working-DOM attribute, optionally carrying a namespace/prefix after adjustment. */
-export interface Attr {
-  name: string;
-  value: string;
-  prefix?: string | null;
-  ns?: string | null;
-}
+import { MATHML_NS, SVG_NS } from "../Html/Namespaces.ts";
+import type { HtmlAttribute, HtmlAttributeNamespace } from "../Html/Node.ts";
+import * as Nodes from "./nodes.ts";
 
 /** MathML text integration points (start tags/characters inside them use HTML rules). */
 export const MATHML_TEXT_IP = tagSet("mi", "mo", "mn", "ms", "mtext");
@@ -187,38 +181,44 @@ const SVG_ATTRS: NameCorrections = {
 
 /** Foreign attributes placed into the XLink / XML / XMLNS namespaces. */
 interface ForeignAttributes {
-  readonly [name: string]: { prefix: string | null; local: string; ns: string };
+  readonly [name: string]: {
+    readonly prefix: string | null;
+    readonly local: string;
+    readonly ns: HtmlAttributeNamespace;
+  };
 }
 const FOREIGN_ATTRS: ForeignAttributes = {
-  "xlink:actuate": { prefix: "xlink", local: "actuate", ns: XLINK_NS },
-  "xlink:arcrole": { prefix: "xlink", local: "arcrole", ns: XLINK_NS },
-  "xlink:href": { prefix: "xlink", local: "href", ns: XLINK_NS },
-  "xlink:role": { prefix: "xlink", local: "role", ns: XLINK_NS },
-  "xlink:show": { prefix: "xlink", local: "show", ns: XLINK_NS },
-  "xlink:title": { prefix: "xlink", local: "title", ns: XLINK_NS },
-  "xlink:type": { prefix: "xlink", local: "type", ns: XLINK_NS },
-  "xml:lang": { prefix: "xml", local: "lang", ns: XML_NS },
-  "xml:space": { prefix: "xml", local: "space", ns: XML_NS },
-  xmlns: { prefix: null, local: "xmlns", ns: XMLNS_NS },
-  "xmlns:xlink": { prefix: "xmlns", local: "xlink", ns: XMLNS_NS },
+  "xlink:actuate": { prefix: "xlink", local: "actuate", ns: "xlink" },
+  "xlink:arcrole": { prefix: "xlink", local: "arcrole", ns: "xlink" },
+  "xlink:href": { prefix: "xlink", local: "href", ns: "xlink" },
+  "xlink:role": { prefix: "xlink", local: "role", ns: "xlink" },
+  "xlink:show": { prefix: "xlink", local: "show", ns: "xlink" },
+  "xlink:title": { prefix: "xlink", local: "title", ns: "xlink" },
+  "xlink:type": { prefix: "xlink", local: "type", ns: "xlink" },
+  "xml:lang": { prefix: "xml", local: "lang", ns: "xml" },
+  "xml:space": { prefix: "xml", local: "space", ns: "xml" },
+  xmlns: { prefix: null, local: "xmlns", ns: "xmlns" },
+  "xmlns:xlink": { prefix: "xmlns", local: "xlink", ns: "xmlns" },
 };
 
 /**
- * Apply the per-namespace attribute fix-ups to a token's attributes: SVG/MathML
- * name case-correction followed by the foreign (XLink/XML/XMLNS) namespace
- * placement.
+ * Apply the per-namespace attribute fix-ups to a token's attributes (all in
+ * no namespace): SVG/MathML name case-correction followed by the foreign
+ * (XLink/XML/XMLNS) namespace placement. `ns` is the element's namespace URI.
  */
-export const adjustForeignAttrs = (attrs: ReadonlyArray<Attr>, ns: string): Array<Attr> =>
-  attrs.map((a): Attr => {
+export const adjustForeignAttrs = (
+  attrs: ReadonlyArray<HtmlAttribute>,
+  ns: string,
+): Array<HtmlAttribute> =>
+  attrs.map((a): HtmlAttribute => {
     const foreign = FOREIGN_ATTRS[a.name];
-    if (foreign) {
-      return { name: foreign.local, value: a.value, prefix: foreign.prefix, ns: foreign.ns };
-    }
+    if (foreign) return Nodes.htmlAttribute(foreign.local, a.value, foreign.ns, foreign.prefix);
     if (ns === SVG_NS) {
       const fixed = SVG_ATTRS[a.name];
-      if (fixed) return { name: fixed, value: a.value };
+      if (fixed) return Nodes.htmlAttribute(fixed, a.value, null, null);
     } else if (ns === MATHML_NS) {
-      if (a.name === "definitionurl") return { name: "definitionURL", value: a.value };
+      if (a.name === "definitionurl")
+        return Nodes.htmlAttribute("definitionURL", a.value, null, null);
     }
-    return { name: a.name, value: a.value };
+    return a;
   });

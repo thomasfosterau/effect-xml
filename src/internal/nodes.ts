@@ -17,11 +17,25 @@
  * arrays passed in are kept, not copied: a caller hands over arrays it never
  * mutates again.
  *
+ * The HTML DOM's classes (`src/Html/Node.ts`) have constructors here too,
+ * prefixed `html`.
+ *
  * Public construction (`Xml.element`, `new XmlElement(...)`, `QName.fromRaw`)
  * keeps validating; only parser-internal code whose inputs are well-typed by
  * construction uses these.
  */
+import * as Predicate from "effect/Predicate";
 import type * as Schema from "effect/Schema";
+import {
+  HtmlAttribute,
+  HtmlComment,
+  HtmlDoctype,
+  HtmlDocument,
+  HtmlElement,
+  type HtmlNode,
+  HtmlTemplateContent,
+  HtmlText,
+} from "../Html/Node.ts";
 import { QName } from "../Name.ts";
 import {
   XmlAttribute,
@@ -60,34 +74,6 @@ export const qname = (
   local: string,
   namespace: QName["namespace"],
 ): QName => construct(QName, { prefix, local, namespace });
-
-/**
- * Unprefixed {@link QName}s shared per distinct local name and namespace: a
- * builder hands every element (or attribute) spelled the same way the same
- * instance, which is unobservable (a `QName` is immutable and compared by
- * value) and saves an allocation per node. One cache per parse. Native `Map`s
- * keyed by the (fresh, sliced) names, for the reason given in `tagSet.ts`.
- */
-export type QNameCache = (local: string, namespace: QName["namespace"]) => QName;
-
-/** A fresh {@link QNameCache}. */
-export const qnameCache = (): QNameCache => {
-  const inNamespace = new Map<string, Map<string, QName>>();
-  const inNoNamespace = new Map<string, QName>();
-  return (local, namespace) => {
-    let table = inNoNamespace;
-    if (namespace !== null) {
-      const existing = inNamespace.get(namespace);
-      table = existing ?? new Map();
-      if (existing === undefined) inNamespace.set(namespace, table);
-    }
-    const hit = table.get(local);
-    if (hit !== undefined) return hit;
-    const made = qname(null, local, namespace);
-    table.set(local, made);
-    return made;
-  };
-};
 
 /** A {@link QName} split from a raw `prefix:local` name, in no namespace, as `QName.fromRaw` does. */
 export const qnameFromRaw = (raw: string): QName => {
@@ -143,3 +129,108 @@ export const document = (
   doctype: XmlDocument["doctype"],
   children: ReadonlyArray<XmlNode>,
 ): XmlDocument => construct(XmlDocument, { declaration, doctype, children });
+
+type Writable<T> = { -readonly [K in keyof T]: T[K] };
+
+/**
+ * An instance of `Class` with no fields yet, which the caller assigns in the
+ * schema's declaration order (`_tag` first), as {@link construct} does. The
+ * HTML constructors below use it rather than {@link construct}: assigning
+ * each field directly skips an `Object.assign` and its argument object per
+ * node, which was a twentieth of `Html.parseFragment`.
+ */
+const blank = <C extends SchemaClass>(Class: C): Writable<C["prototype"]> =>
+  // SAFETY: the caller assigns every field of the schema before the instance
+  // escapes, so it ends up exactly as `construct` would build it.
+  Object.create(Class.prototype);
+
+/** An {@link HtmlAttribute}. */
+export const htmlAttribute = (
+  name: string,
+  value: string,
+  namespace: HtmlAttribute["namespace"],
+  prefix: HtmlAttribute["prefix"],
+): HtmlAttribute => {
+  const node = blank(HtmlAttribute);
+  node.name = name;
+  node.value = value;
+  node.namespace = namespace;
+  node.prefix = prefix;
+  return node;
+};
+
+/** An {@link HtmlText}. */
+export const htmlText = (data: string): HtmlText => {
+  const node = blank(HtmlText);
+  node._tag = "HtmlText";
+  node.data = data;
+  return node;
+};
+
+/**
+ * Whether a node is text: a tag check, once per text token (`instanceof`
+ * would walk the whole prototype chain of every node that is not text).
+ */
+const isHtmlTextNode = <N extends { readonly _tag: string }>(
+  node: N | HtmlText,
+): node is HtmlText => Predicate.isTagged(node, "HtmlText");
+
+/**
+ * Append text to a list of nodes as the HTML parsers do, merging it into the
+ * last node when that is text (a text node is replaced, never mutated), so no
+ * two text nodes are ever adjacent.
+ */
+export const appendHtmlText = <N extends { readonly _tag: string }>(
+  nodes: Array<N | HtmlText>,
+  data: string,
+): void => {
+  const last = nodes.length - 1;
+  const prev = nodes[last];
+  if (prev !== undefined && isHtmlTextNode(prev)) nodes[last] = htmlText(prev.data + data);
+  else nodes.push(htmlText(data));
+};
+
+/** An {@link HtmlComment}. */
+export const htmlComment = (data: string): HtmlComment => {
+  const node = blank(HtmlComment);
+  node._tag = "HtmlComment";
+  node.data = data;
+  return node;
+};
+
+/** An {@link HtmlTemplateContent}, keeping `children` (never mutated afterwards). */
+export const htmlTemplateContent = (children: ReadonlyArray<HtmlNode>): HtmlTemplateContent => {
+  const node = blank(HtmlTemplateContent);
+  node._tag = "HtmlTemplateContent";
+  node.children = children;
+  return node;
+};
+
+/** An {@link HtmlElement}, keeping `attributes` and `children` (never mutated afterwards). */
+export const htmlElement = (
+  namespace: HtmlElement["namespace"],
+  name: string,
+  attributes: ReadonlyArray<HtmlAttribute>,
+  children: ReadonlyArray<HtmlNode>,
+  content: HtmlElement["content"],
+): HtmlElement => {
+  const node = blank(HtmlElement);
+  node._tag = "HtmlElement";
+  node.namespace = namespace;
+  node.name = name;
+  node.attributes = attributes;
+  node.children = children;
+  node.content = content;
+  return node;
+};
+
+/** An {@link HtmlDoctype}. */
+export const htmlDoctype = (name: string, publicId: string, systemId: string): HtmlDoctype =>
+  construct(HtmlDoctype, { name, publicId, systemId });
+
+/** An {@link HtmlDocument}, keeping `children` (never mutated afterwards). */
+export const htmlDocument = (
+  mode: HtmlDocument["mode"],
+  doctype: HtmlDocument["doctype"],
+  children: ReadonlyArray<HtmlNode>,
+): HtmlDocument => construct(HtmlDocument, { _tag: "HtmlDocument", mode, doctype, children });

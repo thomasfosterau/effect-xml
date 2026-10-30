@@ -1,12 +1,13 @@
 /**
- * High-level HTML parsing API (experimental fragment-level).
+ * One-call HTML parsing of strings, streams and bytes, into the HTML DOM
+ * (`./Node.ts`).
  */
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as Encoding from "../Encoding.ts";
 import { decodeOptions } from "../Sax.ts";
 import type { SaxError } from "../Error.ts";
-import type { XmlDocument, XmlNode } from "../Xml/Node.ts";
+import type { HtmlDocument, HtmlNode } from "./Node.ts";
 import { buildFragment } from "./TreeBuilder.ts";
 import {
   buildDocument,
@@ -35,7 +36,7 @@ import type { SaxEvent } from "../Sax.ts";
 export const parseFragment = (
   input: string,
   options?: HtmlOptions,
-): Effect.Effect<ReadonlyArray<XmlNode>, SaxError> =>
+): Effect.Effect<ReadonlyArray<HtmlNode>, SaxError> =>
   buildFragment(tokenizeString(input, options), options);
 
 /**
@@ -48,7 +49,7 @@ export const parseFragmentStream =
   (options?: HtmlOptions) =>
   <E, R>(
     input: Stream.Stream<string, E, R>,
-  ): Effect.Effect<ReadonlyArray<XmlNode>, SaxError | E, R> =>
+  ): Effect.Effect<ReadonlyArray<HtmlNode>, SaxError | E, R> =>
     buildFragment(input.pipe(tokenize(options)), options);
 
 /**
@@ -60,11 +61,12 @@ export const parseFragmentStream =
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
- * import { Html, Xml } from "@thomasfosterau/effect-xml"
+ * import { Html } from "@thomasfosterau/effect-xml"
  *
  * const doc = Effect.runSync(Html.parseDocument("<b>1<i>2</b>3</i>"))
- * console.log(Xml.serialize(doc.root))
- * // <html><head/><body><b>1<i>2</i></b><i>3</i></body></html>
+ * console.log(doc.mode) // "quirks" (there is no DOCTYPE)
+ * console.log(Html.serialize(doc.documentElement))
+ * // <html><head></head><body><b>1<i>2</i></b><i>3</i></body></html>
  * ```
  *
  * @since 0.2.0
@@ -73,7 +75,7 @@ export const parseFragmentStream =
 export const parseDocument = (
   input: string,
   options?: HtmlOptions,
-): Effect.Effect<XmlDocument, SaxError> => buildDocumentString(input, options);
+): Effect.Effect<HtmlDocument, SaxError> => buildDocumentString(input, options);
 
 /**
  * Options for {@link parseDocumentFragment}: the HTML options plus the
@@ -123,7 +125,7 @@ export interface HtmlFragmentOptions extends HtmlOptions {
 export const parseDocumentFragment = (
   input: string,
   options?: HtmlFragmentOptions,
-): Effect.Effect<ReadonlyArray<XmlNode>, SaxError> =>
+): Effect.Effect<ReadonlyArray<HtmlNode>, SaxError> =>
   buildFragmentString(input, parseFragmentContext(options?.context ?? "body"), options);
 
 /**
@@ -134,7 +136,7 @@ export const parseDocumentFragment = (
  */
 export const parseDocumentStream =
   (options?: HtmlOptions) =>
-  <E, R>(input: Stream.Stream<string, E, R>): Effect.Effect<XmlDocument, SaxError | E, R> =>
+  <E, R>(input: Stream.Stream<string, E, R>): Effect.Effect<HtmlDocument, SaxError | E, R> =>
     buildDocument(input.pipe(tokenize(options)), options);
 
 /**
@@ -162,7 +164,7 @@ const htmlDecodeOptions = (options: HtmlBytesOptions | undefined) =>
 export const parseDocumentBytes = (
   input: Uint8Array,
   options?: HtmlBytesOptions,
-): Effect.Effect<XmlDocument, SaxError> =>
+): Effect.Effect<HtmlDocument, SaxError> =>
   Encoding.decodeBytes(input, htmlDecodeOptions(options)).pipe(
     Effect.flatMap((text) => buildDocumentString(text, options)),
   );
@@ -175,7 +177,7 @@ export const parseDocumentBytes = (
  */
 export const parseDocumentBytesStream =
   (options?: HtmlBytesOptions) =>
-  <E, R>(input: Stream.Stream<Uint8Array, E, R>): Effect.Effect<XmlDocument, SaxError | E, R> =>
+  <E, R>(input: Stream.Stream<Uint8Array, E, R>): Effect.Effect<HtmlDocument, SaxError | E, R> =>
     buildDocument(
       input.pipe(Encoding.decode(htmlDecodeOptions(options)), tokenize(options)),
       options,

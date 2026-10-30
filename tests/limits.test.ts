@@ -48,7 +48,29 @@ describe("resource limits", () => {
   test("HTML depth is the tree's, not the count of unclosed tags", async () => {
     // Each <p> closes the previous one, so the tree stays shallow.
     const doc = await Effect.runPromise(Html.parseDocument("<p>x".repeat(5000)));
-    expect(doc.root.textContent.length).toBe(5000);
+    expect(doc.documentElement.textContent.length).toBe(5000);
+  });
+
+  test("deep HTML within the limit builds, serializes, converts and reads text", async () => {
+    // (Tree construction's scope checks walk the stack of open elements, so
+    // parsing time grows with the square of the depth: keep this one modest.)
+    const input = "<div>".repeat(10_000) + "x";
+    const doc = await Effect.runPromise(
+      Html.parseDocument(input, { limits: { maxDepth: Infinity } }),
+    );
+    expect(doc.documentElement.textContent).toBe("x");
+    expect(doc.documentElement.descendants("div").length).toBe(10_000);
+    const serialized = Html.serialize(doc);
+    expect(serialized.length).toBeGreaterThan(input.length);
+    expect(Html.toXml(doc).root.textContent).toBe("x");
+    // The lenient builder has no such scans: go deeper than any call stack.
+    const deeper = "<div>".repeat(100_000) + "x";
+    const nodes = await Effect.runPromise(
+      Html.parseFragment(deeper, { limits: { maxDepth: Infinity } }),
+    );
+    expect(Html.serializeFragment(nodes).length).toBeGreaterThan(deeper.length);
+    const [root] = Html.toXml(nodes);
+    expect(root?._tag === "XmlElement" && root.textContent).toBe("x");
   });
 
   test("deep nesting within the limit still parses, serializes and reads text", async () => {

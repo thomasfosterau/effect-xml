@@ -1,9 +1,19 @@
 /**
  * The `Html` module: lenient HTML tokenization, WHATWG tree construction
- * (`parseDocument`) and a lenient fragment builder (`parseFragment`).
+ * (`parseDocument`, `parseDocumentFragment`) and a lenient fragment builder
+ * (`parseFragment`), all building the HTML DOM (`HtmlDocument`,
+ * `HtmlElement`, …), which `toXml` converts to the XML DOM.
  *
  * @since 0.2.0
  */
+
+/**
+ * The HTML DOM.
+ *
+ * @since 0.3.0
+ * @category models
+ */
+export * from "./Node.ts";
 
 /**
  * The namespace URIs foreign (SVG / MathML) content is placed in.
@@ -52,3 +62,11 @@ export * from "./Html.ts";
  * @category serialization
  */
 export * from "./Serialize.ts";
+
+/**
+ * Conversion to the XML DOM.
+ *
+ * @since 0.3.0
+ * @category conversion
+ */
+export * from "./ToXml.ts";

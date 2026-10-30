@@ -198,7 +198,7 @@ export default defineConfig({
       // `Html.parseDocument`'s profile, as a `Map` lookup under 2%). The
       // tables are private to the parse and never compared.
       {
-        files: ["src/internal/tagSet.ts", "src/internal/nodes.ts"],
+        files: ["src/internal/tagSet.ts"],
         rules: {
           "effect/avoid-native-object-helpers": "off",
         },

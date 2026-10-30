@@ -6,8 +6,9 @@
  * case, an input (`#data`), the expected parse errors (`#errors`, ignored here),
  * optional flags (`#document-fragment`, `#script-on/off`), and the expected tree
  * (`#document`) serialized in html5lib's `| `-indented notation. This module
- * parses those files and serializes our typed DOM into the same notation so the
- * two can be string-compared.
+ * parses those files and serializes our HTML DOM into the same notation so the
+ * two can be string-compared, and does the same for the XML DOM `Html.toXml`
+ * converts it to.
  */
 import { Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
@@ -15,6 +16,13 @@ import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import type { QName } from "../../src/Name.ts";
+import type {
+  HtmlAttribute,
+  HtmlDoctype,
+  HtmlDocument,
+  HtmlNamespace,
+  HtmlNode,
+} from "../../src/Html/Node.ts";
 import type { XmlAttribute, XmlDocument, XmlDoctype, XmlNode } from "../../src/Xml/Node.ts";
 
 export interface Html5libTest {
@@ -84,6 +92,65 @@ const datFile = Parser.repeat(test);
 export const parseDat = (content: string): ReadonlyArray<Html5libTest> =>
   Parser.parseSync(datFile, content.replace(/\r\n/g, "\n"));
 
+const indent = (depth: number): string => "  ".repeat(depth);
+
+// --- the HTML DOM ------------------------------------------------------------
+
+const htmlNsPrefix = (ns: HtmlNamespace): string =>
+  ns === "svg" ? "svg " : ns === "mathml" ? "math " : "";
+
+// Namespaced (foreign) attributes serialize as "prefix local"; html5lib sorts
+// attributes by that displayed name.
+const htmlAttrName = (a: HtmlAttribute): string =>
+  a.prefix !== null ? `${a.prefix} ${a.name}` : a.name;
+
+const byHtmlAttrName: Order.Order<HtmlAttribute> = Order.mapInput(Order.String, htmlAttrName);
+
+const serializeHtmlChildren = (
+  children: ReadonlyArray<HtmlNode>,
+  depth: number,
+): ReadonlyArray<string> => Arr.flatMap(children, (c) => serializeHtmlNode(c, depth));
+
+const serializeHtmlNode = (node: HtmlNode, depth: number): ReadonlyArray<string> =>
+  Match.valueTags(node, {
+    HtmlElement: (el): ReadonlyArray<string> => [
+      `| ${indent(depth)}<${htmlNsPrefix(el.namespace)}${el.name}>`,
+      ...Arr.map(
+        Arr.sort(el.attributes, byHtmlAttrName),
+        (a) => `| ${indent(depth + 1)}${htmlAttrName(a)}="${a.value}"`,
+      ),
+      ...serializeHtmlChildren(el.children, depth + 1),
+      // A template's contents are a separate fragment, which html5lib writes
+      // as a "content" child.
+      ...(el.content === null
+        ? []
+        : [
+            `| ${indent(depth + 1)}content`,
+            ...serializeHtmlChildren(el.content.children, depth + 2),
+          ]),
+    ],
+    HtmlText: (t) => [`| ${indent(depth)}"${t.data}"`],
+    HtmlComment: (c) => [`| ${indent(depth)}<!-- ${c.data} -->`],
+  });
+
+const serializeHtmlDoctype = (d: HtmlDoctype): string =>
+  `| <!DOCTYPE ${d.name}` +
+  (d.publicId !== "" || d.systemId !== "" ? ` "${d.publicId}" "${d.systemId}"` : "") +
+  ">";
+
+/** Serialize a parsed fragment (the context element's children) into html5lib's notation. */
+export const serializeFragment = (nodes: ReadonlyArray<HtmlNode>): string =>
+  serializeHtmlChildren(nodes, 0).join("\n");
+
+/** Serialize a parsed document into html5lib's `#document` notation. */
+export const serializeTree = (doc: HtmlDocument): string =>
+  [
+    ...(doc.doctype ? [serializeHtmlDoctype(doc.doctype)] : []),
+    ...serializeHtmlChildren(doc.children, 0),
+  ].join("\n");
+
+// --- the XML DOM (what `Html.toXml` converts to) -----------------------------
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
@@ -91,10 +158,6 @@ const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
 const nsPrefix = (uri: QName["namespace"]): string =>
   uri === SVG_NS ? "svg " : uri === MATHML_NS ? "math " : "";
 
-const indent = (depth: number): string => "  ".repeat(depth);
-
-// Namespaced (foreign) attributes serialize as "prefix local"; html5lib sorts
-// attributes by that displayed name.
 const attrName = (a: XmlAttribute): string =>
   a.name.prefix !== null ? `${a.name.prefix} ${a.name.local}` : a.name.local;
 
@@ -113,7 +176,7 @@ const serializeNode = (node: XmlNode, depth: number): ReadonlyArray<string> =>
         Arr.sort(el.attributes, byAttrName),
         (a) => `| ${indent(depth + 1)}${attrName(a)}="${a.value}"`,
       ),
-      // html5lib wraps a template's children in a synthetic "content" fragment.
+      // `Html.toXml` makes a template's contents its children.
       ...(el.name.local === "template" && el.name.namespace === HTML_NS
         ? [`| ${indent(depth + 1)}content`, ...serializeChildren(el.children, depth + 2)]
         : serializeChildren(el.children, depth + 1)),
@@ -133,12 +196,12 @@ const serializeDoctype = (d: XmlDoctype): string =>
     : "") +
   ">";
 
-/** Serialize a parsed fragment (the context element's children) into html5lib's notation. */
-export const serializeFragment = (nodes: ReadonlyArray<XmlNode>): string =>
+/** Serialize XML nodes converted from a parsed fragment into html5lib's notation. */
+export const serializeXmlFragment = (nodes: ReadonlyArray<XmlNode>): string =>
   serializeChildren(nodes, 0).join("\n");
 
-/** Serialize a parsed document into html5lib's `#document` notation. */
-export const serializeTree = (doc: XmlDocument): string =>
+/** Serialize an XML document converted from a parsed document into html5lib's notation. */
+export const serializeXmlTree = (doc: XmlDocument): string =>
   [
     ...(doc.doctype ? [serializeDoctype(doc.doctype)] : []),
     ...serializeChildren(doc.children, 0),
