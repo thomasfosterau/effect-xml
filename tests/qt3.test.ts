@@ -244,7 +244,7 @@ const passes = (v: Option.Option<string>) =>
 const fails = (v: Option.Option<string>) =>
   assert.isTrue(Option.isSome(v), "expected the assertion to fail");
 
-const str = XQuery.AtomicValue.string;
+const str = (s: string) => XQuery.AtomicValue.string(s);
 const int = (n: number) => XQuery.AtomicValue.integer(BigInt(n));
 
 describe("QT3 harness", () => {

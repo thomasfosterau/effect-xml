@@ -105,11 +105,8 @@ export class XQueryError extends Schema.TaggedError<XQueryError>()("XQueryError"
  * @since 0.3.0
  * @category errors
  */
-export const xqueryError = (
-  local: string,
-  description: string,
-  offset?: number | undefined,
-): XQueryError => new XQueryError({ code: errorCode(local), description, offset });
+export const xqueryError = (local: string, description: string, offset?: number): XQueryError =>
+  new XQueryError({ code: errorCode(local), description, offset });
 
 /**
  * Whether an error has the code the specifications define with this local name.

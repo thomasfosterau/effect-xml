@@ -294,7 +294,7 @@ const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123
 
 const formatBase64 = (bytes: Uint8Array): string =>
   Arr.map(Arr.chunksOf(Arr.fromIterable(bytes), 3), (group) => {
-    const [a = 0, b = 0, c = 0] = group;
+    const [a, b = 0, c = 0] = group;
     const n = (a << 16) | (b << 8) | c;
     const chars = [18, 12, 6, 0].map((shift) => base64Alphabet[(n >> shift) & 63] ?? "");
     return chars.slice(0, group.length + 1).join("") + "=".repeat(3 - group.length);
