@@ -376,12 +376,6 @@ export class Lexer {
     this.grammars = grammars(options.mode, options.entities, options.dtd);
   }
 
-  /** Feed a chunk of input. Returns every output produced by this chunk. */
-  write(input: string): ReadonlyArray<LexOutput> {
-    this.push(input);
-    return this.drain();
-  }
-
   /** Signal end of input and flush any pending output. */
   end(): ReadonlyArray<LexOutput> {
     this.ended = true;
