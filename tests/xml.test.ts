@@ -9,6 +9,10 @@ import { at } from "./support/narrow.ts";
 const parse = (input: string, options?: Xml.ParseOptions) =>
   Effect.runPromise(Xml.parse(input, options));
 
+/** An open start tag binding `a` and `b` to one namespace, then `n` attributes `a:k0`… */
+const opening = (n: number) =>
+  `<e xmlns:a="urn:x" xmlns:b="urn:x"${Array.from({ length: n }, (_, i) => ` a:k${i}="v"`).join("")}`;
+
 describe("Xml.parse — tree", () => {
   test("builds a typed element tree", async () => {
     const doc = await parse(`<root><a>1</a><a>2</a></root>`);
@@ -131,6 +135,26 @@ describe("Xml.parse — namespaces", () => {
     expect(r.failure._tag).toBe("DuplicateAttribute");
     expect(performance.now() - start).toBeLessThan(30_000);
   }, 60_000);
+
+  // Few attributes are scanned for a repeat, many are hashed: both sides of the cut.
+  const counts = [1, 6, 7, 8, 9, 12];
+
+  test.each(counts)("distinct names are kept among %i attributes", async (n) => {
+    const doc = await parse(`${opening(n)}/>`);
+    expect(doc.root.attributes).toHaveLength(n + 2);
+  });
+
+  test.each(
+    counts.flatMap((n) => [
+      [n, "the same name", ` a:k${n - 1}="w"`],
+      [n, "the same expanded name", ` b:k${n - 1}="w"`],
+      [n, "the same declaration", ` xmlns:a="urn:y"`],
+    ]),
+  )("a repeat among %i attributes: %s", async (n, _what, repeat) => {
+    const r = await Effect.runPromise(Effect.result(Xml.parse(`${opening(n)}${repeat}/>`)));
+    assert(Result.isFailure(r), "expected a duplicate attribute");
+    expect(r.failure._tag).toBe("DuplicateAttribute");
+  });
 
   test("the reserved prefixes and namespaces, used as allowed", async () => {
     const doc = await parse(
