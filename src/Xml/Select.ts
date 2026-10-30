@@ -31,6 +31,7 @@ import {
 } from "../Error.ts";
 import { resolveAttributes } from "../internal/attributes.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
+import * as Nodes from "../internal/nodes.ts";
 import { Namespaces, QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
 import type { SaxEvent } from "../Sax.ts";
@@ -41,15 +42,7 @@ import {
   type StepLevel,
   type StreamStep,
 } from "../internal/streamPath.ts";
-import {
-  XmlAttribute,
-  XmlCData,
-  XmlComment,
-  XmlElement,
-  XmlProcessingInstruction,
-  XmlText,
-  type XmlNode,
-} from "./Node.ts";
+import { type XmlAttribute, XmlElement, type XmlNode } from "./Node.ts";
 import { XPathError, type CompileOptions, type Path } from "./XPath.ts";
 
 interface Level extends StepLevel {
@@ -87,11 +80,9 @@ class Selector {
     bindings: HashMap.HashMap<string, string>,
     position: Position,
   ): QName | SaxError {
-    const parsed = QName.fromRaw(raw);
-    if (parsed.prefix === "xml")
-      return new QName({ prefix: "xml", local: parsed.local, namespace: Namespaces.xml });
-    if (parsed.prefix === "xmlns")
-      return new QName({ prefix: "xmlns", local: parsed.local, namespace: Namespaces.xmlns });
+    const parsed = Nodes.qnameFromRaw(raw);
+    if (parsed.prefix === "xml") return Nodes.qname("xml", parsed.local, Namespaces.xml);
+    if (parsed.prefix === "xmlns") return Nodes.qname("xmlns", parsed.local, Namespaces.xmlns);
     if (parsed.prefix === null && isAttribute) return parsed;
     const key = parsed.prefix ?? "";
     const ns = Option.getOrUndefined(
@@ -105,11 +96,7 @@ class Selector {
       return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position });
     }
     // `xmlns=""` undeclares the default namespace.
-    return new QName({
-      prefix: parsed.prefix,
-      local: parsed.local,
-      namespace: ns === "" ? null : ns,
-    });
+    return Nodes.qname(parsed.prefix, parsed.local, ns === "" ? null : ns);
   }
 
   /** Feed one event; returns a completed subtree, an error, or nothing. */
@@ -122,15 +109,13 @@ class Selector {
   private readonly handlers = {
     StartElement: (ev: Extract<SaxEvent, { _tag: "StartElement" }>) => this.start(ev),
     EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>) => this.end(ev.name, ev.span.start),
-    Text: (ev: Extract<SaxEvent, { _tag: "Text" }>) => this.append(new XmlText({ data: ev.data })),
-    CData: (ev: Extract<SaxEvent, { _tag: "CData" }>) =>
-      this.append(new XmlCData({ data: ev.data })),
-    Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>) =>
-      this.append(new XmlComment({ data: ev.data })),
+    Text: (ev: Extract<SaxEvent, { _tag: "Text" }>) => this.append(Nodes.text(ev.data)),
+    CData: (ev: Extract<SaxEvent, { _tag: "CData" }>) => this.append(Nodes.cdata(ev.data)),
+    Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>) => this.append(Nodes.comment(ev.data)),
     ProcessingInstruction: (ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>) =>
       Option.getOrElse(
         checkNoColon(ev.target, "a processing instruction target", ev.span.start),
-        () => this.append(new XmlProcessingInstruction({ target: ev.target, data: ev.data })),
+        () => this.append(Nodes.processingInstruction(ev.target, ev.data)),
       ),
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>) =>
       ev.internalSubset === null
@@ -172,7 +157,7 @@ class Selector {
       // Inside a selected subtree: just build.
       this.capture.push({ name, attributes, children: [] });
     } else {
-      const element = new XmlElement({ name, attributes, children: [] });
+      const element = Nodes.element(name, attributes, []);
       const level = advance(this.steps, Option.fromUndefinedOr(this.levels.at(-1)), () => element);
       this.levels.push({ rawName: ev.name, bindings, ...level });
       if (selects(this.steps, level)) {
@@ -198,11 +183,7 @@ class Selector {
       return new MismatchedEndTag({ expected: level.rawName, actual: rawName, position });
     const frame = this.capture.pop();
     if (frame === undefined) return null;
-    const element = new XmlElement({
-      name: frame.name,
-      attributes: frame.attributes,
-      children: frame.children,
-    });
+    const element = Nodes.element(frame.name, frame.attributes, frame.children);
     if (this.levels.length === this.captureDepth) {
       this.captureDepth = -1;
       return element;

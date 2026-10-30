@@ -25,18 +25,11 @@ import {
   UnexpectedEndTag,
   type SaxError,
 } from "../../Error.ts";
-import { Namespaces, QName } from "../../Name.ts";
+import { Namespaces, type QName } from "../../Name.ts";
 import { origin, type Position } from "../../Position.ts";
 import type { Attribute, SaxEvent } from "../../Sax.ts";
-import {
-  XmlAttribute,
-  XmlCData,
-  XmlComment,
-  XmlElement,
-  XmlProcessingInstruction,
-  XmlText,
-  type XmlNode,
-} from "../../Xml/Node.ts";
+import { type XmlAttribute, XmlElement, type XmlNode } from "../../Xml/Node.ts";
+import * as Nodes from "../nodes.ts";
 import { XsdValidationError, type ValidationRule, type XsdSchemaError } from "../../Xsd/Error.ts";
 import { clark, XSI, type ElementDeclaration, type Wildcard } from "../../Xsd/Model.ts";
 import type { Validated, XsdValue } from "../../Xsd/Value.ts";
@@ -238,9 +231,9 @@ export class Validator {
     EndElement: (ev: Event<"EndElement">) => this.end(ev.name, ev.span.start),
     Text: (ev: Event<"Text">) => this.text(ev.data, ev.span.start, false),
     CData: (ev: Event<"CData">) => this.text(ev.data, ev.span.start, true),
-    Comment: (ev: Event<"Comment">) => this.capture(new XmlComment({ data: ev.data })),
+    Comment: (ev: Event<"Comment">) => this.capture(Nodes.comment(ev.data)),
     ProcessingInstruction: (ev: Event<"ProcessingInstruction">) =>
-      this.capture(new XmlProcessingInstruction({ target: ev.target, data: ev.data })),
+      this.capture(Nodes.processingInstruction(ev.target, ev.data)),
     Doctype: () => null,
     XmlDeclaration: () => null,
   };
@@ -383,11 +376,11 @@ export class Validator {
       this.steps,
       Option.flatMap(Option.fromUndefinedOr(parent), (p) => p.level),
       () =>
-        new XmlElement({
-          name: toQName(opening.name),
-          attributes: Result.getOrElse(this.domAttributes(opening.ev, opening.bindings), () => []),
-          children: [],
-        }),
+        Nodes.element(
+          toQName(opening.name),
+          Result.getOrElse(this.domAttributes(opening.ev, opening.bindings), () => []),
+          [],
+        ),
     );
     frame.level = Option.some(level);
     frame.selected = selects(this.steps, level);
@@ -691,7 +684,7 @@ export class Validator {
               : this.resolve(a.name, true, bindings, a.span.start);
         return name instanceof UnboundNamespacePrefix
           ? Result.fail(name)
-          : Result.succeed(new XmlAttribute({ name: toQName(name), value: a.value }));
+          : Result.succeed(Nodes.attribute(toQName(name), a.value));
       }),
     );
   }
@@ -858,7 +851,7 @@ export class Validator {
       return isWhitespace(data)
         ? null
         : new InvalidDocumentStructure({ position, reason: "text outside the root element" });
-    frame.dom?.push(cdata ? new XmlCData({ data }) : new XmlText({ data }));
+    frame.dom?.push(cdata ? Nodes.cdata(data) : Nodes.text(data));
     const type = frame.type;
     if (type === undefined) return null;
     if (frame.nil)
@@ -897,10 +890,8 @@ export class Validator {
       return new MismatchedEndTag({ expected: frame.raw, actual: raw, position });
     const value = frame.type === undefined ? Result.succeed(null) : this.complete(frame, position);
     if (Result.isFailure(value)) return value.failure;
-    const element = Option.map(
-      Option.fromNullishOr(frame.dom),
-      (children) =>
-        new XmlElement({ name: toQName(frame.name), attributes: frame.domAttributes, children }),
+    const element = Option.map(Option.fromNullishOr(frame.dom), (children) =>
+      Nodes.element(toQName(frame.name), frame.domAttributes, children),
     );
     Option.map(element, (el) => this.recordTypes(frame, el));
     const violated = this.constraints(frame, element, position);
@@ -1058,11 +1049,7 @@ const expanded = (prefix: string | null, local: string, namespace: string | null
 });
 
 /** The `QName` of a resolved name, for the DOM; it was resolved from a well-formed start tag. */
-const toQName = (name: Expanded): QName =>
-  new QName(
-    { prefix: name.prefix, local: name.local, namespace: name.namespace },
-    { disableChecks: true },
-  );
+const toQName = (name: Expanded): QName => Nodes.qname(name.prefix, name.local, name.namespace);
 
 interface Opening {
   readonly ev: Event<"StartElement">;
