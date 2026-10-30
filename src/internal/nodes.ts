@@ -5,8 +5,9 @@
  * struct schema over its input: it checks each field, copies each array and
  * checks each array element against its own schema (every child of an element
  * against the whole node union). The parsers build a node per token from values
- * they produced themselves, so that work is pure overhead on the hot path: a
- * third of `Xml.parse` and `Html.parseDocument`.
+ * they produced themselves, so that work is pure overhead on the hot path:
+ * skipping it makes `Xml.parse` almost three times as fast, and
+ * `Html.parseDocument` 1.7 times.
  *
  * These build the same instance without it: an object with the class's
  * prototype and the fields assigned in the order the schema declares them
