@@ -152,10 +152,10 @@ export default defineConfig({
       "unicorn/consistent-function-scoping": "warn",
       // Type-aware (tsgolint) rules. oxlint applies `overrides` to none of
       // them, so each relaxation here is global and counted.
-      // 12 sites, all in src/, each with a `SAFETY:` comment: the branded-name
-      // casts (`unsafeTagName` / `unsafeAttrName`, the lexer's event →
-      // SaxEvent narrowing in `convert.ts`), a parse failure's `unknown` cause,
-      // and the caller-described value types of `Xsd.parser`. The hot-path
+      // 14 sites (13 in src/, 1 in tests), each with a `SAFETY:` comment: the
+      // branded-name casts (`unsafeTagName` / `unsafeAttrName`, the lexer's
+      // event → SaxEvent narrowing in `convert.ts`), a parse failure's
+      // `unknown` cause, the caller-described value types of `Xsd.parser`. The hot-path
       // sites stay casts for the reason given for `convert.ts` below. A new
       // site is a defect (#80).
       "typescript/no-unsafe-type-assertion": "warn",
