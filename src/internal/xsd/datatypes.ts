@@ -339,7 +339,7 @@ const parseBase64 = (s: string): Result.Result<SimpleValue, string> => {
     base64Alphabet.indexOf(c),
   );
   const bytes = Arr.flatMap(Arr.chunksOf(sextets, 4), (group) => {
-    const [a = 0, b = 0, c = 0, d = 0] = group;
+    const [a, b = 0, c = 0, d = 0] = group;
     const n = (a << 18) | (b << 12) | (c << 6) | d;
     return Arr.take([(n >> 16) & 255, (n >> 8) & 255, n & 255], group.length - 1);
   });

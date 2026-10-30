@@ -150,6 +150,19 @@ export default defineConfig({
       // 13 sites in src/, 25 in tests: helpers declared inside the function
       // or test that uses them.
       "unicorn/consistent-function-scoping": "warn",
+      // Type-aware (tsgolint) rules. oxlint applies `overrides` to none of
+      // them, so each relaxation here is global and counted.
+      // 12 sites, all in src/, each with a `SAFETY:` comment: the branded-name
+      // casts (`unsafeTagName` / `unsafeAttrName`, the lexer's event →
+      // SaxEvent narrowing in `convert.ts`), a parse failure's `unknown` cause,
+      // and the caller-described value types of `Xsd.parser`. The hot-path
+      // sites stay casts for the reason given for `convert.ts` below. A new
+      // site is a defect (#80).
+      "typescript/no-unsafe-type-assertion": "warn",
+      // 3 sites, each an entry point the rule's own message exempts: the CLI
+      // bin (`packages/cli/src/main.ts`) and two test programs. src/ has none;
+      // a site there is a defect (#80).
+      "effecttsgo/strict-effect-provide": "warn",
     },
     overrides: [
       // Build/test configs are evaluated by Vite and Vitest in bare Node,
@@ -311,12 +324,16 @@ export default defineConfig({
         },
       },
     ],
-    // Type-aware linting is off for now: type checking stays the `check`
-    // task's job (native tsc, Effect-patched), and enabling it reports 34
-    // findings still to fix (#61).
+    // Type-aware linting through oxlint-tsgolint (bundled with vite-plus and
+    // patched by `effect-tsgo patch --oxlint`), which also enables
+    // `@effect/tsgo`'s `effecttsgo/*` preset rules. `typeCheck` reports
+    // TypeScript errors in `vp check` too; `vp run check` stays the gate of
+    // record (the Effect-patched tsc). tsgolint reads each file's nearest
+    // tsconfig.json, so `tests/`, `examples/` and `bench/` each carry one that
+    // extends tsconfig.test.json.
     options: {
-      typeAware: false,
-      typeCheck: false,
+      typeAware: true,
+      typeCheck: true,
     },
     jsPlugins: [
       {

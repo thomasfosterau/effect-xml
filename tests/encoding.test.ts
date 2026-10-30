@@ -21,7 +21,7 @@ const utf16 = (s: string, little: boolean, bom: boolean): Uint8Array => {
 
 const utf32 = (s: string, little: boolean, bom: boolean): Uint8Array => {
   // Never `undefined`: each item of a string's iterator is one whole code point.
-  const cps = [...s].map((c) => c.codePointAt(0) ?? 0);
+  const cps = Array.from(s, (c) => c.codePointAt(0) ?? 0);
   if (bom) cps.unshift(0xfeff);
   const out = new Uint8Array(cps.length * 4);
   const view = new DataView(out.buffer);

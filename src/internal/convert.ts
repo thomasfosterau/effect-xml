@@ -8,6 +8,7 @@
  * bench`). The override that allows this is scoped to the hot-path files in
  * `vite.config.ts`.
  */
+import { absurd } from "effect/Function";
 import type { ResolvedOptions, SaxEvent } from "../Sax.ts";
 import type { LexEvent } from "./lexer.ts";
 
@@ -45,5 +46,9 @@ export const convert = (ev: LexEvent, opts: ResolvedOptions): SaxEvent | null =>
     case "EntityReference":
       // Expanded before conversion (see `Sax.tokenize`).
       return null;
+    default:
+      // Unreachable (the cases above are exhaustive); it keeps every path
+      // returning a value, and a new tag a compile error.
+      return absurd(ev);
   }
 };

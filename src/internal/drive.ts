@@ -16,7 +16,7 @@
 export const drive = <A>(
   pull: () => ReadonlyArray<A> | null,
   f: (item: A) => boolean,
-  full?: (() => boolean) | undefined,
+  full?: () => boolean,
 ): boolean => {
   for (let batch = pull(); batch !== null; batch = pull()) {
     for (const item of batch) if (!f(item)) return false;

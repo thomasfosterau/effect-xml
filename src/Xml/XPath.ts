@@ -775,8 +775,8 @@ const evalPath = (path: LocationPath, context: XNode): ReadonlyArray<XNode> => {
 const contextNode = (context: Context): XNode => {
   if (context instanceof Cursor) return { kind: "element", cursor: context };
   if (context instanceof XmlElement) return { kind: "element", cursor: Cursor.root(context) };
-  // SAFETY: the other two members of `Context` were handled above.
-  return { kind: "root", top: Cursor.root((context as XmlDocument).root) };
+  // The other two members of `Context` were handled above.
+  return { kind: "root", top: Cursor.root(context.root) };
 };
 
 const toDom = (n: XNode): XPathNode | null =>

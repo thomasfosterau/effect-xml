@@ -286,6 +286,11 @@ interface Frame {
 
 const INITIAL_SCOPE: Bindings = { xml: Namespaces.xml, "": "" };
 
+/** The first character `chars` could not write, as `U+XXXX`; set from inside its replacer. */
+interface FirstInvalid {
+  failed: string | null;
+}
+
 /** @internal The writer's state machine: one event in, some text out. */
 export class XmlWriter {
   private readonly stack: Array<Frame> = [];
@@ -314,7 +319,10 @@ export class XmlWriter {
   /** Encode, strip or replace characters XML forbids; `null` when the policy is to fail. */
   private chars(s: string, what: string): string | SerializationError {
     if (!INVALID.test(s)) return s;
-    let failed: string | null = null;
+    // A holder, not a `let`: the replacer sets it, and control-flow analysis
+    // can't see an assignment made inside a callback, so it would keep a
+    // `let` narrowed to `null` (and its message part typed `never`).
+    const first: FirstInvalid = { failed: null };
     const out = s.replace(INVALID_ALL, (c) => {
       // `c` is one matched character, so it has a code point.
       const cp = c.codePointAt(0) ?? 0;
@@ -322,13 +330,13 @@ export class XmlWriter {
       if (escaped !== undefined) return escaped;
       if (this.invalid === "strip") return "";
       if (this.invalid === "replace") return "�";
-      failed ??= `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+      first.failed ??= `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
       return c;
     });
-    return failed === null
+    return first.failed === null
       ? out
       : new SerializationError({
-          reason: `${what} contains ${failed}, which XML 1.0 does not allow`,
+          reason: `${what} contains ${first.failed}, which XML 1.0 does not allow`,
         });
   }
 
