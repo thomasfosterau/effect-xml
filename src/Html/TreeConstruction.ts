@@ -23,24 +23,14 @@ import * as Stream from "effect/Stream";
 import * as Str from "effect/String";
 import type { SaxError } from "../Error.ts";
 import { defaultLimits, resolveLimits, type Limits } from "../Limits.ts";
-import { QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
 import { resolveSaxOptions, SaxEvent } from "../Sax.ts";
 import { convert as convertLexEvent } from "../internal/convert.ts";
 import { depthExceeded, Guard } from "../internal/guard.ts";
+import * as Nodes from "../internal/nodes.ts";
 import { acceptAll, tryAccept } from "../internal/unwind.ts";
 import { isFault, Lexer } from "../internal/lexer.ts";
-import {
-  XmlCData,
-  XmlComment,
-  XmlDoctype,
-  XmlDocument,
-  XmlElement,
-  XmlProcessingInstruction,
-  XmlText,
-  XmlAttribute,
-  type XmlNode,
-} from "../Xml/Node.ts";
+import { type XmlDoctype, type XmlDocument, XmlElement, type XmlNode } from "../Xml/Node.ts";
 import { rawTextElements, rcdataElements, voidElements } from "./Tokenizer.ts";
 import {
   adjustForeignAttrs,
@@ -880,13 +870,13 @@ class HtmlTreeBuilder {
     Doctype: (ev) => {
       if (this.mode !== "initial") return;
       this.quirks = computeQuirks(ev.name, ev.publicId, ev.systemId);
-      this.doctype = new XmlDoctype({
+      this.doctype = Nodes.doctype(
         // The HTML parser lowercases the DOCTYPE name.
-        name: ev.name.toLowerCase(),
-        publicId: ev.publicId,
-        systemId: ev.systemId,
-        internalSubset: ev.internalSubset,
-      });
+        ev.name.toLowerCase(),
+        ev.publicId,
+        ev.systemId,
+        ev.internalSubset,
+      );
       this.mode = "beforeHtml";
     },
     Comment: (ev) => {
@@ -2611,11 +2601,7 @@ class HtmlTreeBuilder {
     this.populateSelectedContent();
 
     const children: Array<XmlNode> = this.topLevel.map(toXmlNode);
-    return new XmlDocument({
-      declaration: null,
-      doctype: this.doctype,
-      children,
-    });
+    return Nodes.document(null, this.doctype, children);
   }
 }
 
@@ -2661,28 +2647,20 @@ const cloneMNode = (node: MNode): MNode => {
 };
 
 const toXmlLeaf = (node: Exclude<MNode, MElement>): XmlNode => {
-  if (node._t === "text") return new XmlText({ data: node.data });
-  if (node._t === "comment") return new XmlComment({ data: node.data });
-  if (node._t === "cdata") return new XmlCData({ data: node.data });
-  return new XmlProcessingInstruction({ target: node.target, data: node.data });
+  if (node._t === "text") return Nodes.text(node.data);
+  if (node._t === "comment") return Nodes.comment(node.data);
+  if (node._t === "cdata") return Nodes.cdata(node.data);
+  return Nodes.processingInstruction(node.target, node.data);
 };
 
 const toXmlElement = (node: MElement, children: ReadonlyArray<XmlNode>): XmlElement =>
-  new XmlElement({
-    name: new QName({ prefix: null, local: node.name, namespace: node.ns }),
-    attributes: node.attrs.map(
-      (a) =>
-        new XmlAttribute({
-          name: new QName({
-            prefix: a.prefix ?? null,
-            local: a.name,
-            namespace: a.ns ?? null,
-          }),
-          value: a.value,
-        }),
+  Nodes.element(
+    Nodes.qname(null, node.name, node.ns),
+    node.attrs.map((a) =>
+      Nodes.attribute(Nodes.qname(a.prefix ?? null, a.name, a.ns ?? null), a.value),
     ),
     children,
-  });
+  );
 
 /** Convert to the immutable DOM, iteratively so deep trees can't overflow the stack. */
 const toXmlNode = (root: MNode): XmlNode => {

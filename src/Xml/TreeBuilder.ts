@@ -27,20 +27,18 @@ import {
 } from "../Error.ts";
 import { resolveAttributes } from "../internal/attributes.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
-import { Namespaces, QName } from "../Name.ts";
+import * as Nodes from "../internal/nodes.ts";
+import { Namespaces, type QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
 import { SaxEvent, type Attribute } from "../Sax.ts";
-import {
-  XmlCData,
-  XmlComment,
+import type {
   XmlDeclaration,
   XmlDoctype,
   XmlDocument,
   XmlAttribute,
   XmlElement,
-  XmlProcessingInstruction,
   XmlText,
-  type XmlNode,
+  XmlNode,
 } from "./Node.ts";
 
 /**
@@ -135,12 +133,12 @@ class Builder {
     position: Position,
     own: Bindings,
   ): Result.Result<QName, SaxError> {
-    const parsed = QName.fromRaw(raw);
+    const parsed = Nodes.qnameFromRaw(raw);
     if (!this.namespaces) return Result.succeed(parsed);
     // Default namespace does not apply to attributes (XML Namespaces §6.2).
     if (parsed.prefix === null) {
       const ns = isAttribute ? null : this.resolvePrefix(null, own);
-      return Result.succeed(new QName({ prefix: null, local: parsed.local, namespace: ns }));
+      return Result.succeed(Nodes.qname(null, parsed.local, ns));
     }
     const ns = this.resolvePrefix(parsed.prefix, own);
     if (ns === null && this.recover) return Result.succeed(parsed);
@@ -149,7 +147,7 @@ class Builder {
         new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position }),
       );
     }
-    return Result.succeed(new QName({ prefix: parsed.prefix, local: parsed.local, namespace: ns }));
+    return Result.succeed(Nodes.qname(parsed.prefix, parsed.local, ns));
   }
 
   private collectBindings(attributes: ReadonlyArray<Attribute>): Bindings {
@@ -255,11 +253,11 @@ class Builder {
     EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>): Effect.Effect<void, SaxError> =>
       this.endElement(ev.name, ev.span.start),
     Text: (ev: Extract<SaxEvent, { _tag: "Text" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(new XmlText({ data: ev.data }), ev.span.start),
+      this.appendChild(Nodes.text(ev.data), ev.span.start),
     CData: (ev: Extract<SaxEvent, { _tag: "CData" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(new XmlCData({ data: ev.data }), ev.span.start),
+      this.appendChild(Nodes.cdata(ev.data), ev.span.start),
     Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(new XmlComment({ data: ev.data }), ev.span.start),
+      this.appendChild(Nodes.comment(ev.data), ev.span.start),
     ProcessingInstruction: (
       ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>,
     ): Effect.Effect<void, SaxError> => {
@@ -268,19 +266,12 @@ class Builder {
           ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
           : Option.none();
       if (Option.isSome(error)) return Effect.fail(error.value);
-      return this.appendChild(
-        new XmlProcessingInstruction({ target: ev.target, data: ev.data }),
-        ev.span.start,
-      );
+      return this.appendChild(Nodes.processingInstruction(ev.target, ev.data), ev.span.start);
     },
     XmlDeclaration: (
       ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>,
     ): Effect.Effect<void, SaxError> => {
-      this.declaration = new XmlDeclaration({
-        version: ev.version,
-        encoding: ev.encoding,
-        standalone: ev.standalone,
-      });
+      this.declaration = Nodes.declaration(ev.version, ev.encoding, ev.standalone);
       return Effect.void;
     },
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>): Effect.Effect<void, SaxError> => {
@@ -289,12 +280,7 @@ class Builder {
           ? checkSubset(ev.internalSubset, ev.span.start)
           : Option.none();
       if (Option.isSome(error)) return Effect.fail(error.value);
-      this.doctype = new XmlDoctype({
-        name: ev.name,
-        publicId: ev.publicId,
-        systemId: ev.systemId,
-        internalSubset: ev.internalSubset,
-      });
+      this.doctype = Nodes.doctype(ev.name, ev.publicId, ev.systemId, ev.internalSubset);
       return Effect.void;
     },
   };
@@ -323,10 +309,10 @@ class Builder {
       onSuccess: ({ name, attributes }) => {
         if (ev.selfClosing) {
           // A complete, childless element.
-          return this.appendChild(new XmlElement({ name, attributes, children: [] }), position);
+          return this.appendChild(Nodes.element(name, attributes, []), position);
         }
         this.stack.push({
-          element: new XmlElement({ name, attributes, children: [] }),
+          element: Nodes.element(name, attributes, []),
           children: [],
           bindings,
           rawName: ev.name,
@@ -409,27 +395,17 @@ class Builder {
         new InvalidDocumentStructure({ position, reason: "document has no root element" }),
       );
     }
-    return Effect.succeed(
-      new XmlDocument({
-        declaration: this.declaration,
-        doctype: this.doctype,
-        children: this.top,
-      }),
-    );
+    return Effect.succeed(Nodes.document(this.declaration, this.doctype, this.top));
   }
 }
 
 /** The element an open frame becomes once it is closed. */
 const closed = (frame: Frame): XmlElement =>
-  new XmlElement({
-    name: frame.element.name,
-    attributes: frame.element.attributes,
-    children: frame.children,
-  });
+  Nodes.element(frame.element.name, frame.element.attributes, frame.children);
 
 /** A recovering parse's root for a document that has none. */
 const synthesizedRoot = (): XmlElement =>
-  new XmlElement({ name: QName.fromRaw(SYNTHESIZED_ROOT), attributes: [], children: [] });
+  Nodes.element(Nodes.qnameFromRaw(SYNTHESIZED_ROOT), [], []);
 
 /**
  * Recovery: resolve the attributes, dropping each one whose raw name, or
@@ -442,12 +418,12 @@ const recoverAttributes = (
 ): Array<XmlAttribute> => {
   const seen = MutableHashSet.empty<string>();
   return Arr.reduce(attributes, Arr.empty<XmlAttribute>(), (list, a) => {
-    const name = Result.getOrElse(resolve(a.name, a.span.start), () => QName.fromRaw(a.name));
+    const name = Result.getOrElse(resolve(a.name, a.span.start), () => Nodes.qnameFromRaw(a.name));
     // An expanded-name key has a space, which no raw name has, so the two never collide.
     const keys = name.namespace === null ? [a.name] : [a.name, `${name.namespace} ${name.local}`];
     if (Arr.some(keys, (key) => MutableHashSet.has(seen, key))) return list;
     Arr.forEach(keys, (key) => MutableHashSet.add(seen, key));
-    list.push(new XmlAttribute({ name, value: a.value }));
+    list.push(Nodes.attribute(name, a.value));
     return list;
   });
 };

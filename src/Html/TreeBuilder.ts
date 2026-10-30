@@ -19,19 +19,11 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { resolveLimits, type Limits } from "../Limits.ts";
-import { QName } from "../Name.ts";
 import { depthExceeded } from "../internal/guard.ts";
+import * as Nodes from "../internal/nodes.ts";
 import { acceptAll } from "../internal/unwind.ts";
 import { SaxEvent } from "../Sax.ts";
-import {
-  XmlAttribute,
-  XmlCData,
-  XmlComment,
-  XmlElement,
-  XmlProcessingInstruction,
-  XmlText,
-  type XmlNode,
-} from "../Xml/Node.ts";
+import type { XmlElement, XmlNode } from "../Xml/Node.ts";
 import { voidElements } from "./Tokenizer.ts";
 
 interface Frame {
@@ -60,10 +52,10 @@ class FragmentBuilder {
 
   private startElement(ev: Extract<SaxEvent, { _tag: "StartElement" }>): void {
     const name = ev.name.toLowerCase();
-    const attributes = ev.attributes.map(
-      (a) => new XmlAttribute({ name: QName.simple(a.name.toLowerCase()), value: a.value }),
+    const attributes = ev.attributes.map((a) =>
+      Nodes.attribute(Nodes.qname(null, a.name.toLowerCase(), null), a.value),
     );
-    const element = new XmlElement({ name: QName.simple(name), attributes, children: [] });
+    const element = Nodes.element(Nodes.qname(null, name, null), attributes, []);
     if (ev.selfClosing || HashSet.has(voidElements, name)) {
       this.append(element);
       return;
@@ -87,11 +79,7 @@ class FragmentBuilder {
   private closeTo(depth: number): void {
     const closing = this.stack.splice(depth).toReversed();
     closing.forEach((frame, i) => {
-      const finished = new XmlElement({
-        name: frame.element.name,
-        attributes: frame.element.attributes,
-        children: frame.children,
-      });
+      const finished = Nodes.element(frame.element.name, frame.element.attributes, frame.children);
       // Each element closes into the one below it; the outermost into what stays open.
       const parent = closing[i + 1];
       if (parent === undefined) this.append(finished);
@@ -107,14 +95,12 @@ class FragmentBuilder {
   private readonly handlers = {
     StartElement: (ev: Extract<SaxEvent, { _tag: "StartElement" }>): void => this.startElement(ev),
     EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>): void => this.endElement(ev.name),
-    Text: (ev: Extract<SaxEvent, { _tag: "Text" }>): void =>
-      this.append(new XmlText({ data: ev.data })),
-    CData: (ev: Extract<SaxEvent, { _tag: "CData" }>): void =>
-      this.append(new XmlCData({ data: ev.data })),
+    Text: (ev: Extract<SaxEvent, { _tag: "Text" }>): void => this.append(Nodes.text(ev.data)),
+    CData: (ev: Extract<SaxEvent, { _tag: "CData" }>): void => this.append(Nodes.cdata(ev.data)),
     Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>): void =>
-      this.append(new XmlComment({ data: ev.data })),
+      this.append(Nodes.comment(ev.data)),
     ProcessingInstruction: (ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>): void =>
-      this.append(new XmlProcessingInstruction({ target: ev.target, data: ev.data })),
+      this.append(Nodes.processingInstruction(ev.target, ev.data)),
     Doctype: (): void => undefined,
     XmlDeclaration: (): void => undefined,
   };

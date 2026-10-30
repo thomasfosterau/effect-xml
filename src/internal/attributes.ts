@@ -9,7 +9,8 @@ import { DuplicateAttribute, type SaxError } from "../Error.ts";
 import type { QName, TagName } from "../Name.ts";
 import type { Position } from "../Position.ts";
 import type { Attribute } from "../Sax.ts";
-import { XmlAttribute } from "../Xml/Node.ts";
+import type { XmlAttribute } from "../Xml/Node.ts";
+import * as Nodes from "./nodes.ts";
 
 /**
  * The attributes of the element `element`, each name resolved by `resolve`.
@@ -46,7 +47,7 @@ export const resolveAttributes = (
             );
           MutableHashSet.add(seen, expanded);
         }
-        list.push(new XmlAttribute({ name, value: a.value }));
+        list.push(Nodes.attribute(name, a.value));
         return Result.succeed(list);
       });
     }),
