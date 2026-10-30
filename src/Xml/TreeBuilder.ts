@@ -26,6 +26,7 @@ import {
   type SaxError,
 } from "../Error.ts";
 import { resolveAttributes } from "../internal/attributes.ts";
+import { QNames } from "../internal/qnames.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
 import { Namespaces, QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
@@ -105,6 +106,8 @@ class Builder {
   private rootEnded = false;
   /** Recovery: comments and PIs after the root's end tag, which stay after the root. */
   private readonly trailing: Array<XmlNode> = [];
+  /** The names built so far, so each raw name and namespace is built once. */
+  private readonly names = new QNames();
 
   constructor(options: BuildOptions) {
     this.namespaces = options.namespaces ?? true;
@@ -135,21 +138,21 @@ class Builder {
     position: Position,
     own: Bindings,
   ): Result.Result<QName, SaxError> {
-    const parsed = QName.fromRaw(raw);
-    if (!this.namespaces) return Result.succeed(parsed);
+    const parsed = this.names.entry(raw);
+    if (!this.namespaces) return Result.succeed(this.names.name(parsed, null));
     // Default namespace does not apply to attributes (XML Namespaces §6.2).
     if (parsed.prefix === null) {
       const ns = isAttribute ? null : this.resolvePrefix(null, own);
-      return Result.succeed(new QName({ prefix: null, local: parsed.local, namespace: ns }));
+      return Result.succeed(this.names.name(parsed, ns));
     }
     const ns = this.resolvePrefix(parsed.prefix, own);
-    if (ns === null && this.recover) return Result.succeed(parsed);
+    if (ns === null && this.recover) return Result.succeed(this.names.name(parsed, null));
     if (ns === null) {
       return Result.fail(
         new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position }),
       );
     }
-    return Result.succeed(new QName({ prefix: parsed.prefix, local: parsed.local, namespace: ns }));
+    return Result.succeed(this.names.name(parsed, ns));
   }
 
   private collectBindings(attributes: ReadonlyArray<Attribute>): Bindings {

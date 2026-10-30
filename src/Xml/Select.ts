@@ -30,6 +30,7 @@ import {
   type SaxError,
 } from "../Error.ts";
 import { resolveAttributes } from "../internal/attributes.ts";
+import { QNames } from "../internal/qnames.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
 import { Namespaces, QName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
@@ -73,6 +74,8 @@ class Selector {
   private readonly capture: Array<Frame> = [];
   private captureDepth = -1;
   private unbinding = false;
+  /** The names built so far, so each raw name and namespace is built once. */
+  private readonly names = new QNames();
   last: Position = origin;
 
   private readonly steps: ReadonlyArray<StreamStep>;
@@ -87,12 +90,10 @@ class Selector {
     bindings: HashMap.HashMap<string, string>,
     position: Position,
   ): QName | SaxError {
-    const parsed = QName.fromRaw(raw);
-    if (parsed.prefix === "xml")
-      return new QName({ prefix: "xml", local: parsed.local, namespace: Namespaces.xml });
-    if (parsed.prefix === "xmlns")
-      return new QName({ prefix: "xmlns", local: parsed.local, namespace: Namespaces.xmlns });
-    if (parsed.prefix === null && isAttribute) return parsed;
+    const parsed = this.names.entry(raw);
+    if (parsed.prefix === "xml") return this.names.name(parsed, Namespaces.xml);
+    if (parsed.prefix === "xmlns") return this.names.name(parsed, Namespaces.xmlns);
+    if (parsed.prefix === null && isAttribute) return this.names.name(parsed, null);
     const key = parsed.prefix ?? "";
     const ns = Option.getOrUndefined(
       HashMap.get(bindings, key).pipe(
@@ -101,15 +102,11 @@ class Selector {
     );
     // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
     if (ns === undefined || (ns === "" && parsed.prefix !== null)) {
-      if (parsed.prefix === null) return parsed;
+      if (parsed.prefix === null) return this.names.name(parsed, null);
       return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position });
     }
     // `xmlns=""` undeclares the default namespace.
-    return new QName({
-      prefix: parsed.prefix,
-      local: parsed.local,
-      namespace: ns === "" ? null : ns,
-    });
+    return this.names.name(parsed, ns === "" ? null : ns);
   }
 
   /** Feed one event; returns a completed subtree, an error, or nothing. */

@@ -140,6 +140,42 @@ describe("Xml.parse — namespaces", () => {
     expect(doc.root.attribute("xml:lang")).toBe("en");
   });
 
+  test("one raw name in several namespaces resolves to each", async () => {
+    // Names are built once per raw name and namespace, so this exercises a
+    // raw name seen again in a namespace other than its first.
+    const doc = await parse(
+      `<r><p:e xmlns:p="urn:a"/><p:e xmlns:p="urn:b"/><p:e xmlns:p="urn:a"/>` +
+        `<e/><e xmlns="urn:c"/><e/></r>`,
+    );
+    expect(doc.root.elements.map((e) => e.name.namespace)).toEqual([
+      "urn:a",
+      "urn:b",
+      "urn:a",
+      null,
+      "urn:c",
+      null,
+    ]);
+    expect(doc.root.elements.map((e) => e.name.qualified)).toEqual([
+      "p:e",
+      "p:e",
+      "p:e",
+      "e",
+      "e",
+      "e",
+    ]);
+  });
+
+  test("a document with more distinct names than the name cache holds", async () => {
+    const n = 10_000;
+    const children = Array.from({ length: n }, (_, i) => `<p:e${i} xmlns:p="urn:${i % 3}"/>`);
+    const doc = await parse(`<r>${children.join("")}<p:e0 xmlns:p="urn:9"/></r>`);
+    const elements = doc.root.elements;
+    expect(elements).toHaveLength(n + 1);
+    expect(at(elements, 4).name.namespace).toBe("urn:1");
+    expect(at(elements, 4).name.local).toBe("e4");
+    expect(at(elements, n).name.namespace).toBe("urn:9");
+  });
+
   test("XML 1.1 may undeclare a prefix", async () => {
     const doc = await parse(
       `<?xml version="1.1"?><a xmlns:p="urn:p"><p:b xmlns:p="urn:q"/><c xmlns:p=""/></a>`,
