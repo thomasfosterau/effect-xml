@@ -10,10 +10,17 @@
 
 /**
  * Pull batches until `pull` returns `null`, handing each item to `f` in order;
- * stop at the first item `f` returns `false` for.
+ * stop at the first item `f` returns `false` for, or after a whole batch
+ * once `full` returns `true`. Returns whether `pull` ran dry.
  */
-export const drive = <A>(pull: () => ReadonlyArray<A> | null, f: (item: A) => boolean): void => {
+export const drive = <A>(
+  pull: () => ReadonlyArray<A> | null,
+  f: (item: A) => boolean,
+  full?: (() => boolean) | undefined,
+): boolean => {
   for (let batch = pull(); batch !== null; batch = pull()) {
-    for (const item of batch) if (!f(item)) return;
+    for (const item of batch) if (!f(item)) return false;
+    if (full !== undefined && full()) return false;
   }
+  return true;
 };

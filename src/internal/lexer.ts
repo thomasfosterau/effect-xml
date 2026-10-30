@@ -226,10 +226,39 @@ class Positions {
   private index = 0;
   private pos: Position = this.anchorPos;
   private crlfNext = 0;
+  /**
+   * The first `\n` at or after absolute index {@link newlineFrom}, or -1 if
+   * the buffer had none when it ended at {@link newlineLimit}. Each query
+   * moves forward from it, so every newline is searched for once, rather
+   * than the text between two positions being sliced and split per query.
+   */
+  private newlineFrom = 0;
+  private newline = -1;
+  private newlineLimit = 0;
   private readonly source: { readonly buf: string; readonly base: number };
 
   constructor(source: { readonly buf: string; readonly base: number }) {
     this.source = source;
+  }
+
+  /** The first `\n` at or after absolute index `from` (at or after the buffer's start), or -1. */
+  private nextNewline(from: number): number {
+    const { buf, base } = this.source;
+    const end = base + buf.length;
+    const known = this.newline;
+    if (from >= this.newlineFrom && (known === -1 ? this.newlineLimit === end : from <= known)) {
+      return known;
+    }
+    // Text before the limit is unchanged (input is only appended and the
+    // buffer only trimmed at the front), so a search that found nothing
+    // resumes at the limit.
+    const resume =
+      known === -1 && from >= this.newlineFrom ? Math.max(from, this.newlineLimit) : from;
+    const at = buf.indexOf("\n", resume - base);
+    this.newlineFrom = from;
+    this.newline = at === -1 ? -1 : base + at;
+    this.newlineLimit = end;
+    return this.newline;
   }
 
   at(index: number): Position {
@@ -239,15 +268,20 @@ class Positions {
       this.crlfNext = this.anchorCrlf;
     }
     if (index === this.index) return this.pos;
-    const { buf, base } = this.source;
     let { line, column } = this.pos;
     // Lines: count the newlines in between; the column restarts after the last.
-    // (Both bounds clamp at 0, as `indexOf` does for a negative start.)
-    const from = Math.max(0, this.index - base);
-    const between = buf.slice(from, Math.max(from, index - base));
-    const last = between.lastIndexOf("\n");
-    if (last !== -1) line += between.split("\n").length - 1;
-    column = last === -1 ? column + (index - this.index) : index - base - (from + last);
+    // (The search starts at the buffer at the earliest.)
+    const from = Math.max(this.index, this.source.base);
+    const nl = this.nextNewline(from);
+    if (nl === -1 || nl >= index) {
+      column += index - this.index;
+    } else {
+      // From the first newline on: it is at index 0 of `between`.
+      const { buf, base } = this.source;
+      const between = buf.slice(nl - base, index - base);
+      line += between.split("\n").length - 1;
+      column = index - (nl + between.lastIndexOf("\n"));
+    }
     // Offsets: one per character, plus one per collapsed CRLF.
     const k = crlfBound(this.crlf, this.crlfNext, index);
     const offset = this.pos.offset + (index - this.index) + (k - this.crlfNext);
@@ -452,10 +486,12 @@ export class Lexer {
   /**
    * Lex one token at a time, handing each output to `f` before the next token
    * is read, so a driver can react (switch raw text off, stop at a limit) in
-   * between. Stops when `f` returns `false` or no more tokens can be read.
+   * between. Stops when `f` returns `false`, after a whole token once `full`
+   * returns `true`, or when no more tokens can be read; returns whether it
+   * stopped for the last reason.
    */
-  pullEach(f: (output: LexOutput) => boolean): void {
-    drive(() => this.pull(), f);
+  pullEach(f: (output: LexOutput) => boolean, full?: (() => boolean) | undefined): boolean {
+    return drive(() => this.pull(), f, full);
   }
 
   private drain(): ReadonlyArray<LexOutput> {
@@ -585,50 +621,55 @@ export class Lexer {
   // A `switch`, not a `$match` table: this runs once per token, and a switch
   // lets V8 inline each case (and the `at` / `span` calls in it), where the
   // table's shared, megamorphic dispatch can't (see `vite.config.ts`).
+  // Each event is built in the shape of its SAX event (the fields, then
+  // `_tag`, as `SaxEvent.<Tag>(fields)` builds it), so the SAX layer can pass
+  // it on instead of copying it.
   private event(t: Tok): LexEvent {
     switch (t._tag) {
       case "StartElement": {
         const start = this.at(t.start);
-        const attributes = t.attributes.map((a) => ({
+        const attributes = t.attributes.map((a): LexAttribute => ({
           name: a.name,
           value: a.value,
           span: this.span(a),
         }));
         return {
-          _tag: "StartElement",
           name: t.name,
           attributes,
           selfClosing: t.selfClosing,
           span: { start, end: this.at(t.end) },
+          _tag: "StartElement",
         };
       }
       case "EndElement":
-        return { _tag: "EndElement", name: t.name, span: this.span(t) };
+        return { name: t.name, span: this.span(t), _tag: "EndElement" };
       case "Text":
+        return { data: t.data, span: this.span(t), _tag: "Text" };
       case "CData":
+        return { data: t.data, span: this.span(t), _tag: "CData" };
       case "Comment":
-        return { _tag: t._tag, data: t.data, span: this.span(t) };
+        return { data: t.data, span: this.span(t), _tag: "Comment" };
       case "ProcessingInstruction":
-        return { _tag: t._tag, target: t.target, data: t.data, span: this.span(t) };
+        return { target: t.target, data: t.data, span: this.span(t), _tag: t._tag };
       case "Doctype":
         return {
-          _tag: t._tag,
           name: t.name,
           publicId: t.publicId,
           systemId: t.systemId,
           internalSubset: t.internalSubset,
           span: this.span(t),
+          _tag: t._tag,
         };
       case "XmlDeclaration":
         return {
-          _tag: t._tag,
           version: t.version,
           encoding: t.encoding,
           standalone: t.standalone,
           span: this.span(t),
+          _tag: t._tag,
         };
       case "EntityReference":
-        return { _tag: t._tag, name: t.name, span: this.span(t) };
+        return { name: t.name, span: this.span(t), _tag: t._tag };
     }
   }
 
