@@ -18,7 +18,6 @@
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as HashMap from "effect/HashMap";
-import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -40,6 +39,7 @@ import {
   advance,
   selects,
   compileStreamable,
+  unmatched,
   type StepLevel,
   type StreamStep,
 } from "../internal/streamPath.ts";
@@ -160,8 +160,9 @@ class Selector {
       // Inside a selected subtree: just build.
       this.capture.push({ name, attributes, children: [] });
     } else {
-      const element = Nodes.element(name, attributes, []);
-      const level = advance(this.steps, Option.fromUndefinedOr(this.levels.at(-1)), () => element);
+      const level = advance(this.steps, Option.fromUndefinedOr(this.levels.at(-1)), name, () =>
+        Nodes.element(name, attributes, []),
+      );
       this.levels.push({ rawName: ev.name, bindings, ...level });
       if (selects(this.steps, level)) {
         this.captureDepth = this.levels.length - 1;
@@ -170,12 +171,7 @@ class Selector {
       if (ev.selfClosing) return this.end(ev.name, ev.span.start);
       return null;
     }
-    this.levels.push({
-      rawName: ev.name,
-      bindings,
-      matched: HashSet.empty(),
-      reached: HashSet.empty(),
-    });
+    this.levels.push({ rawName: ev.name, bindings, ...unmatched });
     return ev.selfClosing ? this.end(ev.name, ev.span.start) : null;
   }
 

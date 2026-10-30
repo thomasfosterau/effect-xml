@@ -376,6 +376,7 @@ export class Validator {
     const level = advance(
       this.steps,
       Option.flatMap(Option.fromUndefinedOr(parent), (p) => p.level),
+      opening.name,
       () =>
         Nodes.element(
           toQName(opening.name),

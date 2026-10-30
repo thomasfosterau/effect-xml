@@ -4,11 +4,12 @@
  * its ancestors matched. Shared by `Sax.select` and `Xsd.select`.
  */
 import * as Arr from "effect/Array";
-import * as HashSet from "effect/HashSet";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
+import * as Order from "effect/Order";
 import * as Predicate from "effect/Predicate";
 import { Cursor } from "../Xml/Cursor.ts";
+import type { QName } from "../Name.ts";
 import type { XmlElement } from "../Xml/Node.ts";
 import * as Result from "effect/Result";
 import {
@@ -117,64 +118,71 @@ export const compileStreamable = (
 
 /** Which steps an element matched, and which it or an ancestor matched. */
 export interface StepLevel {
-  /** Indices of the steps that match at this element. */
-  readonly matched: HashSet.HashSet<number>;
-  /** Indices of the steps that match here or at an ancestor. */
-  readonly reached: HashSet.HashSet<number>;
+  /** Indices of the steps that match at this element, ascending. */
+  readonly matched: ReadonlyArray<number>;
+  /** Indices of the steps that match here or at an ancestor, ascending. */
+  readonly reached: ReadonlyArray<number>;
 }
 
-const matches = (step: StreamStep, element: XmlElement): boolean => {
-  const name = element.name;
+/** No steps: shared by every level that matches none, so most elements allocate nothing. */
+const none: ReadonlyArray<number> = [];
+
+/** The level of an element that matches no step, under an ancestor that matched none either. */
+export const unmatched: StepLevel = { matched: none, reached: none };
+
+/** The part of an element's name a name test reads. */
+export type ExpandedName = Pick<QName, "local" | "namespace">;
+
+/** Whether `name` passes the step's name test. */
+const namePasses = (step: StreamStep, name: ExpandedName): boolean => {
   const nodeTest = step.test;
-  if (
-    Predicate.isTagged(nodeTest, "Name")
-      ? name.local !== nodeTest.local || name.namespace !== nodeTest.namespace
-      : nodeTest.namespace !== undefined && name.namespace !== nodeTest.namespace
-  ) {
-    return false;
-  }
-  if (Arr.isReadonlyArrayEmpty(step.predicates)) return true;
-  const cursor = Cursor.root(element);
-  return step.predicates.every((p) => test(p, cursor));
+  return Predicate.isTagged(nodeTest, "Name")
+    ? name.local === nodeTest.local && name.namespace === nodeTest.namespace
+    : nodeTest.namespace === undefined || name.namespace === nodeTest.namespace;
+};
+
+/** `a ∪ b`, both ascending; `a` itself when `b` adds nothing. */
+const union = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): ReadonlyArray<number> => {
+  const added = Arr.filter(b, (i) => !a.includes(i));
+  return Arr.isReadonlyArrayEmpty(added) ? a : Arr.sort([...a, ...added], Order.Number);
 };
 
 /**
  * The steps an element matches, given its parent's level (`None` for the
- * document element). `element` is built at most once, and only when a step can apply to it;
- * only its name and attributes are read.
+ * document element). A name test reads `name` alone; `element` is built at
+ * most once, and only when a step with predicates passes its name test (only
+ * its name and attributes are read).
  */
 export const advance = (
   steps: ReadonlyArray<StreamStep>,
   parent: Option.Option<StepLevel>,
+  name: ExpandedName,
   element: () => XmlElement,
 ): StepLevel => {
-  let built: Option.Option<XmlElement> = Option.none();
-  const once = (): XmlElement =>
-    Option.getOrElse(built, () => {
-      const made = element();
-      built = Option.some(made);
-      return made;
-    });
-  const matched = HashSet.fromIterable(
-    Arr.flatMap(steps, (step, i) => {
-      const after =
-        i === 0
-          ? step.axis === "descendant" || Option.isNone(parent)
-          : Option.exists(parent, (p) =>
-              HashSet.has(step.axis === "child" ? p.matched : p.reached, i - 1),
-            );
-      return after && matches(step, once()) ? [i] : [];
-    }),
-  );
-  return {
-    matched,
-    reached: HashSet.union(
-      Option.match(parent, { onNone: HashSet.empty<number>, onSome: (p) => p.reached }),
-      matched,
-    ),
-  };
+  let cursor = Option.none<Cursor>();
+  const up = Option.getOrUndefined(parent);
+  const reached = up === undefined ? none : up.reached;
+  const matched = Arr.reduce(steps, none, (acc, step, i) => {
+    const after =
+      i === 0
+        ? step.axis === "descendant" || up === undefined
+        : up !== undefined && (step.axis === "child" ? up.matched : up.reached).includes(i - 1);
+    if (!after || !namePasses(step, name)) return acc;
+    if (Arr.isReadonlyArrayNonEmpty(step.predicates)) {
+      const at = Option.getOrElse(cursor, () => {
+        const made = Cursor.root(element());
+        cursor = Option.some(made);
+        return made;
+      });
+      if (!step.predicates.every((p) => test(p, at))) return acc;
+    }
+    return [...acc, i];
+  });
+  return Arr.isReadonlyArrayEmpty(matched) && reached === none
+    ? unmatched
+    : { matched, reached: union(reached, matched) };
 };
 
 /** Whether a level matched the whole path. */
 export const selects = (steps: ReadonlyArray<StreamStep>, level: StepLevel): boolean =>
-  HashSet.has(level.matched, steps.length - 1);
+  level.matched.includes(steps.length - 1);
