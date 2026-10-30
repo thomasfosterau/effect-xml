@@ -49,7 +49,7 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 ## Commands
 
 - `pnpm install` — dependencies plus the Vite+ git hooks (pre-commit runs `vp staged`: format + lint on staged files) and the `prepare` step that patches the native `tsc` / `oxlint` with `@effect/tsgo`. No pre-push hook: run the gates yourself.
-- `vp check` — format + lint (Oxfmt + Oxlint with `@effect/tsgo`'s preset, `@enfect/oxlint`'s `recommended` Effect rules and oxlint's `import` / `promise` / `vitest` / `jsdoc` plugins at the `correctness`, `suspicious` and `perf` categories). `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`, plus `packages/cli`'s. They are different commands.
+- `vp check` — format + lint (Oxfmt + Oxlint with `@effect/tsgo`'s preset, `@enfect/oxlint`'s `recommended` Effect rules and oxlint's `import` / `promise` / `vitest` / `jsdoc` plugins at the `correctness`, `suspicious` and `perf` categories). Lint is type-aware through oxlint-tsgolint (`typeAware` + `typeCheck`, which also runs `@effect/tsgo`'s `effecttsgo/*` rules); tsgolint reads each file's nearest `tsconfig.json`, which is why `tests/`, `examples/` and `bench/` carry one extending `tsconfig.test.json`. `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`, plus `packages/cli`'s. They are different commands.
 - `vp run test:unit` — the unit suite, including the html5lib conformance gate, and `packages/cli`'s.
 - `vp run build` — `vp pack` → `dist/` (one ESM bundle + `.d.ts` per entry), and `packages/cli/dist/main.js` (the `effect-xml-xsd` executable).
 - `vp run docgen` — compiles and runs every `@example` against `dist/`, writes the (git-ignored) API reference to `docs/`.
@@ -73,7 +73,7 @@ Before you report work as done, run the gates below in order and quote each comm
 7. `pnpm audit --audit-level high` (network)
 8. `vp run test:coverage`, then `fallow audit --format json --quiet --explain --gate-marker agent --base origin/trunk` (the fallow gate below; not a CI step).
 
-Steps 2–7 are CI's required `ci` job, in its order ([ci.yml](.github/workflows/ci.yml)). CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA and never persists checkout credentials; the release job alone holds `id-token: write` and never runs for Dependabot. `uvx zizmor .github` audits the workflows (config in `.github/zizmor.yml`).
+Steps 2–7 are CI's required `ci` job, in its order ([ci.yml](.github/workflows/ci.yml)). CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA, never persists checkout credentials and never sets `node-version: latest` (it can resolve to a pre-release; the setup action uses `"*"` with `check-latest`, Release the engines major); the release job alone holds `id-token: write` and never runs for Dependabot. `uvx zizmor .github` audits the workflows (config in `.github/zizmor.yml`).
 
 ## Branches and pull requests
 

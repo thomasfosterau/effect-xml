@@ -121,6 +121,9 @@ const everyNode = (roots: ReadonlyArray<Instance>): Array<Instance> =>
   );
 
 /** An instance's own properties, in order, with their descriptors. */
+/** A node's `toString()`: each class declares its own (Effect's `Inspectable`). */
+const textOf = (value: { toString(): string }): string => value.toString();
+
 const own = (value: Instance) =>
   Reflect.ownKeys(value).map((key) => [key, Object.getOwnPropertyDescriptor(value, key)]);
 
@@ -136,7 +139,7 @@ const expectAsConstructed = (roots: ReadonlyArray<Instance>): Array<string> => {
     expect(Equal.equals(actual, expected)).toBe(true);
     expect(Equal.equals(expected, actual)).toBe(true);
     expect(Hash.hash(actual)).toBe(Hash.hash(expected));
-    expect(String(actual)).toBe(String(expected));
+    expect(textOf(actual)).toBe(textOf(expected));
     const schema = schemaOf(actual);
     expect(Schema.is(schema)(actual)).toBe(true);
     expect(Schema.encodeSync(schema)(actual)).toStrictEqual(Schema.encodeSync(schema)(expected));

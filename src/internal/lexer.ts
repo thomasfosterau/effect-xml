@@ -24,6 +24,7 @@
 import { Input, ParseError, Parser } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
+import { absurd } from "effect/Function";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
@@ -484,7 +485,7 @@ export class Lexer {
    * returns `true`, or when no more tokens can be read; returns whether it
    * stopped for the last reason.
    */
-  pullEach(f: (output: LexOutput) => boolean, full?: (() => boolean) | undefined): boolean {
+  pullEach(f: (output: LexOutput) => boolean, full?: () => boolean): boolean {
     return drive(() => this.pull(), f, full);
   }
 
@@ -664,6 +665,10 @@ export class Lexer {
         };
       case "EntityReference":
         return { name: t.name, span: this.span(t), _tag: t._tag };
+      default:
+        // Unreachable (the cases above are exhaustive); it keeps every path
+        // returning a value, and a new tag a compile error.
+        return absurd(t);
     }
   }
 

@@ -6,6 +6,7 @@
  * depth says nothing about the tree (end tags are optional), so the HTML tree
  * builders check depth against their stack of open elements instead.
  */
+import { absurd } from "effect/Function";
 import { LimitExceeded, type LimitName } from "../Error.ts";
 import type { Limits } from "../Limits.ts";
 import type { Position } from "../Position.ts";
@@ -70,6 +71,10 @@ export class Guard {
       case "XmlDeclaration":
       case "EntityReference":
         return null;
+      default:
+        // Unreachable (the cases above are exhaustive); it keeps every path
+        // returning a value, and a new tag a compile error.
+        return absurd(ev);
     }
   }
 

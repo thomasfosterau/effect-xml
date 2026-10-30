@@ -171,19 +171,15 @@ export const htmlText = (data: string): HtmlText => {
  * Whether a node is text: a tag check, once per text token (`instanceof`
  * would walk the whole prototype chain of every node that is not text).
  */
-const isHtmlTextNode = <N extends { readonly _tag: string }>(
-  node: N | HtmlText,
-): node is HtmlText => Predicate.isTagged(node, "HtmlText");
+const isHtmlTextNode = (node: { readonly _tag: string }): node is HtmlText =>
+  Predicate.isTagged(node, "HtmlText");
 
 /**
  * Append text to a list of nodes as the HTML parsers do, merging it into the
  * last node when that is text (a text node is replaced, never mutated), so no
  * two text nodes are ever adjacent.
  */
-export const appendHtmlText = <N extends { readonly _tag: string }>(
-  nodes: Array<N | HtmlText>,
-  data: string,
-): void => {
+export const appendHtmlText = (nodes: Array<{ readonly _tag: string }>, data: string): void => {
   const last = nodes.length - 1;
   const prev = nodes[last];
   if (prev !== undefined && isHtmlTextNode(prev)) nodes[last] = htmlText(prev.data + data);

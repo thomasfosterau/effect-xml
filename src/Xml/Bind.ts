@@ -376,13 +376,19 @@ interface Resolved {
   readonly identifier: string | undefined;
 }
 
-const annotationAt = <A extends FieldBinding | ElementName>(
+/** The value each binding annotation key carries. */
+interface BindingAnnotations {
+  readonly [FieldBindingId]: FieldBinding;
+  readonly [ElementNameId]: ElementName;
+}
+
+const annotationAt = <K extends keyof BindingAnnotations>(
   ast: SchemaAST.AST,
-  key: typeof FieldBindingId | typeof ElementNameId,
-): A | undefined => {
+  key: K,
+): BindingAnnotations[K] | undefined => {
   const found = ast.context?.annotations?.[key] ?? SchemaAST.resolve(ast)?.[key];
   // SAFETY: the values under the binding keys are only written by `annotations`.
-  return found as A | undefined;
+  return found as BindingAnnotations[K] | undefined;
 };
 
 /** `outer`'s value unless it was left out. */
@@ -406,8 +412,8 @@ const mergeField = (
 
 const resolve = (ast: SchemaAST.AST, outer?: Omit<Resolved, "ast">): Resolved => {
   const here = {
-    field: mergeField(outer?.field, annotationAt<FieldBinding>(ast, FieldBindingId)),
-    named: outer?.named ?? annotationAt<ElementName>(ast, ElementNameId),
+    field: mergeField(outer?.field, annotationAt(ast, FieldBindingId)),
+    named: outer?.named ?? annotationAt(ast, ElementNameId),
     identifier: outer?.identifier ?? SchemaAST.resolveIdentifier(ast),
   };
   if (ast.encoding !== undefined) return resolve(Arr.lastNonEmpty(ast.encoding).to, here);
