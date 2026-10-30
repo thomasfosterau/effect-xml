@@ -79,8 +79,10 @@ const SYNTHESIZED_ROOT = "root";
 /** Namespace bindings an element declares: prefix (`""` for the default) to URI. */
 type Bindings = HashMap.HashMap<string, string>;
 
+/** An open element: what it becomes once closed (see {@link closed}), built only then. */
 interface Frame {
-  readonly element: XmlElement;
+  readonly name: QName;
+  readonly attributes: ReadonlyArray<XmlAttribute>;
   readonly children: Array<XmlNode>;
   readonly bindings: Bindings;
   readonly rawName: string;
@@ -237,7 +239,8 @@ class Builder {
   /** Open `element` (with its children so far) as the root, which recovery never closes early. */
   private openRoot(element: XmlElement): void {
     this.stack.push({
-      element,
+      name: element.name,
+      attributes: element.attributes,
       children: [...element.children],
       bindings: HashMap.empty(),
       rawName: element.name.qualified,
@@ -315,7 +318,8 @@ class Builder {
           return this.appendChild(Nodes.element(name, attributes, []), position);
         }
         this.stack.push({
-          element: Nodes.element(name, attributes, []),
+          name,
+          attributes,
           children: [],
           bindings,
           rawName: ev.name,
@@ -404,7 +408,7 @@ class Builder {
 
 /** The element an open frame becomes once it is closed. */
 const closed = (frame: Frame): XmlElement =>
-  Nodes.element(frame.element.name, frame.element.attributes, frame.children);
+  Nodes.element(frame.name, frame.attributes, frame.children);
 
 /** A recovering parse's root for a document that has none. */
 const synthesizedRoot = (): XmlElement =>
