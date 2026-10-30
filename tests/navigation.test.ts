@@ -245,6 +245,28 @@ describe("Sax.select", () => {
     expect((await select(`<a><b><c/></b><c/></a>`, "/a//c")).length).toBe(2);
   });
 
+  test("matches before an error in the same chunk are emitted first", async () => {
+    // One input chunk, so the matches and the error are in one batch of events.
+    const input = `<a><b n="1"/><b n="2"/></c>`;
+    const seen: Array<string | undefined> = [];
+    const r = await Effect.runPromise(
+      Effect.result(
+        Stream.make(input).pipe(
+          Sax.tokenize(),
+          Sax.select("//b"),
+          Stream.runForEach((b) => Effect.sync(() => seen.push(b.attribute("n")))),
+        ),
+      ),
+    );
+    expect(failure(r)._tag).toBe("MismatchedEndTag");
+    expect(seen).toEqual(["1", "2"]);
+    // Taking only the matches never reaches the error.
+    const taken = await Effect.runPromise(
+      Stream.make(input).pipe(Sax.tokenize(), Sax.select("//b"), Stream.take(2), Stream.runCollect),
+    );
+    expect(Array.from(taken, (b) => b.attribute("n"))).toEqual(["1", "2"]);
+  });
+
   test("a large sheet streams through", async () => {
     let count = 0;
     const rows = 20_000;

@@ -246,14 +246,21 @@ export const select =
       const steps = compileStreamable(path, options);
       if (Result.isFailure(steps)) return Stream.fail(steps.failure);
       const selector = new Selector(steps.success);
+      // A chunk of events at a time, folded synchronously up to the first
+      // error: a stream per event cost more than the selection.
       const body = events.pipe(
-        Stream.flatMap((ev) => {
-          const out = selector.accept(ev);
-          return out === null
-            ? Stream.empty
-            : out instanceof XmlElement
-              ? Stream.succeed(out)
-              : Stream.fail(out);
+        Stream.chunks,
+        Stream.flatMap((chunk) => {
+          const selected: Array<XmlElement> = [];
+          const failed = Arr.findFirst(chunk, (ev) => {
+            const out = selector.accept(ev);
+            if (out instanceof XmlElement) selected.push(out);
+            return out === null || out instanceof XmlElement ? Option.none() : Option.some(out);
+          });
+          return Option.match(failed, {
+            onNone: () => Stream.fromArray(selected),
+            onSome: (error) => Stream.concat(Stream.fromArray(selected), Stream.fail(error)),
+          });
         }),
       );
       const tail = Stream.suspend(() => {
