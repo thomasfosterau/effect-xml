@@ -154,10 +154,9 @@ export default defineConfig({
       // over children would have to recurse per level). The lexer's drive
       // loop: it runs once per token, and an `Arr.unfold` there allocates per
       // token (measured: every parser slowed by a quarter). Every DOM walk
-      // and every lexer driver goes through them. The SAX conversion of a
-      // batch is the same per-token loop (see the next override).
+      // and every lexer driver goes through them.
       {
-        files: ["src/internal/tree.ts", "src/internal/drive.ts", "src/internal/convert.ts"],
+        files: ["src/internal/tree.ts", "src/internal/drive.ts"],
         rules: {
           "effect/imperative-loops": "off",
         },
@@ -169,7 +168,7 @@ export default defineConfig({
       // megamorphic and V8 can't inline the cases; written that way, these
       // three files cost the SAX path a third of its throughput (`vp run
       // bench`, 64 KiB chunks: ~495 ms against ~360 ms). Here a `switch` on
-      // `_tag`, direct tag guards and one plain batch loop are the fix.
+      // `_tag` and direct tag guards are the fix.
       {
         files: ["src/internal/lexer.ts", "src/internal/guard.ts", "src/internal/convert.ts"],
         rules: {

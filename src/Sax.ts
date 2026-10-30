@@ -12,6 +12,7 @@
  * an element name can never be confused with an arbitrary string.
  */
 import * as Arr from "effect/Array";
+import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -29,7 +30,7 @@ import {
   Lexer,
   type LexOutput,
 } from "./internal/lexer.ts";
-import { convertBatch } from "./internal/convert.ts";
+import { convert } from "./internal/convert.ts";
 import { quote } from "./internal/quote.ts";
 import { xmlEntities, htmlEntities } from "./internal/entities.ts";
 import type { AttrName, TagName } from "./Name.ts";
@@ -233,12 +234,11 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
 };
 
 // -----------------------------------------------------------------------------
-// Conversion
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
 // Streaming API
 // -----------------------------------------------------------------------------
+
+/** The most events {@link tokenize} emits in one stream chunk. */
+const BATCH = 1024;
 
 /**
  * The core combinator: turn a stream of input chunks into a stream of SAX
@@ -292,39 +292,62 @@ export const tokenize =
         return [o];
       };
       // Lex token by token, so a limit stops the lexer at the offending token
-      // rather than after the whole chunk; the first fault ends the batch.
-      let out: Array<LexOutput> = [];
+      // rather than after the whole chunk, converting each output as it comes.
+      // The events are emitted in batches of at most `BATCH`, read only as the
+      // stream is pulled: a large chunk never has all its events in memory at
+      // once, and each batch can be dropped before the next is built.
+      let events: Array<SaxEvent> = [];
+      let fault: SaxError | undefined = undefined;
       /** Keep one output; `false` once it is (or has become) a fault, ending the batch. */
       const accept = (o: LexOutput): boolean => {
-        const over = isFault(o) ? null : guard.event(o);
-        out.push(over === null ? o : { _tag: "Fault", error: over });
-        return over === null && !isFault(o);
+        if (isFault(o)) {
+          fault = o.error;
+          return false;
+        }
+        const over = guard.event(o);
+        if (over !== null) {
+          fault = over;
+          return false;
+        }
+        const ev = convert(o, opts);
+        if (ev !== null) events.push(ev);
+        return true;
       };
-      const drain = (): ReadonlyArray<LexOutput> => {
-        out = [];
-        lexer.pullEach(dtd === undefined ? accept : (raw) => interpret(raw).every(accept));
-        return out;
-      };
-      const write = (chunk: string): ReadonlyArray<LexOutput> => {
+      const each = dtd === undefined ? accept : (raw: LexOutput) => interpret(raw).every(accept);
+      const full = (): boolean => events.length >= BATCH;
+      /**
+       * The events of the input written so far, then the fault if there is
+       * one: once the input has ended, or else when the token the lexer is
+       * still waiting on is already too long.
+       */
+      const lexed = (ended: boolean): Stream.Stream<SaxEvent, SaxError> =>
+        Stream.fromPull(
+          Effect.sync(() => {
+            let dry = false;
+            return Effect.suspend(
+              (): Effect.Effect<Arr.NonEmptyReadonlyArray<SaxEvent>, SaxError | Cause.Done> => {
+                if (fault === undefined && !dry) {
+                  events = [];
+                  dry = lexer.pullEach(each, full);
+                  if (dry && !ended) fault = guard.pending(lexer) ?? undefined;
+                  const batch = events;
+                  if (Arr.isArrayNonEmpty(batch)) return Effect.succeed(batch);
+                }
+                return fault === undefined ? Cause.done() : Effect.fail(fault);
+              },
+            );
+          }),
+        );
+      const write = (chunk: string): Stream.Stream<SaxEvent, SaxError> => {
         const over = guard.input(chunk.length, lexer);
-        if (over !== null) return [{ _tag: "Fault", error: over }];
+        if (over !== null) return Stream.fail(over);
         lexer.push(chunk);
-        const outs = drain();
-        const pending = guard.pending(lexer);
-        return pending === null ? outs : [...outs, { _tag: "Fault", error: pending }];
+        return lexed(false);
       };
-      // One stream per input chunk, not per event: the events of a chunk are
-      // converted in a loop, followed by the failure if there was one.
-      const emit = (outs: ReadonlyArray<LexOutput>): Stream.Stream<SaxEvent, SaxError> => {
-        const { events, fault } = convertBatch(outs, opts);
-        return fault === undefined
-          ? Stream.fromIterable(events)
-          : Stream.concat(Stream.fromIterable(events), Stream.fail(fault));
-      };
-      const body = input.pipe(Stream.flatMap((chunk) => emit(write(chunk))));
+      const body = input.pipe(Stream.flatMap(write));
       const tail = Stream.suspend(() => {
         lexer.close();
-        return emit(drain());
+        return lexed(true);
       });
       return Stream.concat(body, tail);
     });
