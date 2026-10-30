@@ -8,7 +8,7 @@ Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.websit
 | **`Xml`** | `@thomasfosterau/effect-xml/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
 | **`Html`** | `@thomasfosterau/effect-xml/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, and `parseDocumentFragment` for the fragment case, passing all 1405 html5lib tree-construction cases) and a lenient fragment builder. |
 | **`Xsd`** | `@thomasfosterau/effect-xml/Xsd` | XML Schema 1.0: compile a schema, then validate documents as they stream (failing at the first violation) into typed values, or generate a typed parser module from it. |
-| **`XQuery`** | `@thomasfosterau/effect-xml/XQuery` | XPath 3.1 and XQuery 3.1, in progress: so far the XDM 3.1 data model (nodes over the `Xml` DOM, typed atomic values, maps, arrays and function items) and `XQueryError`. |
+| **`XQuery`** | `@thomasfosterau/effect-xml/XQuery` | XPath 3.1 and XQuery 3.1, in progress: so far the XDM 3.1 data model (nodes over the `Xml` DOM, typed atomic values, maps, arrays and function items), `XQueryError`, and the compiler front end (`XQuery.compile` / `XQuery.XPath.compile`: the full grammar and the static checks). |
 
 Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `@thomasfosterau/effect-xml` re-exports every layer as a namespace plus the shared errors, names and positions.
 
@@ -461,6 +461,22 @@ XQuery.atomicString(XQuery.AtomicValue.double(1e7)); // "1.0E7"
 ```
 
 Failures are `XQueryError`s: an `err:` QName `code` (`err:FORG0001`, `err:FOTY0013`, …), a `description`, an `offset` into the query and, from `fn:error`, a `value`.
+
+### Compiling queries
+
+`XQuery.compile` parses an XQuery 3.1 module (the whole grammar of Appendix A: the prolog, FLWOR with windows and grouping, direct, computed and string constructors, `switch`, `typeswitch`, `try`, maps, arrays, lookups and arrows) and checks it statically; `XQuery.XPath.compile` does the same for XPath 3.1. Either returns a `Result`: a `Query` (the syntax tree and its static context, for the evaluator to come), or the first static error with its offset:
+
+```ts
+import * as Result from "effect/Result";
+import { XQuery } from "@thomasfosterau/effect-xml";
+
+XQuery.compile("for $b in //book where $b/price < 10 return <cheap>{ $b/title }</cheap>"); // Success(Query)
+XQuery.compile("1 + $x"); // Failure(err:XPST0008 at offset 4: the variable $x is not declared)
+XQuery.compile("1 + $x", { variables: ["x"] }); // Success(Query)
+XQuery.XPath.compile("<a/>"); // Failure(err:XPST0003 at offset 0: …): constructors are XQuery's
+```
+
+The static checks are the ones that need no schema: syntax (`XPST0003`), unbound prefixes (`XPST0081`), undeclared variables (`XPST0008`), unknown functions and arities (`XPST0017`, against the Functions and Operators 3.1 library), unknown types (`XPST0051`, `XPST0080`), and the prolog's and constructors' `XQST` errors. Options set the static context: `namespaces`, `defaultElementNamespace`, `defaultFunctionNamespace`, `variables` and `functions` (by Clark name, `{uri}local`), `baseUri`, `collations`, and `opaqueNamespaces` for imported modules and schemas the compiler can't see into.
 
 ## Typed errors
 

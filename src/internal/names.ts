@@ -5,7 +5,7 @@
 import { Compiler, Parser, Token } from "@thomasfosterau/effect-parse";
 
 /** `NameStartChar` without `:`. */
-const ncNameStartChar = [
+export const ncNameStartChar = [
   Token.range("A", "Z"),
   "_",
   Token.range("a", "z"),
@@ -24,7 +24,7 @@ const ncNameStartChar = [
 ];
 
 /** `NameChar` without `:`. */
-const ncNameChar = [
+export const ncNameChar = [
   ...ncNameStartChar,
   "-.·",
   Token.range("0", "9"),

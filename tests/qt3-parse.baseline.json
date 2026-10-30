@@ -1,0 +1,3666 @@
+{
+  "XQ31": {
+    "fn-abs": {
+      "runnable": 188,
+      "syntax": 188,
+      "static": 188
+    },
+    "fn-adjust-date-to-timezone": {
+      "runnable": 41,
+      "syntax": 41,
+      "static": 41
+    },
+    "fn-adjust-dateTime-to-timezone": {
+      "runnable": 48,
+      "syntax": 48,
+      "static": 48
+    },
+    "fn-adjust-time-to-timezone": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 42
+    },
+    "fn-analyze-string": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "fn-apply": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "fn-available-environment-variables": {
+      "runnable": 11,
+      "syntax": 11,
+      "static": 11
+    },
+    "fn-avg": {
+      "runnable": 239,
+      "syntax": 239,
+      "static": 239
+    },
+    "fn-base-uri": {
+      "runnable": 82,
+      "syntax": 82,
+      "static": 82
+    },
+    "fn-boolean": {
+      "runnable": 143,
+      "syntax": 143,
+      "static": 143
+    },
+    "fn-ceiling": {
+      "runnable": 94,
+      "syntax": 94,
+      "static": 94
+    },
+    "fn-codepoint-equal": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "fn-codepoints-to-string": {
+      "runnable": 76,
+      "syntax": 76,
+      "static": 76
+    },
+    "fn-collation-key": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "fn-collection": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "fn-compare": {
+      "runnable": 87,
+      "syntax": 87,
+      "static": 87
+    },
+    "fn-concat": {
+      "runnable": 96,
+      "syntax": 96,
+      "static": 96
+    },
+    "fn-contains": {
+      "runnable": 68,
+      "syntax": 68,
+      "static": 68
+    },
+    "fn-contains-token": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "fn-count": {
+      "runnable": 316,
+      "syntax": 316,
+      "static": 316
+    },
+    "fn-current-date": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "fn-current-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-current-time": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "fn-data": {
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
+    },
+    "fn-dateTime": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-day-from-date": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-day-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-days-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-deep-equal": {
+      "runnable": 247,
+      "syntax": 247,
+      "static": 247
+    },
+    "fn-default-collation": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "fn-default-language": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "fn-distinct-values": {
+      "runnable": 105,
+      "syntax": 105,
+      "static": 105
+    },
+    "fn-doc": {
+      "runnable": 45,
+      "syntax": 45,
+      "static": 45
+    },
+    "fn-doc-available": {
+      "runnable": 16,
+      "syntax": 16,
+      "static": 16
+    },
+    "fn-document-uri": {
+      "runnable": 53,
+      "syntax": 53,
+      "static": 53
+    },
+    "fn-empty": {
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
+    },
+    "fn-encode-for-uri": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "fn-ends-with": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-environment-variable": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "fn-error": {
+      "runnable": 97,
+      "syntax": 97,
+      "static": 76
+    },
+    "fn-escape-html-uri": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "fn-exactly-one": {
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
+    },
+    "fn-exists": {
+      "runnable": 58,
+      "syntax": 58,
+      "static": 58
+    },
+    "fn-false": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-filter": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-floor": {
+      "runnable": 88,
+      "syntax": 88,
+      "static": 88
+    },
+    "fn-fold-left": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "fn-fold-right": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-for-each": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "fn-for-each-pair": {
+      "runnable": 47,
+      "syntax": 47,
+      "static": 47
+    },
+    "fn-format-date": {
+      "runnable": 119,
+      "syntax": 119,
+      "static": 119
+    },
+    "fn-format-dateTime": {
+      "runnable": 83,
+      "syntax": 83,
+      "static": 83
+    },
+    "fn-format-integer": {
+      "runnable": 64,
+      "syntax": 64,
+      "static": 64
+    },
+    "fn-format-number": {
+      "runnable": 263,
+      "syntax": 263,
+      "static": 263
+    },
+    "fn-format-time": {
+      "runnable": 91,
+      "syntax": 91,
+      "static": 91
+    },
+    "fn-function-lookup": {
+      "runnable": 618,
+      "syntax": 618,
+      "static": 618
+    },
+    "fn-function-arity": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "fn-function-name": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-generate-id": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "fn-has-children": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "fn-head": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "fn-hours-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-hours-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-hours-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-id": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "fn-idref": {
+      "runnable": 14,
+      "syntax": 14,
+      "static": 14
+    },
+    "fn-implicit-timezone": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-innermost": {
+      "runnable": 50,
+      "syntax": 50,
+      "static": 50
+    },
+    "fn-index-of": {
+      "runnable": 53,
+      "syntax": 53,
+      "static": 53
+    },
+    "fn-insert-before": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "fn-in-scope-prefixes": {
+      "runnable": 57,
+      "syntax": 57,
+      "static": 57
+    },
+    "fn-iri-to-uri": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "fn-json-doc": {
+      "runnable": 68,
+      "syntax": 68,
+      "static": 68
+    },
+    "fn-json-to-xml": {
+      "runnable": 35,
+      "syntax": 35,
+      "static": 35
+    },
+    "fn-lang": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "fn-last": {
+      "runnable": 69,
+      "syntax": 69,
+      "static": 69
+    },
+    "fn-local-name": {
+      "runnable": 53,
+      "syntax": 53,
+      "static": 53
+    },
+    "fn-local-name-from-QName": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "fn-lower-case": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-max": {
+      "runnable": 208,
+      "syntax": 208,
+      "static": 208
+    },
+    "fn-matches": {
+      "runnable": 162,
+      "syntax": 162,
+      "static": 162
+    },
+    "fn-matches.re": {
+      "runnable": 1003,
+      "syntax": 1003,
+      "static": 1003
+    },
+    "fn-min": {
+      "runnable": 207,
+      "syntax": 207,
+      "static": 207
+    },
+    "fn-minutes-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-minutes-from-duration": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "fn-minutes-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-month-from-date": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-months-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-month-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-name": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "fn-namespace-uri": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "fn-namespace-uri-for-prefix": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "fn-namespace-uri-from-QName": {
+      "runnable": 16,
+      "syntax": 16,
+      "static": 16
+    },
+    "fn-nilled": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "fn-node-name": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "fn-normalize-space": {
+      "runnable": 35,
+      "syntax": 35,
+      "static": 35
+    },
+    "fn-normalize-unicode": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "fn-not": {
+      "runnable": 79,
+      "syntax": 79,
+      "static": 79
+    },
+    "fn-number": {
+      "runnable": 66,
+      "syntax": 66,
+      "static": 66
+    },
+    "fn-one-or-more": {
+      "runnable": 56,
+      "syntax": 56,
+      "static": 56
+    },
+    "fn-outermost": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "fn-parse-ietf-date": {
+      "runnable": 105,
+      "syntax": 105,
+      "static": 105
+    },
+    "fn-parse-json": {
+      "runnable": 154,
+      "syntax": 154,
+      "static": 154
+    },
+    "fn-parse-xml": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "fn-parse-xml-fragment": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-path": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "fn-position": {
+      "runnable": 67,
+      "syntax": 67,
+      "static": 67
+    },
+    "fn-prefix-from-QName": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-QName": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "fn-random-number-generator": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "fn-remove": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "fn-replace": {
+      "runnable": 91,
+      "syntax": 91,
+      "static": 91
+    },
+    "fn-resolve-QName": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-resolve-uri": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "fn-reverse": {
+      "runnable": 70,
+      "syntax": 70,
+      "static": 70
+    },
+    "fn-root": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "fn-round": {
+      "runnable": 262,
+      "syntax": 262,
+      "static": 262
+    },
+    "fn-round-half-to-even": {
+      "runnable": 128,
+      "syntax": 128,
+      "static": 128
+    },
+    "fn-seconds-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-seconds-from-duration": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "fn-seconds-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-serialize": {
+      "runnable": 110,
+      "syntax": 110,
+      "static": 110
+    },
+    "fn-sort": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "fn-starts-with": {
+      "runnable": 60,
+      "syntax": 60,
+      "static": 60
+    },
+    "fn-static-base-uri": {
+      "runnable": 18,
+      "syntax": 18,
+      "static": 18
+    },
+    "fn-string": {
+      "runnable": 69,
+      "syntax": 69,
+      "static": 69
+    },
+    "fn-string-join": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "fn-string-length": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "fn-string-to-codepoints": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "fn-subsequence": {
+      "runnable": 107,
+      "syntax": 107,
+      "static": 107
+    },
+    "fn-substring": {
+      "runnable": 48,
+      "syntax": 48,
+      "static": 48
+    },
+    "fn-substring-after": {
+      "runnable": 50,
+      "syntax": 50,
+      "static": 50
+    },
+    "fn-substring-before": {
+      "runnable": 50,
+      "syntax": 50,
+      "static": 50
+    },
+    "fn-sum": {
+      "runnable": 222,
+      "syntax": 222,
+      "static": 222
+    },
+    "fn-tail": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "fn-timezone-from-date": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "fn-timezone-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-timezone-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-tokenize": {
+      "runnable": 65,
+      "syntax": 65,
+      "static": 65
+    },
+    "fn-trace": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "fn-transform": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "fn-translate": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "fn-true": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-unordered": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "fn-unparsed-text": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-unparsed-text-available": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "fn-unparsed-text-lines": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-upper-case": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "fn-uri-collection": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "fn-xml-to-json": {
+      "runnable": 137,
+      "syntax": 137,
+      "static": 137
+    },
+    "fn-year-from-date": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-years-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-year-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-zero-or-one": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "math-acos": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-asin": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-atan": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-atan2": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "math-cos": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-exp": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-exp10": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "math-log": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-log10": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-pi": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "math-pow": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "math-sin": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-sqrt": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-tan": {
+      "runnable": 11,
+      "syntax": 11,
+      "static": 11
+    },
+    "map-merge": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "map-contains": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "map-find": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "map-get": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "map-entry": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "map-size": {
+      "runnable": 15,
+      "syntax": 15,
+      "static": 15
+    },
+    "map-keys": {
+      "runnable": 14,
+      "syntax": 14,
+      "static": 14
+    },
+    "map-put": {
+      "runnable": 19,
+      "syntax": 19,
+      "static": 19
+    },
+    "map-remove": {
+      "runnable": 18,
+      "syntax": 18,
+      "static": 18
+    },
+    "map-for-each": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "map-call": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "array-append": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "array-filter": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "array-flatten": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "array-fold-left": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-fold-right": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "array-for-each": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-for-each-pair": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-get": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "array-head": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-insert-before": {
+      "runnable": 11,
+      "syntax": 11,
+      "static": 11
+    },
+    "array-join": {
+      "runnable": 11,
+      "syntax": 11,
+      "static": 11
+    },
+    "array-put": {
+      "runnable": 13,
+      "syntax": 13,
+      "static": 13
+    },
+    "array-remove": {
+      "runnable": 16,
+      "syntax": 16,
+      "static": 16
+    },
+    "array-reverse": {
+      "runnable": 4,
+      "syntax": 4,
+      "static": 4
+    },
+    "array-size": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "array-sort": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "array-subarray": {
+      "runnable": 18,
+      "syntax": 18,
+      "static": 18
+    },
+    "array-tail": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "xs-anyURI": {
+      "runnable": 13,
+      "syntax": 13,
+      "static": 13
+    },
+    "xs-base64Binary": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "xs-double": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "xs-float": {
+      "runnable": 3,
+      "syntax": 3,
+      "static": 3
+    },
+    "xs-hexBinary": {
+      "runnable": 1,
+      "syntax": 1,
+      "static": 1
+    },
+    "xs-normalizedString": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "xs-numeric": {
+      "runnable": 20,
+      "syntax": 20,
+      "static": 20
+    },
+    "xs-token": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "op-add-dayTimeDurations": {
+      "runnable": 61,
+      "syntax": 61,
+      "static": 61
+    },
+    "op-add-dayTimeDuration-to-date": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "op-add-dayTimeDuration-to-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "op-add-dayTimeDuration-to-time": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "op-add-yearMonthDurations": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "op-add-yearMonthDuration-to-date": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "op-add-yearMonthDuration-to-dateTime": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "op-anyURI-equal": {
+      "runnable": 22,
+      "syntax": 22,
+      "static": 22
+    },
+    "op-anyURI-greater-than": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "op-anyURI-less-than": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "op-bang": {
+      "runnable": 14,
+      "syntax": 14,
+      "static": 14
+    },
+    "op-base64Binary-equal": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "op-base64Binary-less-than": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "op-base64Binary-greater-than": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "op-boolean-equal": {
+      "runnable": 57,
+      "syntax": 57,
+      "static": 57
+    },
+    "op-boolean-greater-than": {
+      "runnable": 49,
+      "syntax": 49,
+      "static": 49
+    },
+    "op-boolean-less-than": {
+      "runnable": 49,
+      "syntax": 49,
+      "static": 49
+    },
+    "op-concat": {
+      "runnable": 92,
+      "syntax": 92,
+      "static": 92
+    },
+    "op-concatenate": {
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
+    },
+    "op-date-equal": {
+      "runnable": 47,
+      "syntax": 47,
+      "static": 47
+    },
+    "op-date-greater-than": {
+      "runnable": 48,
+      "syntax": 48,
+      "static": 48
+    },
+    "op-date-less-than": {
+      "runnable": 48,
+      "syntax": 48,
+      "static": 48
+    },
+    "op-dateTime-equal": {
+      "runnable": 71,
+      "syntax": 71,
+      "static": 71
+    },
+    "op-dateTime-greater-than": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "op-dateTime-less-than": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "op-dayTimeDuration-greater-than": {
+      "runnable": 58,
+      "syntax": 58,
+      "static": 58
+    },
+    "op-dayTimeDuration-less-than": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "op-divide-dayTimeDuration": {
+      "runnable": 55,
+      "syntax": 55,
+      "static": 55
+    },
+    "op-divide-dayTimeDuration-by-dayTimeDuration": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "op-divide-yearMonthDuration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "op-divide-yearMonthDuration-by-yearMonthDuration": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "op-duration-equal": {
+      "runnable": 158,
+      "syntax": 158,
+      "static": 158
+    },
+    "op-except": {
+      "runnable": 65,
+      "syntax": 65,
+      "static": 65
+    },
+    "op-gDay-equal": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "op-gMonth-equal": {
+      "runnable": 45,
+      "syntax": 45,
+      "static": 45
+    },
+    "op-gMonthDay-equal": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "op-gYear-equal": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "op-gYearMonth-equal": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "op-hexBinary-equal": {
+      "runnable": 35,
+      "syntax": 35,
+      "static": 35
+    },
+    "op-hexBinary-greater-than": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "op-hexBinary-less-than": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "op-intersect": {
+      "runnable": 67,
+      "syntax": 67,
+      "static": 67
+    },
+    "op-is-same-node": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "op-multiply-dayTimeDuration": {
+      "runnable": 47,
+      "syntax": 47,
+      "static": 47
+    },
+    "op-multiply-yearMonthDuration": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "op-node-after": {
+      "runnable": 35,
+      "syntax": 35,
+      "static": 35
+    },
+    "op-node-before": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "op-numeric-add": {
+      "runnable": 140,
+      "syntax": 140,
+      "static": 140
+    },
+    "op-numeric-equal": {
+      "runnable": 202,
+      "syntax": 202,
+      "static": 202
+    },
+    "op-numeric-divide": {
+      "runnable": 140,
+      "syntax": 140,
+      "static": 140
+    },
+    "op-numeric-greater-than": {
+      "runnable": 118,
+      "syntax": 118,
+      "static": 118
+    },
+    "op-numeric-integer-divide": {
+      "runnable": 136,
+      "syntax": 136,
+      "static": 136
+    },
+    "op-numeric-less-than": {
+      "runnable": 183,
+      "syntax": 183,
+      "static": 183
+    },
+    "op-numeric-mod": {
+      "runnable": 124,
+      "syntax": 124,
+      "static": 124
+    },
+    "op-numeric-multiply": {
+      "runnable": 109,
+      "syntax": 109,
+      "static": 109
+    },
+    "op-numeric-subtract": {
+      "runnable": 119,
+      "syntax": 119,
+      "static": 119
+    },
+    "op-numeric-unary-minus": {
+      "runnable": 66,
+      "syntax": 66,
+      "static": 66
+    },
+    "op-numeric-unary-plus": {
+      "runnable": 55,
+      "syntax": 55,
+      "static": 55
+    },
+    "op-QName-equal": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "op-string-equal": {
+      "runnable": 15,
+      "syntax": 15,
+      "static": 15
+    },
+    "op-string-greater-than": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "op-string-less-than": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "op-subtract-dates": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "op-subtract-dateTimes": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "op-subtract-dayTimeDuration-from-date": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "op-subtract-dayTimeDuration-from-dateTime": {
+      "runnable": 22,
+      "syntax": 22,
+      "static": 22
+    },
+    "op-subtract-dayTimeDuration-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "op-subtract-dayTimeDurations": {
+      "runnable": 69,
+      "syntax": 69,
+      "static": 69
+    },
+    "op-subtract-times": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "op-subtract-yearMonthDuration-from-date": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "op-subtract-yearMonthDuration-from-dateTime": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "op-subtract-yearMonthDurations": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "op-time-equal": {
+      "runnable": 58,
+      "syntax": 58,
+      "static": 58
+    },
+    "op-time-greater-than": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "op-time-less-than": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "op-to": {
+      "runnable": 168,
+      "syntax": 168,
+      "static": 168
+    },
+    "op-union": {
+      "runnable": 74,
+      "syntax": 74,
+      "static": 74
+    },
+    "op-yearMonthDuration-greater-than": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "op-yearMonthDuration-less-than": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "op-same-key": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "prod-AllowingEmpty": {
+      "runnable": 19,
+      "syntax": 19,
+      "static": 19
+    },
+    "prod-Annotation": {
+      "runnable": 58,
+      "syntax": 58,
+      "static": 58
+    },
+    "prod-ArrayTest": {
+      "runnable": 55,
+      "syntax": 55,
+      "static": 55
+    },
+    "prod-ArrowPostfix": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 42
+    },
+    "prod-AxisStep": {
+      "runnable": 336,
+      "syntax": 336,
+      "static": 336
+    },
+    "prod-AxisStep.abbr": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "prod-AxisStep.ancestor": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "prod-AxisStep.ancestor-or-self": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "prod-AxisStep.following": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "prod-AxisStep.following-sibling": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "prod-AxisStep.preceding": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "prod-AxisStep.preceding-sibling": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "prod-AxisStep.unabbr": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "prod-BaseURIDecl": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "prod-BoundarySpaceDecl": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "prod-CastableExpr": {
+      "runnable": 785,
+      "syntax": 785,
+      "static": 785
+    },
+    "prod-CastExpr": {
+      "runnable": 2755,
+      "syntax": 2755,
+      "static": 2755
+    },
+    "prod-CastExpr.derived": {
+      "runnable": 153,
+      "syntax": 153,
+      "static": 153
+    },
+    "prod-Comment": {
+      "runnable": 45,
+      "syntax": 45,
+      "static": 45
+    },
+    "prod-CompAttrConstructor": {
+      "runnable": 131,
+      "syntax": 131,
+      "static": 131
+    },
+    "prod-CompDocConstructor": {
+      "runnable": 55,
+      "syntax": 55,
+      "static": 55
+    },
+    "prod-CompCommentConstructor": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "prod-CompElemConstructor": {
+      "runnable": 95,
+      "syntax": 95,
+      "static": 95
+    },
+    "prod-CompNamespaceConstructor": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 42
+    },
+    "prod-CompPIConstructor": {
+      "runnable": 55,
+      "syntax": 55,
+      "static": 55
+    },
+    "prod-CompTextConstructor": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "prod-ConstructionDecl": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "prod-ContextItemDecl": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 40
+    },
+    "prod-ContextItemExpr": {
+      "runnable": 45,
+      "syntax": 45,
+      "static": 45
+    },
+    "prod-CopyNamespacesDecl": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "prod-CountClause": {
+      "runnable": 13,
+      "syntax": 13,
+      "static": 13
+    },
+    "prod-CurlyArrayConstructor": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "prod-DecimalFormatDecl": {
+      "runnable": 41,
+      "syntax": 41,
+      "static": 41
+    },
+    "prod-DefaultCollationDecl": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "prod-DefaultNamespaceDecl": {
+      "runnable": 59,
+      "syntax": 59,
+      "static": 59
+    },
+    "prod-DirAttributeList": {
+      "runnable": 133,
+      "syntax": 133,
+      "static": 133
+    },
+    "prod-DirectConstructor": {
+      "runnable": 91,
+      "syntax": 91,
+      "static": 91
+    },
+    "prod-DirElemConstructor": {
+      "runnable": 69,
+      "syntax": 69,
+      "static": 69
+    },
+    "prod-DirElemContent": {
+      "runnable": 115,
+      "syntax": 115,
+      "static": 115
+    },
+    "prod-DirElemContent.namespace": {
+      "runnable": 133,
+      "syntax": 133,
+      "static": 133
+    },
+    "prod-DirElemContent.whitespace": {
+      "runnable": 83,
+      "syntax": 83,
+      "static": 83
+    },
+    "prod-EmptyOrderDecl": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "prod-EQName": {
+      "runnable": 45,
+      "syntax": 45,
+      "static": 45
+    },
+    "prod-ExtensionExpr": {
+      "runnable": 56,
+      "syntax": 56,
+      "static": 56
+    },
+    "prod-ForClause": {
+      "runnable": 178,
+      "syntax": 178,
+      "static": 178
+    },
+    "prod-FunctionCall": {
+      "runnable": 94,
+      "syntax": 94,
+      "static": 94
+    },
+    "prod-FunctionDecl": {
+      "runnable": 155,
+      "syntax": 155,
+      "static": 155
+    },
+    "prod-GeneralComp.eq": {
+      "runnable": 191,
+      "syntax": 191,
+      "static": 191
+    },
+    "prod-GeneralComp.ge": {
+      "runnable": 112,
+      "syntax": 112,
+      "static": 112
+    },
+    "prod-GeneralComp.gt": {
+      "runnable": 118,
+      "syntax": 118,
+      "static": 118
+    },
+    "prod-GeneralComp.le": {
+      "runnable": 108,
+      "syntax": 108,
+      "static": 108
+    },
+    "prod-GeneralComp.lt": {
+      "runnable": 133,
+      "syntax": 133,
+      "static": 133
+    },
+    "prod-GeneralComp.ne": {
+      "runnable": 140,
+      "syntax": 140,
+      "static": 140
+    },
+    "prod-GroupByClause": {
+      "runnable": 35,
+      "syntax": 35,
+      "static": 35
+    },
+    "prod-IfExpr": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 42
+    },
+    "prod-InlineFunctionExpr": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "prod-InstanceofExpr": {
+      "runnable": 291,
+      "syntax": 291,
+      "static": 291
+    },
+    "prod-LetClause": {
+      "runnable": 88,
+      "syntax": 88,
+      "static": 88
+    },
+    "prod-Literal": {
+      "runnable": 166,
+      "syntax": 166,
+      "static": 166
+    },
+    "prod-Lookup": {
+      "runnable": 106,
+      "syntax": 106,
+      "static": 106
+    },
+    "prod-MapConstructor": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 42
+    },
+    "prod-MapTest": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "prod-ModuleImport": {
+      "runnable": 105,
+      "syntax": 105,
+      "static": 88
+    },
+    "prod-NamedFunctionRef": {
+      "runnable": 556,
+      "syntax": 556,
+      "static": 556
+    },
+    "prod-NamespaceDecl": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "prod-NameTest": {
+      "runnable": 127,
+      "syntax": 127,
+      "static": 127
+    },
+    "prod-NodeTest": {
+      "runnable": 68,
+      "syntax": 68,
+      "static": 68
+    },
+    "prod-OptionDecl": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "prod-OptionDecl.serialization": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 29
+    },
+    "prod-OrExpr": {
+      "runnable": 371,
+      "syntax": 371,
+      "static": 371
+    },
+    "prod-OrderByClause": {
+      "runnable": 139,
+      "syntax": 139,
+      "static": 139
+    },
+    "prod-OrderingModeDecl": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "prod-PathExpr": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "prod-ParenthesizedExpr": {
+      "runnable": 20,
+      "syntax": 20,
+      "static": 20
+    },
+    "prod-PositionalVar": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "prod-Predicate": {
+      "runnable": 205,
+      "syntax": 205,
+      "static": 205
+    },
+    "prod-QuantifiedExpr": {
+      "runnable": 203,
+      "syntax": 203,
+      "static": 203
+    },
+    "prod-ReturnClause": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-SequenceType": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-SquareArrayConstructor": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "prod-StepExpr": {
+      "runnable": 58,
+      "syntax": 58,
+      "static": 58
+    },
+    "prod-StringConstructor": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "prod-SwitchExpr": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "prod-TreatExpr": {
+      "runnable": 71,
+      "syntax": 71,
+      "static": 71
+    },
+    "prod-TryCatchExpr": {
+      "runnable": 173,
+      "syntax": 173,
+      "static": 173
+    },
+    "prod-TypeswitchExpr": {
+      "runnable": 67,
+      "syntax": 67,
+      "static": 67
+    },
+    "prod-UnorderedExpr": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "prod-UnaryLookup": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "prod-ValueComp": {
+      "runnable": 96,
+      "syntax": 96,
+      "static": 96
+    },
+    "prod-VarDecl": {
+      "runnable": 128,
+      "syntax": 128,
+      "static": 128
+    },
+    "prod-VarDecl.external": {
+      "runnable": 97,
+      "syntax": 97,
+      "static": 97
+    },
+    "prod-VarDefaultValue": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "prod-VersionDecl": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "prod-WhereClause": {
+      "runnable": 82,
+      "syntax": 82,
+      "static": 82
+    },
+    "prod-WindowClause": {
+      "runnable": 116,
+      "syntax": 116,
+      "static": 116
+    },
+    "misc-CombinedErrorCodes": {
+      "runnable": 230,
+      "syntax": 230,
+      "static": 218
+    },
+    "misc-AnnexE": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "misc-AppendixA4": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "misc-ErrorsAndOptimization": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "misc-HigherOrderFunctions": {
+      "runnable": 126,
+      "syntax": 126,
+      "static": 126
+    },
+    "misc-JsonTestSuite": {
+      "runnable": 318,
+      "syntax": 318,
+      "static": 318
+    },
+    "misc-StaticContext": {
+      "runnable": 1,
+      "syntax": 1,
+      "static": 1
+    },
+    "misc-Surrogates": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "misc-UCACollation": {
+      "runnable": 73,
+      "syntax": 73,
+      "static": 73
+    },
+    "misc-XMLEdition": {
+      "runnable": 11,
+      "syntax": 11,
+      "static": 11
+    }
+  },
+  "XP31": {
+    "fn-abs": {
+      "runnable": 183,
+      "syntax": 183,
+      "static": 183
+    },
+    "fn-adjust-date-to-timezone": {
+      "runnable": 41,
+      "syntax": 41,
+      "static": 41
+    },
+    "fn-adjust-dateTime-to-timezone": {
+      "runnable": 48,
+      "syntax": 48,
+      "static": 48
+    },
+    "fn-adjust-time-to-timezone": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 42
+    },
+    "fn-analyze-string": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "fn-apply": {
+      "runnable": 14,
+      "syntax": 14,
+      "static": 14
+    },
+    "fn-available-environment-variables": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "fn-avg": {
+      "runnable": 238,
+      "syntax": 238,
+      "static": 238
+    },
+    "fn-base-uri": {
+      "runnable": 4,
+      "syntax": 4,
+      "static": 4
+    },
+    "fn-boolean": {
+      "runnable": 138,
+      "syntax": 138,
+      "static": 138
+    },
+    "fn-ceiling": {
+      "runnable": 87,
+      "syntax": 87,
+      "static": 87
+    },
+    "fn-codepoint-equal": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "fn-codepoints-to-string": {
+      "runnable": 70,
+      "syntax": 70,
+      "static": 70
+    },
+    "fn-collation-key": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "fn-collection": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "fn-compare": {
+      "runnable": 87,
+      "syntax": 87,
+      "static": 87
+    },
+    "fn-concat": {
+      "runnable": 96,
+      "syntax": 96,
+      "static": 96
+    },
+    "fn-contains": {
+      "runnable": 60,
+      "syntax": 60,
+      "static": 60
+    },
+    "fn-contains-token": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "fn-count": {
+      "runnable": 75,
+      "syntax": 75,
+      "static": 75
+    },
+    "fn-current-date": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "fn-current-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-current-time": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "fn-data": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-dateTime": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-day-from-date": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-day-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-days-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-deep-equal": {
+      "runnable": 193,
+      "syntax": 193,
+      "static": 193
+    },
+    "fn-default-collation": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "fn-default-language": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "fn-distinct-values": {
+      "runnable": 91,
+      "syntax": 91,
+      "static": 91
+    },
+    "fn-doc": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "fn-doc-available": {
+      "runnable": 16,
+      "syntax": 16,
+      "static": 16
+    },
+    "fn-document-uri": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "fn-empty": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-encode-for-uri": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "fn-ends-with": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-environment-variable": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "fn-error": {
+      "runnable": 90,
+      "syntax": 90,
+      "static": 69
+    },
+    "fn-escape-html-uri": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "fn-exactly-one": {
+      "runnable": 50,
+      "syntax": 50,
+      "static": 50
+    },
+    "fn-exists": {
+      "runnable": 56,
+      "syntax": 56,
+      "static": 56
+    },
+    "fn-false": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-filter": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-floor": {
+      "runnable": 88,
+      "syntax": 88,
+      "static": 88
+    },
+    "fn-fold-left": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "fn-fold-right": {
+      "runnable": 20,
+      "syntax": 20,
+      "static": 20
+    },
+    "fn-for-each": {
+      "runnable": 15,
+      "syntax": 15,
+      "static": 15
+    },
+    "fn-for-each-pair": {
+      "runnable": 47,
+      "syntax": 47,
+      "static": 47
+    },
+    "fn-format-date": {
+      "runnable": 118,
+      "syntax": 118,
+      "static": 118
+    },
+    "fn-format-dateTime": {
+      "runnable": 78,
+      "syntax": 78,
+      "static": 78
+    },
+    "fn-format-integer": {
+      "runnable": 64,
+      "syntax": 64,
+      "static": 64
+    },
+    "fn-format-number": {
+      "runnable": 248,
+      "syntax": 248,
+      "static": 248
+    },
+    "fn-format-time": {
+      "runnable": 88,
+      "syntax": 88,
+      "static": 88
+    },
+    "fn-function-lookup": {
+      "runnable": 611,
+      "syntax": 611,
+      "static": 611
+    },
+    "fn-function-arity": {
+      "runnable": 19,
+      "syntax": 19,
+      "static": 19
+    },
+    "fn-function-name": {
+      "runnable": 22,
+      "syntax": 22,
+      "static": 22
+    },
+    "fn-generate-id": {
+      "runnable": 18,
+      "syntax": 18,
+      "static": 18
+    },
+    "fn-has-children": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "fn-head": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "fn-hours-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-hours-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-hours-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-id": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "fn-idref": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "fn-implicit-timezone": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-innermost": {
+      "runnable": 47,
+      "syntax": 47,
+      "static": 47
+    },
+    "fn-index-of": {
+      "runnable": 53,
+      "syntax": 53,
+      "static": 53
+    },
+    "fn-insert-before": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "fn-in-scope-prefixes": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "fn-iri-to-uri": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "fn-json-doc": {
+      "runnable": 68,
+      "syntax": 68,
+      "static": 68
+    },
+    "fn-json-to-xml": {
+      "runnable": 35,
+      "syntax": 35,
+      "static": 35
+    },
+    "fn-lang": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "fn-last": {
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
+    },
+    "fn-local-name": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "fn-local-name-from-QName": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "fn-lower-case": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-max": {
+      "runnable": 189,
+      "syntax": 189,
+      "static": 189
+    },
+    "fn-matches": {
+      "runnable": 161,
+      "syntax": 161,
+      "static": 161
+    },
+    "fn-matches.re": {
+      "runnable": 1002,
+      "syntax": 1002,
+      "static": 1002
+    },
+    "fn-min": {
+      "runnable": 188,
+      "syntax": 188,
+      "static": 188
+    },
+    "fn-minutes-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-minutes-from-duration": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "fn-minutes-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-month-from-date": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-months-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-month-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-name": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-namespace-uri": {
+      "runnable": 16,
+      "syntax": 16,
+      "static": 16
+    },
+    "fn-namespace-uri-for-prefix": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "fn-namespace-uri-from-QName": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "fn-nilled": {
+      "runnable": 13,
+      "syntax": 13,
+      "static": 13
+    },
+    "fn-node-name": {
+      "runnable": 13,
+      "syntax": 13,
+      "static": 13
+    },
+    "fn-normalize-space": {
+      "runnable": 35,
+      "syntax": 35,
+      "static": 35
+    },
+    "fn-normalize-unicode": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "fn-not": {
+      "runnable": 76,
+      "syntax": 76,
+      "static": 76
+    },
+    "fn-number": {
+      "runnable": 66,
+      "syntax": 66,
+      "static": 66
+    },
+    "fn-one-or-more": {
+      "runnable": 53,
+      "syntax": 53,
+      "static": 53
+    },
+    "fn-outermost": {
+      "runnable": 46,
+      "syntax": 46,
+      "static": 46
+    },
+    "fn-parse-ietf-date": {
+      "runnable": 105,
+      "syntax": 105,
+      "static": 105
+    },
+    "fn-parse-json": {
+      "runnable": 147,
+      "syntax": 147,
+      "static": 147
+    },
+    "fn-parse-xml": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "fn-parse-xml-fragment": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-path": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "fn-position": {
+      "runnable": 67,
+      "syntax": 67,
+      "static": 67
+    },
+    "fn-prefix-from-QName": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-QName": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-random-number-generator": {
+      "runnable": 41,
+      "syntax": 41,
+      "static": 41
+    },
+    "fn-remove": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "fn-replace": {
+      "runnable": 90,
+      "syntax": 90,
+      "static": 90
+    },
+    "fn-resolve-QName": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "fn-resolve-uri": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "fn-reverse": {
+      "runnable": 66,
+      "syntax": 66,
+      "static": 66
+    },
+    "fn-root": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "fn-round": {
+      "runnable": 262,
+      "syntax": 262,
+      "static": 262
+    },
+    "fn-round-half-to-even": {
+      "runnable": 128,
+      "syntax": 128,
+      "static": 128
+    },
+    "fn-seconds-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-seconds-from-duration": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "fn-seconds-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-serialize": {
+      "runnable": 93,
+      "syntax": 93,
+      "static": 93
+    },
+    "fn-sort": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "fn-starts-with": {
+      "runnable": 60,
+      "syntax": 60,
+      "static": 60
+    },
+    "fn-static-base-uri": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "fn-string": {
+      "runnable": 69,
+      "syntax": 69,
+      "static": 69
+    },
+    "fn-string-join": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "fn-string-length": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "fn-string-to-codepoints": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "fn-subsequence": {
+      "runnable": 105,
+      "syntax": 105,
+      "static": 105
+    },
+    "fn-substring": {
+      "runnable": 48,
+      "syntax": 48,
+      "static": 48
+    },
+    "fn-substring-after": {
+      "runnable": 50,
+      "syntax": 50,
+      "static": 50
+    },
+    "fn-substring-before": {
+      "runnable": 50,
+      "syntax": 50,
+      "static": 50
+    },
+    "fn-sum": {
+      "runnable": 222,
+      "syntax": 222,
+      "static": 222
+    },
+    "fn-tail": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "fn-timezone-from-date": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "fn-timezone-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-timezone-from-time": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-tokenize": {
+      "runnable": 64,
+      "syntax": 64,
+      "static": 64
+    },
+    "fn-trace": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "fn-transform": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "fn-translate": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "fn-true": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "fn-unordered": {
+      "runnable": 40,
+      "syntax": 40,
+      "static": 40
+    },
+    "fn-unparsed-text": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-unparsed-text-available": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "fn-unparsed-text-lines": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "fn-upper-case": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "fn-uri-collection": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "fn-xml-to-json": {
+      "runnable": 82,
+      "syntax": 82,
+      "static": 82
+    },
+    "fn-year-from-date": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-years-from-duration": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "fn-year-from-dateTime": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "fn-zero-or-one": {
+      "runnable": 49,
+      "syntax": 49,
+      "static": 49
+    },
+    "math-acos": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-asin": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-atan": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-atan2": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "math-cos": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-exp": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-exp10": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "math-log": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-log10": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-pi": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "math-pow": {
+      "runnable": 34,
+      "syntax": 34,
+      "static": 34
+    },
+    "math-sin": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-sqrt": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "math-tan": {
+      "runnable": 11,
+      "syntax": 11,
+      "static": 11
+    },
+    "map-merge": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "map-contains": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "map-find": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "map-get": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "map-entry": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "map-size": {
+      "runnable": 15,
+      "syntax": 15,
+      "static": 15
+    },
+    "map-keys": {
+      "runnable": 14,
+      "syntax": 14,
+      "static": 14
+    },
+    "map-put": {
+      "runnable": 19,
+      "syntax": 19,
+      "static": 19
+    },
+    "map-remove": {
+      "runnable": 18,
+      "syntax": 18,
+      "static": 18
+    },
+    "map-for-each": {
+      "runnable": 16,
+      "syntax": 16,
+      "static": 16
+    },
+    "map-call": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "array-append": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "array-filter": {
+      "runnable": 12,
+      "syntax": 12,
+      "static": 12
+    },
+    "array-flatten": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "array-fold-left": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-fold-right": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "array-for-each": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-for-each-pair": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-get": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-head": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "array-insert-before": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "array-join": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "array-put": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "array-remove": {
+      "runnable": 15,
+      "syntax": 15,
+      "static": 15
+    },
+    "array-reverse": {
+      "runnable": 4,
+      "syntax": 4,
+      "static": 4
+    },
+    "array-size": {
+      "runnable": 7,
+      "syntax": 7,
+      "static": 7
+    },
+    "array-sort": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "array-subarray": {
+      "runnable": 16,
+      "syntax": 16,
+      "static": 16
+    },
+    "array-tail": {
+      "runnable": 5,
+      "syntax": 5,
+      "static": 5
+    },
+    "xs-anyURI": {
+      "runnable": 13,
+      "syntax": 13,
+      "static": 13
+    },
+    "xs-base64Binary": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "xs-double": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "xs-float": {
+      "runnable": 3,
+      "syntax": 3,
+      "static": 3
+    },
+    "xs-hexBinary": {
+      "runnable": 1,
+      "syntax": 1,
+      "static": 1
+    },
+    "xs-normalizedString": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "xs-numeric": {
+      "runnable": 19,
+      "syntax": 19,
+      "static": 19
+    },
+    "xs-token": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "op-add-dayTimeDurations": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "op-add-dayTimeDuration-to-date": {
+      "runnable": 22,
+      "syntax": 22,
+      "static": 22
+    },
+    "op-add-dayTimeDuration-to-dateTime": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "op-add-dayTimeDuration-to-time": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "op-add-yearMonthDurations": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "op-add-yearMonthDuration-to-date": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "op-add-yearMonthDuration-to-dateTime": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "op-anyURI-equal": {
+      "runnable": 22,
+      "syntax": 22,
+      "static": 22
+    },
+    "op-anyURI-greater-than": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "op-anyURI-less-than": {
+      "runnable": 8,
+      "syntax": 8,
+      "static": 8
+    },
+    "op-bang": {
+      "runnable": 14,
+      "syntax": 14,
+      "static": 14
+    },
+    "op-base64Binary-equal": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "op-base64Binary-less-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-base64Binary-greater-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-boolean-equal": {
+      "runnable": 49,
+      "syntax": 49,
+      "static": 49
+    },
+    "op-boolean-greater-than": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "op-boolean-less-than": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "op-concat": {
+      "runnable": 92,
+      "syntax": 92,
+      "static": 92
+    },
+    "op-concatenate": {
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
+    },
+    "op-date-equal": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "op-date-greater-than": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "op-date-less-than": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "op-dateTime-equal": {
+      "runnable": 63,
+      "syntax": 63,
+      "static": 63
+    },
+    "op-dateTime-greater-than": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "op-dateTime-less-than": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "op-dayTimeDuration-greater-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-dayTimeDuration-less-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-divide-dayTimeDuration": {
+      "runnable": 37,
+      "syntax": 37,
+      "static": 37
+    },
+    "op-divide-dayTimeDuration-by-dayTimeDuration": {
+      "runnable": 25,
+      "syntax": 25,
+      "static": 25
+    },
+    "op-divide-yearMonthDuration": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-divide-yearMonthDuration-by-yearMonthDuration": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "op-duration-equal": {
+      "runnable": 144,
+      "syntax": 144,
+      "static": 144
+    },
+    "op-except": {
+      "runnable": 18,
+      "syntax": 18,
+      "static": 18
+    },
+    "op-gDay-equal": {
+      "runnable": 45,
+      "syntax": 45,
+      "static": 45
+    },
+    "op-gMonth-equal": {
+      "runnable": 39,
+      "syntax": 39,
+      "static": 39
+    },
+    "op-gMonthDay-equal": {
+      "runnable": 45,
+      "syntax": 45,
+      "static": 45
+    },
+    "op-gYear-equal": {
+      "runnable": 40,
+      "syntax": 40,
+      "static": 40
+    },
+    "op-gYearMonth-equal": {
+      "runnable": 40,
+      "syntax": 40,
+      "static": 40
+    },
+    "op-hexBinary-equal": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "op-hexBinary-greater-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-hexBinary-less-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-intersect": {
+      "runnable": 24,
+      "syntax": 24,
+      "static": 24
+    },
+    "op-is-same-node": {
+      "runnable": 22,
+      "syntax": 22,
+      "static": 22
+    },
+    "op-multiply-dayTimeDuration": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "op-multiply-yearMonthDuration": {
+      "runnable": 40,
+      "syntax": 40,
+      "static": 40
+    },
+    "op-node-after": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "op-node-before": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "op-numeric-add": {
+      "runnable": 131,
+      "syntax": 131,
+      "static": 131
+    },
+    "op-numeric-equal": {
+      "runnable": 178,
+      "syntax": 178,
+      "static": 178
+    },
+    "op-numeric-divide": {
+      "runnable": 119,
+      "syntax": 119,
+      "static": 119
+    },
+    "op-numeric-greater-than": {
+      "runnable": 92,
+      "syntax": 92,
+      "static": 92
+    },
+    "op-numeric-integer-divide": {
+      "runnable": 125,
+      "syntax": 125,
+      "static": 125
+    },
+    "op-numeric-less-than": {
+      "runnable": 154,
+      "syntax": 154,
+      "static": 154
+    },
+    "op-numeric-mod": {
+      "runnable": 113,
+      "syntax": 113,
+      "static": 113
+    },
+    "op-numeric-multiply": {
+      "runnable": 73,
+      "syntax": 73,
+      "static": 73
+    },
+    "op-numeric-subtract": {
+      "runnable": 106,
+      "syntax": 106,
+      "static": 106
+    },
+    "op-numeric-unary-minus": {
+      "runnable": 62,
+      "syntax": 62,
+      "static": 62
+    },
+    "op-numeric-unary-plus": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "op-QName-equal": {
+      "runnable": 36,
+      "syntax": 36,
+      "static": 36
+    },
+    "op-string-equal": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "op-string-greater-than": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "op-string-less-than": {
+      "runnable": 10,
+      "syntax": 10,
+      "static": 10
+    },
+    "op-subtract-dates": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "op-subtract-dateTimes": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "op-subtract-dayTimeDuration-from-date": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "op-subtract-dayTimeDuration-from-dateTime": {
+      "runnable": 20,
+      "syntax": 20,
+      "static": 20
+    },
+    "op-subtract-dayTimeDuration-from-time": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "op-subtract-dayTimeDurations": {
+      "runnable": 32,
+      "syntax": 32,
+      "static": 32
+    },
+    "op-subtract-times": {
+      "runnable": 33,
+      "syntax": 33,
+      "static": 33
+    },
+    "op-subtract-yearMonthDuration-from-date": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "op-subtract-yearMonthDuration-from-dateTime": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "op-subtract-yearMonthDurations": {
+      "runnable": 30,
+      "syntax": 30,
+      "static": 30
+    },
+    "op-time-equal": {
+      "runnable": 52,
+      "syntax": 52,
+      "static": 52
+    },
+    "op-time-greater-than": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "op-time-less-than": {
+      "runnable": 38,
+      "syntax": 38,
+      "static": 38
+    },
+    "op-to": {
+      "runnable": 166,
+      "syntax": 166,
+      "static": 166
+    },
+    "op-union": {
+      "runnable": 20,
+      "syntax": 20,
+      "static": 20
+    },
+    "op-yearMonthDuration-greater-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-yearMonthDuration-less-than": {
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
+    },
+    "op-same-key": {
+      "runnable": 11,
+      "syntax": 11,
+      "static": 11
+    },
+    "prod-ArrayTest": {
+      "runnable": 47,
+      "syntax": 47,
+      "static": 47
+    },
+    "prod-ArrowPostfix": {
+      "runnable": 42,
+      "syntax": 42,
+      "static": 42
+    },
+    "prod-AxisStep": {
+      "runnable": 224,
+      "syntax": 224,
+      "static": 224
+    },
+    "prod-AxisStep.abbr": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-AxisStep.ancestor": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-AxisStep.ancestor-or-self": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-AxisStep.following": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-AxisStep.following-sibling": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-AxisStep.preceding": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "prod-AxisStep.preceding-sibling": {
+      "runnable": 18,
+      "syntax": 18,
+      "static": 18
+    },
+    "prod-AxisStep.unabbr": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "prod-CastableExpr": {
+      "runnable": 780,
+      "syntax": 780,
+      "static": 780
+    },
+    "prod-CastExpr": {
+      "runnable": 2737,
+      "syntax": 2737,
+      "static": 2737
+    },
+    "prod-CastExpr.derived": {
+      "runnable": 153,
+      "syntax": 153,
+      "static": 153
+    },
+    "prod-Comment": {
+      "runnable": 27,
+      "syntax": 27,
+      "static": 27
+    },
+    "prod-ContextItemExpr": {
+      "runnable": 43,
+      "syntax": 43,
+      "static": 43
+    },
+    "prod-CurlyArrayConstructor": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "prod-DirectConstructor": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "prod-DirElemContent": {
+      "runnable": 4,
+      "syntax": 4,
+      "static": 4
+    },
+    "prod-EQName": {
+      "runnable": 26,
+      "syntax": 26,
+      "static": 26
+    },
+    "prod-ForClause": {
+      "runnable": 75,
+      "syntax": 75,
+      "static": 75
+    },
+    "prod-FunctionCall": {
+      "runnable": 59,
+      "syntax": 59,
+      "static": 59
+    },
+    "prod-GeneralComp.eq": {
+      "runnable": 119,
+      "syntax": 119,
+      "static": 119
+    },
+    "prod-GeneralComp.ge": {
+      "runnable": 58,
+      "syntax": 58,
+      "static": 58
+    },
+    "prod-GeneralComp.gt": {
+      "runnable": 67,
+      "syntax": 67,
+      "static": 67
+    },
+    "prod-GeneralComp.le": {
+      "runnable": 57,
+      "syntax": 57,
+      "static": 57
+    },
+    "prod-GeneralComp.lt": {
+      "runnable": 74,
+      "syntax": 74,
+      "static": 74
+    },
+    "prod-GeneralComp.ne": {
+      "runnable": 89,
+      "syntax": 89,
+      "static": 89
+    },
+    "prod-IfExpr": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "prod-InlineFunctionExpr": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "prod-InstanceofExpr": {
+      "runnable": 272,
+      "syntax": 272,
+      "static": 272
+    },
+    "prod-LetClause": {
+      "runnable": 23,
+      "syntax": 23,
+      "static": 23
+    },
+    "prod-Literal": {
+      "runnable": 118,
+      "syntax": 118,
+      "static": 118
+    },
+    "prod-Lookup": {
+      "runnable": 102,
+      "syntax": 102,
+      "static": 102
+    },
+    "prod-MapConstructor": {
+      "runnable": 22,
+      "syntax": 22,
+      "static": 22
+    },
+    "prod-MapTest": {
+      "runnable": 44,
+      "syntax": 44,
+      "static": 44
+    },
+    "prod-NamedFunctionRef": {
+      "runnable": 546,
+      "syntax": 546,
+      "static": 546
+    },
+    "prod-NameTest": {
+      "runnable": 51,
+      "syntax": 51,
+      "static": 51
+    },
+    "prod-NodeTest": {
+      "runnable": 29,
+      "syntax": 29,
+      "static": 29
+    },
+    "prod-OrExpr": {
+      "runnable": 329,
+      "syntax": 329,
+      "static": 329
+    },
+    "prod-PathExpr": {
+      "runnable": 19,
+      "syntax": 19,
+      "static": 19
+    },
+    "prod-ParenthesizedExpr": {
+      "runnable": 14,
+      "syntax": 14,
+      "static": 14
+    },
+    "prod-Predicate": {
+      "runnable": 165,
+      "syntax": 165,
+      "static": 165
+    },
+    "prod-QuantifiedExpr": {
+      "runnable": 161,
+      "syntax": 161,
+      "static": 161
+    },
+    "prod-ReturnClause": {
+      "runnable": 15,
+      "syntax": 15,
+      "static": 15
+    },
+    "prod-SequenceType": {
+      "runnable": 21,
+      "syntax": 21,
+      "static": 21
+    },
+    "prod-SquareArrayConstructor": {
+      "runnable": 2,
+      "syntax": 2,
+      "static": 2
+    },
+    "prod-StepExpr": {
+      "runnable": 3,
+      "syntax": 3,
+      "static": 3
+    },
+    "prod-TreatExpr": {
+      "runnable": 61,
+      "syntax": 61,
+      "static": 61
+    },
+    "prod-UnaryLookup": {
+      "runnable": 31,
+      "syntax": 31,
+      "static": 31
+    },
+    "prod-ValueComp": {
+      "runnable": 95,
+      "syntax": 95,
+      "static": 95
+    },
+    "misc-AppendixA4": {
+      "runnable": 9,
+      "syntax": 9,
+      "static": 9
+    },
+    "misc-ErrorsAndOptimization": {
+      "runnable": 6,
+      "syntax": 6,
+      "static": 6
+    },
+    "misc-HigherOrderFunctions": {
+      "runnable": 48,
+      "syntax": 48,
+      "static": 48
+    },
+    "misc-Surrogates": {
+      "runnable": 17,
+      "syntax": 17,
+      "static": 17
+    },
+    "misc-UCACollation": {
+      "runnable": 73,
+      "syntax": 73,
+      "static": 73
+    },
+    "misc-XMLEdition": {
+      "runnable": 1,
+      "syntax": 1,
+      "static": 1
+    }
+  }
+}
