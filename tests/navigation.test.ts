@@ -240,6 +240,21 @@ describe("Sax.select", () => {
     expect(nested.map((e) => Xml.serialize(e))).toEqual(["<s><s><t/></s></s>", "<s/>"]);
   });
 
+  test("one raw name in several namespaces resolves to each", async () => {
+    const selected = await select(
+      `<a><b xmlns="urn:1"/><b/><p:b xmlns:p="urn:2"/><p:b xmlns:p="urn:1"/><b xmlns="urn:2"/></a>`,
+      "/a/*",
+    );
+    expect(selected.map((e) => e.name.namespace)).toEqual([
+      "urn:1",
+      null,
+      "urn:2",
+      "urn:1",
+      "urn:2",
+    ]);
+    expect(selected.map((e) => e.name.qualified)).toEqual(["b", "b", "p:b", "p:b", "b"]);
+  });
+
   test("child steps must be direct children", async () => {
     expect((await select(`<a><b><c/></b><c/></a>`, "/a/c")).length).toBe(1);
     expect((await select(`<a><b><c/></b><c/></a>`, "/a//c")).length).toBe(2);
