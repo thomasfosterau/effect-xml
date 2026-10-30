@@ -240,6 +240,11 @@ describe("Sax.select", () => {
     expect(nested.map((e) => Xml.serialize(e))).toEqual(["<s><s><t/></s></s>", "<s/>"]);
   });
 
+  test("child steps must be direct children", async () => {
+    expect((await select(`<a><b><c/></b><c/></a>`, "/a/c")).length).toBe(1);
+    expect((await select(`<a><b><c/></b><c/></a>`, "/a//c")).length).toBe(2);
+  });
+
   test("matches before an error in the same chunk are emitted first", async () => {
     // One input chunk, so the matches and the error are in one batch of events.
     const input = `<a><b n="1"/><b n="2"/></c>`;
@@ -260,11 +265,6 @@ describe("Sax.select", () => {
       Stream.make(input).pipe(Sax.tokenize(), Sax.select("//b"), Stream.take(2), Stream.runCollect),
     );
     expect(Array.from(taken, (b) => b.attribute("n"))).toEqual(["1", "2"]);
-  });
-
-  test("child steps must be direct children", async () => {
-    expect((await select(`<a><b><c/></b><c/></a>`, "/a/c")).length).toBe(1);
-    expect((await select(`<a><b><c/></b><c/></a>`, "/a//c")).length).toBe(2);
   });
 
   test("a large sheet streams through", async () => {
