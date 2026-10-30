@@ -21,6 +21,7 @@ import {
   type Wildcard,
 } from "../../Xsd/Model.ts";
 import { builtinBase, isBuiltinSimple } from "./datatypes.ts";
+import { isIn, tagSet } from "../tagSet.ts";
 
 export const anyType = builtin("anyType");
 export const anySimpleType = builtin("anySimpleType");
@@ -125,16 +126,16 @@ export const substitutionsOf = (
     );
   };
   const blocked = (head: ElementDeclaration, member: ElementDeclaration): boolean => {
-    const blocks = [
+    const blocks = tagSet(
       ...(head.block ?? []),
       ...Option.match(typeOf(model, head.type), {
         onNone: () => [],
         onSome: (t) => (Predicate.isTagged(t, "ComplexType") ? (t.block ?? []) : []),
       }),
-    ];
+    );
     return Option.match(derivationPath(model, member.type, head.type), {
       onNone: () => true,
-      onSome: (path) => path.some((how) => blocks.includes(how)),
+      onSome: (path) => path.some((how) => isIn(blocks, how)),
     });
   };
   const compute = (head: string): ReadonlyArray<readonly [string, string]> =>

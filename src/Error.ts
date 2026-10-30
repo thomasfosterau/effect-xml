@@ -10,6 +10,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { showPosition } from "./Position.ts";
 import { quote } from "./internal/quote.ts";
+import { isIn, tagSet } from "./internal/tagSet.ts";
 
 /** The `Position` every error carries, as a schema (the `Position` interface's shape). */
 const ErrorPosition = Schema.Struct({
@@ -329,9 +330,9 @@ export type SaxError =
  * @category guards
  */
 export const isSaxError = (u: unknown): u is SaxError =>
-  Predicate.hasProperty(u, "_tag") && Predicate.isString(u._tag) && saxErrorTags.includes(u._tag);
+  Predicate.hasProperty(u, "_tag") && Predicate.isString(u._tag) && isIn(saxErrorTags, u._tag);
 
-const saxErrorTags: ReadonlyArray<string> = [
+const saxErrorTags = tagSet(
   "UnexpectedCharacter",
   "UnexpectedEndOfInput",
   "InvalidEntity",
@@ -345,4 +346,4 @@ const saxErrorTags: ReadonlyArray<string> = [
   "LimitExceeded",
   "UnsupportedEncoding",
   "InvalidByteSequence",
-];
+);

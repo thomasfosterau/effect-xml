@@ -34,6 +34,8 @@ export const isEnter = <N>(step: Visit<N>): step is Extract<Visit<N>, { _tag: "E
  * `Exit` for every node `children` returns an array for (an element, even an
  * empty one) once its children are done. Leaves (`children` returns
  * `undefined`) get no `Exit`.
+ *
+ * @yields Each `Enter` and `Exit` step, in document order.
  */
 export function* preorder<N>(
   roots: ReadonlyArray<N>,

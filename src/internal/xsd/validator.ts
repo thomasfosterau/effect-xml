@@ -45,6 +45,7 @@ import {
 import { evaluate, type Tables, type Typed, type TypeOf } from "./identity.ts";
 import { advance, selects, type StepLevel, type StreamStep } from "../streamPath.ts";
 import type { ComplexRuntime, Runtime, TypeRuntime } from "./runtime.ts";
+import { isIn, tagSet } from "../tagSet.ts";
 
 /** Anything that stops validation. */
 export type Failure = XsdValidationError | XsdSchemaError | SaxError;
@@ -125,7 +126,7 @@ const ok: Result.Result<void, Failure> = Result.void;
 
 const isWhitespace = (s: string): boolean => /^[ \t\r\n]*$/.test(s);
 
-const xsiAttributes = ["type", "nil", "schemaLocation", "noNamespaceSchemaLocation"];
+const xsiAttributes = tagSet("type", "nil", "schemaLocation", "noNamespaceSchemaLocation");
 
 /** A term, for messages; its namespace is spelled out when the element found was in another. */
 const describe =
@@ -550,15 +551,15 @@ export class Validator {
       onNone: () => Option.some(`the type ${key} is not derived from ${decl.type}`),
       onSome: (path) => {
         const declared = typeOf(this.runtime.model, decl.type);
-        const blocks = [
+        const blocks = tagSet(
           ...(decl.block ?? []),
           ...Option.match(declared, {
             onNone: () => [],
             onSome: (t) => (Predicate.isTagged(t, "ComplexType") ? (t.block ?? []) : []),
           }),
-        ];
+        );
         return Option.map(
-          Arr.findFirst(path, (how) => blocks.includes(how)),
+          Arr.findFirst(path, (how) => isIn(blocks, how)),
           (how) => `the declaration blocks types derived by ${how}, like ${key}`,
         );
       },
@@ -726,7 +727,7 @@ export class Validator {
         new DuplicateAttribute({ element, attribute: a.name, position: a.span.start }),
       );
     seen.push(key);
-    if (qname.namespace === XSI && xsiAttributes.includes(qname.local)) return Result.void;
+    if (qname.namespace === XSI && isIn(xsiAttributes, qname.local)) return Result.void;
     if (Predicate.isTagged(type, "Simple"))
       return Result.fail(
         this.invalid(

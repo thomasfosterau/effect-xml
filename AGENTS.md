@@ -21,7 +21,7 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 
 ## Common pitfalls
 
-- **Never edit a version in `package.json`.** Versions live in the `pnpm-workspace.yaml` catalog (`catalogMode: strict` rejects anything else). After editing it, run `pnpm install` and commit `pnpm-lock.yaml`, or CI fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`. `@effect/tsgo`, `@typescript/native` and `vite-plus` move together (the tsgo patch hard-errors at install on an unsupported `tsc` or `oxlint`); read their catalog comments first.
+- **Never edit a version in `package.json`.** Versions live in the `pnpm-workspace.yaml` catalog (`catalogMode: strict` rejects anything else). After editing it, run `pnpm install` and commit `pnpm-lock.yaml`, or CI fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`. `@effect/tsgo`, `@typescript/native` and `vite-plus` move together (the tsgo patch hard-errors at install on an unsupported `tsc` or `oxlint`); read their catalog comments first. Dependabot groups every lockstep set (`toolchain`, `effect`, `docgen`, `changesets`, `fallow`; `.github/dependabot.yml`), but the npm aliases (`vite`, `typescript`, `@typescript/native`) and the `overrides` are moved by hand in the toolchain PR, as that file's header lists.
 - **Chunk boundaries must never change the output.** The lexer buffers unconsumed input and runs the grammar for its current state in effect-parse _partial_ mode: a grammar that runs out of input reports Incomplete and is retried once the pending input has grown by half (so a token split across many chunks still lexes in linear time). `tests/streaming.test.ts` asserts identical events and spans for every chunk size; a change to the lexer or a grammar keeps it green.
 - **Positions count raw UTF-16 units.** CR and CRLF are normalized to LF before lexing; the lexer records where each CRLF was so `offset` still counts the raw input. Lines and columns are computed lazily from the buffer.
 - **The lexer is mutable for throughput, never observably.** `Sax.tokenize` builds it inside `Stream.suspend`, so each materialization gets a fresh one. Faults are data (`LexOutput.Fault`), lifted into the stream's error channel by `Sax.ts`; nothing in the pipeline throws.
@@ -49,7 +49,7 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 ## Commands
 
 - `pnpm install` — dependencies plus the Vite+ git hooks (pre-commit runs `vp staged`: format + lint on staged files) and the `prepare` step that patches the native `tsc` / `oxlint` with `@effect/tsgo`. No pre-push hook: run the gates yourself.
-- `vp check` — format + lint (Oxfmt + Oxlint with the Effect presets). `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`, plus `packages/cli`'s. They are different commands.
+- `vp check` — format + lint (Oxfmt + Oxlint with `@effect/tsgo`'s preset, `@enfect/oxlint`'s `recommended` Effect rules and oxlint's `import` / `promise` / `vitest` / `jsdoc` plugins at the `correctness`, `suspicious` and `perf` categories). `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`, plus `packages/cli`'s. They are different commands.
 - `vp run test:unit` — the unit suite, including the html5lib conformance gate, and `packages/cli`'s.
 - `vp run build` — `vp pack` → `dist/` (one ESM bundle + `.d.ts` per entry), and `packages/cli/dist/main.js` (the `effect-xml-xsd` executable).
 - `vp run docgen` — compiles and runs every `@example` against `dist/`, writes the (git-ignored) API reference to `docs/`.
@@ -73,7 +73,7 @@ Before you report work as done, run the gates below in order and quote each comm
 7. `pnpm audit --audit-level high` (network)
 8. `vp run test:coverage`, then `fallow audit --format json --quiet --explain --gate-marker agent --base origin/trunk` (the fallow gate below; not a CI step).
 
-Steps 2–7 are CI's required `ci` job, in its order ([ci.yml](.github/workflows/ci.yml)).
+Steps 2–7 are CI's required `ci` job, in its order ([ci.yml](.github/workflows/ci.yml)). CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA and never persists checkout credentials; the release job alone holds `id-token: write` and never runs for Dependabot. `uvx zizmor .github` audits the workflows (config in `.github/zizmor.yml`).
 
 ## Branches and pull requests
 

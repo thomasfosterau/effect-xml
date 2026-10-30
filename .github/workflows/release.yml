@@ -11,6 +11,7 @@ on:
 
 concurrency:
   group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 # No permissions by default; the release job opts into exactly what it needs.
 permissions: {}
@@ -20,7 +21,9 @@ jobs:
     name: Version or publish
     # Never run on forks (they have neither the environment nor the trusted
     # publisher binding, so a fork cannot publish on your behalf).
-    if: github.repository == 'thomasfosterau/effect-xml'
+    # Nor for a push Dependabot made: it holds `id-token: write` and the
+    # release environment, which no bot-authored change may reach.
+    if: github.repository == 'thomasfosterau/effect-xml' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Requires manual approval via a protected GitHub Environment named
@@ -52,6 +55,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: true
 
       # Installs the pnpm version pinned by the package.json "packageManager"
       # field. Must run before setup-node so its pnpm cache can find the store.

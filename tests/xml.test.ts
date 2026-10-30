@@ -220,6 +220,8 @@ describe("Xml — Schema integration", () => {
   });
 
   test("Schema rejects malformed node data", () => {
-    expect(() => Schema.decodeUnknownSync(Xml.XmlText)({ _tag: "XmlText", data: 42 })).toThrow();
+    expect(() => Schema.decodeUnknownSync(Xml.XmlText)({ _tag: "XmlText", data: 42 })).toThrow(
+      "Expected string",
+    );
   });
 });

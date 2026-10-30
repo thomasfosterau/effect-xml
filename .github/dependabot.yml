@@ -10,17 +10,29 @@
 #   gitHead, and hard-errors (UnsupportedTargetPackageVersionError) at
 #   `pnpm install` on any pairing it has no artifact for; `vite`, `vitest`
 #   and `@vitest/*` must equal vite-plus's own pins; the TS6 alias
-#   (`typescript` → `@typescript/typescript6`) and the Effect oxlint plugin
-#   ride along. One group, all update types, so the set lands as one PR —
-#   check the `components` table in node_modules/@effect/tsgo/dist/effect-tsgo.cjs
-#   before merging it.
+#   (`typescript` → `@typescript/typescript6`), `@effect/language-service`
+#   and the Effect lint rules (`@enfect/oxlint`) ride along. One group, all
+#   update types, so the set lands as one PR — check the `components` table
+#   in node_modules/@effect/tsgo/dist/effect-tsgo.cjs before merging it.
 # - `docgen`: `@effect/docgen` runs the examples under `tsx`.
 # - `changesets`, `fallow`: their own small sets.
 # - `minor-and-patch`: everything else, minor and patch only (a major gets
 #   its own PR).
 #
-# `cooldown` mirrors pnpm-workspace.yaml's `minimumReleaseAge` (1 day), with
-# first-party `@thomasfosterau/*` exempt as it is there.
+# Moved by hand, because Dependabot cannot bump them (do it in the toolchain
+# PR that moves `vite-plus`):
+# - the `vite` catalog entry, an npm alias
+#   (`npm:@voidzero-dev/vite-plus-core@<vite-plus version>`);
+# - the `typescript` (`npm:@typescript/typescript6@…`) and
+#   `@typescript/native` (`npm:typescript@…`) aliases, only to a pairing the
+#   new `@effect/tsgo`'s `components` table lists;
+# - the `vite@*` / `vitest@*` / `effect` overrides, which follow their
+#   catalog entries.
+#
+# `cooldown` is 1 day (Dependabot counts whole days), longer than
+# pnpm-workspace.yaml's `minimumReleaseAge` of 8 hours, so a Dependabot PR
+# never proposes a version pnpm would still refuse to install. First-party
+# `@thomasfosterau/*` is exempt, as it is there.
 version: 2
 updates:
   - package-ecosystem: "npm"
@@ -37,6 +49,8 @@ updates:
       default-days: 1
       exclude:
         - "@thomasfosterau/*"
+        # Exempt from pnpm's release-age hold too (the owner's call).
+        - "@enfect/*"
     groups:
       effect:
         applies-to: version-updates
@@ -66,7 +80,8 @@ updates:
           - "@typescript/native"
           - "typescript"
           - "@typescript/typescript6"
-          - "@mpsuesser/oxlint-plugin-effect"
+          - "@oxlint/*"
+          - "@enfect/oxlint"
         update-types:
           - "major"
           - "minor"
