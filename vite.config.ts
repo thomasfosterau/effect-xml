@@ -141,11 +141,39 @@ export default defineConfig({
       // pulls one token at a time so `suppressRawText` is set before the next
       // token is lexed. Each iteration depends on state the previous one
       // mutated, so no `Arr` combinator expresses them, and recursion would
-      // overflow on a long document. Every other loop in the file is gone.
+      // overflow on a long document. The other loops are the per-token walks
+      // of the stack of open elements and the formatting list (scope tests,
+      // implied end tags, formatting reconstruction) and the conversion of the
+      // finished tree, where an `Arr.findLast*` allocated an `Option` and a
+      // closure per call; the lenient fragment builder's two stack walks are
+      // the same. Together with the next override these made
+      // `Html.parseDocument` and `Html.parseFragment` 1.5–1.8 times as fast
+      // (`vp run bench`).
       {
-        files: ["src/Html/TreeConstruction.ts"],
+        files: ["src/Html/TreeConstruction.ts", "src/Html/TreeBuilder.ts"],
         rules: {
           "effect/imperative-loops": "off",
+        },
+      },
+      // Lookup tables keyed by tag names the parsers slice from their input:
+      // a property lookup must intern each fresh string first, a `Map` only
+      // hashes it (`flagsOf` as a record lookup was 7% of
+      // `Html.parseDocument`'s profile, as a `Map` lookup under 2%). The
+      // tables are private to the parse and never compared.
+      {
+        files: ["src/internal/tagSet.ts", "src/internal/nodes.ts"],
+        rules: {
+          "effect/avoid-native-object-helpers": "off",
+        },
+      },
+      // The HTML tree builders' per-token dispatch, for the reason given for
+      // the lexer below: `SaxEvent.$match` was a fifth of
+      // `Html.parseDocument`'s profile and an eighth of `Html.parseFragment`'s.
+      {
+        files: ["src/Html/TreeConstruction.ts", "src/Html/TreeBuilder.ts"],
+        rules: {
+          "effect/avoid-direct-tag-checks": "off",
+          "effect/prefer-match-over-switch": "off",
         },
       },
       // The two primitive loops everything else is built on. The stack-safe

@@ -12,31 +12,35 @@
  * Because it reuses the typed {@link XmlNode} DOM, results compose with the rest
  * of the library (queries, serialization, Schema validation).
  */
-import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as HashSet from "effect/HashSet";
-import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { resolveLimits, type Limits } from "../Limits.ts";
 import { depthExceeded } from "../internal/guard.ts";
 import * as Nodes from "../internal/nodes.ts";
 import { acceptAll } from "../internal/unwind.ts";
-import { SaxEvent } from "../Sax.ts";
-import type { XmlElement, XmlNode } from "../Xml/Node.ts";
+import type { SaxEvent } from "../Sax.ts";
+import { isIn, union } from "../internal/tagSet.ts";
+import type { QName } from "../Name.ts";
+import type { XmlAttribute, XmlNode } from "../Xml/Node.ts";
 import { voidElements } from "./Tokenizer.ts";
 
+/** An open element: its name, its parts so far, and the children it gathers. */
 interface Frame {
   readonly name: string;
-  readonly element: XmlElement;
+  readonly qname: QName;
+  readonly attributes: ReadonlyArray<XmlAttribute>;
   readonly children: Array<XmlNode>;
 }
 
-const matchSaxEvent = SaxEvent.$match;
+// The void elements as a lookup table (a `HashSet` hashes every name).
+const VOID = union(voidElements);
 
 class FragmentBuilder {
   private readonly stack: Array<Frame> = [];
   private readonly roots: Array<XmlNode> = [];
+  /** One {@link QName} per distinct (lowercased) name, for elements and attributes alike. */
+  private readonly names = Nodes.qnameCache();
 
   private readonly limits: Limits;
 
@@ -45,65 +49,78 @@ class FragmentBuilder {
   }
 
   private append(node: XmlNode): void {
-    const frame = this.stack.at(-1);
-    if (frame) frame.children.push(node);
+    const top = this.stack.at(-1);
+    if (top !== undefined) top.children.push(node);
     else this.roots.push(node);
   }
 
   private startElement(ev: Extract<SaxEvent, { _tag: "StartElement" }>): void {
     const name = ev.name.toLowerCase();
+    const qname = this.names(name, null);
     const attributes = ev.attributes.map((a) =>
-      Nodes.attribute(Nodes.qname(null, a.name.toLowerCase(), null), a.value),
+      Nodes.attribute(this.names(a.name.toLowerCase(), null), a.value),
     );
-    const element = Nodes.element(Nodes.qname(null, name, null), attributes, []);
-    if (ev.selfClosing || HashSet.has(voidElements, name)) {
-      this.append(element);
+    if (ev.selfClosing || isIn(VOID, name)) {
+      this.append(Nodes.element(qname, attributes, []));
       return;
     }
     const over = depthExceeded(this.limits, this.stack.length + 1, ev.span.start);
     if (over !== null) throw over;
-    this.stack.push({ name, element, children: [] });
+    this.stack.push({ name, qname, attributes, children: [] });
   }
 
   private endElement(rawName: string): void {
     const name = rawName.toLowerCase();
     // Auto-close everything above the nearest matching open element; a stray
     // end tag (no match) is ignored.
-    Option.map(
-      Arr.findLastIndex(this.stack, (frame) => frame.name === name),
-      (idx) => this.closeTo(idx),
-    );
+    const stack = this.stack;
+    let idx = stack.length - 1;
+    let frame = stack[idx];
+    while (frame !== undefined && frame.name !== name) frame = stack[--idx];
+    if (frame !== undefined) this.closeTo(idx);
   }
 
   /** Close every open element at or above `depth`, innermost first. */
   private closeTo(depth: number): void {
-    const closing = this.stack.splice(depth).toReversed();
-    closing.forEach((frame, i) => {
-      const finished = Nodes.element(frame.element.name, frame.element.attributes, frame.children);
-      // Each element closes into the one below it; the outermost into what stays open.
-      const parent = closing[i + 1];
-      if (parent === undefined) this.append(finished);
-      else parent.children.push(finished);
-    });
+    // Each element closes into the one below it; the outermost into what stays open.
+    const stack = this.stack;
+    while (stack.length > depth) {
+      const frame = stack.pop();
+      if (frame === undefined) return;
+      this.append(Nodes.element(frame.qname, frame.attributes, frame.children));
+    }
   }
 
+  /**
+   * Process one event. A `switch` on the tag rather than a `$match` table:
+   * this runs once per token, and `$match` is one dispatcher shared by every
+   * table in the program, so its calls go megamorphic (see `vite.config.ts`).
+   */
   accept(ev: SaxEvent): void {
-    return matchSaxEvent(ev, this.handlers);
+    switch (ev._tag) {
+      case "StartElement":
+        this.startElement(ev);
+        return;
+      case "EndElement":
+        this.endElement(ev.name);
+        return;
+      case "Text":
+        this.append(Nodes.text(ev.data));
+        return;
+      case "CData":
+        this.append(Nodes.cdata(ev.data));
+        return;
+      case "Comment":
+        this.append(Nodes.comment(ev.data));
+        return;
+      case "ProcessingInstruction":
+        this.append(Nodes.processingInstruction(ev.target, ev.data));
+        return;
+      case "Doctype":
+      case "XmlDeclaration":
+        return;
+    }
   }
-
-  /** What each event kind does; built once per builder, not per event. */
-  private readonly handlers = {
-    StartElement: (ev: Extract<SaxEvent, { _tag: "StartElement" }>): void => this.startElement(ev),
-    EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>): void => this.endElement(ev.name),
-    Text: (ev: Extract<SaxEvent, { _tag: "Text" }>): void => this.append(Nodes.text(ev.data)),
-    CData: (ev: Extract<SaxEvent, { _tag: "CData" }>): void => this.append(Nodes.cdata(ev.data)),
-    Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>): void =>
-      this.append(Nodes.comment(ev.data)),
-    ProcessingInstruction: (ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>): void =>
-      this.append(Nodes.processingInstruction(ev.target, ev.data)),
-    Doctype: (): void => undefined,
-    XmlDeclaration: (): void => undefined,
-  };
 
   finish(): ReadonlyArray<XmlNode> {
     this.closeTo(0);
