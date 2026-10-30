@@ -61,6 +61,34 @@ export const qname = (
   namespace: QName["namespace"],
 ): QName => construct(QName, { prefix, local, namespace });
 
+/**
+ * Unprefixed {@link QName}s shared per distinct local name and namespace: a
+ * builder hands every element (or attribute) spelled the same way the same
+ * instance, which is unobservable (a `QName` is immutable and compared by
+ * value) and saves an allocation per node. One cache per parse. Native `Map`s
+ * keyed by the (fresh, sliced) names, for the reason given in `tagSet.ts`.
+ */
+export type QNameCache = (local: string, namespace: QName["namespace"]) => QName;
+
+/** A fresh {@link QNameCache}. */
+export const qnameCache = (): QNameCache => {
+  const inNamespace = new Map<string, Map<string, QName>>();
+  const inNoNamespace = new Map<string, QName>();
+  return (local, namespace) => {
+    let table = inNoNamespace;
+    if (namespace !== null) {
+      const existing = inNamespace.get(namespace);
+      table = existing ?? new Map();
+      if (existing === undefined) inNamespace.set(namespace, table);
+    }
+    const hit = table.get(local);
+    if (hit !== undefined) return hit;
+    const made = qname(null, local, namespace);
+    table.set(local, made);
+    return made;
+  };
+};
+
 /** A {@link QName} split from a raw `prefix:local` name, in no namespace, as `QName.fromRaw` does. */
 export const qnameFromRaw = (raw: string): QName => {
   const idx = raw.indexOf(":");
