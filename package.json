@@ -55,6 +55,10 @@
     "./Xsd": {
       "types": "./dist/Xsd.d.ts",
       "default": "./dist/Xsd.js"
+    },
+    "./XQuery": {
+      "types": "./dist/XQuery.d.ts",
+      "default": "./dist/XQuery.js"
     }
   },
   "publishConfig": {

@@ -226,6 +226,18 @@ export default defineConfig({
           "effect/imperative-loops": "off",
         },
       },
+      // XDM node handles walk up the parent chain (document order, the root,
+      // the ancestors whose namespace declarations are in scope). A loop keeps
+      // that stack-safe for the same reason as the tree walk above: recursion
+      // once per ancestor would overflow on a deep enough document, and an
+      // `Arr.unfold` would allocate an `Option` and a tuple per level on the
+      // path every step of a path expression sorts by.
+      {
+        files: ["src/internal/xquery/node.ts"],
+        rules: {
+          "effect/imperative-loops": "off",
+        },
+      },
       // The per-token dispatch: the lexer's token → event step and its
       // guards, the limit check, and the SAX conversion run once per token.
       // `$match` and `$is` are each ONE function shared by every table and
@@ -385,6 +397,7 @@ export default defineConfig({
       Xml: "src/Xml/index.ts",
       Html: "src/Html/index.ts",
       Xsd: "src/Xsd/index.ts",
+      XQuery: "src/XQuery/index.ts",
     },
     format: "esm",
     platform: "neutral",

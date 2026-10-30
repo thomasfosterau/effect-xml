@@ -151,4 +151,6 @@ fallow.sarif
 # Generated API reference (`vp run docgen`). Never committed; the README is
 # the reference consumers read.
 docs/
+# QT3's shared source documents (vendored fixtures, see tests/fixtures/qt3/README.md).
+!tests/fixtures/qt3/docs/
 .vitest/
