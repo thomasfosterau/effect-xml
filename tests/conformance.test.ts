@@ -28,6 +28,8 @@ import {
   parseDat,
   serializeFragment,
   serializeTree,
+  serializeXmlFragment,
+  serializeXmlTree,
 } from "./support/html5lib.ts";
 
 /** Every `.dat` fixture's text, keyed by its path relative to this file. */
@@ -76,6 +78,23 @@ const parseCase = (t: Html5libTest): Effect.Effect<string, SaxError> => {
   });
 };
 
+/** A case's tree converted with `Html.toXml`, in html5lib notation: the same as {@link parseCase}'s. */
+const parseCaseAsXml = (t: Html5libTest): Effect.Effect<readonly [string, string], SaxError> => {
+  const scripting = t.scriptMode === "on";
+  return Option.match(t.fragmentContext, {
+    onNone: () =>
+      Html.parseDocument(t.data, { scripting }).pipe(
+        Effect.map((doc) => [serializeTree(doc), serializeXmlTree(Html.toXml(doc))] as const),
+      ),
+    onSome: (context) =>
+      Html.parseDocumentFragment(t.data, { context, scripting }).pipe(
+        Effect.map(
+          (nodes) => [serializeFragment(nodes), serializeXmlFragment(Html.toXml(nodes))] as const,
+        ),
+      ),
+  });
+};
+
 /** Our tree for a case in html5lib notation, or `THREW: <message>` when parsing failed. */
 const render = (t: Html5libTest): string =>
   Exit.match(Effect.runSyncExit(parseCase(t)), {
@@ -108,6 +127,17 @@ describe("html5lib tree-construction conformance", () => {
 
     expect(runnable).toBe(RUNNABLE);
     expect(passed).toBeGreaterThanOrEqual(BASELINE);
+  });
+
+  test("Html.toXml keeps every case's tree", () => {
+    const differing = Arr.filter(
+      Arr.flatMap(FILES, ({ content }) => runnableTests(content)),
+      (t) => {
+        const [html, xml] = Effect.runSync(parseCaseAsXml(t));
+        return html !== xml;
+      },
+    );
+    expect(Arr.map(differing, (t) => t.data)).toEqual([]);
   });
 
   test("never throws on any supported case", async () => {

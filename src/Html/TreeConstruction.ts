@@ -9,10 +9,12 @@
  * (SVG / MathML) content and quirks-mode detection. The html5lib
  * tree-construction suite is the conformance gate (`tests/conformance.test.ts`).
  *
- * Tree construction needs a *mutable* tree (the adoption agency algorithm
- * reparents and clones nodes), so we build an internal mutable DOM with parent
- * pointers and convert it to the immutable, Schema-backed {@link XmlNode} DOM at
- * the end. Output is therefore fully interoperable with the rest of the library.
+ * Tree construction needs *mutable* elements (the adoption agency algorithm
+ * and foster parenting reparent and clone them), so elements are built as an
+ * internal mutable tree with parent pointers and converted to the immutable
+ * {@link HtmlElement}s at the end. Everything else (attributes, text,
+ * comments, the DOCTYPE) is built as its final node straight away. The result
+ * is the HTML DOM of `./Node.ts`; `Html.toXml` converts it to the XML DOM.
  *
  * Remaining spec gaps are tracked in issue #12.
  */
@@ -31,12 +33,15 @@ import * as Nodes from "../internal/nodes.ts";
 import { acceptAll, tryDrive } from "../internal/unwind.ts";
 import { isFault, type LexEvent, Lexer } from "../internal/lexer.ts";
 import {
-  type XmlAttribute,
-  type XmlDoctype,
-  type XmlDocument,
-  XmlElement,
-  type XmlNode,
-} from "../Xml/Node.ts";
+  type HtmlAttribute,
+  type HtmlDoctype,
+  type HtmlDocument,
+  type HtmlDocumentMode,
+  type HtmlElement,
+  type HtmlNamespace,
+  type HtmlNode,
+  isHtmlElement,
+} from "./Node.ts";
 import { rawTextElements, rcdataElements, voidElements } from "./Tokenizer.ts";
 import {
   adjustForeignAttrs,
@@ -51,54 +56,33 @@ import { flagsOf, tagFlags, tagSet, union } from "../internal/tagSet.ts";
 // Mutable working DOM
 // -----------------------------------------------------------------------------
 
-interface MAttr {
-  name: string;
-  value: string;
-  prefix?: string | null;
-  ns?: string | null;
-}
-
+/**
+ * An element of the working tree. Its attributes and leaf children are
+ * already the final, immutable nodes (no algorithm step changes them; a text
+ * node that grows is replaced), so only elements are converted at the end.
+ */
 interface MElement {
-  readonly _t: "element";
+  readonly _tag: "MElement";
   name: string;
-  /** Element namespace (HTML by default; SVG/MathML for foreign content). */
+  /** Element namespace URI (HTML by default; SVG/MathML for foreign content). */
   ns: string;
   /** The tag-category flags of `name` (see `tagFlagsOf`), looked up once. */
   readonly flags: number;
-  attrs: Array<MAttr>;
+  attrs: Array<HtmlAttribute>;
   children: Array<MNode>;
   parent: MElement | null;
 }
 
-interface MText {
-  readonly _t: "text";
-  data: string;
-  parent: MElement | null;
-}
+/**
+ * A node of the working tree: a working element, or a final node, which has
+ * no parent pointer. During construction the final nodes are leaves (text and
+ * comments); {@link freeze} replaces each working element with its final
+ * {@link HtmlElement} in place.
+ */
+type MNode = MElement | HtmlNode;
 
-interface MComment {
-  readonly _t: "comment";
-  data: string;
-  parent: MElement | null;
-}
-
-interface MCData {
-  readonly _t: "cdata";
-  data: string;
-  parent: MElement | null;
-}
-
-interface MPi {
-  readonly _t: "pi";
-  target: string;
-  data: string;
-  parent: MElement | null;
-}
-
-type MNode = MElement | MText | MComment | MCData | MPi;
-
-const mkElement = (name: string, attrs: Array<MAttr>, ns: string = HTML_NS): MElement => ({
-  _t: "element",
+const mkElement = (name: string, attrs: Array<HtmlAttribute>, ns: string = HTML_NS): MElement => ({
+  _tag: "MElement",
   name,
   ns,
   flags: tagFlagsOf(name),
@@ -107,7 +91,9 @@ const mkElement = (name: string, attrs: Array<MAttr>, ns: string = HTML_NS): MEl
   parent: null,
 });
 
-const detach = (node: MNode): void => {
+const isElementNode = (node: MNode): node is MElement => node._tag === "MElement";
+
+const detach = (node: MElement): void => {
   const p = node.parent;
   if (p === null) return;
   const i = p.children.indexOf(node);
@@ -116,24 +102,19 @@ const detach = (node: MNode): void => {
 };
 
 const appendChild = (parent: MElement, node: MNode): void => {
-  detach(node);
-  node.parent = parent;
+  if (isElementNode(node)) {
+    detach(node);
+    node.parent = parent;
+  }
   parent.children.push(node);
 };
 
-/** Append character data to `parent`, merging with its last child when that is text. */
-const appendText = (parent: MElement, data: string): void => {
-  const last = parent.children.at(-1);
-  if (last !== undefined && last._t === "text") last.data += data;
-  else appendChild(parent, { _t: "text", data, parent: null });
-};
-
 const insertBefore = (parent: MElement, node: MNode, ref: MNode): void => {
-  detach(node);
+  if (isElementNode(node)) detach(node);
   const idx = parent.children.indexOf(ref);
   if (idx === -1) parent.children.push(node);
   else parent.children.splice(idx, 0, node);
-  node.parent = parent;
+  if (isElementNode(node)) node.parent = parent;
 };
 
 // -----------------------------------------------------------------------------
@@ -340,44 +321,103 @@ const BLOCK_INSERT_TAGS = tagSet(
 // insertions plus the ones that insert with their own handling.
 const CLOSES_P_TAGS = union(BLOCK_INSERT_TAGS, ["hr", "table", "xmp"]);
 
-// Public identifier prefixes that put the document into quirks mode.
+// Public identifier prefixes that put the document into quirks mode
+// (WHATWG "the initial insertion mode"), lowercased: the match is ASCII
+// case-insensitive.
 const QUIRKY_PUBLIC_PREFIXES = [
   "+//silmaril//dtd html pro v0r11 19970101//",
   "-//as//dtd html 3.0 aswedit + extensions//",
-  "-//ietf//dtd html 2.0",
-  "-//ietf//dtd html 3.0",
+  "-//advasoft ltd//dtd html 3.0 aswedit + extensions//",
+  "-//ietf//dtd html 2.0 level 1//",
+  "-//ietf//dtd html 2.0 level 2//",
+  "-//ietf//dtd html 2.0 strict level 1//",
+  "-//ietf//dtd html 2.0 strict level 2//",
+  "-//ietf//dtd html 2.0 strict//",
+  "-//ietf//dtd html 2.0//",
+  "-//ietf//dtd html 2.1e//",
+  "-//ietf//dtd html 3.0//",
+  "-//ietf//dtd html 3.2 final//",
+  "-//ietf//dtd html 3.2//",
+  "-//ietf//dtd html 3//",
+  "-//ietf//dtd html level 0//",
+  "-//ietf//dtd html level 1//",
+  "-//ietf//dtd html level 2//",
+  "-//ietf//dtd html level 3//",
+  "-//ietf//dtd html strict level 0//",
+  "-//ietf//dtd html strict level 1//",
+  "-//ietf//dtd html strict level 2//",
+  "-//ietf//dtd html strict level 3//",
+  "-//ietf//dtd html strict//",
+  "-//ietf//dtd html//",
+  "-//metrius//dtd metrius presentational//",
+  "-//microsoft//dtd internet explorer 2.0 html strict//",
+  "-//microsoft//dtd internet explorer 2.0 html//",
+  "-//microsoft//dtd internet explorer 2.0 tables//",
+  "-//microsoft//dtd internet explorer 3.0 html strict//",
+  "-//microsoft//dtd internet explorer 3.0 html//",
+  "-//microsoft//dtd internet explorer 3.0 tables//",
+  "-//netscape comm. corp.//dtd html//",
+  "-//netscape comm. corp.//dtd strict html//",
+  "-//o'reilly and associates//dtd html 2.0//",
+  "-//o'reilly and associates//dtd html extended 1.0//",
+  "-//o'reilly and associates//dtd html extended relaxed 1.0//",
+  "-//sq//dtd html 2.0 hotmetal + extensions//",
+  "-//softquad software//dtd hotmetal pro 6.0::19990601::extensions to html 4.0//",
+  "-//softquad//dtd hotmetal pro 4.0::19971010::extensions to html 4.0//",
+  "-//spyglass//dtd html 2.0 extended//",
+  "-//sun microsystems corp.//dtd hotjava html//",
+  "-//sun microsystems corp.//dtd hotjava strict html//",
   "-//w3c//dtd html 3 1995-03-24//",
-  "-//w3c//dtd html 3.2",
-  "-//w3c//dtd html 4.0",
-  "-//w3c//dtd html experimental",
-  "-//w3o//dtd w3 html 3.0",
-  "-//webtechs//dtd mozilla html",
+  "-//w3c//dtd html 3.2 draft//",
+  "-//w3c//dtd html 3.2 final//",
+  "-//w3c//dtd html 3.2//",
+  "-//w3c//dtd html 3.2s draft//",
+  "-//w3c//dtd html 4.0 frameset//",
+  "-//w3c//dtd html 4.0 transitional//",
+  "-//w3c//dtd html experimental 19960712//",
+  "-//w3c//dtd html experimental 970421//",
+  "-//w3c//dtd w3 html//",
+  "-//w3o//dtd w3 html 3.0//",
+  "-//webtechs//dtd mozilla html 2.0//",
+  "-//webtechs//dtd mozilla html//",
 ];
 
-/** Whether a DOCTYPE puts the document into (full) quirks mode. */
-const computeQuirks = (name: string, publicId: string | null, systemId: string | null): boolean => {
-  if (name.toLowerCase() !== "html") return true;
+const HTML401_FRAMESET = "-//w3c//dtd html 4.01 frameset//";
+const HTML401_TRANSITIONAL = "-//w3c//dtd html 4.01 transitional//";
+
+/**
+ * The document mode a DOCTYPE sets (WHATWG "the initial insertion mode").
+ * The tokenizer's force-quirks flag is not modelled: a DOCTYPE without a
+ * name is quirks through its name.
+ */
+const documentModeOf = (
+  name: string,
+  publicId: string | null,
+  systemId: string | null,
+): HtmlDocumentMode => {
+  if (name.toLowerCase() !== "html") return "quirks";
   const p = publicId === null ? null : publicId.toLowerCase();
   const s = systemId === null ? null : systemId.toLowerCase();
   if (
     p === "-//w3o//dtd w3 html strict 3.0//en//" ||
     p === "-/w3c/dtd html 4.0 transitional/en" ||
-    p === "html"
+    p === "html" ||
+    s === "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd"
   ) {
-    return true;
+    return "quirks";
   }
-  if (s === "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd") return true;
-  if (p !== null) {
-    if (Arr.some(QUIRKY_PUBLIC_PREFIXES, (prefix) => p.startsWith(prefix))) return true;
-    if (
-      s === null &&
-      (p.startsWith("-//w3c//dtd html 4.01 frameset//") ||
-        p.startsWith("-//w3c//dtd html 4.01 transitional//"))
-    ) {
-      return true;
-    }
+  if (p === null) return "no-quirks";
+  if (Arr.some(QUIRKY_PUBLIC_PREFIXES, (prefix) => p.startsWith(prefix))) return "quirks";
+  const html401 = p.startsWith(HTML401_FRAMESET) || p.startsWith(HTML401_TRANSITIONAL);
+  if (html401 && s === null) return "quirks";
+  if (
+    html401 ||
+    p.startsWith("-//w3c//dtd xhtml 1.0 frameset//") ||
+    p.startsWith("-//w3c//dtd xhtml 1.0 transitional//")
+  ) {
+    return "limited-quirks";
   }
-  return false;
+  return "no-quirks";
 };
 
 // Scope stop sets.
@@ -492,8 +532,6 @@ const MARKER: Marker = { marker: true };
 type FormattingEntry = MElement | Marker;
 const isMarker = (entry: FormattingEntry): entry is Marker => "marker" in entry;
 const isFormattingElement = (entry: FormattingEntry): entry is MElement => !isMarker(entry);
-
-const isElementNode = (node: MNode): node is MElement => node._t === "element";
 
 const isHtmlTemplate = (el: MElement): boolean => el.name === "template" && el.ns === HTML_NS;
 
@@ -724,7 +762,7 @@ class HtmlTreeBuilder {
   /** The stack of template insertion modes (one entry per open <template>). */
   private readonly templateModes: Array<Mode> = [];
   private readonly topLevel: Array<MNode> = [];
-  private doctype: XmlDoctype | null = null;
+  private doctype: HtmlDoctype | null = null;
   private htmlEl: MElement | null = null;
   private headEl: MElement | null = null;
   private bodyEl: MElement | null = null;
@@ -738,8 +776,11 @@ class HtmlTreeBuilder {
   private ignoreLeadingNewline = false;
   /** The form element pointer (at most one open form outside templates). */
   private formEl: MElement | null = null;
-  /** Quirks mode (no DOCTYPE, or a quirky one): affects e.g. <table> closing <p>. */
-  private quirks = true;
+  /**
+   * The document mode: quirks with no DOCTYPE (or a legacy one), which
+   * affects e.g. whether `<table>` closes a `<p>`.
+   */
+  private documentMode: HtmlDocumentMode = "quirks";
   /**
    * Whether a `<selectedcontent>` was ever inserted: only then does the
    * end-of-input walk that fills them have anything to do.
@@ -775,7 +816,7 @@ class HtmlTreeBuilder {
     this.topLevel.push(root);
     this.open.push(root);
     this.htmlEl = root;
-    this.quirks = false;
+    this.documentMode = "no-quirks";
     if (isHtmlTemplate(context)) this.templateModes.push("inTemplate");
     this.resetInsertionMode();
     if (this.mode !== "beforeHead") this.bodyEl = root;
@@ -851,8 +892,7 @@ class HtmlTreeBuilder {
     }
     const place = this.appropriatePlace();
     if (place.kind === "topLevel") {
-      detach(node);
-      node.parent = null;
+      if (isElementNode(node)) detach(node);
       this.topLevel.push(node);
     } else if (place.kind === "append") {
       appendChild(place.parent, node);
@@ -908,7 +948,7 @@ class HtmlTreeBuilder {
     return Option.fromNullishOr(RESET_MODES[name]);
   }
 
-  private insertElement(name: string, attrs: Array<MAttr>, ns: string = HTML_NS): MElement {
+  private insertElement(name: string, attrs: Array<HtmlAttribute>, ns: string = HTML_NS): MElement {
     const el = mkElement(name, attrs, ns);
     if (name === "selectedcontent") this.hasSelectedContent = true;
     this.insert(el);
@@ -1006,10 +1046,7 @@ class HtmlTreeBuilder {
 
   /** Insert (and push) a fresh HTML element with a copy of `el`'s name and attributes. */
   private insertClone(el: MElement): MElement {
-    const clone = mkElement(
-      el.name,
-      el.attrs.map((a) => ({ ...a })),
-    );
+    const clone = mkElement(el.name, el.attrs.slice());
     this.insert(clone);
     this.pushOpen(clone);
     return clone;
@@ -1056,13 +1093,12 @@ class HtmlTreeBuilder {
 
   private acceptDoctype(ev: Extract<TreeEvent, { _tag: "Doctype" }>): void {
     if (this.mode !== "initial") return;
-    this.quirks = computeQuirks(ev.name, ev.publicId, ev.systemId);
-    this.doctype = Nodes.doctype(
+    this.documentMode = documentModeOf(ev.name, ev.publicId, ev.systemId);
+    this.doctype = Nodes.htmlDoctype(
       // The HTML parser lowercases the DOCTYPE name.
       ev.name.toLowerCase(),
-      ev.publicId,
-      ev.systemId,
-      ev.internalSubset,
+      ev.publicId ?? "",
+      ev.systemId ?? "",
     );
     this.mode = "beforeHtml";
   }
@@ -1070,22 +1106,24 @@ class HtmlTreeBuilder {
   private acceptComment(ev: Extract<TreeEvent, { _tag: "Comment" }>): void {
     if (this.mode === "afterAfterBody" || this.mode === "afterAfterFrameset") {
       // After </html>: a comment belongs at the document level.
-      this.topLevel.push({ _t: "comment", data: ev.data, parent: null });
+      this.topLevel.push(Nodes.htmlComment(ev.data));
     } else if (
       (this.mode === "afterBody" || this.mode === "afterFrameset") &&
       this.htmlEl !== null
     ) {
       // After </body>/frameset: a comment is the html element's last child.
-      appendChild(this.htmlEl, { _t: "comment", data: ev.data, parent: null });
+      appendChild(this.htmlEl, Nodes.htmlComment(ev.data));
     } else {
-      this.insert({ _t: "comment", data: ev.data, parent: null });
+      this.insert(Nodes.htmlComment(ev.data));
     }
   }
 
   private acceptProcessingInstruction(
     ev: Extract<TreeEvent, { _tag: "ProcessingInstruction" }>,
   ): void {
-    this.insert({ _t: "pi", target: ev.target, data: ev.data, parent: null });
+    // A bogus comment, as the HTML tokenizer makes of `<?target data?>`
+    // (only an XML-mode event stream has processing instructions).
+    this.insert(Nodes.htmlComment(`?${ev.target}${ev.data === "" ? "" : " " + ev.data}?`));
   }
 
   private acceptCData(ev: Extract<TreeEvent, { _tag: "CData" }>): void {
@@ -1095,7 +1133,7 @@ class HtmlTreeBuilder {
       if (Str.isNonEmpty(ev.data)) this.insertText(ev.data);
     } else {
       // HTML content: `<![CDATA[…]]>` is a bogus comment.
-      this.insert({ _t: "comment", data: "[CDATA[" + ev.data + "]]", parent: null });
+      this.insert(Nodes.htmlComment("[CDATA[" + ev.data + "]]"));
     }
   }
 
@@ -1107,10 +1145,9 @@ class HtmlTreeBuilder {
 
   private acceptStartElement(ev: Extract<TreeEvent, { _tag: "StartElement" }>): void {
     const name = ev.name.toLowerCase();
-    const attrs = ev.attributes.map((a) => ({
-      name: a.name.toLowerCase(),
-      value: a.value,
-    }));
+    const attrs = ev.attributes.map((a) =>
+      Nodes.htmlAttribute(a.name.toLowerCase(), a.value, null, null),
+    );
     this.selfClosing = ev.selfClosing;
     const node = this.adjustedCurrent;
     if (node !== null && this.usesForeignRules(node, "start", name)) {
@@ -1185,7 +1222,7 @@ class HtmlTreeBuilder {
   }
 
   /** Insert a foreign (SVG/MathML) element in the namespace of the current node. */
-  private insertForeignElement(name: string, attrs: Array<MAttr>, ns: string): void {
+  private insertForeignElement(name: string, attrs: Array<HtmlAttribute>, ns: string): void {
     const tag = ns === SVG_NS ? svgTagName(name) : name;
     this.insertElement(tag, adjustForeignAttrs(attrs, ns), ns);
     if (this.selfClosing) this.open.pop();
@@ -1197,7 +1234,7 @@ class HtmlTreeBuilder {
     this.insertText(data.replaceAll("\u0000", "\uFFFD"));
   }
 
-  private foreignStart(current: MElement, name: string, attrs: Array<MAttr>): void {
+  private foreignStart(current: MElement, name: string, attrs: Array<HtmlAttribute>): void {
     const isFontBreakout =
       name === "font" &&
       attrs.some((a) => a.name === "color" || a.name === "face" || a.name === "size");
@@ -1370,7 +1407,7 @@ class HtmlTreeBuilder {
     // before the head; the rest opens the body.
     const lead = /^[\t\n\f\r ]+/.exec(data);
     const keepLead = inHead || this.mode === "afterHead";
-    if (lead && keepLead) this.insert({ _t: "text", data: lead[0], parent: null });
+    if (lead && keepLead) this.insert(Nodes.htmlText(lead[0]));
     this.ensureBody();
     this.onFlowText(lead ? data.slice(lead[0].length) : data);
   }
@@ -1379,12 +1416,12 @@ class HtmlTreeBuilder {
   private placeSpineWhitespace(data: string, inHead: boolean): void {
     if (inHead || this.mode === "afterHead") {
       // In <head>, or inter-section whitespace after </head> (kept in <html>).
-      this.insert({ _t: "text", data, parent: null });
+      this.insert(Nodes.htmlText(data));
     } else if (
       this.bodyEl !== null &&
       (this.mode === "afterBody" || this.mode === "afterAfterBody")
     ) {
-      appendChild(this.bodyEl, { _t: "text", data, parent: null });
+      appendChild(this.bodyEl, Nodes.htmlText(data));
     }
   }
 
@@ -1434,30 +1471,29 @@ class HtmlTreeBuilder {
   private insertText(data: string): void {
     const target = this.current;
     if (this.appendsTo(target)) {
-      appendText(target, data);
+      Nodes.appendHtmlText(target.children, data);
       return;
     }
     const place = this.appropriatePlace();
     if (place.kind === "topLevel") {
-      const last = this.topLevel.at(-1);
-      if (last !== undefined && last._t === "text") last.data += data;
-      else this.topLevel.push({ _t: "text", data, parent: null });
+      Nodes.appendHtmlText(this.topLevel, data);
       return;
     }
     const { parent } = place;
     if (place.kind === "append") {
-      appendText(parent, data);
+      Nodes.appendHtmlText(parent.children, data);
       return;
     }
     const idx = parent.children.indexOf(place.before);
     const prev = idx > 0 ? parent.children[idx - 1] : undefined;
-    if (prev !== undefined && prev._t === "text") prev.data += data;
-    else insertBefore(parent, { _t: "text", data, parent: null }, place.before);
+    if (prev !== undefined && prev._tag === "HtmlText") {
+      parent.children[idx - 1] = Nodes.htmlText(prev.data + data);
+    } else insertBefore(parent, Nodes.htmlText(data), place.before);
   }
 
   // --- start tags ----------------------------------------------------------
 
-  private onStart(name: string, attrs: Array<MAttr>): void {
+  private onStart(name: string, attrs: Array<HtmlAttribute>): void {
     // The "ignore next newline" flag only applies to the immediately following
     // character token; any tag clears it (it is re-armed below for pre/listing).
     this.ignoreLeadingNewline = false;
@@ -1562,7 +1598,7 @@ class HtmlTreeBuilder {
    * stack around the insertion and removed again; `popAfter` pops the inserted
    * (void) element immediately.
    */
-  private insertInHead(name: string, attrs: Array<MAttr>, popAfter: boolean): void {
+  private insertInHead(name: string, attrs: Array<HtmlAttribute>, popAfter: boolean): void {
     const head = this.headEl;
     const reopenHead = this.mode === "afterHead" && head !== null && !this.open.includes(head);
     if (reopenHead) this.open.push(head);
@@ -1575,7 +1611,7 @@ class HtmlTreeBuilder {
   }
 
   /** Start-tag handlers per insertion mode. */
-  private readonly startHandlers: ModeTable<(name: string, attrs: Array<MAttr>) => void> = {
+  private readonly startHandlers: ModeTable<(name: string, attrs: Array<HtmlAttribute>) => void> = {
     initial: (name, attrs) => this.inBodyStart(name, attrs),
     beforeHtml: (name, attrs) => this.inBodyStart(name, attrs),
     beforeHead: (name, attrs) => this.inBodyStart(name, attrs),
@@ -1600,7 +1636,7 @@ class HtmlTreeBuilder {
     afterAfterBody: (name, attrs) => this.inBodyStart(name, attrs),
   };
 
-  private dispatchStart(name: string, attrs: Array<MAttr>): void {
+  private dispatchStart(name: string, attrs: Array<HtmlAttribute>): void {
     this.startHandlers[this.mode](name, attrs);
   }
 
@@ -1610,14 +1646,14 @@ class HtmlTreeBuilder {
     this.mode = m;
   }
 
-  private inTemplateStart(name: string, attrs: Array<MAttr>): void {
+  private inTemplateStart(name: string, attrs: Array<HtmlAttribute>): void {
     // Head-content tags (base/link/meta/script/style/title/...) are handled
     // earlier in onStart before dispatch, so they never reach here.
     this.switchTemplateMode(templateModeForStart(name));
     this.dispatchStart(name, attrs);
   }
 
-  private inHeadNoscriptStart(name: string, attrs: Array<MAttr>): void {
+  private inHeadNoscriptStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (
       name === "basefont" ||
       name === "bgsound" ||
@@ -1651,7 +1687,7 @@ class HtmlTreeBuilder {
 
   // --- frameset ------------------------------------------------------------
 
-  private startFrameset(attrs: Array<MAttr>): void {
+  private startFrameset(attrs: Array<HtmlAttribute>): void {
     // Before/after head with no body yet: this is a frameset document.
     if (
       this.bodyEl === null &&
@@ -1684,7 +1720,7 @@ class HtmlTreeBuilder {
     // else: ignore the token.
   }
 
-  private inFramesetStart(name: string, attrs: Array<MAttr>): void {
+  private inFramesetStart(name: string, attrs: Array<HtmlAttribute>): void {
     // noframes is routed through the in-head handling earlier in onStart; other
     // tags are ignored.
     if (name === "frameset") {
@@ -1715,7 +1751,7 @@ class HtmlTreeBuilder {
   }
 
   /** An `<optgroup>` start tag: closes an open option / optgroup first. */
-  private insertOptgroup(attrs: Array<MAttr>): void {
+  private insertOptgroup(attrs: Array<HtmlAttribute>): void {
     if (this.current?.name === "option") this.open.pop();
     if (this.current?.name === "optgroup") this.open.pop();
     this.reconstructFormatting();
@@ -1726,14 +1762,14 @@ class HtmlTreeBuilder {
    * A nested <select> acts as </select>; an <input> / <textarea> closes the
    * select and is reprocessed. Ignored when no select is in scope.
    */
-  private leaveSelectFor(name: string, attrs: Array<MAttr>): void {
+  private leaveSelectFor(name: string, attrs: Array<HtmlAttribute>): void {
     if (!this.hasSelectInScope()) return;
     this.popUntilIncluding("select");
     this.resetInsertionMode();
     if (name !== "select") this.dispatchStart(name, attrs);
   }
 
-  private inSelectStart(name: string, attrs: Array<MAttr>): void {
+  private inSelectStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (name === "option") {
       if (this.current?.name === "option") this.open.pop();
       this.reconstructFormatting();
@@ -1759,7 +1795,7 @@ class HtmlTreeBuilder {
     this.inBodyStart(name, attrs);
   }
 
-  private inSelectInTableStart(name: string, attrs: Array<MAttr>): void {
+  private inSelectInTableStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (isTag(SELECT_TABLE_TAGS, name)) {
       this.popUntilIncluding("select");
       this.resetInsertionMode();
@@ -1770,14 +1806,14 @@ class HtmlTreeBuilder {
   }
 
   /** Process a start tag with the in-body rules but foster-parented (the "anything else in table" case). */
-  private fosterInBody(name: string, attrs: Array<MAttr>): void {
+  private fosterInBody(name: string, attrs: Array<HtmlAttribute>): void {
     this.foster = true;
     this.inBodyStart(name, attrs);
     this.foster = false;
   }
 
   /** The table-structure start tags in "in table" (caption, colgroup, col, row groups, rows, cells); false for anything else. */
-  private tableStructureStart(name: string, attrs: Array<MAttr>): boolean {
+  private tableStructureStart(name: string, attrs: Array<HtmlAttribute>): boolean {
     if (name === "caption") {
       this.clearStackBackTo(TABLE_CONTEXT);
       this.afe.push(MARKER);
@@ -1814,7 +1850,7 @@ class HtmlTreeBuilder {
     return false;
   }
 
-  private inTableStart(name: string, attrs: Array<MAttr>): void {
+  private inTableStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (this.tableStructureStart(name, attrs)) return;
     if (name === "table") {
       // Nested <table>: act as if </table> then reprocess.
@@ -1848,7 +1884,7 @@ class HtmlTreeBuilder {
     this.fosterInBody(name, attrs);
   }
 
-  private inTableBodyStart(name: string, attrs: Array<MAttr>): void {
+  private inTableBodyStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (name === "tr") {
       this.clearStackBackTo(TABLE_BODY_CONTEXT);
       this.insertElement("tr", attrs);
@@ -1881,7 +1917,7 @@ class HtmlTreeBuilder {
     this.inTableStart(name, attrs);
   }
 
-  private inRowStart(name: string, attrs: Array<MAttr>): void {
+  private inRowStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (name === "td" || name === "th") {
       this.clearStackBackTo(TABLE_ROW_CONTEXT);
       this.insertElement(name, attrs);
@@ -1909,7 +1945,7 @@ class HtmlTreeBuilder {
     this.inTableStart(name, attrs);
   }
 
-  private inCellStart(name: string, attrs: Array<MAttr>): void {
+  private inCellStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (isTag(STRAY_TABLE_TAGS, name)) {
       if (this.hasInScope("td", TABLE_SCOPE) || this.hasInScope("th", TABLE_SCOPE)) {
         this.closeCell();
@@ -1920,7 +1956,7 @@ class HtmlTreeBuilder {
     return this.inBodyStart(name, attrs);
   }
 
-  private inCaptionStart(name: string, attrs: Array<MAttr>): void {
+  private inCaptionStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (isTag(STRAY_TABLE_TAGS, name) || name === "table") {
       if (this.hasInScope("caption", TABLE_SCOPE)) {
         this.generateImpliedEndTags();
@@ -1934,7 +1970,7 @@ class HtmlTreeBuilder {
     return this.inBodyStart(name, attrs);
   }
 
-  private inColumnGroupStart(name: string, attrs: Array<MAttr>): void {
+  private inColumnGroupStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (name === "col") {
       this.insertElement("col", attrs);
       this.open.pop();
@@ -1967,7 +2003,7 @@ class HtmlTreeBuilder {
     popThrough(this.afe, isMarker);
   }
 
-  private inBodyStart(name: string, attrs: Array<MAttr>): void {
+  private inBodyStart(name: string, attrs: Array<HtmlAttribute>): void {
     // <image> is a willful violation: it is treated as <img>.
     if (name === "image") name = "img";
 
@@ -1986,7 +2022,7 @@ class HtmlTreeBuilder {
 
     if (isTag(CLOSES_P, name) && this.hasInScope("p", BUTTON_SCOPE)) {
       // In quirks mode <table> does not close an open <p>.
-      if (name !== "table" || !this.quirks) this.closeP();
+      if (name !== "table" || this.documentMode !== "quirks") this.closeP();
     }
 
     // <pre>/<listing>/<textarea> swallow an immediately-following newline.
@@ -2671,10 +2707,7 @@ class HtmlTreeBuilder {
           continue;
         }
         // Create a clone, replace in afe and open
-        const clone = mkElement(
-          node.name,
-          node.attrs.map((a) => ({ ...a })),
-        );
+        const clone = mkElement(node.name, node.attrs.slice());
         this.afe[afeIdx] = clone;
         this.open[nodeIdx] = clone;
         node = clone;
@@ -2688,12 +2721,10 @@ class HtmlTreeBuilder {
       // ancestor (foster-parented when the ancestor is a table section).
       this.fosterOrAppend(commonAncestor, lastNode);
       // Step 4.13: clone formatting element
-      const feClone = mkElement(
-        formattingElement.name,
-        formattingElement.attrs.map((a) => ({ ...a })),
-      );
+      const feClone = mkElement(formattingElement.name, formattingElement.attrs.slice());
       // Step 4.14: move furthestBlock children to clone
-      Arr.forEach(Arr.copy(furthestBlock.children), (child) => appendChild(feClone, child));
+      adoptChildren(feClone, furthestBlock.children);
+      furthestBlock.children = [];
       // Step 4.15: append clone to furthestBlock
       appendChild(furthestBlock, feClone);
       // Step 4.16/4.17: fix active formatting list
@@ -2777,16 +2808,16 @@ class HtmlTreeBuilder {
   }
 
   /** The fragment case's result: the root element's children (WHATWG step 15). */
-  finishFragment(): ReadonlyArray<XmlNode> {
+  finishFragment(): ReadonlyArray<HtmlNode> {
     this.closeAtEof();
     this.populateSelectedContent();
     const root = this.htmlEl;
     if (root === null) return [];
-    const built = new Freezer().node(root);
-    return built instanceof XmlElement ? built.children : [];
+    const built = freeze(root);
+    return isHtmlElement(built) ? built.children : [];
   }
 
-  finish(): XmlDocument {
+  finish(): HtmlDocument {
     this.closeAtEof();
 
     // Ensure a minimal valid document exists (but never add a <body> to a
@@ -2801,9 +2832,7 @@ class HtmlTreeBuilder {
 
     this.populateSelectedContent();
 
-    const freezer = new Freezer();
-    const children: Array<XmlNode> = this.topLevel.map((node) => freezer.node(node));
-    return Nodes.document(null, this.doctype, children);
+    return Nodes.htmlDocument(this.documentMode, this.doctype, Arr.map(this.topLevel, freeze));
   }
 }
 
@@ -2811,105 +2840,85 @@ class HtmlTreeBuilder {
 // Helpers
 // -----------------------------------------------------------------------------
 
-const sameAttrs = (a: ReadonlyArray<MAttr>, b: ReadonlyArray<MAttr>): boolean =>
+const sameAttrs = (a: ReadonlyArray<HtmlAttribute>, b: ReadonlyArray<HtmlAttribute>): boolean =>
   a.length === b.length &&
   Arr.every(a, (x) => {
     const y = b.find((z) => z.name === x.name);
     return y !== undefined && y.value === x.value;
   });
 
-const mergeAttrs = (el: MElement, attrs: ReadonlyArray<MAttr>): void =>
+const mergeAttrs = (el: MElement, attrs: ReadonlyArray<HtmlAttribute>): void =>
   Arr.forEach(attrs, (a) => {
-    if (!el.attrs.some((x) => x.name === a.name)) el.attrs.push({ ...a });
+    if (!el.attrs.some((x) => x.name === a.name)) el.attrs.push(a);
   });
 
 /** Make `children` the children of `parent`. */
 const adoptChildren = (parent: MElement, children: Array<MNode>): void => {
   parent.children = children;
-  Arr.forEach(children, (child) => {
-    child.parent = parent;
-  });
+  for (const child of children) if (isElementNode(child)) child.parent = parent;
 };
 
-// The mutable DOM's own `_t` discriminant, checked directly: these two run
-// once per node of every document, where a compiled `Match` costs a third of
-// the parse.
+/** A deep copy of an element; leaves are immutable, so the copy shares them. */
 const cloneMNode = (node: MNode): MNode => {
-  if (node._t === "element") {
-    const el = mkElement(
-      node.name,
-      node.attrs.map((a) => ({ ...a })),
-      node.ns,
-    );
-    adoptChildren(el, Arr.map(node.children, cloneMNode));
-    return el;
-  }
-  if (node._t === "pi") return { _t: "pi", target: node.target, data: node.data, parent: null };
-  return { _t: node._t, data: node.data, parent: null };
+  if (!isElementNode(node)) return node;
+  const el = mkElement(node.name, node.attrs.slice(), node.ns);
+  adoptChildren(el, Arr.map(node.children, cloneMNode));
+  return el;
 };
 
-const toXmlLeaf = (node: Exclude<MNode, MElement>): XmlNode => {
-  if (node._t === "text") return Nodes.text(node.data);
-  if (node._t === "comment") return Nodes.comment(node.data);
-  if (node._t === "cdata") return Nodes.cdata(node.data);
-  return Nodes.processingInstruction(node.target, node.data);
-};
+/** The {@link HtmlNamespace} of a namespace URI. */
+const namespaceOf = (ns: string): HtmlNamespace =>
+  ns === HTML_NS ? "html" : ns === SVG_NS ? "svg" : "mathml";
 
 /**
- * The conversion to the immutable DOM. Elements of one name in one namespace
- * share a {@link QName}, as do unprefixed attributes (see `Nodes.QNameCache`).
+ * The final element for `el`, given its children's final nodes. An HTML
+ * `<template>`'s children are its template contents.
  */
-class Freezer {
-  private readonly names = Nodes.qnameCache();
+const freezeElement = (el: MElement, children: ReadonlyArray<HtmlNode>): HtmlElement =>
+  isHtmlTemplate(el)
+    ? Nodes.htmlElement("html", el.name, el.attrs, [], Nodes.htmlTemplateContent(children))
+    : Nodes.htmlElement(namespaceOf(el.ns), el.name, el.attrs, children, null);
 
-  private attribute(a: MAttr): XmlAttribute {
-    const prefix = a.prefix ?? null;
-    const ns = a.ns ?? null;
-    return Nodes.attribute(
-      prefix === null ? this.names(a.name, ns) : Nodes.qname(prefix, a.name, ns),
-      a.value,
-    );
-  }
-
-  private element(node: MElement, children: ReadonlyArray<XmlNode>): XmlElement {
-    return Nodes.element(
-      this.names(node.name, node.ns),
-      node.attrs.map((a) => this.attribute(a)),
-      children,
-    );
-  }
-
-  /** Convert a node, iteratively so deep trees can't overflow the stack. */
-  node(root: MNode): XmlNode {
-    if (root._t !== "element") return toXmlLeaf(root);
-    // Post-order: an element is built once all of its children have been.
-    // `elements[i]` is converting into `built[i]`; the last of each is current.
-    const elements: Array<MElement> = [root];
-    const built: Array<Array<XmlNode>> = [[]];
-    for (
-      let el = elements.at(-1), children = built.at(-1);
-      el !== undefined && children !== undefined;
-      el = elements.at(-1), children = built.at(-1)
-    ) {
-      const next = el.children[children.length];
-      if (next === undefined) {
-        const done = this.element(el, children);
-        elements.pop();
-        built.pop();
-        const parent = built.at(-1);
-        if (parent === undefined) return done;
-        parent.push(done);
-      } else if (next._t === "element") {
-        elements.push(next);
-        built.push([]);
-      } else {
-        children.push(toXmlLeaf(next));
-      }
+/**
+ * The final node for a working-tree node: leaves are final already; an
+ * element is built post-order, iteratively so a deep tree can't overflow the
+ * stack. Each element's children array becomes its final node's: the walk
+ * replaces the working elements in it with their final nodes, so it allocates
+ * nothing but the elements themselves. Attribute arrays are handed over as
+ * they are (nothing mutates them once parsing is done). The working tree is
+ * spent afterwards.
+ */
+const freeze = (root: MNode): HtmlNode => {
+  if (!isElementNode(root)) return root;
+  // The elements being built, outermost first, and where each is in its children.
+  const elements: Array<MElement> = [root];
+  const positions: Array<number> = [0];
+  for (let depth = 0; depth >= 0;) {
+    const el = elements[depth];
+    if (el === undefined) break;
+    const children = el.children;
+    let i = positions[depth] ?? 0;
+    let next = children[i];
+    while (next !== undefined && !isElementNode(next)) next = children[++i];
+    if (next !== undefined) {
+      positions[depth] = i;
+      elements[++depth] = next;
+      positions[depth] = 0;
+      continue;
     }
-    // The loop returns when it closes the root.
-    return this.element(root, []);
+    // SAFETY: the walk above found no working element left in `children`:
+    // each was replaced by its final node when it was done (below).
+    const done = freezeElement(el, children as ReadonlyArray<HtmlNode>);
+    depth--;
+    const parent = elements[depth];
+    if (parent === undefined) return done;
+    const at = positions[depth] ?? 0;
+    parent.children[at] = done;
+    positions[depth] = at + 1;
   }
-}
+  // Unreachable: the loop returns when it finishes the root.
+  return freezeElement(root, []);
+};
 
 // -----------------------------------------------------------------------------
 // Public driver
@@ -2929,7 +2938,7 @@ export const buildDocument = <E, R>(
     readonly limits?: Partial<Limits> | undefined;
     readonly scripting?: boolean | undefined;
   },
-): Effect.Effect<XmlDocument, SaxError | E, R> =>
+): Effect.Effect<HtmlDocument, SaxError | E, R> =>
   Effect.gen(function* () {
     const builder = new HtmlTreeBuilder({
       limits: resolveLimits(options?.limits),
@@ -3016,7 +3025,7 @@ const runCoupled = <A>(
 export const buildDocumentString = (
   input: string,
   options?: StringBuildOptions,
-): Effect.Effect<XmlDocument, SaxError> =>
+): Effect.Effect<HtmlDocument, SaxError> =>
   runCoupled(input, options, undefined, (builder) => builder.finish());
 
 /**
@@ -3031,5 +3040,5 @@ export const buildFragmentString = (
   input: string,
   context: FragmentContext,
   options?: StringBuildOptions,
-): Effect.Effect<ReadonlyArray<XmlNode>, SaxError> =>
+): Effect.Effect<ReadonlyArray<HtmlNode>, SaxError> =>
   runCoupled(input, options, context, (builder) => builder.finishFragment());

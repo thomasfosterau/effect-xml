@@ -9,11 +9,21 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Hash from "effect/Hash";
+import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Html, Sax, Xml } from "../src/index.ts";
+import {
+  HtmlAttribute,
+  HtmlComment,
+  HtmlDoctype,
+  HtmlDocument,
+  HtmlElement,
+  HtmlTemplateContent,
+  HtmlText,
+} from "../src/Html/Node.ts";
 import { QName } from "../src/Name.ts";
 import {
   XmlAttribute,
@@ -38,48 +48,68 @@ type Instance =
   | XmlElement
   | XmlDeclaration
   | XmlDoctype
-  | XmlDocument;
+  | XmlDocument
+  | HtmlAttribute
+  | HtmlText
+  | HtmlComment
+  | HtmlTemplateContent
+  | HtmlElement
+  | HtmlDoctype
+  | HtmlDocument;
+
+/** A class the parsers build, constructed (and validated) from its own fields. */
+type InstanceClass = new (fields: Instance) => Instance;
 
 /** The same instance built with `new` (and so by the class's own schema). */
 const rebuild = (node: Instance): Instance => {
-  if (node instanceof QName) return new QName({ ...node });
-  if (node instanceof XmlAttribute) return new XmlAttribute({ ...node });
-  if (node instanceof XmlText) return new XmlText({ ...node });
-  if (node instanceof XmlCData) return new XmlCData({ ...node });
-  if (node instanceof XmlComment) return new XmlComment({ ...node });
-  if (node instanceof XmlProcessingInstruction) return new XmlProcessingInstruction({ ...node });
-  if (node instanceof XmlElement) return new XmlElement({ ...node });
-  if (node instanceof XmlDeclaration) return new XmlDeclaration({ ...node });
-  if (node instanceof XmlDoctype) return new XmlDoctype({ ...node });
-  return new XmlDocument({ ...node });
+  // SAFETY: each instance's constructor is its Schema class, which takes the
+  // instance as its fields.
+  const Class = node.constructor as InstanceClass;
+  return new Class(node);
 };
+
+/** The classes that are their own schema; the others encode through their node union. */
+const ownSchemas = [
+  QName,
+  XmlAttribute,
+  XmlDeclaration,
+  XmlDoctype,
+  XmlDocument,
+  HtmlAttribute,
+  HtmlTemplateContent,
+  HtmlDoctype,
+  HtmlDocument,
+] as const;
 
 /** The schema that encodes `node`. */
 const schemaOf = (node: Instance): Schema.Codec<unknown, unknown> =>
-  node instanceof QName
-    ? QName
-    : node instanceof XmlAttribute
-      ? XmlAttribute
-      : node instanceof XmlDeclaration
-        ? XmlDeclaration
-        : node instanceof XmlDoctype
-          ? XmlDoctype
-          : node instanceof XmlDocument
-            ? XmlDocument
-            : Xml.XmlNode;
+  Option.getOrElse(
+    Arr.findFirst(ownSchemas, (Class): boolean => node instanceof Class),
+    (): Schema.Codec<unknown, unknown> =>
+      node.constructor.name.startsWith("Html") ? Html.HtmlNode : Xml.XmlNode,
+  );
+
+/** The present one of an optional part. */
+const optional = <A>(part: A | null): ReadonlyArray<A> => (part === null ? [] : [part]);
 
 /** The nodes directly inside `node`: names, attributes, children, declarations. */
-const parts = (node: Instance): ReadonlyArray<Instance> => {
-  if (node instanceof XmlAttribute) return [node.name];
-  if (node instanceof XmlElement) return [node.name, ...node.attributes, ...node.children];
-  if (node instanceof XmlDocument)
-    return [
-      ...(node.declaration === null ? [] : [node.declaration]),
-      ...(node.doctype === null ? [] : [node.doctype]),
-      ...node.children,
-    ];
-  return [];
-};
+const parts: (node: Instance) => ReadonlyArray<Instance> = Match.type<Instance>().pipe(
+  Match.when(Match.instanceOf(XmlAttribute), (n) => [n.name]),
+  Match.when(Match.instanceOf(XmlElement), (n) => [n.name, ...n.attributes, ...n.children]),
+  Match.when(Match.instanceOf(XmlDocument), (n) => [
+    ...optional(n.declaration),
+    ...optional(n.doctype),
+    ...n.children,
+  ]),
+  Match.when(Match.instanceOf(HtmlElement), (n) => [
+    ...n.attributes,
+    ...n.children,
+    ...optional(n.content),
+  ]),
+  Match.when(Match.instanceOf(HtmlTemplateContent), (n) => n.children),
+  Match.when(Match.instanceOf(HtmlDocument), (n) => [...optional(n.doctype), ...n.children]),
+  Match.orElse((): ReadonlyArray<Instance> => []),
+);
 
 /** Every node in these trees, without recursion. */
 const everyNode = (roots: ReadonlyArray<Instance>): Array<Instance> =>
@@ -164,14 +194,37 @@ describe("parsed nodes are indistinguishable from constructed ones", () => {
     expectAsConstructed(selected);
   });
 
+  const htmlInput =
+    `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">` +
+    `<title>t</title><p class=x>a<b>b<i>c</b>d</i><!-- c --><table>x<tr><td>y</table>` +
+    `<template><td>in<template>nested</template></td></template>` +
+    `<svg viewBox="0 0 1 1"><rect xlink:href="#a" xmlns:xlink="${Html.XLINK_NS}"/></svg>` +
+    `<math definitionurl=u><mi>x</mi></math><select><option selected>o</select><selectedcontent>`;
+
+  const htmlClasses = [
+    "HtmlAttribute",
+    "HtmlText",
+    "HtmlComment",
+    "HtmlTemplateContent",
+    "HtmlElement",
+    "HtmlDoctype",
+    "HtmlDocument",
+  ];
+
   test("Html.parseDocument", async () => {
-    const doc = await Effect.runPromise(
-      Html.parseDocument(
-        `<!DOCTYPE html><title>t</title><p class=x>a<b>b<i>c</b>d</i><!-- c -->` +
-          `<svg viewBox="0 0 1 1"><rect xlink:href="#a"/></svg><math><mi>x</mi></math>`,
-      ),
+    const doc = await Effect.runPromise(Html.parseDocument(htmlInput));
+    expect(Arr.sort(expectAsConstructed([doc]), Order.String)).toEqual(
+      Arr.sort(htmlClasses, Order.String),
     );
-    expectAsConstructed([doc]);
+  });
+
+  test("Html.parseDocumentFragment", async () => {
+    const nodes = await Effect.runPromise(
+      Html.parseDocumentFragment(`<td>a<template><b>t</b></template><svg><g xml:lang=en/></svg>`, {
+        context: "tr",
+      }),
+    );
+    expectAsConstructed(nodes);
   });
 
   test("Html.parseFragment", async () => {
@@ -179,5 +232,23 @@ describe("parsed nodes are indistinguishable from constructed ones", () => {
       Html.parseFragment(`<P Class=x>a<br><b>b<![CDATA[c]]><!-- c --><?pi d?></p>tail`),
     );
     expectAsConstructed(nodes);
+  });
+
+  test("Html.toXml", async () => {
+    const doc = await Effect.runPromise(Html.parseDocument(htmlInput));
+    expect(Arr.sort(expectAsConstructed([Html.toXml(doc)]), Order.String)).toEqual(
+      Arr.sort(
+        [
+          "QName",
+          "XmlAttribute",
+          "XmlText",
+          "XmlComment",
+          "XmlElement",
+          "XmlDoctype",
+          "XmlDocument",
+        ],
+        Order.String,
+      ),
+    );
   });
 });

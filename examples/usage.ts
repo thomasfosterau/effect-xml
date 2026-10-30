@@ -61,12 +61,14 @@ const xmlDemo = Effect.fn("xmlDemo")(function* () {
 const htmlDemo = Effect.fn("htmlDemo")(function* () {
   yield* Console.log("\n# 3. HTML");
   const doc = yield* Html.parseDocument(`<title>Hi</title><p>1<p>2<b>x<i>y</b>z`);
-  yield* Console.log("  parseDocument: " + Xml.serialize(doc.root));
+  yield* Console.log(`  parseDocument (${doc.mode}): ` + Html.serialize(doc.documentElement));
+  // The XML DOM, for XPath, C14n and the XML writer.
+  yield* Console.log("  as XML: " + Xml.serialize(Html.toXml(doc).root));
 
   const nodes = yield* Html.parseFragment(`<p>Hello <b>world<br>!</p><script>if (a<b) {}</script>`);
   yield* Effect.forEach(
-    Arr.filter(nodes, Schema.is(Xml.XmlElement)),
-    (el) => Console.log(`  fragment <${el.name.qualified}> => ${toJson(el.textContent)}`),
+    Arr.filter(nodes, Html.isHtmlElement),
+    (el) => Console.log(`  fragment <${el.name}> => ${toJson(el.textContent)}`),
     { concurrency: 1, discard: true },
   );
 });

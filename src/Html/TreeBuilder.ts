@@ -9,8 +9,13 @@
  * elements list, the adoption agency algorithm, or implicit html/head/body
  * insertion: for those, use `Html.parseDocument`.
  *
- * Because it reuses the typed {@link XmlNode} DOM, results compose with the rest
- * of the library (queries, serialization, Schema validation).
+ * It builds the HTML DOM (`./Node.ts`): every element is in the HTML
+ * namespace with a lowercased name, and its attributes (lowercased too) are in
+ * no namespace. That DOM has no CDATA sections or processing instructions, so
+ * a CDATA section becomes text, merged with the text around it (its content is character data, as the WHATWG
+ * parser treats it in SVG and MathML) and a processing instruction becomes the
+ * comment the HTML tokenizer would make of it (`<?target data?>` as
+ * `?target data?`). A DOCTYPE is dropped.
  */
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -21,16 +26,14 @@ import * as Nodes from "../internal/nodes.ts";
 import { acceptAll } from "../internal/unwind.ts";
 import type { SaxEvent } from "../Sax.ts";
 import { isIn, union } from "../internal/tagSet.ts";
-import type { QName } from "../Name.ts";
-import type { XmlAttribute, XmlNode } from "../Xml/Node.ts";
+import type { HtmlAttribute, HtmlNode } from "./Node.ts";
 import { voidElements } from "./Tokenizer.ts";
 
-/** An open element: its name, its parts so far, and the children it gathers. */
+/** An open element: its name, its attributes, and the children it gathers. */
 interface Frame {
   readonly name: string;
-  readonly qname: QName;
-  readonly attributes: ReadonlyArray<XmlAttribute>;
-  readonly children: Array<XmlNode>;
+  readonly attributes: ReadonlyArray<HtmlAttribute>;
+  readonly children: Array<HtmlNode>;
 }
 
 // The void elements as a lookup table (a `HashSet` hashes every name).
@@ -38,9 +41,7 @@ const VOID = union(voidElements);
 
 class FragmentBuilder {
   private readonly stack: Array<Frame> = [];
-  private readonly roots: Array<XmlNode> = [];
-  /** One {@link QName} per distinct (lowercased) name, for elements and attributes alike. */
-  private readonly names = Nodes.qnameCache();
+  private readonly roots: Array<HtmlNode> = [];
 
   private readonly limits: Limits;
 
@@ -48,25 +49,29 @@ class FragmentBuilder {
     this.limits = limits;
   }
 
-  private append(node: XmlNode): void {
+  private append(node: HtmlNode): void {
     const top = this.stack.at(-1);
     if (top !== undefined) top.children.push(node);
     else this.roots.push(node);
   }
 
+  /** Append text, merging it into the last node when that is text (so no two text nodes are adjacent). */
+  private appendText(data: string): void {
+    Nodes.appendHtmlText(this.stack.at(-1)?.children ?? this.roots, data);
+  }
+
   private startElement(ev: Extract<SaxEvent, { _tag: "StartElement" }>): void {
     const name = ev.name.toLowerCase();
-    const qname = this.names(name, null);
     const attributes = ev.attributes.map((a) =>
-      Nodes.attribute(this.names(a.name.toLowerCase(), null), a.value),
+      Nodes.htmlAttribute(a.name.toLowerCase(), a.value, null, null),
     );
     if (ev.selfClosing || isIn(VOID, name)) {
-      this.append(Nodes.element(qname, attributes, []));
+      this.append(Nodes.htmlElement("html", name, attributes, [], null));
       return;
     }
     const over = depthExceeded(this.limits, this.stack.length + 1, ev.span.start);
     if (over !== null) throw over;
-    this.stack.push({ name, qname, attributes, children: [] });
+    this.stack.push({ name, attributes, children: [] });
   }
 
   private endElement(rawName: string): void {
@@ -87,7 +92,7 @@ class FragmentBuilder {
     while (stack.length > depth) {
       const frame = stack.pop();
       if (frame === undefined) return;
-      this.append(Nodes.element(frame.qname, frame.attributes, frame.children));
+      this.append(Nodes.htmlElement("html", frame.name, frame.attributes, frame.children, null));
     }
   }
 
@@ -105,16 +110,14 @@ class FragmentBuilder {
         this.endElement(ev.name);
         return;
       case "Text":
-        this.append(Nodes.text(ev.data));
-        return;
       case "CData":
-        this.append(Nodes.cdata(ev.data));
+        this.appendText(ev.data);
         return;
       case "Comment":
-        this.append(Nodes.comment(ev.data));
+        this.append(Nodes.htmlComment(ev.data));
         return;
       case "ProcessingInstruction":
-        this.append(Nodes.processingInstruction(ev.target, ev.data));
+        this.append(Nodes.htmlComment(`?${ev.target}${ev.data === "" ? "" : " " + ev.data}?`));
         return;
       case "Doctype":
       case "XmlDeclaration":
@@ -122,7 +125,7 @@ class FragmentBuilder {
     }
   }
 
-  finish(): ReadonlyArray<XmlNode> {
+  finish(): ReadonlyArray<HtmlNode> {
     this.closeTo(0);
     return this.roots;
   }
@@ -138,7 +141,7 @@ class FragmentBuilder {
 export const buildFragment = <E, R>(
   events: Stream.Stream<SaxEvent, E, R>,
   options?: { readonly limits?: Partial<Limits> | undefined },
-): Effect.Effect<ReadonlyArray<XmlNode>, SaxError | E, R> =>
+): Effect.Effect<ReadonlyArray<HtmlNode>, SaxError | E, R> =>
   Effect.gen(function* () {
     const builder = new FragmentBuilder(resolveLimits(options?.limits));
     yield* acceptAll(events, (ev) => builder.accept(ev));

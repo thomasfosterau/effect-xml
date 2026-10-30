@@ -226,7 +226,9 @@ describe("HTML encoding sniffing (WHATWG)", () => {
     `<!doctype html><html><head>${charset}</head><body><p>caf\xe9</p></body></html>`;
   const para = (bytes: Uint8Array, options?: Html.HtmlBytesOptions) =>
     Effect.runPromise(
-      Html.parseDocumentBytes(bytes, options).pipe(Effect.map((d) => Xml.serialize(d.root))),
+      Html.parseDocumentBytes(bytes, options).pipe(
+        Effect.map((d) => Html.serialize(d.documentElement)),
+      ),
     );
 
   test("defaults to windows-1252", async () => {
@@ -265,7 +267,7 @@ describe("HTML encoding sniffing (WHATWG)", () => {
     const out = await Effect.runPromise(
       Stream.fromIterable(chunks(doc, 7)).pipe(
         Html.parseDocumentBytesStream(),
-        Effect.map((d) => d.root.textContent),
+        Effect.map((d) => d.documentElement.textContent),
       ),
     );
     expect(out.endsWith("café")).toBe(true);

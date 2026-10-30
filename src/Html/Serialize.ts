@@ -2,18 +2,21 @@
  * HTML serialization, following the WHATWG "serializing HTML fragments"
  * algorithm: void elements have no end tag, the text of raw-text elements
  * (`<script>`, `<style>`…) is written as it is, and names of foreign
- * (SVG/MathML) elements and namespaced attributes take their HTML forms.
- *
- * Elements in no namespace (from `Html.parseFragment`) are treated as HTML.
+ * (SVG/MathML) elements and namespaced attributes take their HTML forms. A
+ * `<template>` is written with its template contents.
  */
 import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";
-import * as Predicate from "effect/Predicate";
-import { Namespaces } from "../Name.ts";
-import { XmlDocument, type XmlElement, type XmlNode } from "../Xml/Node.ts";
 import { isIn, tagSet } from "../internal/tagSet.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
-import { HTML_NS, MATHML_NS, SVG_NS, XLINK_NS } from "./Namespaces.ts";
+import {
+  type HtmlAttribute,
+  type HtmlDocument,
+  type HtmlElement,
+  type HtmlNode,
+  isHtmlDocument,
+  isHtmlElement,
+} from "./Node.ts";
 
 const VOID = tagSet(
   "area",
@@ -39,88 +42,92 @@ const VOID = tagSet(
 /** Elements whose text children are written without escaping (scripting is off, so not `noscript`). */
 const RAW = tagSet("style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext");
 
-const isHtml = (ns: string | null): boolean => ns === null || ns === HTML_NS;
-
 const escapeText = (s: string): string =>
-  s.replace(/[& <>]/g, (c) =>
+  s.replace(/[&\u00A0<>]/g, (c) =>
     c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&nbsp;",
   );
 
 const escapeAttribute = (s: string): string =>
-  s.replace(/[& "<>]/g, (c) =>
+  s.replace(/[&\u00A0"<>]/g, (c) =>
     c === "&" ? "&amp;" : c === '"' ? "&quot;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&nbsp;",
   );
 
-const tagName = (name: {
-  readonly local: string;
-  readonly namespace: string | null;
-  readonly qualified: string;
-}): string =>
-  isHtml(name.namespace) || name.namespace === SVG_NS || name.namespace === MATHML_NS
-    ? name.local
-    : name.qualified;
-
-const attributeName = (name: {
-  readonly local: string;
-  readonly namespace: string | null;
-  readonly qualified: string;
-}): string => {
-  if (name.namespace === Namespaces.xml) return `xml:${name.local}`;
-  if (name.namespace === Namespaces.xmlns)
-    return name.local === "xmlns" ? "xmlns" : `xmlns:${name.local}`;
-  if (name.namespace === XLINK_NS) return `xlink:${name.local}`;
-  return name.qualified;
+/** An attribute's serialized name: the namespaced ones take their prefixed forms. */
+const attributeName = (a: HtmlAttribute): string => {
+  if (a.namespace === "xml") return `xml:${a.name}`;
+  if (a.namespace === "xmlns") return a.name === "xmlns" ? "xmlns" : `xmlns:${a.name}`;
+  if (a.namespace === "xlink") return `xlink:${a.name}`;
+  return a.name;
 };
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isVoid = (el: HtmlElement): boolean => el.namespace === "html" && isIn(VOID, el.name);
 
-/** The children a serialization descends into: none for a void HTML element (it has no end tag). */
-const contentOf = (node: XmlNode): ReadonlyArray<XmlNode> | undefined =>
-  isElement(node) && !(isHtml(node.name.namespace) && isIn(VOID, node.name.local))
-    ? node.children
-    : undefined;
+/**
+ * The children a serialization descends into: a template's contents, none for
+ * a void HTML element (it has no end tag).
+ */
+const contentOf = (node: HtmlNode): ReadonlyArray<HtmlNode> | undefined => {
+  if (!isHtmlElement(node) || isVoid(node)) return undefined;
+  return node.content === null ? node.children : node.content.children;
+};
 
 /**
  * Serialize nodes in order (an element's `innerHTML` is its children, serialized).
  *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import { Html } from "@thomasfosterau/effect-xml"
+ *
+ * const nodes = Effect.runSync(Html.parseDocumentFragment(`<p title="a&b">1 < 2<br>`))
+ * console.log(Html.serializeFragment(nodes)) // <p title="a&amp;b">1 &lt; 2<br></p>
+ * ```
+ *
  * @since 0.3.0
  * @category serialization
  */
-export const serializeFragment = (nodes: ReadonlyArray<XmlNode>): string => {
+export const serializeFragment = (nodes: ReadonlyArray<HtmlNode>): string => {
   // For each open element, whether its text children are written raw.
   const raw: Array<boolean> = [];
   return Iterable.reduce(preorder(nodes, contentOf), "", (out, step) => {
     if (isEnter(step)) return out + open(step.node, raw);
     raw.pop();
-    return isElement(step.node) ? out + `</${tagName(step.node.name)}>` : out;
+    return isHtmlElement(step.node) ? out + `</${step.node.name}>` : out;
   });
 };
 
 /** A node's own markup: all of a leaf, the start tag of an element. */
-const open = (node: XmlNode, raw: Array<boolean>): string =>
+const open = (node: HtmlNode, raw: Array<boolean>): string =>
   Match.valueTags(node, {
-    XmlText: (t) => (raw.at(-1) === true ? t.data : escapeText(t.data)),
-    XmlCData: (t) => (raw.at(-1) === true ? t.data : escapeText(t.data)),
-    XmlComment: (c) => `<!--${c.data}-->`,
-    XmlProcessingInstruction: (pi) => `<?${pi.target}${pi.data === "" ? "" : " " + pi.data}>`,
-    XmlElement: (e) => {
-      const html = isHtml(e.name.namespace);
-      if (contentOf(e) !== undefined) raw.push(html && isIn(RAW, e.name.local));
+    HtmlText: (t) => (raw.at(-1) === true ? t.data : escapeText(t.data)),
+    HtmlComment: (c) => `<!--${c.data}-->`,
+    HtmlElement: (e) => {
+      if (contentOf(e) !== undefined) raw.push(e.namespace === "html" && isIn(RAW, e.name));
       const attributes = e.attributes
-        .map((a) => ` ${attributeName(a.name)}="${escapeAttribute(a.value)}"`)
+        .map((a) => ` ${attributeName(a)}="${escapeAttribute(a.value)}"`)
         .join("");
-      return `<${tagName(e.name)}${attributes}>`;
+      return `<${e.name}${attributes}>`;
     },
   });
 
 /**
  * Serialize a node (an element's `outerHTML`), or a document with its DOCTYPE.
  *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import { Html } from "@thomasfosterau/effect-xml"
+ *
+ * const doc = Effect.runSync(Html.parseDocument("<!doctype html><p>Hi"))
+ * console.log(Html.serialize(doc))
+ * // <!DOCTYPE html><html><head></head><body><p>Hi</p></body></html>
+ * ```
+ *
  * @since 0.3.0
  * @category serialization
  */
-export const serialize = (node: XmlNode | XmlDocument): string => {
-  if (!(node instanceof XmlDocument)) return serializeFragment([node]);
+export const serialize = (node: HtmlNode | HtmlDocument): string => {
+  if (!isHtmlDocument(node)) return serializeFragment([node]);
   return (
     (node.doctype === null ? "" : `<!DOCTYPE ${node.doctype.name}>`) +
     serializeFragment(node.children)

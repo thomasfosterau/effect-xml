@@ -52,3 +52,27 @@ export const XML_NS = "http://www.w3.org/XML/1998/namespace";
  * @category namespaces
  */
 export const XMLNS_NS = "http://www.w3.org/2000/xmlns/";
+
+/**
+ * The URI of each element namespace (`Html.HtmlElement`'s `namespace`).
+ *
+ * @since 0.3.0
+ * @category namespaces
+ */
+export const NAMESPACE_URIS = {
+  html: HTML_NS,
+  svg: SVG_NS,
+  mathml: MATHML_NS,
+} as const;
+
+/**
+ * The URI of each adjusted-attribute namespace (`Html.HtmlAttribute`'s `namespace`).
+ *
+ * @since 0.3.0
+ * @category namespaces
+ */
+export const ATTRIBUTE_NAMESPACE_URIS = {
+  xlink: XLINK_NS,
+  xml: XML_NS,
+  xmlns: XMLNS_NS,
+} as const;
