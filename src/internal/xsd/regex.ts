@@ -16,6 +16,7 @@ import * as Option from "effect/Option";
 import * as Record from "effect/Record";
 import * as Result from "effect/Result";
 import { quote } from "../quote.ts";
+import { isIn, tagSet } from "../tagSet.ts";
 
 /** A code point as a `v`-mode escape. */
 const escape = (c: string): string => `\\u{${(c.codePointAt(0) ?? 0).toString(16)}}`;
@@ -72,7 +73,7 @@ const multiCharEscapes: Readonly<Record<string, string>> = {
 
 const singleCharEscapes: Readonly<Record<string, string>> = { n: "\n", r: "\r", t: "\t" };
 
-const categories: ReadonlyArray<string> = [
+const categories = tagSet(
   "L",
   "Lu",
   "Ll",
@@ -109,7 +110,7 @@ const categories: ReadonlyArray<string> = [
   "Cf",
   "Co",
   "Cn",
-];
+);
 
 /** The block escapes of XSD 1.0 (`\p{IsBasicLatin}`), as code point ranges. */
 const blockList: ReadonlyArray<readonly [string, ReadonlyArray<readonly [number, number]>]> = [
@@ -210,7 +211,7 @@ const blocks = Record.fromEntries(blockList);
 
 /** `\p{…}` (or, negated, `\P{…}`) for a category or `Is` block name. */
 const property = (name: string, negated: boolean): Option.Option<string> => {
-  if (categories.includes(name)) return Option.some(`\\${negated ? "P" : "p"}{${name}}`);
+  if (isIn(categories, name)) return Option.some(`\\${negated ? "P" : "p"}{${name}}`);
   if (!name.startsWith("Is")) return Option.none();
   return Option.map(
     Record.get(blocks, name.slice(2)),

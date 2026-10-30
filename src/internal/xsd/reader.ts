@@ -48,6 +48,7 @@ import {
 import { anyTypeDefinition } from "./components.ts";
 import { builtinBase, isBuiltinSimple } from "./datatypes.ts";
 import { translate } from "./regex.ts";
+import { isIn, tagSet } from "../tagSet.ts";
 
 /** A schema document, as the reader sees it. */
 export interface SchemaDocument {
@@ -168,7 +169,14 @@ const bounds = (b: { readonly min: number; readonly max: MaxOccurs }) => ({
   max: b.max === 1 ? undefined : b.max,
 });
 
-const unsupported = ["redefine", "override", "assert", "assertion", "alternative", "openContent"];
+const unsupported = tagSet(
+  "redefine",
+  "override",
+  "assert",
+  "assertion",
+  "alternative",
+  "openContent",
+);
 
 // -----------------------------------------------------------------------------
 // Wildcards
@@ -251,7 +259,7 @@ const combineWildcards = (
 const hasTerms = (p: Particle): boolean =>
   Predicate.isTagged(p, "Element") || Predicate.isTagged(p, "Any") || p.particles.some(hasTerms);
 
-const facetNames: ReadonlyArray<string> = [
+const facetNames = tagSet(
   "length",
   "minLength",
   "maxLength",
@@ -264,7 +272,7 @@ const facetNames: ReadonlyArray<string> = [
   "whiteSpace",
   "enumeration",
   "pattern",
-];
+);
 
 const numericFacets = [
   "length",
@@ -383,7 +391,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     return Result.gen(function* () {
       yield* Result.all(
         Arr.map(kids(root), (node): R<void> => {
-          if (unsupported.includes(node.el.name.local))
+          if (isIn(unsupported, node.el.name.local))
             return fail(context, `xs:${node.el.name.local} is not supported`);
           const kind = kindOf(node);
           if (kind === undefined) return Result.void;
@@ -475,7 +483,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     return Result.gen(function* () {
       const unknown = Arr.findFirst(
         children,
-        (k) => !facetNames.includes(k.el.name.local) && !isXs(k, "simpleType"),
+        (k) => !isIn(facetNames, k.el.name.local) && !isXs(k, "simpleType"),
       );
       if (Option.isSome(unknown))
         return yield* fail(node.doc, `xs:${unknown.value.el.name.local} is not a facet`);
@@ -773,8 +781,8 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     base: ReadonlyArray<AttributeUse>,
     own: Attributes,
   ): ReadonlyArray<AttributeUse> => {
-    const replaced = [...Arr.map(own.uses, (u) => u.name), ...own.prohibited];
-    return [...Arr.filter(base, (u) => !replaced.includes(u.name)), ...own.uses];
+    const replaced = tagSet(...Arr.map(own.uses, (u) => u.name), ...own.prohibited);
+    return [...Arr.filter(base, (u) => !isIn(replaced, u.name)), ...own.uses];
   };
 
   // ---------------------------------------------------------------------------

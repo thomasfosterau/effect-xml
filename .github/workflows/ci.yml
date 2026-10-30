@@ -4,7 +4,10 @@ name: CI
 # vite.config.ts (the `check`, `test:unit`, `build` and `docgen` tasks), not
 # in GitHub Actions `needs:`. Copied in shape from the effect-web library.
 # Nothing here needs a database, a stage or a credential, so every PR runs
-# the whole gate.
+# the whole gate — Dependabot's included: the job holds a read-only token, no
+# secrets and no OIDC, checks out without persisting credentials, and every
+# third-party action is pinned to a commit SHA (Dependabot's
+# `github-actions` updates keep the pins current).
 
 on:
   pull_request:
@@ -44,15 +47,15 @@ jobs:
           restore-keys: |
             vp-task-v1-${{ runner.os }}-
       - name: Format and lint
-        run: vp check
+        run: pnpm exec vp check
       - name: Type gate (src + tests + example)
-        run: vp run check
+        run: pnpm exec vp run check
       - name: Unit tests (incl. the html5lib conformance gate)
-        run: vp run test:unit
+        run: pnpm exec vp run test:unit
       - name: Build
-        run: vp run build
+        run: pnpm exec vp run build
       # Type-checks AND runs every JSDoc @example against the built dist/.
       - name: Verify documentation examples (docgen)
-        run: vp run docgen
+        run: pnpm exec vp run docgen
       - name: Audit
         run: pnpm audit --audit-level high

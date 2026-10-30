@@ -34,7 +34,7 @@ Hooks are managed by Vite+; the editable [.vite-hooks/pre-commit](.vite-hooks/pr
 ## Running individual checks
 
 ```sh
-vp lint                              # oxlint (with the Effect presets)
+vp lint                              # oxlint (@effect/tsgo + @enfect/oxlint)
 vp fmt                               # oxfmt
 vp check                             # both
 vp run check                         # the type gate
@@ -46,4 +46,5 @@ vp run docgen                        # run every @example, write docs/
 vp run test:coverage                 # Istanbul map for fallow
 vp run fallow:audit                  # change-set review (not a CI gate)
 vp run example                       # the tour in examples/usage.ts
+uvx zizmor .github                   # GitHub Actions audit (config: .github/zizmor.yml)
 ```

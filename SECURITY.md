@@ -20,7 +20,7 @@ The package is published with a hardened, automated pipeline designed to resist 
 - **Pinned actions.** All GitHub Actions are pinned to full commit SHAs, so a hijacked tag cannot inject workflow code.
 - **Least privilege.** Workflows default to `permissions: {}`; each job opts into only the scopes it needs. CI checks out with `persist-credentials: false`.
 - **Manual approval gate.** Publishing runs in a protected `release` environment that requires manual approval.
-- **Locked dependencies with a cooling-off period.** Installs use `pnpm install --frozen-lockfile` against the committed `pnpm-lock.yaml`; `minimumReleaseAge` holds newly published third-party versions for a day before pnpm will install them; Dependabot proposes updates for review with the same cooldown, grouping the sets that must move together.
+- **Locked dependencies with a cooling-off period.** Installs use `pnpm install --frozen-lockfile` against the committed `pnpm-lock.yaml`; `minimumReleaseAge` holds newly published third-party versions for 8 hours before pnpm will install them; Dependabot proposes updates for review after a 1-day cooldown (it counts whole days, so it never proposes a version pnpm would refuse), grouping the sets that must move together. CI runs every pull request, Dependabot's included, with a read-only token, no secrets and no OIDC, SHA-pinned actions and non-persisted checkout credentials; the release job, which alone holds `id-token: write`, never runs for a Dependabot push, and `uvx zizmor .github` checks the workflows.
 - **No runtime dependencies.** `effect` and `@thomasfosterau/effect-parse` are peers the consumer installs; nothing else ships.
 
 ## Release pipeline

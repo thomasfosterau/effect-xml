@@ -65,8 +65,16 @@ export default defineConfig({
   lint: {
     ignorePatterns: ["**/dist/**", "**/docs/**", "**/coverage/**", "**/node_modules/**"],
     extends: [recommended, effect.configs.recommended],
+    // oxlint's own plugins beyond the defaults: `import`, `promise`,
+    // `vitest` and `jsdoc` cover what the Effect presets don't (module
+    // hygiene, promise misuse in the tests and benchmark, test shape, doc
+    // comment tags). `suspicious` and `perf` are on at `error` with the
+    // correctness category; the rules below say where one cannot apply.
+    plugins: ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "vitest", "jsdoc"],
     categories: {
       correctness: "error",
+      suspicious: "error",
+      perf: "error",
     },
     rules: {
       "eslint/no-unused-vars": [
@@ -113,6 +121,35 @@ export default defineConfig({
       "typescript/ban-ts-comment": "off",
       "unicorn/no-empty-file": "off",
       "vite-plus/prefer-vite-plus-imports": "error",
+
+      // ---- oxlint plugins (`suspicious` / `perf` categories) ---------------
+      // `_tag` is the discriminant of every Effect tagged union and error
+      // class; reading it is the point, so a leading underscore is not a
+      // smell here.
+      "eslint/no-underscore-dangle": "off",
+      // docgen's tags (`@since`, `@category`) and the module tags every file
+      // header carries are part of the doc-comment standard (AGENTS.md).
+      "jsdoc/check-tag-names": [
+        "error",
+        { definedTags: ["since", "category", "copyright", "module", "internal"] },
+      ],
+      // Tests assert through `expect` and the repo's own assertion helpers
+      // (tests/support/narrow.ts, and per-file `expect…` / `rejects` helpers).
+      "vitest/expect-expect": [
+        "error",
+        { assertFunctionNames: ["expect", "expect*", "assert", "assert*", "rejects"] },
+      ],
+      // Vitest's `expect(value, message)` takes the failure message second.
+      "vitest/valid-expect": ["error", { maxArgs: 2 }],
+      // Adoption allowances (#61): sites that predate the `suspicious`
+      // category. A new site is a defect; when a count reaches zero, delete
+      // the line so the rule is back at `error`.
+      // 15 sites in src/, 4 in packages/cli/tests: a name reused in an inner
+      // scope (`value`, `text`, `attributes`), mostly inside parser closures.
+      "eslint/no-shadow": "warn",
+      // 13 sites in src/, 25 in tests: helpers declared inside the function
+      // or test that uses them.
+      "unicorn/consistent-function-scoping": "warn",
     },
     overrides: [
       // Build/test configs are evaluated by Vite and Vitest in bare Node,
@@ -246,6 +283,9 @@ export default defineConfig({
           "effect/avoid-try-catch": "off",
           "effect/avoid-any": "off",
           "effect/no-unknown-returns": "off",
+          // Runs are timed one after another on purpose; in parallel they
+          // would measure each other.
+          "eslint/no-await-in-loop": "off",
         },
       },
       // The example is a program: its one `Effect.runPromise` IS the entry
@@ -271,8 +311,9 @@ export default defineConfig({
         },
       },
     ],
-    // Type-aware linting is intentionally disabled: type checking stays the
-    // `check` task's job (native tsc, Effect-patched).
+    // Type-aware linting is off for now: type checking stays the `check`
+    // task's job (native tsc, Effect-patched), and enabling it reports 34
+    // findings still to fix (#61).
     options: {
       typeAware: false,
       typeCheck: false,

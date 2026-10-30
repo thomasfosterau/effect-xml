@@ -111,13 +111,15 @@ describe("html5lib tree-construction conformance", () => {
   });
 
   test("never throws on any supported case", async () => {
-    await Effect.runPromise(
-      Effect.forEach(
-        Arr.flatMap(FILES, ({ content }) => runnableTests(content)),
-        // Should always produce a tree, even for malformed input.
-        (t) => Effect.asVoid(parseCase(t)),
-        { concurrency: 1, discard: true },
+    await expect(
+      Effect.runPromise(
+        Effect.forEach(
+          Arr.flatMap(FILES, ({ content }) => runnableTests(content)),
+          // Should always produce a tree, even for malformed input.
+          (t) => Effect.asVoid(parseCase(t)),
+          { concurrency: 1, discard: true },
+        ),
       ),
-    );
+    ).resolves.toBeUndefined();
   });
 });

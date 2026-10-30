@@ -166,6 +166,7 @@ const eventOf = (node: XmlNode): WriterEvent =>
 /**
  * The events of a node (without recursion, so any depth is fine).
  *
+ * @yields The node's writer events, in document order.
  * @since 0.3.0
  * @category conversions
  */
