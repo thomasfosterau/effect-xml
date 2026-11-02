@@ -56,7 +56,7 @@ catalog:
   # `vp check` run.
   "@enfect/oxlint": ^0.9.0
   # Peer: the token, declaration and entity grammars are effect-parse parsers.
-  "@thomasfosterau/effect-parse": ^0.4.0
+  "@thomasfosterau/effect-parse": ^0.4.1
   "@types/node": ^26.6.6
   # Must equal the vitest that vite-plus bundles (see `vitest` below); vite-plus
   # refuses to run coverage on a mismatch.
@@ -94,7 +94,7 @@ catalogs:
   peers:
     # Caret, not `>=`: on 0.x a minor release may break the combinator API
     # the grammars are written against.
-    "@thomasfosterau/effect-parse": ^0.4.0
+    "@thomasfosterau/effect-parse": ^0.4.1
     # The floor the package declared before the tooling migration; raising it
     # is a breaking change.
     effect: ^4.0.5
