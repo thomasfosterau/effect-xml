@@ -11,8 +11,9 @@
  * every expression is built on. Failures are {@link XQueryError}s carrying the
  * specifications' `err:` codes.
  *
- * The query compiler and evaluator build on this model and are added to this
- * module as they land.
+ * {@link compile} parses an XQuery 3.1 module and checks it statically, to a
+ * {@link Query} or the first static error ({@link XPath}`.compile` does the
+ * same for XPath 3.1); the evaluator builds on this model and lands next.
  *
  * @example
  * ```ts
@@ -70,3 +71,12 @@ export * from "../internal/xquery/item.ts";
  * @category errors
  */
 export * from "./Error.ts";
+
+/**
+ * Compiling an XQuery 3.1 module (or, with `XPath.compile`, an XPath 3.1
+ * expression) to a {@link Query}, or the first static error.
+ *
+ * @since 0.3.0
+ * @category compiling
+ */
+export * from "./Compile.ts";
