@@ -233,17 +233,32 @@ const resolveHint = (hint: string, family: Family): Detected | UnsupportedEncodi
   return { encoding, bomLength: 0, source: "hint" };
 };
 
+/** How much of the input to read first for the XML declaration: enough for nearly every one. */
+const SHORT_WINDOW = 128;
+
+/**
+ * Whether `text`, read with at most `max` characters, holds all that
+ * {@link sniffXml} reads of the input: its first six characters, or the text
+ * up to the first `?>`. It then reads the same as the whole input would.
+ */
+const holdsDeclaration = (text: string, max: number): boolean =>
+  text.length < max || text.indexOf("?>") !== -1 || !/^<\?xml[ \t\r\n]/.test(text);
+
 /**
  * The start of the input from `from` on, as {@link readAscii} reads it, far
- * enough to hold an XML declaration. The first DECLARATION_WINDOW characters
- * nearly always hold all of it, so the rest of a large first chunk is read
- * only when they don't: reading it all costs far more than decoding it.
+ * enough to hold an XML declaration: up to its `?>` (or the end of the
+ * input), or just its first characters when it doesn't open with one. The
+ * first SHORT_WINDOW characters nearly always hold it all, then the first
+ * DECLARATION_WINDOW, so the rest of the first chunk is read only when they
+ * don't: reading it costs far more than decoding it, and for a small document
+ * it was most of the cost of sniffing.
  */
 const declarationText = (head: Uint8Array, family: Family, from: number): string => {
-  const window = readAscii(head, family, from, DECLARATION_WINDOW);
-  return window.indexOf("?>") !== -1 || !/^<\?xml[ \t\r\n]/.test(window)
-    ? window
-    : readAscii(head, family, from);
+  const read = (max: number) => readAscii(head, family, from, max);
+  const short = read(SHORT_WINDOW);
+  if (holdsDeclaration(short, SHORT_WINDOW)) return short;
+  const window = read(DECLARATION_WINDOW);
+  return holdsDeclaration(window, DECLARATION_WINDOW) ? window : read(Infinity);
 };
 
 /**

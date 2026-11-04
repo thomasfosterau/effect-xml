@@ -108,7 +108,7 @@ export const parseBytes = (
   input: Uint8Array,
   options?: ParseBytesOptions,
 ): Effect.Effect<XmlDocument, SaxError> =>
-  Stream.make(input).pipe(Sax.tokenizeBytes(bytesOptions(options)), build(options ?? {}));
+  Sax.tokenizeByteArray(input, bytesOptions(options)).pipe(build(options ?? {}));
 
 /**
  * Parse a stream of XML bytes into a typed document, detecting the encoding.

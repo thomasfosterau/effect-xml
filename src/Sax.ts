@@ -16,6 +16,7 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
 import { MalformedDeclaration } from "./Error.ts";
@@ -271,7 +272,7 @@ export const tokenize =
       });
       const expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
       const guard = new Guard(opts.limits, opts.mode === "xml");
-      /** Interpret the DTD-related outputs (with `dtd: "internal"`). */
+      /** Interpret a DOCTYPE or an entity reference (with `dtd: "internal"`). */
       const interpret = (o: LexOutput): ReadonlyArray<LexOutput> => {
         if (dtd === undefined || expander === undefined) return [o];
         if (isDoctypeEvent(o)) {
@@ -288,7 +289,6 @@ export const tokenize =
           return [{ _tag: "Fault", error: fault }];
         }
         if (isEntityReferenceEvent(o)) return expander.expand(o);
-        if (isStartElementEvent(o)) return [applyDefaults(dtd, o)];
         return [o];
       };
       // Lex token by token, so a limit stops the lexer at the offending token
@@ -313,7 +313,15 @@ export const tokenize =
         if (ev !== null) events.push(ev);
         return true;
       };
-      const each = dtd === undefined ? accept : (raw: LexOutput) => interpret(raw).every(accept);
+      // Only a DOCTYPE or an entity reference can stand for other outputs; the
+      // rest are kept one for one, without an array per output.
+      const each =
+        dtd === undefined
+          ? accept
+          : (raw: LexOutput): boolean =>
+              isDoctypeEvent(raw) || isEntityReferenceEvent(raw)
+                ? interpret(raw).every(accept)
+                : accept(isStartElementEvent(raw) ? applyDefaults(dtd, raw) : raw);
       const full = (): boolean => events.length >= BATCH;
       /**
        * The events of the input written so far, then the fault if there is
@@ -387,6 +395,29 @@ export const tokenizeBytes =
   (options?: SaxBytesOptions) =>
   <E, R>(input: Stream.Stream<Uint8Array, E, R>): Stream.Stream<SaxEvent, SaxError | E, R> =>
     input.pipe(Encoding.decode(decodeOptions(options)), tokenize(options));
+
+/**
+ * @internal Tokenize a complete byte array, as {@link tokenizeBytes} does a
+ * stream of that one chunk, but decoding it up front rather than through a
+ * decoding stream: the same decoder calls and the same text chunks, without
+ * a stream stage per document (a third of the cost of a small one).
+ */
+export const tokenizeByteArray = (
+  input: Uint8Array,
+  options?: SaxBytesOptions,
+): Stream.Stream<SaxEvent, SaxError> =>
+  Stream.suspend(() => {
+    const decoder = new Encoding.ByteDecoder(decodeOptions(options));
+    const first = decoder.write(input);
+    if (!Predicate.isString(first)) return Stream.fail(first);
+    const rest = decoder.end();
+    // `decode` drops empty chunks; the end of the input may fail after the text.
+    const text = Stream.fromIterable(first === "" ? [] : [first]);
+    const chunks = Predicate.isString(rest)
+      ? Stream.concat(text, Stream.fromIterable(rest === "" ? [] : [rest]))
+      : Stream.concat(text, Stream.fail(rest));
+    return chunks.pipe(tokenize(options));
+  });
 
 /**
  * Tokenize a complete in-memory string into a stream of SAX events.

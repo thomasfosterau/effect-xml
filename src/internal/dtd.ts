@@ -26,7 +26,7 @@ import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
-import type { Limits } from "../Limits.ts";
+import { resolveLimits, type Limits } from "../Limits.ts";
 import { isXmlChar, type EntityResolver, type ExpansionFailure } from "./entities.ts";
 import {
   commentRest,
@@ -555,5 +555,32 @@ export class Dtd implements EntityResolver {
   /** The attributes declared for an element. */
   attributes(element: string): ReadonlyArray<AttributeDecl> | undefined {
     return Option.getOrUndefined(MutableHashMap.get(this.attlists, element));
+  }
+}
+
+/**
+ * The DTD that the shared `dtd: "internal"` grammars consult. The grammars
+ * are built once per entity table rather than once per document (building
+ * and compiling them is most of the cost of parsing a small document), so
+ * they refer to the document's {@link Dtd} through this slot, which the lexer
+ * running them points at its own before each token. A grammar runs
+ * synchronously and calls no other lexer, so the slot never changes during a
+ * run, whichever documents are being parsed at once.
+ */
+export class DtdSlot implements EntityResolver {
+  /** The DTD of the document being lexed (an empty one until a lexer sets it; afterwards, the last one set). */
+  current: Dtd = new Dtd(resolveLimits(undefined));
+
+  declares(name: string): boolean {
+    return this.current.declares(name);
+  }
+
+  resolve(name: string, inAttribute: boolean): string | ExpansionFailure {
+    return this.current.resolve(name, inAttribute);
+  }
+
+  /** Whether the replacement text of `name` contains markup (see {@link Dtd.isMarkup}). */
+  isMarkup(name: string): boolean {
+    return this.current.isMarkup(name);
   }
 }

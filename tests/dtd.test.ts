@@ -40,6 +40,10 @@ const outline = (nodes: ReadonlyArray<Xml.XmlNode>) =>
 const attributesOf = (element: Xml.XmlElement) =>
   Record.fromEntries(element.attributes.map((a) => [a.name.local, a.value] as const));
 
+/** The SAX events of `input` with `dtd: "internal"`, written one character at a time. */
+const charByChar = (input: string) =>
+  Stream.fromIterable(splitEvery(input, 1)).pipe(Sax.tokenize(options));
+
 describe("dtd: internal", () => {
   test("internal entities, including markup", () => {
     const doc = parseOk(`<!DOCTYPE r [
@@ -265,6 +269,20 @@ describe("dtd: internal", () => {
   test("external entities are reported as such", () => {
     const e = parseErr(`<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>`);
     expect(e.message).toContain(`external entity "x" is not supported`);
+  });
+
+  test("documents lexed at once each read their own DTD", () => {
+    // The `dtd: "internal"` grammars are shared; interleaving two streams'
+    // tokens must still resolve each document's entities from its own subset.
+    const one = `<!DOCTYPE r [<!ENTITY e "one"><!ENTITY m "<b/>">]><r a="&e;">&e; &m;</r>`;
+    const two = `<!DOCTYPE r [<!ENTITY e "two"><!ENTITY m "<i/>">]><r a="&e;">&e; &m;</r>`;
+    const [left, right] = Arr.unzip(
+      Effect.runSync(Stream.runCollect(Stream.zip(charByChar(one), charByChar(two)))),
+    );
+    expect(left).toEqual(Effect.runSync(Stream.runCollect(charByChar(one))));
+    expect(right).toEqual(Effect.runSync(Stream.runCollect(charByChar(two))));
+    expect(right.filter(Sax.isText).map((t) => t.data)).toEqual(["two "]);
+    expect(right.filter(Sax.isStartElement).map((e) => e.name)).toEqual(["r", "i"]);
   });
 
   describe("hostile documents", () => {

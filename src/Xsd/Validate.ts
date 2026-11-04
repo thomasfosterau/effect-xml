@@ -288,7 +288,7 @@ export const parseBytes = (
   input: Uint8Array,
   options?: ParseOptions,
 ): Effect.Effect<Validated, XsdError> =>
-  Stream.make(input).pipe(Sax.tokenizeBytes(saxOptions(options)), decode(model, options));
+  Sax.tokenizeByteArray(input, saxOptions(options)).pipe(decode(model, options));
 
 /**
  * Parse and validate a stream of XML bytes against a schema, detecting the encoding.

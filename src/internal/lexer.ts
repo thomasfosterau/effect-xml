@@ -374,7 +374,7 @@ export class Lexer {
 
   constructor(options: LexerOptions) {
     this.options = options;
-    this.grammars = grammars(options.mode, options.entities, options.dtd);
+    this.grammars = grammars(options.mode, options.entities, options.dtd !== undefined);
   }
 
   /** Signal end of input and flush any pending output. */
@@ -432,6 +432,9 @@ export class Lexer {
     if (!this.ended && this.buf.length < this.retryAt) return null;
     const start = this.cursor;
     const state = this.parseState(start);
+    // The `dtd: "internal"` grammars are shared: point them at this document's DTD.
+    const dtd = this.options.dtd;
+    if (dtd !== undefined) this.grammars.dtd.current = dtd;
     // The compiled grammar runs on the reused state; on a failure `Parser.run`
     // re-runs the interpreter, so `mode` and the reported failure are its.
     const step = Parser.run(this.grammar(), state);
