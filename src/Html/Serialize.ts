@@ -4,6 +4,11 @@
  * (`<script>`, `<style>`…) is written as it is, and names of foreign
  * (SVG/MathML) elements and namespaced attributes take their HTML forms. A
  * `<template>` is written with its template contents.
+ *
+ * As the algorithm specifies, no extra newline is written at the start of a
+ * `<pre>`, `<textarea>` or `<listing>`. The parser drops one leading newline
+ * there, so text that really starts with a newline loses it on a round trip
+ * (whatwg/html#944).
  */
 import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";
@@ -73,6 +78,10 @@ const contentOf = (node: HtmlNode): ReadonlyArray<HtmlNode> | undefined => {
 
 /**
  * Serialize nodes in order (an element's `innerHTML` is its children, serialized).
+ *
+ * Follows the WHATWG algorithm exactly, so a leading newline in the text of a
+ * `<pre>`, `<textarea>` or `<listing>` is not doubled and does not survive
+ * being parsed again.
  *
  * @example
  * ```ts
