@@ -408,6 +408,20 @@ describe("Html round trips", () => {
     firsts.forEach((first, i) => expect(Equal.equals(agains[i], first)).toBe(true));
   });
 
+  // WHATWG serializing HTML fragments: no extra U+000A is written for these
+  // elements (whatwg/html#944), so the parser's dropped leading newline is not
+  // restored and the round trip loses one newline.
+  test.each(["pre", "textarea", "listing"])(
+    "a leading newline in <%s> is not doubled on serialization",
+    async (name) => {
+      const first = await doc(`<!DOCTYPE html><${name}>\n\nHello.</${name}>`);
+      const body = child(first.documentElement, "body");
+      expect(Html.serializeFragment(body.children)).toBe(`<${name}>\nHello.</${name}>`);
+      const again = await doc(Html.serialize(first));
+      expect(child(child(again.documentElement, "body"), name).textContent).toBe("Hello.");
+    },
+  );
+
   test("Html.toXml is structural: equal documents convert to equal XML documents", async () => {
     const [as, bs] = await Promise.all([docs(), docs()]);
     as.forEach((a, i) => {
