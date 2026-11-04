@@ -18,6 +18,11 @@
 # pair, @effect/tsgo, @enfect/oxlint, fallow).
 
 packages:
+  # The root is listed explicitly: pnpm always treats it as a workspace
+  # project, but @manypkg/get-packages (what changesets reads) only counts
+  # the root as a package when the globs match it. Without `.`, `changeset
+  # version` fails with "... which is not in the workspace" for the library.
+  - .
   - packages/*
 
 catalogMode: strict
