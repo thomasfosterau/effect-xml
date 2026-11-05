@@ -306,6 +306,8 @@ export class Lexer {
   private state: LexState = DATA;
   /** XML: the number of elements open, for the checks outside the root element. */
   private depth = 0;
+  /** XML: whether the prolog is over (a start tag or a DOCTYPE has been read), so no DOCTYPE may follow. */
+  private prologEnded = false;
   /** XML: why the last token {@link misplaced} looked at is not well-formed. */
   private misplacement: Option.Option<InvalidDocumentStructure> = Option.none();
   private readonly grammars: Grammars;
@@ -522,7 +524,9 @@ export class Lexer {
   /**
    * XML: is `t` out of place (§2.1, §2.8)? An XML declaration must open the
    * document (an entity's replacement text has none), and outside the root
-   * element there may be no references or CDATA sections. Records why in
+   * element there may be no references or CDATA sections. A document type
+   * declaration belongs to the prolog: at most one, before the root element.
+   * Records why in
    * {@link misplacement}, and counts the open elements as it goes.
    */
   // A `switch` and a method built once: this runs once per XML token.
@@ -530,9 +534,21 @@ export class Lexer {
     switch (t._tag) {
       case "StartElement":
         if (!t.selfClosing) this.depth++;
+        this.prologEnded = true;
         return false;
       case "EndElement":
         if (this.depth > 0) this.depth--;
+        return false;
+      case "Doctype":
+        // Replacement text (`content`) takes no declarations at all; the
+        // entity expansion reports that.
+        if (!this.options.content && this.prologEnded) {
+          return this.misplace(
+            t.start,
+            "a document type declaration is only allowed once, in the prolog before the root element",
+          );
+        }
+        this.prologEnded = true;
         return false;
       case "XmlDeclaration":
         return (

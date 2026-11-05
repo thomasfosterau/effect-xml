@@ -41,6 +41,24 @@ describe("typed errors", () => {
     expect(e.message).toContain("multiple root");
   });
 
+  test("a DOCTYPE inside the root element is not well-formed (#118)", async () => {
+    const e = await parseError(`<w><!DOCTYPE html PUBLIC 'a' 'b'><a/></w>`);
+    expect(e._tag).toBe("InvalidDocumentStructure");
+    expect(e.message).toContain("at 1:4: a document type declaration is only allowed once");
+  });
+
+  test("HTML still reads a stray DOCTYPE in content, which tree construction ignores", async () => {
+    const events = await Effect.runPromise(
+      Sax.collect(`<w><!DOCTYPE html><a/></w>`, { mode: "html" }),
+    );
+    expect(events.map((e) => e._tag)).toStrictEqual([
+      "StartElement",
+      "Doctype",
+      "StartElement",
+      "EndElement",
+    ]);
+  });
+
   test("character data outside the root", async () => {
     const e = await parseError(`text<a/>`);
     expect(e._tag).toBe("InvalidDocumentStructure");

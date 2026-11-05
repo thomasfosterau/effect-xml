@@ -188,6 +188,23 @@ describe("XML well-formedness", () => {
       ["<a/><![CDATA[ ]]>", "CDATA sections are not allowed outside the root element"],
     ]));
 
+  test("a document type declaration comes once, in the prolog (§2.8)", () =>
+    rejects([
+      [
+        "<w><!DOCTYPE html PUBLIC 'a' 'b'><a/></w>",
+        "at 1:4: a document type declaration is only allowed once, in the prolog",
+      ],
+      ["<a/><!DOCTYPE a>", "at 1:5: a document type declaration is only allowed once"],
+      ["<!DOCTYPE a><!DOCTYPE a><a/>", "at 1:13: a document type declaration is only allowed once"],
+    ]));
+
+  test("a document type declaration may follow the XML declaration, comments and PIs", async () => {
+    const events = await Effect.runPromise(
+      Sax.collect(`<?xml version="1.0"?><!-- c --><?p?> <!DOCTYPE a><a/>`),
+    );
+    expect(events.filter(Sax.isDoctype).map((d) => d.name)).toStrictEqual(["a"]);
+  });
+
   test("references and CDATA sections in an entity's replacement text are content", async () => {
     const events = await Effect.runPromise(
       Sax.collect(`<!DOCTYPE a [<!ENTITY e "&#38;amp;<![CDATA[x]]>">]><a>&e;</a>`, {
