@@ -126,7 +126,7 @@
     },
     "fn-codepoints-to-string": {
       "runnable": 76,
-      "passing": 74
+      "passing": 75
     },
     "fn-collation-key": {
       "runnable": 21,
@@ -310,7 +310,7 @@
     },
     "fn-function-name": {
       "runnable": 25,
-      "passing": 21
+      "passing": 24
     },
     "fn-generate-id": {
       "runnable": 26,
@@ -1736,7 +1736,7 @@
     },
     "fn-codepoints-to-string": {
       "runnable": 70,
-      "passing": 68
+      "passing": 69
     },
     "fn-collation-key": {
       "runnable": 21,
@@ -1920,7 +1920,7 @@
     },
     "fn-function-name": {
       "runnable": 22,
-      "passing": 19
+      "passing": 21
     },
     "fn-generate-id": {
       "runnable": 18,

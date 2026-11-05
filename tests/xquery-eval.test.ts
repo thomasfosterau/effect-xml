@@ -322,6 +322,16 @@ describe("functions", () => {
     expect(values("function-arity(string-join#2)")).toEqual(["2"]);
   });
 
+  test("partial application makes an anonymous function (XPath 3.1 §3.1.5.2)", () => {
+    expect(values("function-name(substring(?, 1))")).toEqual([]);
+    expect(values("function-name(substring#2(?, 1))")).toEqual([]);
+    expect(values("declare function local:f($a, $b) { $a }; function-name(local:f(?, 1))")).toEqual(
+      [],
+    );
+    expect(values("string(function-name(substring#2))")).toEqual(["substring"]);
+    expect(values("function-arity(substring(?, 1)), substring(?, 2)('abc')")).toEqual(["1", "bc"]);
+  });
+
   test("focus-dependent functions read the focus they were referred to in", () => {
     expect(values("(10, 20, 30)[2] ! position#0()")).toEqual(["1"]);
     expect(values("let $p := (5, 6)[position#0() = 2] return $p")).toEqual(["6"]);
