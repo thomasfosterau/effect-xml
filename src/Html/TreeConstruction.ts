@@ -387,15 +387,14 @@ const HTML401_TRANSITIONAL = "-//w3c//dtd html 4.01 transitional//";
 
 /**
  * The document mode a DOCTYPE sets (WHATWG "the initial insertion mode").
- * The tokenizer's force-quirks flag is not modelled: a DOCTYPE without a
- * name is quirks through its name.
  */
 const documentModeOf = (
+  forceQuirks: boolean,
   name: string,
   publicId: string | null,
   systemId: string | null,
 ): HtmlDocumentMode => {
-  if (name.toLowerCase() !== "html") return "quirks";
+  if (forceQuirks || name.toLowerCase() !== "html") return "quirks";
   const p = publicId === null ? null : publicId.toLowerCase();
   const s = systemId === null ? null : systemId.toLowerCase();
   if (
@@ -1094,7 +1093,7 @@ class HtmlTreeBuilder {
 
   private acceptDoctype(ev: Extract<TreeEvent, { _tag: "Doctype" }>): void {
     if (this.mode !== "initial") return;
-    this.documentMode = documentModeOf(ev.name, ev.publicId, ev.systemId);
+    this.documentMode = documentModeOf(ev.forceQuirks, ev.name, ev.publicId, ev.systemId);
     this.doctype = Nodes.htmlDoctype(
       // The HTML parser lowercases the DOCTYPE name.
       ev.name.toLowerCase(),

@@ -75,7 +75,14 @@ describe("HTML tokenization follows WHATWG", () => {
   test("DOCTYPE: a `>` inside an identifier ends the DOCTYPE", async () => {
     const events = await html(`<!DOCTYPE html PUBLIC "a>b">`);
     expect(withoutSpans(events)).toEqual([
-      { _tag: "Doctype", name: "html", publicId: "a", systemId: null, internalSubset: null },
+      {
+        _tag: "Doctype",
+        name: "html",
+        publicId: "a",
+        systemId: null,
+        internalSubset: null,
+        forceQuirks: true,
+      },
       { _tag: "Text", data: 'b">' },
     ]);
   });

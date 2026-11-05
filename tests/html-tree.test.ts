@@ -270,6 +270,16 @@ describe("Html.parseDocument — document mode", () => {
     );
   });
 
+  test("the tokenizer's force-quirks flag makes an html DOCTYPE quirks", async () => {
+    expect(await mode("<!DOCTYPE html bogus><p>x")).toBe("quirks");
+    expect(await mode("<!DOCTYPE html")).toBe("quirks");
+    expect(await mode(`<!DOCTYPE html PUBLIC>`)).toBe("quirks");
+    expect(await mode(`<!DOCTYPE html SYSTEM "about:legacy-compat`)).toBe("quirks");
+    expect(await mode(`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN>`)).toBe("quirks");
+    // A bogus tail after the system identifier leaves the flag unset.
+    expect(await mode(`<!DOCTYPE html SYSTEM "about:legacy-compat" x>`)).toBe("no-quirks");
+  });
+
   test("XHTML 1.0 and HTML 4.01 transitional with a system id are limited-quirks", async () => {
     expect(
       await mode(

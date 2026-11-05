@@ -80,6 +80,7 @@ export type LexEvent =
       readonly publicId: string | null;
       readonly systemId: string | null;
       readonly internalSubset: string | null;
+      readonly forceQuirks: boolean;
       readonly span: Span;
     }
   | {
@@ -628,6 +629,7 @@ export class Lexer {
           publicId: t.publicId,
           systemId: t.systemId,
           internalSubset: t.internalSubset,
+          forceQuirks: t.forceQuirks,
           span: this.span(t),
           _tag: t._tag,
         };

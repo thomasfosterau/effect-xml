@@ -83,6 +83,12 @@ export type SaxEvent = Data.TaggedEnum<{
     readonly publicId: string | null;
     readonly systemId: string | null;
     readonly internalSubset: string | null;
+    /**
+     * The WHATWG tokenizer's force-quirks flag (HTML mode): set by a DOCTYPE
+     * without a name, a bogus one, a missing or unterminated identifier, or
+     * one cut short by the end of input. Always `false` in XML mode.
+     */
+    readonly forceQuirks: boolean;
     readonly span: Span;
   };
   XmlDeclaration: {

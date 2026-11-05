@@ -4,8 +4,8 @@
  * gate in `conformance.test.ts`.
  *
  * Only tests that start in the data state are run: the SAX stream always
- * starts there. Parse errors aren't compared, and a DOCTYPE's force-quirks
- * flag isn't either (the SAX event has no such field). As with the other
+ * starts there. Parse errors aren't compared; a DOCTYPE's force-quirks flag
+ * is (html5lib's `correctness`, its negation). As with the other
  * gates, this asserts a pass-count baseline: raise it when a change improves
  * the count. Set `HTML5LIB_REPORT=1` to list the failing tests.
  */
@@ -112,16 +112,17 @@ const tokens = (input: string): Array<Token> =>
         Text: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
         CData: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
         Comment: (ev): ReadonlyArray<Token> => [["Comment", ev.data]],
-        Doctype: (ev): ReadonlyArray<Token> => [["DOCTYPE", ev.name, ev.publicId, ev.systemId]],
+        Doctype: (ev): ReadonlyArray<Token> => [
+          ["DOCTYPE", ev.name, ev.publicId, ev.systemId, !ev.forceQuirks],
+        ],
         ProcessingInstruction: (): ReadonlyArray<Token> => [],
         XmlDeclaration: (): ReadonlyArray<Token> => [],
       }),
     ),
   );
 
-/** html5lib's expected tokens, merged and without the force-quirks flag. */
-const expected = (output: ReadonlyArray<Token>): Array<Token> =>
-  mergeCharacters(output.map((t) => (t[0] === "DOCTYPE" ? t.slice(0, 4) : t)));
+/** html5lib's expected tokens, merged. */
+const expected = (output: ReadonlyArray<Token>): Array<Token> => mergeCharacters(output);
 
 /** The tests of each fixture file, in file-name order, that start in the data state. */
 const runnable: ReadonlyArray<readonly [file: string, test: TokenizerTest]> = Arr.sort(
