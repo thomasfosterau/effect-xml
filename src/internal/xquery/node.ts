@@ -317,6 +317,23 @@ export class XdmNode {
     return at;
   }
 
+  /**
+   * A string that identifies the node among every node of every tree, as
+   * `fn:generate-id` needs: the tree, then the node's position under each
+   * ancestor. It starts with a letter and is otherwise letters and digits.
+   */
+  get identity(): string {
+    // Each step is a letter for the list the node is in (namespaces,
+    // attributes, children) and its index there, from the root down.
+    let steps = "";
+    let at: Option.Option<XdmNode> = Option.some(this);
+    while (Option.isSome(at) && Option.isSome(at.value.up)) {
+      steps = `${"nac"[at.value.list] ?? ""}${at.value.index}${steps}`;
+      at = at.value.up;
+    }
+    return `t${this.tree.order}${steps}`;
+  }
+
   /** The parent: an element or document node; `None` at the root of a tree. */
   get parent(): Option.Option<XdmNode> {
     return this.up;

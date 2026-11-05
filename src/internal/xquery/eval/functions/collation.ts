@@ -10,7 +10,9 @@ import * as Option from "effect/Option";
 import { codepointCollation } from "../../parser/context.ts";
 import { compareCodepoints } from "../compare.ts";
 import { raise } from "../raise.ts";
+import type { Sequence } from "../../item.ts";
 import type { Call } from "./define.ts";
+import { text } from "./values.ts";
 
 /** A supported collation. */
 export interface Collation {
@@ -47,3 +49,7 @@ export const collationOf = (uri: string | undefined, call: Call): Collation =>
 /** Compare two strings under a collation: negative, zero or positive. */
 export const collate = (collation: Collation, a: string, b: string): number =>
   compareCodepoints(collation.fold(a), collation.fold(b));
+
+/** The collation of a call's optional collation argument at `i`: the default collation when it is not given. */
+export const collationArg = (args: ReadonlyArray<Sequence>, i: number, call: Call): Collation =>
+  args.length > i ? collationNamed(text(args[i]), call) : collationOf(undefined, call);

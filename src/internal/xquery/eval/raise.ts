@@ -55,7 +55,7 @@ export const raise = (code: string, description: string, offset?: number): never
 };
 
 /** Fail evaluation with `error`, positioned at `offset` if it has no position yet. */
-const raiseError = (error: XQueryError, offset?: number): never => {
+export const raiseError = (error: XQueryError, offset?: number): never => {
   throw withOffset(error, offset);
 };
 

@@ -372,7 +372,34 @@ const mismatch = (t: SeqType, s: Sequence, what: string, offset?: number): never
   return raise("XPTY0004", `${what} must be ${t.text}, not ${got}`, offset);
 };
 
-/** A function item coerced to a function type: called through a wrapper that checks its result. */
+/**
+ * Whether a map or array can stand for a function type unchanged: every
+ * argument the type admits is a valid key (an atomic value for a map, an
+ * integer for an array), every value is of the result type, and for a map the
+ * result type admits the empty sequence a missing key returns (`map(K, V)` is
+ * a `function(xs:anyAtomicType) as V?`, XPath 3.1 §2.5.6.1).
+ */
+const standsFor = (
+  test: Extract<ItemTest, { kind: "function" }>,
+  params: ReadonlyArray<SeqType>,
+  item: MapItem | ArrayItem,
+): boolean => {
+  const own = signatureOf(item).params;
+  return (
+    params.every((p, i) => seqSubtype(p, own[i] ?? anySequence)) &&
+    (item instanceof ArrayItem || test.result.min === 0) &&
+    functionMatches(test, item)
+  );
+};
+
+/**
+ * A function item, map or array coerced to a function type (XPath 3.1
+ * §3.1.5.3): called through a wrapper that converts its arguments to the
+ * expected parameter types and its result to the expected result type. A map
+ * or array that already stands for the type is passed through, so it stays a
+ * map or array; one that does not (`[1, true()]` where a predicate is
+ * expected) is wrapped like any other function item.
+ */
 const coerceFunction = (
   test: Extract<ItemTest, { kind: "function" }>,
   item: Item,
@@ -382,16 +409,11 @@ const coerceFunction = (
   if (test.params === undefined) return item;
   if (!isCallable(item) || arityOf(item) !== test.params.length)
     return raise("XPTY0004", `${what} must be a function of arity ${test.params.length}`, offset);
-  // XPath 3.1 §3.1.5.3: the coerced function converts its arguments to the
-  // expected parameter types and its result to the expected result type. Maps
-  // and arrays are only checked, so they stay maps and arrays.
-  if (!(item instanceof FunctionItem))
-    return itemMatches(test, item)
-      ? item
-      : raise("XPTY0004", `${what} does not match the expected function type`, offset);
   const params = test.params;
+  const isFunction = item instanceof FunctionItem;
+  if (!isFunction && standsFor(test, params, item)) return item;
   const sig: Signature = { params, result: test.result };
-  return new Closure(item.name, sig, (args) =>
+  return new Closure(isFunction ? item.name : Option.none(), sig, (args) =>
     coerce(
       test.result,
       callFunction(
