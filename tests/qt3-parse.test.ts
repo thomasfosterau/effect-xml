@@ -36,6 +36,7 @@ import {
   type Spec,
   type TestCase,
 } from "./support/qt3.ts";
+import { reportRequested } from "./support/report.ts";
 
 const Counts = Schema.Struct({
   runnable: Schema.Finite,
@@ -285,7 +286,7 @@ describe("W3C QT3 parse-only pass", () => {
     const counts = Record.fromEntries(
       results.map(([spec, verdicts]) => [spec, countsBySet(verdicts)] as const),
     );
-    const report = process.env.QT3_REPORT !== undefined && process.env.QT3_REPORT !== "";
+    const report = Effect.runSync(reportRequested("QT3_REPORT"));
     await Effect.runPromise(
       Effect.all(
         [

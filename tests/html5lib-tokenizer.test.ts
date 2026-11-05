@@ -22,6 +22,7 @@ import * as Predicate from "effect/Predicate";
 import * as Record from "effect/Record";
 import * as Schema from "effect/Schema";
 import { Sax } from "../src/index.ts";
+import { reportRequested } from "./support/report.ts";
 
 /** Every `.test` fixture's text, keyed by its path relative to this file. */
 const SOURCES = import.meta.glob<string>("./fixtures/html5lib-tokenizer/*.test", {
@@ -154,10 +155,10 @@ describe("html5lib tokenizer conformance", () => {
     });
     const passed = runnable.length - failures.length;
     await Effect.runPromise(
-      Effect.all([
-        process.env.HTML5LIB_REPORT ? Console.log(failures.join("\n")) : Effect.void,
-        Console.log(`html5lib tokenizer: ${passed}/${runnable.length}`),
-      ]),
+      Effect.gen(function* () {
+        if (yield* reportRequested("HTML5LIB_REPORT")) yield* Console.log(failures.join("\n"));
+        yield* Console.log(`html5lib tokenizer: ${passed}/${runnable.length}`);
+      }),
     );
     expect(passed).toBeGreaterThanOrEqual(BASELINE);
   });

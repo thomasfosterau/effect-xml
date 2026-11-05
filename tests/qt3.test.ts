@@ -45,6 +45,7 @@ import {
   type TestSet,
   type Verdict,
 } from "./support/qt3.ts";
+import { reportRequested } from "./support/report.ts";
 
 /** The engine under test. */
 const ENGINE: Engine = xqueryEngine;
@@ -144,7 +145,7 @@ describe("W3C QT3 conformance", () => {
     const counts = Record.fromEntries(
       results.map(([spec, verdicts]) => [spec, countsBySet(sets, verdicts)] as const),
     );
-    const report = process.env.QT3_REPORT !== undefined && process.env.QT3_REPORT !== "";
+    const report = Effect.runSync(reportRequested("QT3_REPORT"));
     const cases = sets.reduce((n, s) => n + s.cases.length, 0);
     await Effect.runPromise(
       Effect.all(

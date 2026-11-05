@@ -404,10 +404,6 @@ export default defineConfig({
           // A test IS the boundary the rule sends execution to: each case
           // runs its program with `Effect.runPromise` / `runSync`.
           "effect/effect-run-in-body": "off",
-          "effect/require-safety-comment-for-type-assertion": "warn",
-          "effect/use-clock-service": "warn",
-          "effect/avoid-process-env": "warn",
-          "effect/require-effect-concurrency": "warn",
         },
       },
     ],
