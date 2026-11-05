@@ -9,6 +9,8 @@ import type * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import * as Sax from "../Sax.ts";
+import { decodeChunks } from "../internal/tokenizer.ts";
+import { buildChunks } from "../internal/xmlBuilder.ts";
 import { build, type BuildOptions } from "./TreeBuilder.ts";
 import type { XmlDocument, XmlNode } from "./Node.ts";
 import { serializeSync } from "./Writer.ts";
@@ -32,6 +34,16 @@ export interface ParseOptions extends BuildOptions {
   readonly limits?: Partial<Limits> | undefined;
   /** Interpret the DOCTYPE internal subset (see {@link Sax.SaxOptions.dtd}); default `"ignore"`. */
   readonly dtd?: "ignore" | "internal" | undefined;
+  /**
+   * `parse` and `parseBytes`: with `false`, build the tree from a lenient
+   * reading, as `Sax.forEach` reads (see `Sax.ForEachOptions.strict`), for
+   * documents known to be well-formed: a well-formed document gives the same
+   * tree, about twice as fast. If lenient reading fails, the document is read
+   * strictly, so a failure is always the strict one. Default `true`.
+   *
+   * @since 0.3.0
+   */
+  readonly strict?: boolean | undefined;
 }
 
 const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
@@ -63,7 +75,7 @@ export const parse = (
   input: string,
   options?: ParseOptions,
 ): Effect.Effect<XmlDocument, SaxError> =>
-  Sax.tokenizeString(input, saxOptions(options)).pipe(build(options ?? {}));
+  buildChunks(() => ({ chunks: [input] }), saxOptions(options), options, options?.strict !== false);
 
 /**
  * Parse a stream of XML chunks into a typed document. Chunks may split markup
@@ -108,7 +120,12 @@ export const parseBytes = (
   input: Uint8Array,
   options?: ParseBytesOptions,
 ): Effect.Effect<XmlDocument, SaxError> =>
-  Sax.tokenizeByteArray(input, bytesOptions(options)).pipe(build(options ?? {}));
+  buildChunks(
+    () => decodeChunks(input, Sax.decodeOptions(bytesOptions(options))),
+    bytesOptions(options),
+    options,
+    options?.strict !== false,
+  );
 
 /**
  * Parse a stream of XML bytes into a typed document, detecting the encoding.
