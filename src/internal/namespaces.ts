@@ -76,9 +76,13 @@ export const checkStartTag = (
   unbinding: boolean,
 ): Option.Option<InvalidNamespace> => {
   const element = checkElementName(name, at);
-  return Option.isSome(element)
-    ? element
-    : Arr.findFirst(attributes, (a) => checkAttribute(a, unbinding));
+  if (Option.isSome(element)) return element;
+  // Once per start tag: a loop, without a closure per call.
+  for (const a of attributes) {
+    const attribute = checkAttribute(a, unbinding);
+    if (Option.isSome(attribute)) return attribute;
+  }
+  return Option.none();
 };
 
 /** A processing instruction target, entity or notation name has no colon (§7). */

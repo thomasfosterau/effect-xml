@@ -610,6 +610,17 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 | `scripting` | `Html` (and `Sax.tokenize` in HTML mode) | `false` | the HTML scripting flag: when `true`, `<noscript>` content is raw text, as in a browser with scripting enabled |
 | `context` | `Html.parseDocumentFragment` | `"body"` | the context element of the fragment parse |
 
+## Performance
+
+The XML tokenizer reads text, tags, comments, CDATA sections and processing instructions with a hand-written scanner, and leaves everything else (and every error) to its grammars, so it is strict and still fast. Over the built package in Node 22, on an 8 MB spreadsheet worksheet and an 8 MB feed with namespaces, comments, CDATA and references:
+
+|                      | worksheet | feed    |
+| -------------------- | --------- | ------- |
+| `Sax.tokenizeString` | 30 MB/s   | 37 MB/s |
+| `Xml.parse`          | 21 MB/s   | 27 MB/s |
+
+`vp run bench` measures them, and other parsers when they are installed. Each event carries its span and every name and reference is checked; saxes and htmlparser2 (40–60 MB/s here, with no positions per event) and lenient parsers that check less (easysax, @eksml/xml, txml) are faster.
+
 ## Names and positions
 
 ```ts

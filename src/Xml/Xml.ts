@@ -9,6 +9,8 @@ import type * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import * as Sax from "../Sax.ts";
+import { decodeChunks } from "../internal/tokenizer.ts";
+import { buildChunks } from "../internal/xmlBuilder.ts";
 import { build, type BuildOptions } from "./TreeBuilder.ts";
 import type { XmlDocument, XmlNode } from "./Node.ts";
 import { serializeSync } from "./Writer.ts";
@@ -63,7 +65,7 @@ export const parse = (
   input: string,
   options?: ParseOptions,
 ): Effect.Effect<XmlDocument, SaxError> =>
-  Sax.tokenizeString(input, saxOptions(options)).pipe(build(options ?? {}));
+  buildChunks(() => ({ chunks: [input] }), saxOptions(options), options);
 
 /**
  * Parse a stream of XML chunks into a typed document. Chunks may split markup
@@ -108,7 +110,11 @@ export const parseBytes = (
   input: Uint8Array,
   options?: ParseBytesOptions,
 ): Effect.Effect<XmlDocument, SaxError> =>
-  Sax.tokenizeByteArray(input, bytesOptions(options)).pipe(build(options ?? {}));
+  buildChunks(
+    () => decodeChunks(input, Sax.decodeOptions(bytesOptions(options))),
+    bytesOptions(options),
+    options,
+  );
 
 /**
  * Parse a stream of XML bytes into a typed document, detecting the encoding.

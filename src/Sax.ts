@@ -19,20 +19,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
-import { MalformedDeclaration } from "./Error.ts";
-import { Dtd } from "./internal/dtd.ts";
-import { applyDefaults, Expander } from "./internal/expansion.ts";
-import { Guard } from "./internal/guard.ts";
-import {
-  isDoctypeEvent,
-  isEntityReferenceEvent,
-  isFault,
-  isStartElementEvent,
-  Lexer,
-  type LexOutput,
-} from "./internal/lexer.ts";
-import { convert } from "./internal/convert.ts";
-import { quote } from "./internal/quote.ts";
+import { Tokenizer } from "./internal/tokenizer.ts";
 import { xmlEntities, htmlEntities } from "./internal/entities.ts";
 import type { AttrName, TagName } from "./Name.ts";
 import type { Span } from "./Position.ts";
@@ -224,6 +211,8 @@ export interface ResolvedOptions {
   readonly limits: Limits;
   readonly dtd: "ignore" | "internal";
   readonly scripting: boolean;
+  /** Whether events carry positions (internal: `false` for the lean pass of `Xml.parse`). */
+  readonly positions: boolean;
 }
 
 /** @internal */
@@ -237,6 +226,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     limits: resolveLimits(options?.limits),
     dtd: options?.dtd ?? "ignore",
     scripting: options?.scripting ?? false,
+    positions: true,
   };
 };
 
@@ -268,100 +258,50 @@ export const tokenize =
   <E, R>(input: Stream.Stream<string, E, R>): Stream.Stream<SaxEvent, SaxError | E, R> => {
     const opts = resolveSaxOptions(options);
     return Stream.suspend(() => {
-      const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined;
-      const lexer = new Lexer({
-        mode: opts.mode,
-        entities: opts.entities,
-        dtd,
-        content: false,
-        scripting: opts.scripting,
-      });
-      const expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
-      const guard = new Guard(opts.limits, opts.mode === "xml");
-      /** Interpret a DOCTYPE or an entity reference (with `dtd: "internal"`). */
-      const interpret = (o: LexOutput): ReadonlyArray<LexOutput> => {
-        if (dtd === undefined || expander === undefined) return [o];
-        if (isDoctypeEvent(o)) {
-          const subset = o.internalSubset;
-          const error = subset === null ? null : dtd.declare(subset);
-          if (subset === null || error === null) return [o];
-          const found = subset.slice(error.offset, error.offset + 1);
-          const fault = new MalformedDeclaration({
-            construct: "DOCTYPE internal subset",
-            expected: error.expected,
-            found: found === "" ? "end of input" : quote(found),
-            position: o.span.start,
-          });
-          return [{ _tag: "Fault", error: fault }];
-        }
-        if (isEntityReferenceEvent(o)) return expander.expand(o);
-        return [o];
-      };
-      // Lex token by token, so a limit stops the lexer at the offending token
-      // rather than after the whole chunk, converting each output as it comes.
+      const tokenizer = new Tokenizer(opts);
       // The events are emitted in batches of at most `BATCH`, read only as the
       // stream is pulled: a large chunk never has all its events in memory at
       // once, and each batch can be dropped before the next is built.
-      let events: Array<SaxEvent> = [];
-      let fault: SaxError | undefined = undefined;
-      /** Keep one output; `false` once it is (or has become) a fault, ending the batch. */
-      const accept = (o: LexOutput): boolean => {
-        if (isFault(o)) {
-          fault = o.error;
-          return false;
-        }
-        const over = guard.event(o);
-        if (over !== null) {
-          fault = over;
-          return false;
-        }
-        const ev = convert(o, opts);
-        if (ev !== null) events.push(ev);
+      // Filled in place, and each batch copied out at its exact length: a
+      // batch grown a push at a time is copied as it grows.
+      const events: Array<SaxEvent> = [];
+      let count = 0;
+      const keep = (ev: SaxEvent): boolean => {
+        events[count++] = ev;
         return true;
       };
-      // Only a DOCTYPE or an entity reference can stand for other outputs; the
-      // rest are kept one for one, without an array per output.
-      const each =
-        dtd === undefined
-          ? accept
-          : (raw: LexOutput): boolean =>
-              isDoctypeEvent(raw) || isEntityReferenceEvent(raw)
-                ? interpret(raw).every(accept)
-                : accept(isStartElementEvent(raw) ? applyDefaults(dtd, raw) : raw);
-      const full = (): boolean => events.length >= BATCH;
+      const full = (): boolean => count >= BATCH;
       /**
        * The events of the input written so far, then the fault if there is
        * one: once the input has ended, or else when the token the lexer is
        * still waiting on is already too long.
        */
-      const lexed = (ended: boolean): Stream.Stream<SaxEvent, SaxError> =>
+      const lexed = (): Stream.Stream<SaxEvent, SaxError> =>
         Stream.fromPull(
           Effect.sync(() => {
             let dry = false;
             return Effect.suspend(
               (): Effect.Effect<Arr.NonEmptyReadonlyArray<SaxEvent>, SaxError | Cause.Done> => {
-                if (fault === undefined && !dry) {
-                  events = [];
-                  dry = lexer.pullEach(each, full);
-                  if (dry && !ended) fault = guard.pending(lexer) ?? undefined;
-                  const batch = events;
+                if (tokenizer.fault === undefined && !dry) {
+                  count = 0;
+                  dry = tokenizer.run(keep, full);
+                  const batch = events.slice(0, count);
                   if (Arr.isArrayNonEmpty(batch)) return Effect.succeed(batch);
                 }
+                const fault = tokenizer.fault;
                 return fault === undefined ? Cause.done() : Effect.fail(fault);
               },
             );
           }),
         );
       const write = (chunk: string): Stream.Stream<SaxEvent, SaxError> => {
-        const over = guard.input(chunk.length, lexer);
-        if (over !== null) return Stream.fail(over);
-        lexer.push(chunk);
-        return lexed(false);
+        const over = tokenizer.write(chunk);
+        return over === undefined ? lexed() : Stream.fail(over);
       };
       const body = input.pipe(Stream.flatMap(write));
       const tail = Stream.suspend(() => {
-        lexer.close();
-        return lexed(true);
+        tokenizer.close();
+        return lexed();
       });
       return Stream.concat(body, tail);
     });
