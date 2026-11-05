@@ -33,7 +33,7 @@ import { QNames } from "../internal/qnames.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
 import * as Nodes from "../internal/nodes.ts";
 import { Namespaces, QName } from "../Name.ts";
-import { origin, type Position } from "../Position.ts";
+import { origin, type Span } from "../Position.ts";
 import type { SaxEvent } from "../Sax.ts";
 import {
   advance,
@@ -69,7 +69,8 @@ class Selector {
   private unbinding = false;
   /** The names built so far, so each raw name and namespace is built once. */
   private readonly names = new QNames();
-  last: Position = origin;
+  /** The span of the last event (its end is where an unclosed element is reported). */
+  last: Span = { start: origin, end: origin };
 
   private readonly steps: ReadonlyArray<StreamStep>;
 
@@ -81,7 +82,7 @@ class Selector {
     raw: string,
     isAttribute: boolean,
     bindings: HashMap.HashMap<string, string>,
-    position: Position,
+    at: Span,
   ): QName | SaxError {
     const parsed = this.names.entry(raw);
     if (parsed.prefix === "xml") return this.names.name(parsed, Namespaces.xml);
@@ -96,7 +97,7 @@ class Selector {
     // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
     if (ns === undefined || (ns === "" && parsed.prefix !== null)) {
       if (parsed.prefix === null) return this.names.name(parsed, null);
-      return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position });
+      return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position: at.start });
     }
     // `xmlns=""` undeclares the default namespace.
     return this.names.name(parsed, ns === "" ? null : ns);
@@ -104,26 +105,23 @@ class Selector {
 
   /** Feed one event; returns a completed subtree, an error, or nothing. */
   accept(ev: SaxEvent): XmlElement | SaxError | null {
-    this.last = ev.span.end;
+    this.last = ev.span;
     return matchSaxEvent(ev, this.handlers);
   }
 
   /** What each event kind does; built once per selector. */
   private readonly handlers = {
     StartElement: (ev: Extract<SaxEvent, { _tag: "StartElement" }>) => this.start(ev),
-    EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>) => this.end(ev.name, ev.span.start),
+    EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>) => this.end(ev.name, ev.span),
     Text: (ev: Extract<SaxEvent, { _tag: "Text" }>) => this.append(Nodes.text(ev.data)),
     CData: (ev: Extract<SaxEvent, { _tag: "CData" }>) => this.append(Nodes.cdata(ev.data)),
     Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>) => this.append(Nodes.comment(ev.data)),
     ProcessingInstruction: (ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>) =>
-      Option.getOrElse(
-        checkNoColon(ev.target, "a processing instruction target", ev.span.start),
-        () => this.append(Nodes.processingInstruction(ev.target, ev.data)),
+      Option.getOrElse(checkNoColon(ev.target, "a processing instruction target", ev.span), () =>
+        this.append(Nodes.processingInstruction(ev.target, ev.data)),
       ),
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>) =>
-      ev.internalSubset === null
-        ? null
-        : Option.getOrNull(checkSubset(ev.internalSubset, ev.span.start)),
+      ev.internalSubset === null ? null : Option.getOrNull(checkSubset(ev.internalSubset, ev.span)),
     XmlDeclaration: (ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>) => {
       // Only an XML 1.1 document may undeclare a prefix with `xmlns:p=""`.
       this.unbinding = ev.version === "1.1";
@@ -137,7 +135,7 @@ class Selector {
   }
 
   private start(ev: Extract<SaxEvent, { _tag: "StartElement" }>): XmlElement | SaxError | null {
-    const invalid = checkStartTag(ev.name, ev.attributes, ev.span.start, this.unbinding);
+    const invalid = checkStartTag(ev.name, ev.attributes, ev.span, this.unbinding);
     if (Option.isSome(invalid)) return invalid.value;
     const bindings = Arr.reduce(ev.attributes, HashMap.empty<string, string>(), (acc, a) =>
       a.name === "xmlns"
@@ -146,7 +144,7 @@ class Selector {
           ? HashMap.set(acc, a.name.slice(6), a.value)
           : acc,
     );
-    const name = this.resolve(ev.name, false, bindings, ev.span.start);
+    const name = this.resolve(ev.name, false, bindings, ev.span);
     if (!(name instanceof QName)) return name;
     // In document order; the first duplicate or unbound prefix ends the element.
     const resolved = resolveAttributes(ev.name, ev.attributes, (attribute, at) => {
@@ -168,18 +166,18 @@ class Selector {
         this.captureDepth = this.levels.length - 1;
         this.capture.push({ name, attributes, children: [] });
       }
-      if (ev.selfClosing) return this.end(ev.name, ev.span.start);
+      if (ev.selfClosing) return this.end(ev.name, ev.span);
       return null;
     }
     this.levels.push({ rawName: ev.name, bindings, ...unmatched });
-    return ev.selfClosing ? this.end(ev.name, ev.span.start) : null;
+    return ev.selfClosing ? this.end(ev.name, ev.span) : null;
   }
 
-  private end(rawName: string, position: Position): XmlElement | SaxError | null {
+  private end(rawName: string, at: Span): XmlElement | SaxError | null {
     const level = this.levels.pop();
-    if (level === undefined) return new UnexpectedEndTag({ name: rawName, position });
+    if (level === undefined) return new UnexpectedEndTag({ name: rawName, position: at.start });
     if (level.rawName !== rawName)
-      return new MismatchedEndTag({ expected: level.rawName, actual: rawName, position });
+      return new MismatchedEndTag({ expected: level.rawName, actual: rawName, position: at.start });
     const frame = this.capture.pop();
     if (frame === undefined) return null;
     const element = Nodes.element(frame.name, frame.attributes, frame.children);
@@ -196,7 +194,7 @@ class Selector {
     return open === undefined
       ? null
       : new InvalidDocumentStructure({
-          position: this.last,
+          position: this.last.end,
           reason: `unexpected end of input: <${open.rawName}> was never closed`,
         });
   }

@@ -251,6 +251,17 @@ export default defineConfig({
           "effect/imperative-loops": "off",
         },
       },
+      // The line index's scan for line breaks: it runs over every chunk of
+      // input once, pushing one number per `\n` (`indexOf` from the last
+      // one). Recursion would overflow on a chunk with enough lines, and an
+      // `Arr` fold or `Arr.unfold` would allocate per character or per line
+      // on the path every parser takes its input in by.
+      {
+        files: ["src/internal/position.ts"],
+        rules: {
+          "effect/imperative-loops": "off",
+        },
+      },
       // The per-token dispatch: the lexer's token → event step and its
       // guards, the limit check, and the SAX conversion run once per token.
       // `$match` and `$is` are each ONE function shared by every table and
