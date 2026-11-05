@@ -19,6 +19,7 @@ import { AtomicValue } from "../atomic.ts";
 import { ArrayItem, atomize, FunctionItem, MapItem, type Item, type Sequence } from "../item.ts";
 import type { NodeKind, XdmNode } from "../node.ts";
 import { AtomicTypes, derivesFrom, type AtomicType } from "../types.ts";
+import { castAtomic } from "./cast.ts";
 import { attemptSync, raise, Suspend, unwrap, type ResourceRequest } from "./raise.ts";
 
 // -----------------------------------------------------------------------------
@@ -37,6 +38,14 @@ export type ItemTest =
       readonly nodeKind: NodeKind | undefined;
       /** The Clark name the test requires, if it requires one. */
       readonly name: string | undefined;
+      /**
+       * The type annotation an element or attribute test requires, as a
+       * Clark name; `undefined` for none, or for the type every node has
+       * (`xs:anyType`, `xs:anySimpleType`, `xs:anyAtomicType`).
+       */
+      readonly annotation: string | undefined;
+      /** The element test a `document-node(…)` test applies to the document element. */
+      readonly content: ItemTest | undefined;
       readonly matches: (node: XdmNode) => boolean;
     }
   | {
@@ -142,7 +151,15 @@ export const callFunction = (
   if (f instanceof FunctionItem) return unwrap(f.invoke(args), offset);
   const key = singleAtomic(args[0] ?? [], "the key", offset);
   if (f instanceof MapItem) return Option.getOrElse(f.get(key), () => []);
-  return arrayMember(f, key, offset);
+  // An array is a function(xs:integer) as item()*: the function conversion rules
+  // cast an untyped argument (a lookup with `?` does not convert).
+  return arrayMember(
+    f,
+    key.type === AtomicTypes.untypedAtomic
+      ? castAtomic(key, AtomicTypes.integer, undefined, offset)
+      : key,
+    offset,
+  );
 };
 
 // -----------------------------------------------------------------------------
@@ -201,7 +218,7 @@ export const fetchResource = (
   return request.kind === "text"
     ? raise("FOUT1170", `the resource ${request.uri} is not available`, offset)
     : raise(
-        request.kind === "document" ? "FODC0002" : "FODC0004",
+        "FODC0002",
         `${request.uri === "" ? "the default collection" : request.uri} is not available`,
         offset,
       );

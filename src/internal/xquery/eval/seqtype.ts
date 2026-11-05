@@ -53,7 +53,21 @@ const nodeTest = (
   nodeKind: XdmNode["kind"] | undefined,
   name: string | undefined,
   matches: (node: XdmNode) => boolean,
-): ItemTest => ({ kind: "node", nodeKind, name, matches });
+  annotation?: string,
+  content?: ItemTest,
+): ItemTest => ({ kind: "node", nodeKind, name, annotation, content, matches });
+
+/** The annotation a kind test's type name requires: none for the types every element or attribute has. */
+const annotationOf = (type: Option.Option<EQName>, resolve: Resolve): string | undefined =>
+  Option.getOrUndefined(
+    Option.filter(
+      Option.map(type, (t) => resolve(t, "type")),
+      (n) =>
+        !(
+          n.uri === Namespaces.xs && ["anyType", "anySimpleType", "anyAtomicType"].includes(n.local)
+        ),
+    ).pipe(Option.map(clarkOf)),
+  );
 
 const nameOf = (node: XdmNode): string =>
   Option.match(node.name, { onNone: () => "", onSome: (q) => `{${q.namespace ?? ""}}${q.local}` });
@@ -93,12 +107,13 @@ const namedTest = (
     kind,
     wanted,
     (node) => typed && node.kind === kind && (wanted === undefined || nameOf(node) === wanted),
+    annotationOf(type, resolve),
   );
 };
 
 const documentTest = (element: Option.Option<ItemTypeT>, resolve: Resolve): ItemTest => {
   const inner = Option.map(element, (e) => itemTest(e, resolve));
-  return nodeTest("document", undefined, (node) => {
+  const matches = (node: XdmNode): boolean => {
     if (node.kind !== "document") return false;
     return Option.match(inner, {
       onNone: () => true,
@@ -113,7 +128,8 @@ const documentTest = (element: Option.Option<ItemTypeT>, resolve: Resolve): Item
         );
       },
     });
-  });
+  };
+  return nodeTest("document", undefined, matches, undefined, Option.getOrUndefined(inner));
 };
 
 const atomicTest = (name: EQName, resolve: Resolve): ItemTest => {
@@ -268,10 +284,15 @@ const atomicSubtype = (a: ItemTest, b: ItemTest): boolean => {
   return a.kind === "atomic" && derivesFrom(a.type, b.type);
 };
 
-const nodeSubtype = (a: ItemTest, b: Extract<ItemTest, { kind: "node" }>): boolean =>
-  a.kind === "node" &&
-  (b.nodeKind === undefined ||
-    (a.nodeKind === b.nodeKind && (b.name === undefined || a.name === b.name)));
+/** Whether a node test is at least as narrow as another: same kind, name, annotation and document content. */
+const nodeSubtype = (a: ItemTest, b: Extract<ItemTest, { kind: "node" }>): boolean => {
+  if (a.kind !== "node") return false;
+  if (b.nodeKind === undefined) return true;
+  if (a.nodeKind !== b.nodeKind || (b.name !== undefined && a.name !== b.name)) return false;
+  if (b.annotation !== undefined && a.annotation !== b.annotation) return false;
+  const content = b.content;
+  return content === undefined || (a.content !== undefined && itemSubtype(a.content, content));
+};
 
 /** Subtyping against a function test: maps and arrays are functions of one argument. */
 const functionSubtype = (a: ItemTest, b: Extract<ItemTest, { kind: "function" }>): boolean => {
@@ -361,11 +382,26 @@ const coerceFunction = (
   if (test.params === undefined) return item;
   if (!isCallable(item) || arityOf(item) !== test.params.length)
     return raise("XPTY0004", `${what} must be a function of arity ${test.params.length}`, offset);
-  if (itemMatches(test, item)) return item;
-  const name = item instanceof FunctionItem ? item.name : Option.none();
-  const sig: Signature = { params: test.params, result: test.result };
-  return new Closure(name, sig, (args) =>
-    coerce(test.result, callFunction(item, args, offset), "the result", offset),
+  // XPath 3.1 §3.1.5.3: the coerced function converts its arguments to the
+  // expected parameter types and its result to the expected result type. Maps
+  // and arrays are only checked, so they stay maps and arrays.
+  if (!(item instanceof FunctionItem))
+    return itemMatches(test, item)
+      ? item
+      : raise("XPTY0004", `${what} does not match the expected function type`, offset);
+  const params = test.params;
+  const sig: Signature = { params, result: test.result };
+  return new Closure(item.name, sig, (args) =>
+    coerce(
+      test.result,
+      callFunction(
+        item,
+        args.map((a, i) => coerce(params[i] ?? anySequence, a, `argument ${i + 1}`, offset)),
+        offset,
+      ),
+      "the result",
+      offset,
+    ),
   );
 };
 

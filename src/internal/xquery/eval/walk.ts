@@ -10,12 +10,21 @@
 import * as Predicate from "effect/Predicate";
 import type { Expr } from "../parser/ast.ts";
 
-/** Whether an AST value is a call of a function named `position` or `last` (in any namespace: a cautious test). */
-const isFocusCall = (x: unknown): boolean =>
-  Predicate.isTagged(x, "FunctionCall") &&
-  Predicate.hasProperty(x, "name") &&
-  Predicate.hasProperty(x.name, "local") &&
-  (x.name.local === "position" || x.name.local === "last");
+/** The functions whose value depends on the position or size of the focus, or may (`function-lookup`). */
+const focusFunctions: ReadonlyArray<string> = ["position", "last", "function-lookup"];
+
+/**
+ * Whether an AST value calls or refers to (`position#0`) a function that may
+ * read the focus position or size, by local name in any namespace: a cautious
+ * test.
+ */
+const isFocusCall = (x: unknown): boolean => {
+  if (!(Predicate.isTagged(x, "FunctionCall") || Predicate.isTagged(x, "NamedFunctionRef")))
+    return false;
+  if (!Predicate.hasProperty(x, "name") || !Predicate.hasProperty(x.name, "local")) return false;
+  const local = x.name.local;
+  return focusFunctions.some((f) => f === local);
+};
 
 /** Whether some part of an AST value passes `test`. */
 const someNode = (value: unknown, test: (x: unknown) => boolean): boolean => {

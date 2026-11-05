@@ -71,7 +71,13 @@ const compareFloating = (x: number, y: number): number =>
   Number.isNaN(x) || Number.isNaN(y) ? Number.NaN : order(x, y);
 
 const compareNumeric = (a: AtomicValue, b: AtomicValue): number => {
-  if (floating(a.type) || floating(b.type)) return compareFloating(toNumber(a), toNumber(b));
+  if (floating(a.type) || floating(b.type)) {
+    // Promotion to xs:float (neither is a double) rounds both to single precision.
+    const single = a.type.primitive !== "double" && b.type.primitive !== "double";
+    const x = single ? Math.fround(toNumber(a)) : toNumber(a);
+    const y = single ? Math.fround(toNumber(b)) : toNumber(b);
+    return compareFloating(x, y);
+  }
   if (Predicate.isBigInt(a.value) && Predicate.isBigInt(b.value)) return order(a.value, b.value);
   return BigDecimal.Order(toDecimal(a), toDecimal(b));
 };

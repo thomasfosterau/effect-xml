@@ -62,15 +62,28 @@ export const partsOf = (value: AtomicValue): Option.Option<DateTimeParts> => {
   const m = pattern?.exec(String(value.value));
   if (m === null || m === undefined) return Option.none();
   const num = (i: number, fallback: number) => (m[i] === "" ? fallback : Number(m[i]));
-  return Option.some({
-    year: m[1] === "" ? 1972n : BigInt(m[1] ?? "1972"),
-    month: num(2, 12),
-    day: num(3, m[2] === "" ? 31 : 1),
-    hour: num(4, 0),
-    minute: num(5, 0),
-    second: m[6] === "" ? zero : decimal(m[6] ?? "0"),
-    tz: timezone(m[7]),
-  });
+  return Option.some(
+    endOfDay(value.type, {
+      year: m[1] === "" ? 1972n : BigInt(m[1] ?? "1972"),
+      month: num(2, 12),
+      day: num(3, m[2] === "" ? 31 : 1),
+      hour: num(4, 0),
+      minute: num(5, 0),
+      second: m[6] === "" ? zero : decimal(m[6] ?? "0"),
+      tz: timezone(m[7]),
+    }),
+  );
+};
+
+/**
+ * `24:00:00` is the first instant of the next day (XSD 1.1 §3.3.7, §3.3.8):
+ * midnight of the same day for an `xs:time`, which has no day.
+ */
+const endOfDay = (type: AtomicType, p: DateTimeParts): DateTimeParts => {
+  if (p.hour !== 24) return p;
+  if (type.primitive === "time") return { ...p, hour: 0 };
+  const [year, month, day] = civilFromDays(daysFromCivil(p.year, p.month, p.day) + 1n);
+  return { ...p, year, month, day, hour: 0 };
 };
 
 /** Days since 1970-01-01 of a proleptic Gregorian date (Hinnant's `days_from_civil`). */

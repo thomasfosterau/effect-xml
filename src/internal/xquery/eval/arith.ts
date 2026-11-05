@@ -115,14 +115,16 @@ const floatingArith = (
   b: AtomicValue,
   offset?: number,
 ) => {
-  const x = toNumber(a);
-  const y = toNumber(b);
+  // Promotion to xs:float rounds a decimal operand to single precision first.
+  const x = kind === "float" ? Math.fround(toNumber(a)) : toNumber(a);
+  const y = kind === "float" ? Math.fround(toNumber(b)) : toNumber(b);
   if (op === "idiv") {
     if (y === 0) return divByZero(offset);
     if (!Number.isFinite(x) || Number.isNaN(y))
       return raise("FOAR0002", "idiv of NaN or an infinity", offset);
     const q = Math.trunc(x / y);
-    return AtomicValue.integer(Number.isFinite(q) ? BigInt(q) : 0n);
+    if (!Number.isFinite(q)) return raise("FOAR0002", "the quotient of idiv overflows", offset);
+    return AtomicValue.integer(BigInt(q));
   }
   const results: Readonly<Record<Exclude<ArithOp, "idiv">, () => number>> = {
     "+": () => x + y,
@@ -269,6 +271,11 @@ const temporalMinus = (
   });
 };
 
+const isScalable = (t: AtomicType): boolean => t === YM || t === DT;
+
+const isDateOrTime = (t: AtomicType): boolean =>
+  t.primitive === "dateTime" || t.primitive === "date" || t.primitive === "time";
+
 /** Arithmetic where an operand is a date, time or duration. */
 const temporalArith = (
   op: ArithOp,
@@ -279,12 +286,15 @@ const temporalArith = (
 ) => {
   const [da, db] = [isDuration(a.type), isDuration(b.type)];
   if (da && db) return durationArith(op, a, b, offset);
-  if (da && isNumericType(b.type) && (op === "*" || op === "div"))
+  // Only xs:yearMonthDuration and xs:dayTimeDuration scale (F&O 3.1 §8.2.3, §8.2.4).
+  if (isScalable(a.type) && isNumericType(b.type) && (op === "*" || op === "div"))
     return scaleDuration(op, a, b, offset);
-  if (db && isNumericType(a.type) && op === "*") return scaleDuration(op, b, a, offset);
-  if (isTemporal(a.type) && db && (op === "+" || op === "-"))
+  if (isScalable(b.type) && isNumericType(a.type) && op === "*")
+    return scaleDuration(op, b, a, offset);
+  // Durations are added to and subtracted from dateTimes, dates and times only (§9.7).
+  if (isDateOrTime(a.type) && db && (op === "+" || op === "-"))
     return temporalPlus(a, b, op === "-", offset);
-  if (da && isTemporal(b.type) && op === "+") return temporalPlus(b, a, false, offset);
+  if (da && isDateOrTime(b.type) && op === "+") return temporalPlus(b, a, false, offset);
   if (isTemporal(a.type) && isTemporal(b.type) && op === "-")
     return temporalMinus(a, b, implicit, offset);
   return noArith(op, a, b, offset);

@@ -40,7 +40,7 @@ import { type XQueryError, xqueryError } from "./Error.ts";
  * URIs (resolved against the static base URI). Each method may do any work
  * (read a file, fetch over the network); a failure is the error the
  * function raises. Without a `Resolver` in the context, those functions find
- * nothing (`err:FODC0002`, `err:FODC0004`, `err:FOUT1170`).
+ * nothing (`err:FODC0002` for documents and collections, `err:FOUT1170` for texts).
  *
  * @since 0.3.0
  * @category resolving

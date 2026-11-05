@@ -107,12 +107,16 @@ const focus: ReadonlyArray<BuiltinSpec> = [
   },
 ];
 
-const subsequence = (s: Sequence, start: number, length: number): Sequence => {
-  // F&O §14.1.10: the items whose positions p satisfy round(start) <= p < round(start) + round(length).
-  const from = Math.round(start);
-  const to = from + Math.round(length);
-  if (Number.isNaN(from) || Number.isNaN(to)) return [];
-  return s.slice(Math.max(0, from - 1), Number.isFinite(to) ? Math.max(0, to - 1) : undefined);
+/**
+ * F&O 3.1 §14.1.10: the items at the positions p with `from <= p < to`
+ * (`to` absent: no upper bound). The bounds may be infinite, and a NaN bound
+ * selects nothing (`-INF + INF`, from a three-argument call, is NaN).
+ */
+const positions = (s: Sequence, from: number, to: number | undefined): Sequence => {
+  if (Number.isNaN(from) || (to !== undefined && Number.isNaN(to))) return [];
+  const lo = from <= 1 ? 0 : Math.min(from - 1, s.length);
+  const hi = to === undefined ? s.length : to <= 1 ? 0 : Math.min(to - 1, s.length);
+  return s.slice(lo, Math.max(lo, hi));
 };
 
 const cardinality = (
@@ -174,14 +178,16 @@ const sequences: ReadonlyArray<BuiltinSpec> = [
     name: "fn:subsequence",
     params: ["item()*", "xs:double"],
     result: "item()*",
-    impl: (args) => subsequence(arg(args, 0), toNumber(atomOf(arg(args, 1))), Infinity),
+    impl: (args) => positions(arg(args, 0), Math.round(toNumber(atomOf(arg(args, 1)))), undefined),
   },
   {
     name: "fn:subsequence",
     params: ["item()*", "xs:double", "xs:double"],
     result: "item()*",
-    impl: (args) =>
-      subsequence(arg(args, 0), toNumber(atomOf(arg(args, 1))), toNumber(atomOf(arg(args, 2)))),
+    impl: (args) => {
+      const from = Math.round(toNumber(atomOf(arg(args, 1))));
+      return positions(arg(args, 0), from, from + Math.round(toNumber(atomOf(arg(args, 2)))));
+    },
   },
   cardinality("fn:zero-or-one", "item()?", (n) => n <= 1, "FORG0003", "expected at most one"),
   cardinality("fn:one-or-more", "item()+", (n) => n >= 1, "FORG0004", "expected at least one"),
@@ -316,13 +322,18 @@ const names: ReadonlyArray<BuiltinSpec> = [
 ];
 
 /** A URI resolved against the static base URI: `err:FODC0005` if it is not a URI. */
-const absolute = (uri: string, call: Call): string => {
+const absolute = (
+  uri: string,
+  call: Call,
+  unresolved = "FODC0002",
+  invalid = "FODC0005",
+): string => {
   const base = Option.getOrUndefined(call.statics.baseUri);
   const resolved = URL.parse(uri, base) ?? (base === undefined ? undefined : URL.parse(uri));
   if (resolved !== null && resolved !== undefined) return resolved.href;
   if (base === undefined && !/^[^:/?#]+:/.test(uri) && uri !== "")
-    return raise("FODC0002", `${uri} cannot be resolved: there is no base URI`, call.offset);
-  return raise("FODC0005", `${uri} is not a valid URI`, call.offset);
+    return raise(unresolved, `${uri} cannot be resolved: there is no base URI`, call.offset);
+  return raise(invalid, `${uri} is not a valid URI`, call.offset);
 };
 
 const fetchDocument = (uri: string, call: Call): Sequence => {
@@ -359,7 +370,10 @@ const resources: ReadonlyArray<BuiltinSpec> = [
     params: ["xs:string?"],
     result: "item()*",
     impl: (args, call) =>
-      collection(isEmpty(arg(args, 0)) ? "" : absolute(text(arg(args, 0)), call), call),
+      collection(
+        isEmpty(arg(args, 0)) ? "" : absolute(text(arg(args, 0)), call, "FODC0002", "FODC0004"),
+        call,
+      ),
   },
   {
     name: "fn:unparsed-text",
@@ -401,7 +415,8 @@ const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const encoding = args.length > 1 ? text(arg(args, 1)) : undefined;
   const got = fetchResource(
     call.ctx.dyn,
-    { kind: "text", uri: absolute(text(arg(args, 0)), call), encoding },
+    // F&O 3.1 §14.8.1: a URI that can't be resolved is FOUT1170, as a missing resource is.
+    { kind: "text", uri: absolute(text(arg(args, 0)), call, "FOUT1170", "FOUT1170"), encoding },
     call.offset,
   );
   return Predicate.isString(got) ? str(got) : [];

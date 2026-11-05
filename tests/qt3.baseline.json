@@ -114,7 +114,7 @@
     },
     "fn-deep-equal": {
       "runnable": 247,
-      "passing": 179
+      "passing": 180
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -526,7 +526,7 @@
     },
     "fn-subsequence": {
       "runnable": 107,
-      "passing": 100
+      "passing": 101
     },
     "fn-substring": {
       "runnable": 48,
@@ -586,7 +586,7 @@
     },
     "fn-unparsed-text": {
       "runnable": 52,
-      "passing": 37
+      "passing": 40
     },
     "fn-unparsed-text-available": {
       "runnable": 51,
@@ -946,7 +946,7 @@
     },
     "op-divide-dayTimeDuration": {
       "runnable": 55,
-      "passing": 50
+      "passing": 53
     },
     "op-divide-dayTimeDuration-by-dayTimeDuration": {
       "runnable": 25,
@@ -1010,11 +1010,11 @@
     },
     "op-multiply-dayTimeDuration": {
       "runnable": 47,
-      "passing": 43
+      "passing": 47
     },
     "op-multiply-yearMonthDuration": {
       "runnable": 44,
-      "passing": 42
+      "passing": 44
     },
     "op-node-after": {
       "runnable": 35,
@@ -1230,7 +1230,7 @@
     },
     "prod-CastExpr": {
       "runnable": 2755,
-      "passing": 2727
+      "passing": 2728
     },
     "prod-CastExpr.derived": {
       "runnable": 153,
@@ -1724,7 +1724,7 @@
     },
     "fn-deep-equal": {
       "runnable": 193,
-      "passing": 174
+      "passing": 175
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -2136,7 +2136,7 @@
     },
     "fn-subsequence": {
       "runnable": 105,
-      "passing": 100
+      "passing": 101
     },
     "fn-substring": {
       "runnable": 48,
@@ -2196,7 +2196,7 @@
     },
     "fn-unparsed-text": {
       "runnable": 52,
-      "passing": 37
+      "passing": 40
     },
     "fn-unparsed-text-available": {
       "runnable": 51,
@@ -2556,7 +2556,7 @@
     },
     "op-divide-dayTimeDuration": {
       "runnable": 37,
-      "passing": 34
+      "passing": 35
     },
     "op-divide-dayTimeDuration-by-dayTimeDuration": {
       "runnable": 25,
@@ -2624,7 +2624,7 @@
     },
     "op-multiply-yearMonthDuration": {
       "runnable": 40,
-      "passing": 38
+      "passing": 40
     },
     "op-node-after": {
       "runnable": 26,
@@ -2840,7 +2840,7 @@
     },
     "prod-CastExpr": {
       "runnable": 2737,
-      "passing": 2717
+      "passing": 2718
     },
     "prod-CastExpr.derived": {
       "runnable": 153,

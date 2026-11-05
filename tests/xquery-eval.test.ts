@@ -416,3 +416,95 @@ describe("evaluate", () => {
     );
   });
 });
+
+describe("review findings (#94)", () => {
+  test("1: float promotion rounds operands to single precision", () => {
+    expect(values("16777217 + xs:float(-16777216)")).toEqual(["0"]);
+    expect(types("16777217 + xs:float(-16777216)")).toEqual(["float"]);
+  });
+
+  test("2: an idiv whose quotient overflows raises FOAR0002", () => {
+    expect(code("1e308 idiv 1e-308")).toBe("FOAR0002");
+  });
+
+  test("3: an xs:duration that is neither yearMonth nor dayTime does not scale", () => {
+    expect(code("xs:duration('P1Y') * 2")).toBe("XPTY0004");
+    expect(code("2 * xs:duration('P1Y')")).toBe("XPTY0004");
+    expect(code("xs:duration('P1Y') div 2")).toBe("XPTY0004");
+  });
+
+  test("4: durations are added only to dateTime, date and time values", () => {
+    expect(code("xs:gYear('2024') + xs:yearMonthDuration('P1Y')")).toBe("XPTY0004");
+    expect(code("xs:yearMonthDuration('P1Y') + xs:gYearMonth('2024-01')")).toBe("XPTY0004");
+  });
+
+  test("5: comparisons promote to xs:float when neither operand is a double", () => {
+    expect(values("16777217 eq xs:float(16777216)")).toEqual(["true"]);
+    expect(values("16777217 = xs:float(16777216)")).toEqual(["true"]);
+    expect(values("deep-equal(16777217, xs:float(16777216))")).toEqual(["true"]);
+  });
+
+  test("6: subsequence with an infinite negative bound or length is empty", () => {
+    expect(values("subsequence((1, 2, 3), xs:double('-INF'), 3)")).toEqual([]);
+    expect(values("subsequence((1, 2, 3), 1, xs:double('-INF'))")).toEqual([]);
+  });
+
+  test("7: two-argument subsequence from -INF is the whole sequence", () => {
+    expect(values("subsequence((1, 2, 3), xs:double('-INF'))")).toEqual(["1", "2", "3"]);
+  });
+
+  test("8: unparsed-text that can't resolve its URI raises FOUT1170", () => {
+    expect(error("unparsed-text('a.txt')", {}).code.local).toBe("FOUT1170");
+    expect(error("unparsed-text(':')", {}).code.local).toBe("FOUT1170");
+  });
+
+  test("9: an array called as a function converts its argument to xs:integer", () => {
+    expect(values("[42](xs:untypedAtomic('1'))")).toEqual(["42"]);
+    expect(code("[42]?(xs:untypedAtomic('1'))")).toBe("XPTY0004");
+  });
+
+  test("10: without a resolver, the default collection is FODC0002", () => {
+    expect(error("collection()", {}).code.local).toBe("FODC0002");
+    expect(error("collection(())", {}).code.local).toBe("FODC0002");
+  });
+
+  test("11: node subtyping keeps document-node(element(...)) constraints", () => {
+    expect(
+      values(
+        "function($d as document-node(element(a))) as xs:integer { 1 } instance of function(document-node()) as xs:integer",
+      ),
+    ).toEqual(["false"]);
+    expect(
+      values(
+        "function($d as document-node()) as xs:integer { 1 } instance of function(document-node(element(a))) as xs:integer",
+      ),
+    ).toEqual(["true"]);
+    expect(
+      values(
+        "function($e as element(a, xs:string)) { 1 } instance of function(element(a)) as item()*",
+      ),
+    ).toEqual(["false"]);
+  });
+
+  test("12: a coerced function converts its arguments to the expected parameter types", () => {
+    expect(
+      values(
+        "(function($f as function(xs:double) as xs:boolean) { $f(1) })(function($x) { $x instance of xs:double })",
+      ),
+    ).toEqual(["true"]);
+  });
+
+  test("13: 24:00:00 is midnight at the end of the day", () => {
+    expect(values("xs:time('24:00:00') - xs:time('00:00:00')")).toEqual(["PT0S"]);
+    expect(values("xs:dateTime('2024-01-01T24:00:00') cast as xs:date")).toEqual(["2024-01-02"]);
+    expect(
+      values("xs:dateTime('2024-01-01T24:00:00') eq xs:dateTime('2024-01-02T00:00:00')"),
+    ).toEqual(["true"]);
+  });
+
+  test("14: position#0 and last#0 in a predicate keep it positional", () => {
+    const groups = Effect.runSync(Xml.parse("<r><g><i/></g><g><i/></g></r>"));
+    expect(values("count(//i[position#0() = 1])", { context: groups })).toEqual(["2"]);
+    expect(values("count(//i[last#0() = 1])", { context: groups })).toEqual(["2"]);
+  });
+});
