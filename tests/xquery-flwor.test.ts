@@ -102,9 +102,10 @@ describe("group by", () => {
   });
 });
 
-describe("windows", () => {
-  const w = (query: string) => joined(`for ${query} return string-join($w, ",")`);
+/** The windows `query` binds to `$w`, each joined with commas. */
+const w = (query: string) => joined(`for ${query} return string-join($w, ",")`);
 
+describe("windows", () => {
   test("tumbling windows, with and without an end condition", () => {
     expect(
       w(`tumbling window $w in 1 to 7 start at $s when true() end at $e when $e - $s eq 2`),
