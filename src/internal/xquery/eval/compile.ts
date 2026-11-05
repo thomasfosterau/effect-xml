@@ -25,7 +25,7 @@ import {
   type Item,
   type Sequence,
 } from "../item.ts";
-import { compareDocumentOrder, type XdmNode } from "../node.ts";
+import { compareDocumentOrder, XdmNode } from "../node.ts";
 import { scopeOf, type ExpandedName } from "../parser/analyze.ts";
 import type {
   BinaryOp,
@@ -44,6 +44,18 @@ import { builtinArities, Namespaces } from "../parser/builtins.ts";
 import { atomicType, AtomicTypes, derivesFrom, type AtomicType } from "../types.ts";
 import { arithmetic, unary, type ArithOp } from "./arith.ts";
 import { combineNodes, documentOrder } from "./axes.ts";
+import {
+  compAttribute,
+  compComment,
+  compDocument,
+  compElement,
+  compNamespace,
+  compPI,
+  compText,
+  dirComment,
+  dirElement,
+  dirPI,
+} from "./construct.ts";
 import { castAtomic } from "./cast.ts";
 import {
   generalCompare,
@@ -1069,11 +1081,6 @@ const stringConstructor = (
 // The dispatch
 // -----------------------------------------------------------------------------
 
-const unsupported =
-  (what: string) =>
-  (e: { readonly offset: number }): Code =>
-    notImplemented(what, e.offset);
-
 /** Compile an expression in a scope. */
 const compileExpr = (e: ExprT, scope: Scope): Code =>
   Expr.$match(e, {
@@ -1133,17 +1140,17 @@ const compileExpr = (e: ExprT, scope: Scope): Code =>
       }),
     Ordering: ({ body }) => compileExpr(body, scope),
     StringConstructor: (s) => stringConstructor(s, scope),
-    DirElement: unsupported("the direct element constructor"),
-    DirText: unsupported("direct element content"),
-    DirComment: unsupported("the direct comment constructor"),
-    DirPI: unsupported("the direct processing instruction constructor"),
-    CompDocument: unsupported("the document constructor"),
-    CompElement: unsupported("the computed element constructor"),
-    CompAttribute: unsupported("the computed attribute constructor"),
-    CompNamespace: unsupported("the computed namespace constructor"),
-    CompText: unsupported("the text constructor"),
-    CompComment: unsupported("the comment constructor"),
-    CompPI: unsupported("the processing instruction constructor"),
+    DirElement: (x) => dirElement(x, scope, compileExpr),
+    DirText: ({ value }) => constant([XdmNode.fromText(value)]),
+    DirComment: (x) => dirComment(x, scope),
+    DirPI: (x) => dirPI(x, scope),
+    CompDocument: (x) => compDocument(x, scope, compileExpr),
+    CompElement: (x) => compElement(x, scope, compileExpr),
+    CompAttribute: (x) => compAttribute(x, scope, compileExpr),
+    CompNamespace: (x) => compNamespace(x, scope, compileExpr),
+    CompText: (x) => compText(x, scope, compileExpr),
+    CompComment: (x) => compComment(x, scope, compileExpr),
+    CompPI: (x) => compPI(x, scope, compileExpr),
   });
 
 // -----------------------------------------------------------------------------

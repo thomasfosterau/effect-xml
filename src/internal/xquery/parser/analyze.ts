@@ -821,7 +821,8 @@ const namespaceDeclErrors = (namespaces: ReadonlyArray<DirNamespace>): Errors =>
   });
 };
 
-const elementScope = (scope: Scope, namespaces: ReadonlyArray<DirNamespace>): Scope =>
+/** `scope` with a direct element constructor's namespace declarations in scope. */
+export const elementScope = (scope: Scope, namespaces: ReadonlyArray<DirNamespace>): Scope =>
   Arr.reduce(namespaces, scope, (s, n) =>
     Option.match(n.prefix, {
       onNone: () => ({ ...s, defaultElementNamespace: n.uri }),
