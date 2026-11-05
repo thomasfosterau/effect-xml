@@ -333,6 +333,7 @@ export default defineConfig({
           "src/internal/lexer.ts",
           "src/internal/guard.ts",
           "src/internal/convert.ts",
+          "src/internal/lenient.ts",
           "src/internal/xmlBuilder.ts",
           "src/Xml/Plain.ts",
         ],
@@ -342,8 +343,8 @@ export default defineConfig({
         },
       },
       // The per-token and per-element loops of the XML path: the hand-written
-      // scanner (`scan.ts`: char-code loops over the buffer, as every fast
-      // tokenizer is written), the lexer's drive loop, the limit check of a
+      // scanner and the lenient reader (`scan.ts`, `lenient.ts`: char-code
+      // loops over the buffer, as every fast tokenizer is written), the lexer's drive loop, the limit check of a
       // tag's attributes, and the tree builders' steps (the DOM builder's name cache,
       // namespace scopes and duplicate checks as native `Map`s / `Set`s,
       // looked up per element and attribute, where `HashMap` hashes each
@@ -354,6 +355,7 @@ export default defineConfig({
       {
         files: [
           "src/internal/scan.ts",
+          "src/internal/lenient.ts",
           "src/internal/lexer.ts",
           "src/internal/guard.ts",
           "src/internal/namespaces.ts",

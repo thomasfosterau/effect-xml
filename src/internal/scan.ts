@@ -190,12 +190,12 @@ const isAlnum = (c: number): boolean =>
   (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
 
 /** Where the last reference {@link reference} decoded ends. */
-interface Ref {
+export interface Ref {
   end: number;
 }
 
 /** `&#…;` / `&#x…;` at `i`, to an XML `Char` (§4.1). */
-const numericReference = (s: string, i: number, ref: Ref): string | undefined => {
+export const numericReference = (s: string, i: number, ref: Ref): string | undefined => {
   const hex = s.charCodeAt(i + 2) === 120; /* x */
   const digits = hex ? i + 3 : i + 2;
   let cp = 0;
@@ -213,7 +213,7 @@ const numericReference = (s: string, i: number, ref: Ref): string | undefined =>
 };
 
 /** `&name;` at `i`, from `entities`. */
-const namedReference = (
+export const namedReference = (
   s: string,
   i: number,
   entities: Record<string, string>,
