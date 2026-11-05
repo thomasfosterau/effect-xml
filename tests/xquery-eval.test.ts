@@ -329,7 +329,7 @@ describe("functions", () => {
   });
 
   test("a function the core library doesn't implement yet fails as not implemented", () => {
-    const e = error("upper-case('a')");
+    const e = error("transform(map {})");
     expect(e.code.namespace).toBe(XQuery.ImplementationNamespace);
     expect(e.code.local).toBe("NotImplemented");
   });

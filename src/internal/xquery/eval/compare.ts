@@ -47,7 +47,7 @@ export const generalToValue = (op: string): ValueOp | undefined =>
   generalOps.find(([general]) => general === op)?.[1];
 
 /** Compare strings by code point: negative, zero or positive. */
-const compareCodepoints = (a: string, b: string): number => {
+export const compareCodepoints = (a: string, b: string): number => {
   if (a === b) return 0;
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) {
@@ -155,10 +155,10 @@ const compareAtomic = (
   ordering: boolean,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): number => {
   if (isNumericType(a.type) && isNumericType(b.type)) return compareNumeric(a, b);
-  if (stringish(a.type) && stringish(b.type))
-    return compareCodepoints(String(a.value), String(b.value));
+  if (stringish(a.type) && stringish(b.type)) return strings(String(a.value), String(b.value));
   if (a.type.primitive === "duration" && b.type.primitive === "duration")
     return compareDurations(a, b, ordering, offset);
   if (isTemporal(a.type) && a.type.primitive === b.type.primitive) {
@@ -171,6 +171,22 @@ const compareAtomic = (
   }
   return compareOther(a, b, ordering, offset);
 };
+
+/** How strings compare under a collation: negative, zero or positive. */
+export type StringOrder = (a: string, b: string) => number;
+
+/**
+ * Compare two atomic values for ordering, as `fn:min`, `fn:max` and
+ * `fn:sort` do: negative, zero or positive, NaN when either is NaN; strings
+ * by `strings`; `err:XPTY0004` for values without an order between them.
+ */
+export const orderAtomic = (
+  a: AtomicValue,
+  b: AtomicValue,
+  implicitTimezone: number,
+  strings: StringOrder = compareCodepoints,
+  offset?: number,
+): number => compareAtomic(asString(a), asString(b), true, implicitTimezone, offset, strings);
 
 /** Whether a comparison result satisfies an operator. */
 const holds = (op: ValueOp, c: number): boolean => {
@@ -269,6 +285,7 @@ export const atomicDeepEqual = (
   a: AtomicValue,
   b: AtomicValue,
   implicitTimezone: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean => {
   if (isNaNValue(a) && isNaNValue(b)) return true;
   const x = asString(a);
@@ -278,7 +295,7 @@ export const atomicDeepEqual = (
     (stringish(x.type) && stringish(y.type)) ||
     x.type.primitive === y.type.primitive;
   if (!comparable) return false;
-  const c = compareAtomic(x, y, false, implicitTimezone);
+  const c = compareAtomic(x, y, false, implicitTimezone, undefined, strings);
   return c === 0;
 };
 
@@ -290,24 +307,26 @@ const significant = (n: XdmNode): Sequence =>
   n.children.filter((c) => c.kind === "element" || c.kind === "text");
 
 /** Whether two nodes match on their own (kind, name, value, attributes); their children are compared separately. */
-const nodeShallowEqual = (a: XdmNode, b: XdmNode): boolean => {
+const nodeShallowEqual = (a: XdmNode, b: XdmNode, strings: StringOrder): boolean => {
   if (a.kind !== b.kind || nameKey(a) !== nameKey(b)) return false;
   if (a.kind === "document") return true;
-  if (a.kind !== "element") return a.stringValue === b.stringValue;
+  if (a.kind !== "element") return strings(a.stringValue, b.stringValue) === 0;
   const attrs = (n: XdmNode) =>
     HashMap.fromIterable(n.attributes.map((at) => [nameKey(at), at.stringValue] as const));
   const x = attrs(a);
   const y = attrs(b);
   return (
     HashMap.size(x) === HashMap.size(y) &&
-    Arr.every(Arr.fromIterable(x), ([k, v]) => Option.contains(HashMap.get(y, k), v))
+    Arr.every(Arr.fromIterable(x), ([k, v]) =>
+      Option.match(HashMap.get(y, k), { onNone: () => false, onSome: (w) => strings(v, w) === 0 }),
+    )
   );
 };
 
 type Pending = Array<readonly [Sequence, Sequence]>;
 
-const nodeStep = (a: Item, b: Item, pending: Pending): boolean => {
-  if (!(isNode(a) && isNode(b) && nodeShallowEqual(a, b))) return false;
+const nodeStep = (a: Item, b: Item, pending: Pending, strings: StringOrder): boolean => {
+  if (!(isNode(a) && isNode(b) && nodeShallowEqual(a, b, strings))) return false;
   if (a.kind === "element" || a.kind === "document") pending.push([significant(a), significant(b)]);
   return true;
 };
@@ -333,18 +352,29 @@ const arrayStep = (a: ArrayItem, b: ArrayItem, pending: Pending): boolean => {
 const isMapOrArray = (x: Item): boolean => x instanceof MapItem || x instanceof ArrayItem;
 
 /** Compare one pair of items, pushing what remains to compare (children, values, members). */
-const itemStep = (a: Item, b: Item, pending: Pending, implicitTimezone: number): boolean => {
+const itemStep = (
+  a: Item,
+  b: Item,
+  pending: Pending,
+  implicitTimezone: number,
+  strings: StringOrder,
+): boolean => {
   if (isAtomic(a) || isAtomic(b))
-    return isAtomic(a) && isAtomic(b) && atomicDeepEqual(a, b, implicitTimezone);
-  if (isNode(a) || isNode(b)) return nodeStep(a, b, pending);
+    return isAtomic(a) && isAtomic(b) && atomicDeepEqual(a, b, implicitTimezone, strings);
+  if (isNode(a) || isNode(b)) return nodeStep(a, b, pending, strings);
   if (a instanceof MapItem && b instanceof MapItem) return mapStep(a, b, pending);
   if (a instanceof ArrayItem && b instanceof ArrayItem) return arrayStep(a, b, pending);
   if (isMapOrArray(a) || isMapOrArray(b)) return false;
   return raise("FOTY0015", "deep-equal cannot compare function items");
 };
 
-/** `fn:deep-equal` with the codepoint collation. */
-export const deepEqual = (left: Sequence, right: Sequence, implicitTimezone: number): boolean => {
+/** `fn:deep-equal`, strings compared by `strings` (the codepoint collation by default). */
+export const deepEqual = (
+  left: Sequence,
+  right: Sequence,
+  implicitTimezone: number,
+  strings: StringOrder = compareCodepoints,
+): boolean => {
   const pending: Pending = [[left, right]];
   const step = (): boolean => {
     const next = pending.pop();
@@ -352,7 +382,7 @@ export const deepEqual = (left: Sequence, right: Sequence, implicitTimezone: num
     const [xs, ys] = next;
     return (
       xs.length === ys.length &&
-      xs.every((x, i) => itemStep(x, ys[i] ?? x, pending, implicitTimezone))
+      xs.every((x, i) => itemStep(x, ys[i] ?? x, pending, implicitTimezone, strings))
     );
   };
   // Each step either fails or consumes one pending pair; the pairs are finite.

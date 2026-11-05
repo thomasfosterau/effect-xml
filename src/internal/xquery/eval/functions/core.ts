@@ -13,11 +13,9 @@ import { isValidNCName, QName } from "../../../../Name.ts";
 import { XQueryError, errorCode } from "../../../../XQuery/Error.ts";
 import { AtomicValue } from "../../atomic.ts";
 import {
-  ArrayItem,
   atomize,
   effectiveBooleanValue,
   FunctionItem,
-  isNode,
   MapItem,
   stringValue,
   type Item,
@@ -30,35 +28,22 @@ import { deepEqual } from "../compare.ts";
 import { orElse, raise, succeeds, unwrap } from "../raise.ts";
 import { arrayMember, contextItem, fetchResource } from "../runtime.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
-
-const bool = (b: boolean): Sequence => [AtomicValue.boolean(b)];
-const int = (n: number): Sequence => [AtomicValue.integer(BigInt(n))];
-const str = (s: string): Sequence => [AtomicValue.string(s)];
-
-/** The string an optional `xs:string?` argument stands for: `""` when it is empty. */
-const text = (s: Sequence | undefined): string => {
-  const [first] = s ?? [];
-  return first === undefined ? "" : unwrap(stringValue(first));
-};
-
-/** Whether an argument is the empty sequence. */
-const isEmpty = (s: Sequence): boolean => Arr.isReadonlyArrayEmpty(s);
+import {
+  arg,
+  arrayOf,
+  atomOf,
+  bool,
+  contextNode,
+  int,
+  isEmpty,
+  mapOf,
+  optionalNode,
+  str,
+  text,
+} from "./values.ts";
 
 /** How many characters (code points, not UTF-16 units) a string has. */
 const codepoints = (s: string): number => Arr.fromIterable(s).length;
-
-const arg = (args: ReadonlyArray<Sequence>, i: number): Sequence => args[i] ?? [];
-
-/** The context item, which must be a node: `err:XPTY0004` otherwise. */
-const contextNode = (call: Call): XdmNode => {
-  const item = contextItem(call.ctx, call.offset);
-  return isNode(item) ? item : raise("XPTY0004", "the context item is not a node", call.offset);
-};
-
-const optionalNode = (s: Sequence): XdmNode | undefined => {
-  const [n] = s;
-  return n !== undefined && isNode(n) ? n : undefined;
-};
 
 /** A function of an optional node, also defined with no argument (the context node). */
 const ofNode = (
@@ -481,18 +466,6 @@ const errors: ReadonlyArray<BuiltinSpec> = [
   errorArity(["xs:QName?", "xs:string"]),
   errorArity(["xs:QName?", "xs:string", "item()*"]),
 ];
-
-/** The one item of a converted argument, as its declared type guarantees it is. */
-const only = <A>(s: Sequence, guard: (item: Item) => item is Item & A): A => {
-  const [item] = s;
-  return item !== undefined && guard(item)
-    ? item
-    : raise("XPTY0004", "an argument does not have its declared type");
-};
-const mapOf = (s: Sequence): MapItem => only(s, (i): i is MapItem => i instanceof MapItem);
-const arrayOf = (s: Sequence): ArrayItem => only(s, (i): i is ArrayItem => i instanceof ArrayItem);
-const atomOf = (s: Sequence): AtomicValue =>
-  only(s, (i): i is AtomicValue => i instanceof AtomicValue);
 
 const mapsAndArrays: ReadonlyArray<BuiltinSpec> = [
   {

@@ -217,8 +217,7 @@ export const atomicType = (namespace: string | null, local: string): Option.Opti
  */
 export const derivesFrom = (type: AtomicType, ancestor: AtomicType): boolean =>
   // Recursive along the base chain, which is at most eight types long.
-  type === ancestor ||
-  Option.match(type.base, { onNone: () => false, onSome: (base) => derivesFrom(base, ancestor) });
+  type === ancestor || (Option.isSome(type.base) && derivesFrom(type.base.value, ancestor));
 
 /**
  * Whether values of `type` are numeric: `xs:decimal` (and so every integer type), `xs:float` or `xs:double`.
