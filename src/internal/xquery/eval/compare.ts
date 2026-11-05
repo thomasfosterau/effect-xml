@@ -47,7 +47,7 @@ export const generalToValue = (op: string): ValueOp | undefined =>
   generalOps.find(([general]) => general === op)?.[1];
 
 /** Compare strings by code point: negative, zero or positive. */
-const compareCodepoints = (a: string, b: string): number => {
+export const compareCodepoints = (a: string, b: string): number => {
   if (a === b) return 0;
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) {

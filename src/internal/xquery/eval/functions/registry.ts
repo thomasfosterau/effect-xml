@@ -20,9 +20,10 @@ import type { SeqType, Signature } from "../runtime.ts";
 import { sequenceType, type Resolve } from "../seqtype.ts";
 import { core } from "./core.ts";
 import type { BuiltinSpec } from "./define.ts";
+import { strings } from "./strings.ts";
 
 /** Every library of built-in functions. */
-const libraries: ReadonlyArray<ReadonlyArray<BuiltinSpec>> = [core];
+const libraries: ReadonlyArray<ReadonlyArray<BuiltinSpec>> = [core, strings];
 
 /** A built-in function, ready to call: its spec, its expanded name and its parsed signature. */
 export interface Builtin {
