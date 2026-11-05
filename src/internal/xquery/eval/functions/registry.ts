@@ -21,6 +21,8 @@ import { sequenceType, type Resolve } from "../seqtype.ts";
 import { core } from "./core.ts";
 import type { BuiltinSpec } from "./define.ts";
 import { dates } from "./dates.ts";
+import { numberFormatting } from "./format.ts";
+import { dateFormatting } from "./formatDates.ts";
 import { higherOrder } from "./higher.ts";
 import { json } from "./json.ts";
 import { numerics } from "./numerics.ts";
@@ -36,6 +38,8 @@ const libraries: ReadonlyArray<ReadonlyArray<BuiltinSpec>> = [
   higherOrder,
   dates,
   json,
+  numberFormatting,
+  dateFormatting,
 ];
 
 /** A built-in function, ready to call: its spec, its expanded name and its parsed signature. */

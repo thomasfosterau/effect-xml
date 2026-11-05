@@ -4,12 +4,13 @@
  * already converted to their declared types.
  */
 import * as Arr from "effect/Array";
+import { isValidNCName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { ArrayItem, isNode, MapItem, stringValue, type Item, type Sequence } from "../../item.ts";
 import type { XdmNode } from "../../node.ts";
 import { raise, unwrap } from "../raise.ts";
 import { contextItem } from "../runtime.ts";
-import type { Call } from "./define.ts";
+import type { BuiltinSpec, Call } from "./define.ts";
 
 /** A single `xs:boolean`. */
 export const bool = (b: boolean): Sequence => [AtomicValue.boolean(b)];
@@ -75,3 +76,39 @@ export const optionalNode = (s: Sequence): XdmNode | undefined => {
   const [n] = s;
   return n !== undefined && isNode(n) ? n : undefined;
 };
+
+/**
+ * The Clark name (`{uri}local`) an EQName string stands for: `local` (in no
+ * namespace), `prefix:local` with the prefix statically known, or
+ * `Q{uri}local`, after trimming whitespace; `undefined` when it is none of
+ * these or its prefix is unbound.
+ */
+export const clarkOfEQName = (s: string, call: Call): string | undefined => {
+  const trimmed = s.trim();
+  const braced = /^Q\{([^{}]*)\}(.*)$/.exec(trimmed);
+  if (braced !== null) {
+    const [, uri = "", local = ""] = braced;
+    return isValidNCName(local) ? `{${uri.trim()}}${local}` : undefined;
+  }
+  const colon = trimmed.indexOf(":");
+  const local = trimmed.slice(colon + 1);
+  if (!isValidNCName(local)) return undefined;
+  if (colon < 0) return `{}${local}`;
+  const prefix = trimmed.slice(0, colon);
+  const uri = isValidNCName(prefix) ? call.statics.namespace(prefix) : undefined;
+  return uri === undefined ? undefined : `{${uri}}${local}`;
+};
+
+/**
+ * A function of an optional node, also defined with no argument (the
+ * context node, `err:XPTY0004` when it is not a node): `fn:name`,
+ * `fn:root`, `fn:path` and the like.
+ */
+export const ofNode = (
+  name: string,
+  result: string,
+  f: (node: XdmNode | undefined, call: Call) => Sequence,
+): ReadonlyArray<BuiltinSpec> => [
+  { name, params: [], result, focus: true, impl: (_, call) => f(contextNode(call), call) },
+  { name, params: ["node()?"], result, impl: (args, call) => f(optionalNode(arg(args, 0)), call) },
+];

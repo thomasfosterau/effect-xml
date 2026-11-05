@@ -32,6 +32,7 @@ import {
   int,
   isEmpty,
   optionalAtom,
+  ofNode,
   optionalNode,
   str,
   text,
@@ -177,23 +178,13 @@ const sequenceFunctions: ReadonlyArray<BuiltinSpec> = [
 // Nodes
 // -----------------------------------------------------------------------------
 
-/** A function of an optional node, also defined with no argument (the context node). */
-const ofNode = (
+/** A function of a node, also defined with no argument (the context node): the empty sequence for `()`. */
+const ofPresentNode = (
   name: string,
   result: string,
   f: (node: XdmNode, call: Call) => Sequence,
-): ReadonlyArray<BuiltinSpec> => [
-  { name, params: [], result, focus: true, impl: (_, call) => f(contextNode(call), call) },
-  {
-    name,
-    params: ["node()?"],
-    result,
-    impl: (args, call) => {
-      const n = optionalNode(arg(args, 0));
-      return n === undefined ? [] : f(n, call);
-    },
-  },
-];
+): ReadonlyArray<BuiltinSpec> =>
+  ofNode(name, result, (n, call) => (n === undefined ? [] : f(n, call)));
 
 const nodesOf = (s: Sequence): Array<XdmNode> => s.filter(isNode);
 
@@ -273,7 +264,9 @@ const lang = (testlang: string, n: XdmNode): Sequence =>
   );
 
 const nodeFunctions: ReadonlyArray<BuiltinSpec> = [
-  ...ofNode("fn:has-children", "xs:boolean", (n) => bool(Arr.isReadonlyArrayNonEmpty(n.children))),
+  ...ofPresentNode("fn:has-children", "xs:boolean", (n) =>
+    bool(Arr.isReadonlyArrayNonEmpty(n.children)),
+  ),
   {
     name: "fn:innermost",
     params: ["node()*"],
@@ -286,11 +279,11 @@ const nodeFunctions: ReadonlyArray<BuiltinSpec> = [
     result: "node()*",
     impl: (args) => outermost(arg(args, 0)),
   },
-  ...ofNode("fn:path", "xs:string?", (n) => str(path(n))),
-  ...ofNode("fn:generate-id", "xs:string", (n) => str(n.identity)),
-  ...ofNode("fn:nilled", "xs:boolean?", (n) => (n.kind === "element" ? bool(false) : [])),
-  ...ofNode("fn:base-uri", "xs:anyURI?", (n) => anyURI(n.baseUri)),
-  ...ofNode("fn:document-uri", "xs:anyURI?", (n) => anyURI(n.documentUri)),
+  ...ofPresentNode("fn:path", "xs:string?", (n) => str(path(n))),
+  ...ofPresentNode("fn:generate-id", "xs:string", (n) => str(n.identity)),
+  ...ofPresentNode("fn:nilled", "xs:boolean?", (n) => (n.kind === "element" ? bool(false) : [])),
+  ...ofPresentNode("fn:base-uri", "xs:anyURI?", (n) => anyURI(n.baseUri)),
+  ...ofPresentNode("fn:document-uri", "xs:anyURI?", (n) => anyURI(n.documentUri)),
   {
     name: "fn:lang",
     params: ["xs:string?"],

@@ -282,23 +282,23 @@
     },
     "fn-format-date": {
       "runnable": 119,
-      "passing": 2
+      "passing": 119
     },
     "fn-format-dateTime": {
-      "runnable": 83,
-      "passing": 2
+      "runnable": 91,
+      "passing": 91
     },
     "fn-format-integer": {
-      "runnable": 64,
-      "passing": 0
+      "runnable": 71,
+      "passing": 71
     },
     "fn-format-number": {
       "runnable": 263,
-      "passing": 5
+      "passing": 261
     },
     "fn-format-time": {
       "runnable": 91,
-      "passing": 3
+      "passing": 91
     },
     "fn-function-arity": {
       "runnable": 21,
@@ -306,7 +306,7 @@
     },
     "fn-function-lookup": {
       "runnable": 618,
-      "passing": 568
+      "passing": 588
     },
     "fn-function-name": {
       "runnable": 25,
@@ -374,7 +374,7 @@
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 30
+      "passing": 32
     },
     "fn-lang": {
       "runnable": 46,
@@ -1302,7 +1302,7 @@
     },
     "prod-DecimalFormatDecl": {
       "runnable": 41,
-      "passing": 17
+      "passing": 41
     },
     "prod-DefaultCollationDecl": {
       "runnable": 12,
@@ -1338,7 +1338,7 @@
     },
     "prod-EQName": {
       "runnable": 45,
-      "passing": 44
+      "passing": 45
     },
     "prod-EmptyOrderDecl": {
       "runnable": 32,
@@ -1362,7 +1362,7 @@
     },
     "prod-FunctionCall": {
       "runnable": 94,
-      "passing": 87
+      "passing": 94
     },
     "prod-FunctionDecl": {
       "runnable": 155,
@@ -1438,7 +1438,7 @@
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,
-      "passing": 503
+      "passing": 524
     },
     "prod-NamespaceDecl": {
       "runnable": 44,
@@ -1892,23 +1892,23 @@
     },
     "fn-format-date": {
       "runnable": 118,
-      "passing": 2
+      "passing": 118
     },
     "fn-format-dateTime": {
-      "runnable": 78,
-      "passing": 2
+      "runnable": 86,
+      "passing": 86
     },
     "fn-format-integer": {
-      "runnable": 64,
-      "passing": 0
+      "runnable": 71,
+      "passing": 71
     },
     "fn-format-number": {
       "runnable": 248,
-      "passing": 0
+      "passing": 248
     },
     "fn-format-time": {
       "runnable": 88,
-      "passing": 3
+      "passing": 88
     },
     "fn-function-arity": {
       "runnable": 19,
@@ -1916,7 +1916,7 @@
     },
     "fn-function-lookup": {
       "runnable": 611,
-      "passing": 561
+      "passing": 581
     },
     "fn-function-name": {
       "runnable": 22,
@@ -1984,7 +1984,7 @@
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 30
+      "passing": 32
     },
     "fn-lang": {
       "runnable": 38,
@@ -2972,7 +2972,7 @@
     },
     "prod-FunctionCall": {
       "runnable": 59,
-      "passing": 52
+      "passing": 59
     },
     "prod-FunctionDecl": {
       "runnable": 0,
@@ -3048,7 +3048,7 @@
     },
     "prod-NamedFunctionRef": {
       "runnable": 546,
-      "passing": 493
+      "passing": 514
     },
     "prod-NamespaceDecl": {
       "runnable": 0,

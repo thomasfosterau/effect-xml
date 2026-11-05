@@ -595,6 +595,18 @@ const xmlToJson = (input: Sequence, call: Call): Sequence => {
     : invalidXml("not a node", call);
 };
 
+/** `fn:json-doc`, with or without its options. */
+const jsonDoc = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
+  const href = optionalAtom(arg(args, 0));
+  return href === undefined
+    ? []
+    : parseJson(
+        [AtomicValue.string(fetchJson(atomicString(href), call))],
+        optionsOf(args[1], call, "use-first", false),
+        call,
+      );
+};
+
 /** The JSON functions. */
 export const json: ReadonlyArray<BuiltinSpec> = [
   {
@@ -615,31 +627,13 @@ export const json: ReadonlyArray<BuiltinSpec> = [
     name: "fn:json-doc",
     params: ["xs:string?"],
     result: "item()?",
-    impl: (args, call) => {
-      const href = optionalAtom(arg(args, 0));
-      return href === undefined
-        ? []
-        : parseJson(
-            [AtomicValue.string(fetchJson(atomicString(href), call))],
-            optionsOf(undefined, call, "use-first", false),
-            call,
-          );
-    },
+    impl: jsonDoc,
   },
   {
     name: "fn:json-doc",
     params: ["xs:string?", "map(*)"],
     result: "item()?",
-    impl: (args, call) => {
-      const href = optionalAtom(arg(args, 0));
-      return href === undefined
-        ? []
-        : parseJson(
-            [AtomicValue.string(fetchJson(atomicString(href), call))],
-            optionsOf(arg(args, 1), call, "use-first", false),
-            call,
-          );
-    },
+    impl: jsonDoc,
   },
   {
     name: "fn:json-to-xml",

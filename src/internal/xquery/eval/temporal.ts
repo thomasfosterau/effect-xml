@@ -87,7 +87,7 @@ const endOfDay = (type: AtomicType, p: DateTimeParts): DateTimeParts => {
 };
 
 /** Days since 1970-01-01 of a proleptic Gregorian date (Hinnant's `days_from_civil`). */
-const daysFromCivil = (year: bigint, month: number, day: number): bigint => {
+export const daysFromCivil = (year: bigint, month: number, day: number): bigint => {
   const y = month <= 2 ? year - 1n : year;
   const era = (y >= 0n ? y : y - 399n) / 400n;
   const yoe = y - era * 400n;
@@ -98,7 +98,7 @@ const daysFromCivil = (year: bigint, month: number, day: number): bigint => {
 };
 
 /** The date of a day count (Hinnant's `civil_from_days`). */
-const civilFromDays = (days: bigint): readonly [bigint, number, number] => {
+export const civilFromDays = (days: bigint): readonly [bigint, number, number] => {
   const z = days + 719468n;
   const era = (z >= 0n ? z : z - 146096n) / 146097n;
   const doe = z - era * 146097n;
