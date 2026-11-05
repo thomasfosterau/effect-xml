@@ -23,7 +23,7 @@ import { forEachLeniently } from "./internal/lenient.ts";
 import { decodeChunks, runChunks, Tokenizer } from "./internal/tokenizer.ts";
 import { xmlEntities, htmlEntities } from "./internal/entities.ts";
 import type { AttrName, TagName } from "./Name.ts";
-import type { Span } from "./Position.ts";
+import type { Position, Span } from "./Position.ts";
 import { resolveLimits, type Limits } from "./Limits.ts";
 import * as Encoding from "./Encoding.ts";
 
@@ -394,6 +394,13 @@ export const tokenizeString = (
  * The fastest way to read a document in memory, especially with
  * `positions: false`.
  *
+ * `f`'s second argument, `position`, is where the event starts: made when
+ * called, for the event being handed over, so it costs nothing while unused.
+ * With `positions: false` it locates events without a span each, as a
+ * classic SAX parser reports its current position. It is the event's
+ * `span.start` (when events have positions), and only valid during the call
+ * it is passed to.
+ *
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
@@ -413,7 +420,7 @@ export const tokenizeString = (
  */
 export const forEach = (
   input: string | Uint8Array,
-  f: (event: SaxEvent) => void,
+  f: (event: SaxEvent, position: () => Position) => void,
   options?: ForEachOptions,
 ): Effect.Effect<void, SaxError> =>
   Effect.suspend(() => {
@@ -424,8 +431,8 @@ export const forEach = (
     const lenient = options?.strict === false && opts.mode === "xml" && opts.dtd === "ignore";
     const failure = lenient
       ? (chunks.failure ?? forEachLeniently(chunks.chunks.join(""), f, opts))
-      : runChunks(chunks, opts, (ev) => {
-          f(ev);
+      : runChunks(chunks, opts, (ev, position) => {
+          f(ev, position);
           return null;
         });
     return failure === null ? Effect.void : Effect.fail(failure);

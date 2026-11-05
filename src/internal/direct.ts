@@ -18,12 +18,12 @@
  */
 import { Input, Parser } from "@thomasfosterau/effect-parse";
 import type { SaxError } from "../Error.ts";
-import type { Span } from "../Position.ts";
+import type { Position, Span } from "../Position.ts";
 import type { ResolvedOptions, SaxEvent } from "../Sax.ts";
 import { convert } from "./convert.ts";
 import { Guard } from "./guard.ts";
 import { FORBIDDEN, type LexEvent } from "./lexer.ts";
-import { LazySpan, LineIndex } from "./position.ts";
+import { LazyPosition, LazySpan, LineIndex } from "./position.ts";
 import {
   type Context,
   Fallback,
@@ -69,7 +69,7 @@ const declarationEvent = (tok: Tok, span: Span): LexEvent | undefined => {
 class Pass {
   private readonly input: string;
   private readonly opts: ResolvedOptions;
-  private readonly f: (ev: SaxEvent) => SaxError | null;
+  private readonly f: (ev: SaxEvent, position: () => Position) => SaxError | null;
   private readonly guard: Guard;
   private readonly ctx: Context;
   private readonly forbidden: number;
@@ -78,11 +78,26 @@ class Pass {
   private prologEnded = false;
   /** How many events have been handed over. */
   count = 0;
+  /** Where the token being handed over starts. */
+  private start = 0;
+  private readonly lines: LineIndex;
+  /** Whether {@link lines} has the input's line breaks (recorded on first use without positions). */
+  private recorded: boolean;
+
+  /** Where the event being handed over starts (see `Sax.forEach`). */
+  readonly position = (): Position => {
+    if (!this.recorded) {
+      this.lines.record(this.input, 0);
+      this.recorded = true;
+    }
+    // No CR in the input: offsets are indices.
+    return new LazyPosition(this.start, this.start, this.lines);
+  };
 
   constructor(
     input: string,
     opts: ResolvedOptions,
-    f: (ev: SaxEvent) => SaxError | null,
+    f: (ev: SaxEvent, position: () => Position) => SaxError | null,
     reuse: boolean,
   ) {
     this.input = input;
@@ -92,6 +107,8 @@ class Pass {
     this.forbidden = input.search(FORBIDDEN);
     this.data = grammars("xml", opts.entities, false).data;
     const lines = new LineIndex();
+    this.lines = lines;
+    this.recorded = opts.positions;
     if (opts.positions) lines.record(input, 0);
     this.ctx = {
       entities: opts.entities,
@@ -113,6 +130,7 @@ class Pass {
     const { input } = this;
     let pos = 0;
     while (pos < input.length) {
+      this.start = pos;
       const ev = this.token(pos);
       if (ev === undefined) return undefined;
       const end = this.ctx.end;
@@ -120,7 +138,7 @@ class Pass {
       if (this.guard.event(ev) !== null) return undefined;
       const out = convert(ev, this.opts);
       if (out !== null) {
-        const failure = this.f(out);
+        const failure = this.f(out, this.position);
         if (failure !== null) return failure;
         this.count++;
       }
@@ -188,7 +206,7 @@ class Pass {
 export const readDirectly = (
   input: string,
   opts: ResolvedOptions,
-  f: (ev: SaxEvent) => SaxError | null,
+  f: (ev: SaxEvent, position: () => Position) => SaxError | null,
   reuse = false,
 ): Direct => {
   if (input.indexOf("\r") !== -1 || input.length > opts.limits.maxTotalBytes) {

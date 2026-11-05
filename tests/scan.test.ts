@@ -38,6 +38,22 @@ const each = (doc: string | Uint8Array, options: Sax.SaxBytesOptions) => {
   return Exit.map(exit, () => events);
 };
 
+/** Each event's `position()` as `Sax.forEach` reports it (up to any failure). */
+const reported = (doc: string, options: Sax.ForEachOptions) => {
+  const out: Array<unknown> = [];
+  Effect.runSync(
+    Effect.exit(Sax.forEach(doc, (_, position) => out.push(plain(position())), options)),
+  );
+  return out;
+};
+
+/** Each event's `span.start` (up to any failure). */
+const starts = (doc: string) => {
+  const out: Array<unknown> = [];
+  Effect.runSync(Effect.exit(Sax.forEach(doc, (ev) => out.push(plain(ev.span.start)))));
+  return out;
+};
+
 const docs = documents(1, 3000);
 
 const nowhere = { start: origin, end: origin };
@@ -111,6 +127,22 @@ describe("the XML scanner", () => {
         tokenize(text, { positions: false }, text.length),
       );
     });
+  });
+
+  test("Sax.forEach's position is each event's span.start", () => {
+    // Read directly, and (with CRLF line ends) with the lexer.
+    const variants = docs.flatMap((doc) => [doc, doc.replaceAll("\n", "\r\n")]);
+    Arr.forEach(variants, (doc) =>
+      expect(reported(doc, { positions: false }), doc).toStrictEqual(starts(doc)),
+    );
+    // Lenient reading of a well-formed document: the same positions.
+    const wellFormed = variants.filter((doc) =>
+      Exit.isSuccess(Effect.runSync(Effect.exit(Sax.forEach(doc, () => {})))),
+    );
+    expect(wellFormed.length).toBeGreaterThan(100);
+    Arr.forEach(wellFormed, (doc) =>
+      expect(reported(doc, { strict: false }), doc).toStrictEqual(starts(doc)),
+    );
   });
 
   test("Sax.forEach, read directly, stops at a broken limit exactly where the lexer does", () => {

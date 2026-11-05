@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Encoding from "../Encoding.ts";
 import { LimitExceeded, MalformedDeclaration, type SaxError } from "../Error.ts";
+import type { Position } from "../Position.ts";
 import type { ResolvedOptions, SaxEvent } from "../Sax.ts";
 import { convert } from "./convert.ts";
 import { Dtd } from "./dtd.ts";
@@ -69,6 +70,9 @@ export class Tokenizer {
     this.lexer.push(chunk);
     return undefined;
   }
+
+  /** Where the last token read starts: the start of the events it was read as. */
+  readonly position = (): Position => this.lexer.tokenPosition();
 
   /** Signal the end of the input. */
   close(): void {
@@ -155,7 +159,7 @@ export class Tokenizer {
 export const runChunks = (
   { chunks, failure: last }: Chunks,
   opts: ResolvedOptions,
-  f: (ev: SaxEvent) => SaxError | null,
+  f: (ev: SaxEvent, position: () => Position) => SaxError | null,
   reuse = false,
 ): SaxError | null => {
   // XML without a DTD, all of it here: read it directly, and with the lexer
@@ -173,7 +177,7 @@ export const runChunks = (
       skip--;
       return true;
     }
-    return (failure = f(ev)) === null;
+    return (failure = f(ev, tokenizer.position)) === null;
   };
   const early = Arr.findFirst(chunks, (chunk): Option.Option<SaxError> => {
     if (chunk === "") return Option.none();
