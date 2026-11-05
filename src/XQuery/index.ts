@@ -80,3 +80,13 @@ export * from "./Error.ts";
  * @category compiling
  */
 export * from "./Compile.ts";
+
+/**
+ * Evaluating a compiled query (or query text) against a context item and
+ * external variables, with the {@link Resolver} service for documents,
+ * collections and texts.
+ *
+ * @since 0.3.0
+ * @category evaluating
+ */
+export * from "./Evaluate.ts";

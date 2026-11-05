@@ -10,8 +10,10 @@
  * whenever a change improves it. `QT3_REPORT=1` prints the failures, every
  * test set's counts and the counts as a new baseline.
  *
- * The evaluator lands in a later phase; until then the engine is
- * `notImplemented`, every runnable test fails and the passing baselines are 0.
+ * The engine is the library's own evaluator (`xqueryEngine`): each test's
+ * query is compiled as XQuery or XPath and evaluated with `XQuery.evaluate`.
+ * Constructs it does not implement yet count as failures, never as errors a
+ * test may expect.
  */
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
@@ -30,7 +32,7 @@ import {
   codeMatches,
   type Engine,
   notApplicable,
-  notImplemented,
+  xqueryEngine,
   Outcome,
   readCatalog,
   loadDocuments,
@@ -45,7 +47,7 @@ import {
 } from "./support/qt3.ts";
 
 /** The engine under test. */
-const ENGINE: Engine = notImplemented;
+const ENGINE: Engine = xqueryEngine;
 
 const Counts = Schema.Struct({ runnable: Schema.Number, passing: Schema.Number });
 const Baseline = Schema.fromJsonString(

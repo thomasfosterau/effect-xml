@@ -251,6 +251,43 @@ export default defineConfig({
           "effect/imperative-loops": "off",
         },
       },
+      // The XQuery evaluator's axis walks (descendant, following, preceding)
+      // keep an explicit stack in a loop for the reason given for node.ts
+      // above, and its node-list primitives (document-order sort and
+      // dedup, the merge of per-node step results, intersect / except)
+      // and `deep-equal`'s work list are loops over arrays they own, sorted
+      // and reversed in place: they run once per path step on every node
+      // the step reaches, where an `Arr` copy per call would double the
+      // allocation of every path expression.
+      {
+        files: ["src/internal/xquery/eval/axes.ts", "src/internal/xquery/eval/compare.ts"],
+        rules: {
+          "effect/imperative-loops": "off",
+          "effect/prefer-arr-sort": "off",
+          "unicorn/no-array-reverse": "off",
+        },
+      },
+      // The evaluator's exception boundary (see its module comment): dynamic
+      // errors are thrown where they are raised, deep inside compiled code
+      // with no result to thread them through, and caught here, once per
+      // evaluation, as in unwind.ts.
+      {
+        files: ["src/internal/xquery/eval/raise.ts"],
+        rules: {
+          "effect/avoid-try-catch": "off",
+        },
+      },
+      // A generic walk over every field of the XQuery syntax tree, whatever
+      // its variant (see its module comment): its input is the tree's own
+      // nodes, read field by field, so they are `unknown` and walked with
+      // `Object.values`.
+      {
+        files: ["src/internal/xquery/eval/walk.ts"],
+        rules: {
+          "effect/no-unknown-parameters": "off",
+          "effect/avoid-native-object-helpers": "off",
+        },
+      },
       // The per-token dispatch: the lexer's token → event step and its
       // guards, the limit check, and the SAX conversion run once per token.
       // `$match` and `$is` are each ONE function shared by every table and
