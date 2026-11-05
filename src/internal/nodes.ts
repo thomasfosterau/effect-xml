@@ -55,25 +55,33 @@ interface SchemaClass {
   readonly fields: Schema.Struct.Fields;
 }
 
+type Writable<T> = { -readonly [K in keyof T]: T[K] };
+
 /**
- * An instance of `Class` with these fields, without running its schema.
- * `fields` must list them in the schema's declaration order.
+ * An instance of `Class` with no fields yet, which the caller assigns in the
+ * schema's declaration order (`_tag` first). Assigning each field directly,
+ * rather than `Object.assign`ing an argument object onto it, skips that object
+ * and the generic copy per node: it was a twentieth of `Html.parseFragment`.
  */
-const construct = <C extends SchemaClass>(
-  Class: C,
-  fields: Schema.Struct.Type<C["fields"]>,
-): C["prototype"] =>
-  // SAFETY: the caller's fields are already of the schema's types (they came
-  // from the lexer and tree builder, or from nodes built here), so the schema
-  // would accept them unchanged; `new` adds nothing else to the instance.
-  Object.assign(Object.create(Class.prototype), fields);
+const blank = <C extends SchemaClass>(Class: C): Writable<C["prototype"]> =>
+  // SAFETY: the caller assigns every field of the schema, with values already
+  // of the schema's types (they came from the lexer and tree builder, or from
+  // nodes built here), before the instance escapes, so it ends up exactly as
+  // `new` would build it; `new` adds nothing else to the instance.
+  Object.create(Class.prototype);
 
 /** A {@link QName} from its parts. */
 export const qname = (
   prefix: QName["prefix"],
   local: string,
   namespace: QName["namespace"],
-): QName => construct(QName, { prefix, local, namespace });
+): QName => {
+  const node = blank(QName);
+  node.prefix = prefix;
+  node.local = local;
+  node.namespace = namespace;
+  return node;
+};
 
 /** A {@link QName} split from a raw `prefix:local` name, in no namespace, as `QName.fromRaw` does. */
 export const qnameFromRaw = (raw: string): QName => {
@@ -84,36 +92,72 @@ export const qnameFromRaw = (raw: string): QName => {
 };
 
 /** An {@link XmlAttribute}. */
-export const attribute = (name: QName, value: string): XmlAttribute =>
-  construct(XmlAttribute, { name, value });
+export const attribute = (name: QName, value: string): XmlAttribute => {
+  const node = blank(XmlAttribute);
+  node.name = name;
+  node.value = value;
+  return node;
+};
 
 /** An {@link XmlText}. */
-export const text = (data: string): XmlText => construct(XmlText, { _tag: "XmlText", data });
+export const text = (data: string): XmlText => {
+  const node = blank(XmlText);
+  node._tag = "XmlText";
+  node.data = data;
+  return node;
+};
 
 /** An {@link XmlCData}. */
-export const cdata = (data: string): XmlCData => construct(XmlCData, { _tag: "XmlCData", data });
+export const cdata = (data: string): XmlCData => {
+  const node = blank(XmlCData);
+  node._tag = "XmlCData";
+  node.data = data;
+  return node;
+};
 
 /** An {@link XmlComment}. */
-export const comment = (data: string): XmlComment =>
-  construct(XmlComment, { _tag: "XmlComment", data });
+export const comment = (data: string): XmlComment => {
+  const node = blank(XmlComment);
+  node._tag = "XmlComment";
+  node.data = data;
+  return node;
+};
 
 /** An {@link XmlProcessingInstruction}. */
-export const processingInstruction = (target: string, data: string): XmlProcessingInstruction =>
-  construct(XmlProcessingInstruction, { _tag: "XmlProcessingInstruction", target, data });
+export const processingInstruction = (target: string, data: string): XmlProcessingInstruction => {
+  const node = blank(XmlProcessingInstruction);
+  node._tag = "XmlProcessingInstruction";
+  node.target = target;
+  node.data = data;
+  return node;
+};
 
 /** An {@link XmlElement}, keeping `attributes` and `children` (never mutated afterwards). */
 export const element = (
   name: QName,
   attributes: ReadonlyArray<XmlAttribute>,
   children: ReadonlyArray<XmlNode>,
-): XmlElement => construct(XmlElement, { _tag: "XmlElement", name, attributes, children });
+): XmlElement => {
+  const node = blank(XmlElement);
+  node._tag = "XmlElement";
+  node.name = name;
+  node.attributes = attributes;
+  node.children = children;
+  return node;
+};
 
 /** An {@link XmlDeclaration}. */
 export const declaration = (
   version: string,
   encoding: XmlDeclaration["encoding"],
   standalone: XmlDeclaration["standalone"],
-): XmlDeclaration => construct(XmlDeclaration, { version, encoding, standalone });
+): XmlDeclaration => {
+  const node = blank(XmlDeclaration);
+  node.version = version;
+  node.encoding = encoding;
+  node.standalone = standalone;
+  return node;
+};
 
 /** An {@link XmlDoctype}. */
 export const doctype = (
@@ -121,28 +165,27 @@ export const doctype = (
   publicId: XmlDoctype["publicId"],
   systemId: XmlDoctype["systemId"],
   internalSubset: XmlDoctype["internalSubset"],
-): XmlDoctype => construct(XmlDoctype, { name, publicId, systemId, internalSubset });
+): XmlDoctype => {
+  const node = blank(XmlDoctype);
+  node.name = name;
+  node.publicId = publicId;
+  node.systemId = systemId;
+  node.internalSubset = internalSubset;
+  return node;
+};
 
 /** An {@link XmlDocument}, keeping `children` (never mutated afterwards). */
 export const document = (
   declaration: XmlDocument["declaration"],
   doctype: XmlDocument["doctype"],
   children: ReadonlyArray<XmlNode>,
-): XmlDocument => construct(XmlDocument, { declaration, doctype, children });
-
-type Writable<T> = { -readonly [K in keyof T]: T[K] };
-
-/**
- * An instance of `Class` with no fields yet, which the caller assigns in the
- * schema's declaration order (`_tag` first), as {@link construct} does. The
- * HTML constructors below use it rather than {@link construct}: assigning
- * each field directly skips an `Object.assign` and its argument object per
- * node, which was a twentieth of `Html.parseFragment`.
- */
-const blank = <C extends SchemaClass>(Class: C): Writable<C["prototype"]> =>
-  // SAFETY: the caller assigns every field of the schema before the instance
-  // escapes, so it ends up exactly as `construct` would build it.
-  Object.create(Class.prototype);
+): XmlDocument => {
+  const node = blank(XmlDocument);
+  node.declaration = declaration;
+  node.doctype = doctype;
+  node.children = children;
+  return node;
+};
 
 /** An {@link HtmlAttribute}. */
 export const htmlAttribute = (
@@ -221,12 +264,24 @@ export const htmlElement = (
 };
 
 /** An {@link HtmlDoctype}. */
-export const htmlDoctype = (name: string, publicId: string, systemId: string): HtmlDoctype =>
-  construct(HtmlDoctype, { name, publicId, systemId });
+export const htmlDoctype = (name: string, publicId: string, systemId: string): HtmlDoctype => {
+  const node = blank(HtmlDoctype);
+  node.name = name;
+  node.publicId = publicId;
+  node.systemId = systemId;
+  return node;
+};
 
 /** An {@link HtmlDocument}, keeping `children` (never mutated afterwards). */
 export const htmlDocument = (
   mode: HtmlDocument["mode"],
   doctype: HtmlDocument["doctype"],
   children: ReadonlyArray<HtmlNode>,
-): HtmlDocument => construct(HtmlDocument, { _tag: "HtmlDocument", mode, doctype, children });
+): HtmlDocument => {
+  const node = blank(HtmlDocument);
+  node._tag = "HtmlDocument";
+  node.mode = mode;
+  node.doctype = doctype;
+  node.children = children;
+  return node;
+};
