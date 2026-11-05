@@ -109,6 +109,25 @@ const isWhitespace = (s: string): boolean => /^\s*$/.test(s);
  */
 const SCAN_LIMIT = 8;
 
+/**
+ * `items[from, to)` as an array of its own. Most are short, and those are
+ * array literals: V8 sees that the arrays of a document survive and
+ * allocates a literal's straight into the old generation, where a `slice`
+ * is copied out of the young one at each collection.
+ */
+const exactly = <A>(items: ReadonlyArray<A>, from: number, to: number): ReadonlyArray<A> => {
+  const a = items[from];
+  const b = items[from + 1];
+  const c = items[from + 2];
+  const n = to - from;
+  if (n === 0) return NO_NODES;
+  if (n > 3 || a === undefined) return items.slice(from, to);
+  if (n === 1) return [a];
+  if (b === undefined) return items.slice(from, to);
+  if (n === 2) return [a, b];
+  return c === undefined ? items.slice(from, to) : [a, b, c];
+};
+
 /** Record `key` in `set`; whether it is new. */
 const added = (set: Set<string>, key: string): boolean => {
   if (set.has(key)) return false;
@@ -356,10 +375,12 @@ class Builder {
     element: TagName,
     attributes: ReadonlyArray<Attribute>,
     bindings: Bindings,
-  ): Array<XmlAttribute> | undefined {
+  ): ReadonlyArray<XmlAttribute> | undefined {
     const n = attributes.length;
     if (n === 0) return NO_NODES;
-    const list: Array<XmlAttribute> = [];
+    // Resolved into a scratch list, then copied out at its exact length
+    // (see `exactly`).
+    const list = this.resolved;
     // Few attributes: compare with the ones before. Many: a set of the raw
     // names and expanded names (which have a space, as no raw name does).
     const set = n > SCAN_LIMIT ? new Set<string>() : undefined;
@@ -370,10 +391,13 @@ class Builder {
           ? undefined
           : this.attribute(element, attributes, i, a, list, set, bindings);
       if (resolved === undefined) return undefined;
-      list.push(resolved);
+      list[i] = resolved;
     }
-    return list;
+    return exactly(list, 0, n);
   }
+
+  /** The attributes {@link attributes} has resolved so far. */
+  private readonly resolved: Array<XmlAttribute> = [];
 
   /**
    * Attribute `i` of a start tag (`a`), resolved, unless it repeats the name
@@ -404,8 +428,25 @@ class Builder {
       this.failure = duplicateAttribute(element, a);
       return undefined;
     }
-    return Nodes.attribute(name, a.value);
+    return this.attributeNode(name, a.value);
   }
+
+  /**
+   * The attribute `name="value"`, shared with the last one built in its slot
+   * when that is the same: attributes are immutable, and a document repeats
+   * many (`s="1"`, `t="s"`), each otherwise one more object in the tree.
+   */
+  private attributeNode(name: QName, value: string): XmlAttribute {
+    const slot = (value.length * 31 + (value.charCodeAt(0) | 0) + name.local.length * 7) & 255;
+    const known = this.shared[slot];
+    if (known !== undefined && known.name === name && known.value === value) return known;
+    const made = Nodes.attribute(name, value);
+    this.shared[slot] = made;
+    return made;
+  }
+
+  /** The attributes {@link attributeNode} shares, by slot. */
+  private readonly shared: Array<XmlAttribute | undefined> = [];
 
   private startElement(ev: Extract<SaxEvent, { _tag: "StartElement" }>): SaxError | null {
     const position = ev.span.start;
@@ -480,8 +521,7 @@ class Builder {
 
   /** The element an open frame becomes once it is closed (popped from the stack). */
   private closed(frame: Frame): XmlElement {
-    const children =
-      frame.from === this.count ? NO_NODES : this.nodes.slice(frame.from, this.count);
+    const children = exactly(this.nodes, frame.from, this.count);
     // (The slots past `count` are overwritten, never trimmed: shrinking the
     // array's length reallocates it, which was a tenth of `Xml.parse`.)
     this.count = frame.from;

@@ -303,16 +303,17 @@ class Positions {
     let { line, column } = this.pos;
     // Lines: count the newlines in between; the column restarts after the last.
     // (The search starts at the buffer at the earliest.)
-    const from = Math.max(this.index, this.source.base);
-    const nl = this.nextNewline(from);
+    const { buf, base } = this.source;
+    let nl = this.nextNewline(Math.max(this.index, base));
     if (nl === -1 || nl >= index) {
       column += index - this.index;
     } else {
-      // From the first newline on: it is at index 0 of `between`.
-      const { buf, base } = this.source;
-      const between = buf.slice(nl - base, index - base);
-      line += between.split("\n").length - 1;
-      column = index - (nl + between.lastIndexOf("\n"));
+      let last = nl;
+      for (; nl !== -1 && nl < index; nl = this.newlineAfter(nl)) {
+        line++;
+        last = nl;
+      }
+      column = index - last;
     }
     // Offsets: one per character, plus one per collapsed CRLF.
     const k = crlfBound(this.crlf, this.crlfNext, index);
@@ -320,14 +321,22 @@ class Positions {
     this.index = index;
     this.pos = { offset, line, column };
     this.crlfNext = k;
-    const next = index >= this.source.base ? this.nextNewline(index) : -1;
-    this.clear =
-      next === -1
-        ? index >= this.source.base
-          ? this.source.base + this.source.buf.length
-          : -1
-        : next;
+    // `nl` is the first newline at or after `index` (or -1: none in the buffer).
+    this.clear = nl === -1 ? base + buf.length : nl;
     return this.pos;
+  }
+
+  /**
+   * The first `\n` after absolute index `nl` (itself a `\n`), or -1 when the
+   * buffer has none; remembered as the next query's starting point.
+   */
+  private newlineAfter(nl: number): number {
+    const { buf, base } = this.source;
+    const at = buf.indexOf("\n", nl - base + 1);
+    this.newlineFrom = nl + 1;
+    this.newline = at === -1 ? -1 : base + at;
+    this.newlineLimit = base + buf.length;
+    return this.newline;
   }
 
   /** Make `index` (the start of a token) the point to fall back to. */

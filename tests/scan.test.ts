@@ -77,7 +77,11 @@ const pick = <A>(next: () => number, items: ReadonlyArray<A>): A =>
 /** A well-formed element, with attributes, text and references. */
 const element = (next: () => number): string => {
   const name = (): string => pick(next, ["a", "row", "x:c", "v_1", "a.b-c"]);
-  const value = (): string => pick(next, ["", "1", "a&amp;b", "x\ty", "&#x41;", "q'q", "\n", "é"]);
+  // Mostly valid values, and the ones the grammar rejects.
+  const value = (): string =>
+    next() < 0.85
+      ? pick(next, ["", "1", "a&amp;b", "x\ty", "&#x41;", "q'q", "\n", "é"])
+      : pick(next, ["a<b", "&nope;", "&#0;", "&#X41;", "&", "&amp", "]]>"]);
   const attrs = Arr.makeBy(Math.floor(next() * 3), (i) => {
     const q = next() < 0.5 ? '"' : "'";
     const v = value().replaceAll(q, "");

@@ -58,14 +58,10 @@ export interface Context {
 }
 
 /** What {@link Context.marks} keeps track of. */
-const NEEDLES = ["<", "&", "\t", "\n", "]]>", '"', "'"];
+const NEEDLES = ["<", "&", "]]>"];
 const M_LT = 0;
 const M_AMP = 1;
-const M_TAB = 2;
-const M_LF = 3;
-const M_CDATA_END = 4;
-const M_QUOT = 5;
-const M_APOS = 6;
+const M_CDATA_END = 2;
 
 /** Fresh {@link Context.marks}. */
 export const freshMarks = (): Array<number> => NEEDLES.map(() => -1);
@@ -152,6 +148,9 @@ const LT = 60;
 const GT = 62;
 const SLASH = 47;
 const EQ = 61;
+const AMP = 38;
+const TAB = 9;
+const LF = 10;
 const QUOT = 34;
 const APOS = 39;
 const BANG = 33;
@@ -407,9 +406,12 @@ const attributeAt = (buf: string, start: number, ctx: Context, k: number): numbe
   if (i >= end) return MORE;
   const quote = buf.charCodeAt(i);
   if (quote !== QUOT && quote !== APOS) return GRAMMAR;
-  const close = mark(buf, ctx, quote === QUOT ? M_QUOT : M_APOS, i + 1);
-  if (close >= end) return MORE;
-  const value = attributeValue(buf, i + 1, close, ctx);
+  const from = i + 1;
+  const scanned = valueEnd(buf, from, quote);
+  if (scanned < 0) return MORE;
+  const close = Math.floor(scanned / 8);
+  const flags = scanned % 8;
+  const value = attributeValue(buf.slice(from, close), flags, ctx);
   if (value === undefined) return GRAMMAR;
   const name = nameAt(buf, start, nameEnd, ctx);
   if (ctx.lean) {
@@ -427,21 +429,39 @@ const attributeAt = (buf: string, start: number, ctx: Context, k: number): numbe
 };
 
 /**
- * The value of an attribute in `buf[from, to)`, normalized (§3.3.3: literal
- * whitespace is a space) and with its references decoded; `undefined` for
- * the grammar to read (a `<`, or a reference it does not decode).
+ * An attribute value from `from` to its closing `quote`: one pass, noting
+ * what the value needs. Returns the index of the quote times 8 plus the
+ * value's flags ({@link HAS_LT} and the rest), or -1 when the buffer ends
+ * first.
  */
-const attributeValue = (
-  buf: string,
-  from: number,
-  to: number,
-  ctx: Context,
-): string | undefined => {
-  if (mark(buf, ctx, M_LT, from) < to) return undefined;
-  const raw = buf.slice(from, to);
-  const spaced =
-    mark(buf, ctx, M_TAB, from) < to || mark(buf, ctx, M_LF, from) < to
-      ? raw.replace(/[\t\n]/g, " ")
-      : raw;
-  return mark(buf, ctx, M_AMP, from) < to ? decodeRefs(spaced, ctx.entities) : spaced;
+const valueEnd = (buf: string, from: number, quote: number): number => {
+  const end = buf.length;
+  let flags = 0;
+  for (let i = from; i < end; i++) {
+    const c = buf.charCodeAt(i);
+    if (c === quote) return i * 8 + flags;
+    if (c < EQ) flags |= valueFlag(c);
+  }
+  return -1;
+};
+
+/** The flag a character below `=` sets in an attribute value, if any. */
+const valueFlag = (c: number): number =>
+  c === LT ? HAS_LT : c === AMP ? HAS_REF : c === TAB || c === LF ? HAS_SPACE : 0;
+
+/** What an attribute value has in it (see {@link attributeAt}). */
+const HAS_LT = 1;
+const HAS_REF = 2;
+const HAS_SPACE = 4;
+
+/**
+ * The value of an attribute (`raw`, which has `flags` in it), normalized
+ * (§3.3.3: literal whitespace is a space) and with its references decoded;
+ * `undefined` for the grammar to read (a `<`, or a reference it does not
+ * decode).
+ */
+const attributeValue = (raw: string, flags: number, ctx: Context): string | undefined => {
+  if ((flags & HAS_LT) !== 0) return undefined;
+  const spaced = (flags & HAS_SPACE) !== 0 ? raw.replace(/[\t\n]/g, " ") : raw;
+  return (flags & HAS_REF) !== 0 ? decodeRefs(spaced, ctx.entities) : spaced;
 };
