@@ -266,12 +266,15 @@ export const tokenize =
       // The events are emitted in batches of at most `BATCH`, read only as the
       // stream is pulled: a large chunk never has all its events in memory at
       // once, and each batch can be dropped before the next is built.
-      let events: Array<SaxEvent> = [];
+      // Filled in place, and each batch copied out at its exact length: a
+      // batch grown a push at a time is copied as it grows.
+      const events: Array<SaxEvent> = [];
+      let count = 0;
       const keep = (ev: SaxEvent): boolean => {
-        events.push(ev);
+        events[count++] = ev;
         return true;
       };
-      const full = (): boolean => events.length >= BATCH;
+      const full = (): boolean => count >= BATCH;
       /**
        * The events of the input written so far, then the fault if there is
        * one: once the input has ended, or else when the token the lexer is
@@ -284,9 +287,9 @@ export const tokenize =
             return Effect.suspend(
               (): Effect.Effect<Arr.NonEmptyReadonlyArray<SaxEvent>, SaxError | Cause.Done> => {
                 if (tokenizer.fault === undefined && !dry) {
-                  events = [];
+                  count = 0;
                   dry = tokenizer.run(keep, full);
-                  const batch = events;
+                  const batch = events.slice(0, count);
                   if (Arr.isArrayNonEmpty(batch)) return Effect.succeed(batch);
                 }
                 const fault = tokenizer.fault;

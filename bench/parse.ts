@@ -13,9 +13,10 @@
  * entities and CRLF line ends (the input of #13).
  *
  * Other parsers are compared when they are installed, without being
- * dependencies of this package: `pnpm add -D saxes sax fast-xml-parser`
- * (and revert `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`
- * afterwards) to include them.
+ * dependencies of this package: `pnpm add -D saxes sax htmlparser2 easysax
+ * @eksml/xml txml fast-xml-parser` (and revert `package.json`,
+ * `pnpm-workspace.yaml` and `pnpm-lock.yaml` afterwards) to include them.
+ * None of them reports positions per event.
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -185,6 +186,7 @@ if (saxes) {
   await time("saxes (SAX)", () => {
     const p = new saxes.SaxesParser({ xmlns: true });
     p.on("opentag", () => {});
+    p.on("text", () => {});
     p.write(input).close();
   });
 }
@@ -195,6 +197,42 @@ if (sax) {
     p.onopentag = () => {};
     p.write(input).close();
   });
+}
+const htmlparser2 = await optional("htmlparser2");
+if (htmlparser2) {
+  await time("htmlparser2 (SAX, xmlMode)", () => {
+    const p = new htmlparser2.Parser({ onopentag: () => {}, ontext: () => {} }, { xmlMode: true });
+    p.write(input);
+    p.end();
+  });
+}
+const easysax = await optional("easysax");
+if (easysax) {
+  await time("easysax (SAX)", () => {
+    const p = new easysax.default();
+    p.on("startNode", () => {});
+    p.on("textNode", () => {});
+    p.write(input);
+    p.end();
+  });
+}
+const eksmlSax = await optional("@eksml/xml/sax");
+if (eksmlSax) {
+  await time("@eksml/xml (SAX)", () => {
+    const p = eksmlSax.createSaxParser({ entities: true });
+    p.on("openTag", () => {});
+    p.on("text", () => {});
+    p.write(input);
+    p.close();
+  });
+}
+const eksml = await optional("@eksml/xml/parser");
+if (eksml) {
+  await time("@eksml/xml (DOM)", () => eksml.parse(input, { entities: true }));
+}
+const txml = await optional("txml");
+if (txml) {
+  await time("txml (DOM)", () => txml.parse(input));
 }
 const fxp = await optional("fast-xml-parser");
 if (fxp) {
