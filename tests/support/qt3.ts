@@ -700,9 +700,98 @@ export interface Engine {
 
 const isXQueryError = /*#__PURE__*/ Schema.is(XQuery.XQueryError);
 
-/** The engine before there is an evaluator: every test fails. */
-export const notImplemented: Engine = {
-  evaluate: () => Effect.fail(new NotImplemented({ what: "evaluation" })),
+/** A name as the catalog writes it (`x`, `p:x`), as a Clark name with the request's namespaces. */
+const clarkOf = (request: Request, name: string): string => {
+  const colon = name.indexOf(":");
+  if (colon < 0) return `{}${name}`;
+  const prefix = name.slice(0, colon);
+  const uri = request.namespaces.find((b) => b.prefix === prefix)?.uri ?? "";
+  return `{${uri}}${name.slice(colon + 1)}`;
+};
+
+/** The resources a request makes available, served to the evaluator as they are asked for. */
+const missing = (code: string, uri: string) =>
+  Effect.fail(
+    XQuery.xqueryError(code, `${uri === "" ? "the default collection" : uri} is not available`),
+  );
+
+const resolverOf = (request: Request): XQuery.ResourceResolver => {
+  return {
+    document: (uri) =>
+      Option.match(HashMap.get(request.documents, uri), {
+        onNone: () => missing("FODC0002", uri),
+        onSome: (node) =>
+          Result.match(node, {
+            onFailure: (reason) => Effect.fail(XQuery.xqueryError("FODC0002", reason)),
+            onSuccess: Effect.succeed,
+          }),
+      }),
+    collection: (uri) =>
+      Option.match(HashMap.get(request.collections, uri), {
+        onNone: () => missing("FODC0002", uri),
+        onSome: Effect.succeed,
+      }),
+    text: (uri) =>
+      Option.match(HashMap.get(request.resources, uri), {
+        onNone: () => missing("FOUT1170", uri),
+        onSome: (r) => Effect.succeed(new TextDecoder().decode(r.bytes)),
+      }),
+  };
+};
+
+const isNotImplementedCode = (e: XQuery.XQueryError): boolean =>
+  e.code.namespace === XQuery.ImplementationNamespace && e.code.local === "NotImplemented";
+
+/**
+ * Compiled queries by language, text and static context: assertions repeat
+ * (`$result instance of xs:integer`, `deep-equal($result, …)`), and a query
+ * compiled once is also evaluated from its cached program.
+ */
+let compiledQueries = HashMap.empty<string, Result.Result<XQuery.Query, XQuery.XQueryError>>();
+
+const compileCached = (spec: Spec, query: string, options: XQuery.CompileOptions) => {
+  const key = [
+    spec,
+    query,
+    Record.toEntries(options.namespaces ?? {}).join(" "),
+    (options.variables ?? []).join(" "),
+    options.baseUri ?? "",
+  ].join("\u0000");
+  return Option.getOrElse(HashMap.get(compiledQueries, key), () => {
+    const compiled =
+      spec === "XQ31" ? XQuery.compile(query, options) : XQuery.XPath.compile(query, options);
+    compiledQueries = HashMap.set(compiledQueries, key, compiled);
+    return compiled;
+  });
+};
+
+/** The library's own evaluator, as an engine: compile (XQuery or XPath), then evaluate with the request's context. */
+export const xqueryEngine: Engine = {
+  evaluate: (request) => {
+    const options: XQuery.CompileOptions = {
+      namespaces: Record.fromEntries(request.namespaces.map((b) => [b.prefix, b.uri] as const)),
+      variables: request.variables.map((v) => clarkOf(request, v.name)),
+      baseUri: Option.getOrUndefined(request.baseUri),
+    };
+    const compiled = compileCached(request.spec, request.query, options);
+    const collation = Option.filter(
+      request.defaultCollation,
+      (c) => c !== "http://www.w3.org/2005/xpath-functions/collation/codepoint",
+    );
+    if (Option.isSome(collation)) return failed(`the default collation ${collation.value}`);
+    return Effect.fromResult(compiled).pipe(
+      Effect.flatMap((query) =>
+        XQuery.evaluate(query, {
+          context: Option.getOrUndefined(request.contextItem),
+          variables: Record.fromEntries(
+            request.variables.map((v) => [clarkOf(request, v.name), v.value] as const),
+          ),
+        }),
+      ),
+      Effect.provideService(XQuery.Resolver, resolverOf(request)),
+      Effect.catchIf(isNotImplementedCode, (e) => failed(e.description)),
+    );
+  },
   serialize: () => Effect.fail(new NotImplemented({ what: "serialization" })),
 };
 

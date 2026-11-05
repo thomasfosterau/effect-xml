@@ -6,7 +6,8 @@
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
  * stream (whole string and 64 KiB chunks), as bytes, as a DOM, with
  * streaming selection of rows, and validated against a schema for the
- * worksheet (as events, and as typed values). HTML is measured with
+ * worksheet (as events, and as typed values), and queried with XPath
+ * (`XQuery.evaluate` over the parsed DOM). HTML is measured with
  * `Html.parseDocument` and `Html.parseFragment` on a generated page that
  * exercises formatting elements, implied end tags, tables, foreign content,
  * entities and CRLF line ends (the input of #13).
@@ -20,7 +21,7 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
 import * as Stream from "effect/Stream";
-import { Html, Sax, Xml, Xsd } from "../src/index.ts";
+import { Html, Sax, Xml, Xsd, XQuery } from "../src/index.ts";
 
 const SML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const megabytes = Number(process.argv[2] ?? 8);
@@ -132,6 +133,21 @@ await time("effect-xml XSD events (Xsd.validate)", () =>
 );
 await time("effect-xml XSD values (Xsd.parse)", () =>
   Effect.runPromise(Effect.asVoid(Xsd.parse(model, input))),
+);
+
+// XPath over the parsed worksheet: the even rows' cell values. Compiled
+// once; each run evaluates it against a fresh XDM view of the same DOM (so
+// node handles are built during the run, as for a newly loaded document).
+const sheetDom = await Effect.runPromise(Xml.parse(input));
+const rowsQuery = await Effect.runPromise(
+  Effect.fromResult(
+    XQuery.XPath.compile("//x:row[@r mod 2 = 0]/x:c/x:v", { namespaces: { x: SML } }),
+  ),
+);
+await time("effect-xml XPath (XQuery.evaluate)", () =>
+  Effect.runPromise(
+    Effect.asVoid(XQuery.evaluate(rowsQuery, { context: XQuery.XdmNode.fromDocument(sheetDom) })),
+  ),
 );
 
 // The same megabytes of HTML: a block that runs the adoption agency

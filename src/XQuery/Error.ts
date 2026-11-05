@@ -37,6 +37,16 @@ export const ErrorNamespace = "http://www.w3.org/2005/xqt-errors";
 export const errorCode = (local: string): QName =>
   new QName({ prefix: "err", local, namespace: ErrorNamespace });
 
+/**
+ * The namespace of the error codes this implementation adds to the
+ * specifications': `NotImplemented` (local name) for a construct or built-in
+ * function it does not evaluate yet.
+ *
+ * @since 0.3.0
+ * @category errors
+ */
+export const ImplementationNamespace = "https://github.com/thomasfosterau/effect-xml#xquery-errors";
+
 const itemTags: ReadonlyArray<Item["_tag"]> = [
   "XdmNode",
   "AtomicValue",

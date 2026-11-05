@@ -331,16 +331,16 @@ export class XdmNode {
    * the default namespace); `None` for the other kinds.
    */
   get name(): Option.Option<QName> {
-    return Match.valueTags(this.content, {
-      element: (c) => Option.some(c.node.name),
-      attribute: (c) => Option.some(c.node.name),
-      "processing-instruction": (c) => Option.some(QName.simple(c.node.target)),
-      namespace: (c) =>
-        c.binding.prefix === "" ? Option.none() : Option.some(QName.simple(c.binding.prefix)),
-      document: () => Option.none(),
-      text: () => Option.none(),
-      comment: () => Option.none(),
-    });
+    // Read on every name test of a path step: tag guards, not a `Match`
+    // table, which made name tests a fifth of an XPath query's time.
+    const c = this.content;
+    if (Predicate.isTagged(c, "element") || Predicate.isTagged(c, "attribute"))
+      return Option.some(c.node.name);
+    if (Predicate.isTagged(c, "processing-instruction"))
+      return Option.some(QName.simple(c.node.target));
+    if (Predicate.isTagged(c, "namespace") && c.binding.prefix !== "")
+      return Option.some(QName.simple(c.binding.prefix));
+    return Option.none();
   }
 
   /**
