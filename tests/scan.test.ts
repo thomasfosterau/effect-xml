@@ -65,8 +65,29 @@ const pieces = [
   "]]>",
   "]]",
   "<!--c-->",
+  "<!---->",
+  "<!--->",
+  "<!-- a -- b -->",
+  "<!-- a --->",
+  "<!--",
+  "<!-",
+  "<!x",
   "<?pi x?>",
+  "<?pi?>",
+  "<?pi\t \n x ?>",
+  "<?pi\fx?>",
+  "<?pix?>",
+  "<?xml-stylesheet href='a'?>",
+  "<?xml version='1.0'?>",
+  "<?XmL x?>",
+  "<?é x?>",
+  "<?",
+  "?>",
   "<![CDATA[x]]>",
+  "<![CDATA[]]>",
+  "<![CDATA[a]]b]]>",
+  "<![CDATA[",
+  "<![cdata[x]]>",
   "text",
   "\u0001",
 ];
@@ -100,10 +121,14 @@ const documents = (seed: number, count: number): ReadonlyArray<string> => {
     const body = Arr.makeBy(1 + Math.floor(next() * 6), () =>
       next() < 0.6 ? element(next) : pick(next, pieces),
     ).join("");
-    // Every fourth one is well-formed, so the failures don't hide the rest.
+    // Every fourth one is well-formed, so the failures don't hide the rest;
+    // some have markup before and after the root element.
+    const prolog =
+      i % 3 === 0 ? pick(next, ["<?pi x?>", "<!-- c -->\n", "<![CDATA[x]]>", " "]) : "";
+    const epilog = i % 5 === 0 ? pick(next, ["<!-- e -->", "<?pi?>", "\n", "<![CDATA[y]]>"]) : "";
     return i % 4 === 0
-      ? `<root>${Arr.makeBy(4, () => element(next)).join("")}</root>`
-      : `<root>${body}</root>`;
+      ? `${prolog}<root>${Arr.makeBy(4, () => element(next)).join("")}</root>${epilog}`
+      : `${prolog}<root>${body}</root>${epilog}`;
   });
 };
 

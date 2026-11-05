@@ -431,6 +431,7 @@ export class Lexer {
       lean: options.lean ?? false,
       end: 0,
       count: 0,
+      inside: false,
       names: Arr.allocate<string>(NAME_SLOTS),
       reused: new Reused(),
       marks: freshMarks(),
@@ -593,9 +594,9 @@ export class Lexer {
    */
   private scan(): LexEvent | null | undefined {
     const start = this.cursor;
-    if (this.depth === 0 && !this.options.content && this.buf.charCodeAt(start) !== 60) {
-      return undefined;
-    }
+    const inside = this.depth > 0 || this.options.content;
+    if (!inside && this.buf.charCodeAt(start) !== 60) return undefined;
+    this.scanner.inside = inside;
     // Positions are read forwards from the token's start.
     if (!this.scanner.lean) this.positions.anchor(this.base + start);
     const ev = scanXml(this.buf, start, !this.ended, this.scanner);

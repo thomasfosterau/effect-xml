@@ -46,6 +46,11 @@ export interface Context {
   end: number;
   /** How many attributes the last start tag read has. */
   count: number;
+  /**
+   * Whether the cursor is inside the root element (or the input is content):
+   * outside it a CDATA section is out of place, which the grammar reports.
+   */
+  inside: boolean;
   /** Names read recently (see {@link nameAt}). */
   readonly names: Array<string | undefined>;
   /**
@@ -266,7 +271,8 @@ export const scanXml = (buf: string, pos: number, partial: boolean, ctx: Context
   if (pos + 1 >= end) return partial ? Incomplete : Fallback;
   const c1 = buf.charCodeAt(pos + 1);
   if (c1 === SLASH) return endTag(buf, pos, partial, ctx);
-  if (c1 === BANG || c1 === QUESTION) return Fallback;
+  if (c1 === BANG) return declaration(buf, pos, ctx);
+  if (c1 === QUESTION) return processingInstruction(buf, pos, ctx);
   return startTag(buf, pos, partial, ctx);
 };
 
@@ -308,6 +314,67 @@ const endTag = (buf: string, pos: number, partial: boolean, ctx: Context): ScanR
     return ev;
   }
   return { name, span: { start: ctx.at(pos), end: ctx.at(i + 1) }, _tag: "EndElement" };
+};
+
+// The other markup the scanner reads: comments, CDATA sections and
+// processing instructions. Where one runs past the end of the buffer, the
+// grammar reads it (and waits for more input, or reports the error).
+
+/** A comment's (or with `cdata`, a CDATA section's) `data`, as an event from `pos` to `end`. */
+const markupEvent = (
+  ctx: Context,
+  pos: number,
+  end: number,
+  data: string,
+  cdata: boolean,
+): ScanResult => {
+  ctx.end = end;
+  const span = ctx.lean ? NO_SPAN : { start: ctx.at(pos), end: ctx.at(end) };
+  return cdata ? { data, span, _tag: "CData" } : { data, span, _tag: "Comment" };
+};
+
+/**
+ * `<!--…-->` (§2.5: no `--` before the end) or `<![CDATA[…]]>` (§2.7, inside
+ * the root element). Anything else after `<!` is the grammar's.
+ */
+const declaration = (buf: string, pos: number, ctx: Context): ScanResult => {
+  if (buf.startsWith("<!--", pos)) {
+    const dashes = buf.indexOf("--", pos + 4);
+    if (dashes === -1 || buf.charCodeAt(dashes + 2) !== GT) return Fallback;
+    return markupEvent(ctx, pos, dashes + 3, buf.slice(pos + 4, dashes), false);
+  }
+  if (ctx.inside && buf.startsWith("<![CDATA[", pos)) {
+    const close = buf.indexOf("]]>", pos + 9);
+    if (close === -1) return Fallback;
+    return markupEvent(ctx, pos, close + 3, buf.slice(pos + 9, close), true);
+  }
+  return Fallback;
+};
+
+/** XML's `S` (§2.3): unlike the tag grammars' whitespace, no form feed. */
+const isS = (c: number): boolean => c === 32 || c === TAB || c === LF || c === 13;
+
+/**
+ * `<?target data?>` (§2.6), with an ASCII `Name` for a target other than
+ * `xml` in any case (`xml` itself starts the XML declaration, the grammar's).
+ */
+const processingInstruction = (buf: string, pos: number, ctx: Context): ScanResult => {
+  const end = buf.length;
+  if (!is(buf.charCodeAt(pos + 2), NAME_START)) return Fallback;
+  const targetEnd = skipName(buf, pos + 3, end);
+  if (targetEnd >= end) return Fallback;
+  const target = buf.slice(pos + 2, targetEnd);
+  if (target.length === 3 && target.toLowerCase() === "xml") return Fallback;
+  let from = targetEnd;
+  while (from < end && isS(buf.charCodeAt(from))) from++;
+  // Data only after whitespace; `?>` straight after the target ends it empty.
+  if (from === targetEnd && !buf.startsWith("?>", from)) return Fallback;
+  const close = buf.indexOf("?>", from);
+  if (close === -1) return Fallback;
+  ctx.end = close + 2;
+  const data = buf.slice(from, close);
+  const span = ctx.lean ? NO_SPAN : { start: ctx.at(pos), end: ctx.at(close + 2) };
+  return { target, data, span, _tag: "ProcessingInstruction" };
 };
 
 /** The attributes of a tag without any (never written to: events are read-only). */
