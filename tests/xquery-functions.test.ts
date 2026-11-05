@@ -436,3 +436,38 @@ describe("dates, times and durations", () => {
     ).toBe("true");
   });
 });
+
+describe("JSON", () => {
+  test("parse-json: values, null, escapes, duplicates and errors", () => {
+    expect(values(`parse-json('{"a": [1, true, null, "x\\u0041\\n"]}')?a?*`)).toEqual([
+      "1",
+      "true",
+      "xA\n",
+    ]);
+    expect(value(`parse-json('[1.5e2]')?1 instance of xs:double`)).toBe("true");
+    expect(values(`parse-json('null')`)).toEqual([]);
+    expect(value(`parse-json('"\\uD83D\\uDE00"')`)).toBe("😀");
+    expect(value(`parse-json('"\\u0000"')`)).toBe("\uFFFD");
+    expect(value(`parse-json('"a\\u0000\\\\"', map { 'escape': true() })`)).toBe("a\\u0000\\\\");
+    expect(
+      value(`parse-json('"\\u0000"', map { 'fallback': function($s) { '[' || $s || ']' } })`),
+    ).toBe("[\\u0000]");
+    expect(value(`parse-json('{"a": 1, "a": 2}')?a`)).toBe("1");
+    expect(value(`parse-json('{"a": 1, "a": 2}', map { 'duplicates': 'use-last' })?a`)).toBe("2");
+    expect(code(`parse-json('{"a": 1, "a": 2}', map { 'duplicates': 'reject' })`)).toBe("FOJS0003");
+    expect(code(`parse-json('[1, 2')`)).toBe("FOJS0001");
+    expect(code(`parse-json('[1 2]')`)).toBe("FOJS0001");
+    expect(code(`parse-json('{"a" 1}')`)).toBe("FOJS0001");
+    expect(code(`parse-json('1', map { 'duplicates': 'maybe' })`)).toBe("FOJS0005");
+  });
+
+  test("json-to-xml and xml-to-json round-trip", () => {
+    const xml = `json-to-xml('{"a": [1, true, null, "x/"], "b": {}}')`;
+    expect(value(`${xml}/*/local-name()`)).toBe("map");
+    expect(values(`${xml}/*/*/@key/string()`)).toEqual(["a", "b"]);
+    expect(value(`namespace-uri(${xml}/*)`)).toBe("http://www.w3.org/2005/xpath-functions");
+    expect(value(`xml-to-json(${xml})`)).toBe(`{"a":[1,true,null,"x\\/"],"b":{}}`);
+    expect(value(`xml-to-json(json-to-xml('[1e6]'))`)).toBe("[1.0E6]");
+    expect(code(`xml-to-json(json-to-xml('[1]')/*/*/text())`)).toBe("FOJS0006");
+  });
+});

@@ -62,7 +62,7 @@
     },
     "array-sort": {
       "runnable": 28,
-      "passing": 26
+      "passing": 28
     },
     "array-subarray": {
       "runnable": 18,
@@ -306,7 +306,7 @@
     },
     "fn-function-lookup": {
       "runnable": 618,
-      "passing": 556
+      "passing": 568
     },
     "fn-function-name": {
       "runnable": 25,
@@ -370,11 +370,11 @@
     },
     "fn-json-doc": {
       "runnable": 68,
-      "passing": 0
+      "passing": 67
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 0
+      "passing": 30
     },
     "fn-lang": {
       "runnable": 46,
@@ -494,7 +494,7 @@
     },
     "fn-parse-json": {
       "runnable": 154,
-      "passing": 0
+      "passing": 148
     },
     "fn-parse-xml": {
       "runnable": 17,
@@ -678,7 +678,7 @@
     },
     "fn-xml-to-json": {
       "runnable": 137,
-      "passing": 0
+      "passing": 125
     },
     "fn-year-from-date": {
       "runnable": 27,
@@ -710,7 +710,7 @@
     },
     "map-find": {
       "runnable": 12,
-      "passing": 10
+      "passing": 12
     },
     "map-for-each": {
       "runnable": 17,
@@ -1418,7 +1418,7 @@
     },
     "prod-Lookup": {
       "runnable": 106,
-      "passing": 100
+      "passing": 103
     },
     "prod-MapConstructor": {
       "runnable": 42,
@@ -1672,7 +1672,7 @@
     },
     "array-sort": {
       "runnable": 25,
-      "passing": 23
+      "passing": 25
     },
     "array-subarray": {
       "runnable": 16,
@@ -1916,7 +1916,7 @@
     },
     "fn-function-lookup": {
       "runnable": 611,
-      "passing": 549
+      "passing": 561
     },
     "fn-function-name": {
       "runnable": 22,
@@ -1980,11 +1980,11 @@
     },
     "fn-json-doc": {
       "runnable": 68,
-      "passing": 0
+      "passing": 67
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 0
+      "passing": 30
     },
     "fn-lang": {
       "runnable": 38,
@@ -2104,7 +2104,7 @@
     },
     "fn-parse-json": {
       "runnable": 147,
-      "passing": 0
+      "passing": 142
     },
     "fn-parse-xml": {
       "runnable": 17,
@@ -2288,7 +2288,7 @@
     },
     "fn-xml-to-json": {
       "runnable": 82,
-      "passing": 0
+      "passing": 77
     },
     "fn-year-from-date": {
       "runnable": 27,
@@ -2320,7 +2320,7 @@
     },
     "map-find": {
       "runnable": 12,
-      "passing": 10
+      "passing": 12
     },
     "map-for-each": {
       "runnable": 16,
@@ -3028,7 +3028,7 @@
     },
     "prod-Lookup": {
       "runnable": 102,
-      "passing": 99
+      "passing": 102
     },
     "prod-MapConstructor": {
       "runnable": 22,
