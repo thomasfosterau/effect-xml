@@ -19,6 +19,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
+import { forEachLeniently } from "./internal/lenient.ts";
 import { decodeChunks, runChunks, Tokenizer } from "./internal/tokenizer.ts";
 import { xmlEntities, htmlEntities } from "./internal/entities.ts";
 import type { AttrName, TagName } from "./Name.ts";
@@ -407,18 +408,44 @@ export const tokenizeString = (
 export const forEach = (
   input: string | Uint8Array,
   f: (event: SaxEvent) => void,
-  options?: SaxBytesOptions,
+  options?: ForEachOptions,
 ): Effect.Effect<void, SaxError> =>
   Effect.suspend(() => {
     const chunks = Predicate.isString(input)
       ? { chunks: [input] }
       : decodeChunks(input, decodeOptions(options));
-    const failure = runChunks(chunks, resolveSaxOptions(options), (ev) => {
-      f(ev);
-      return null;
-    });
+    const opts = resolveSaxOptions(options);
+    const lenient = options?.strict === false && opts.mode === "xml" && opts.dtd === "ignore";
+    const failure = lenient
+      ? (chunks.failure ?? forEachLeniently(chunks.chunks.join(""), f, opts))
+      : runChunks(chunks, opts, (ev) => {
+          f(ev);
+          return null;
+        });
     return failure === null ? Effect.void : Effect.fail(failure);
   });
+
+/**
+ * Options for {@link forEach}: the SAX options for bytes, and whether to read
+ * strictly.
+ *
+ * @since 0.3.0
+ * @category options
+ */
+export interface ForEachOptions extends SaxBytesOptions {
+  /**
+   * With `false`, read XML leniently: about twice as fast, for documents
+   * known to be well-formed. A well-formed document gives the same events
+   * (without positions); a malformed one may be read rather than rejected.
+   * Names are not checked, nor are duplicate attributes or characters XML
+   * forbids; an unknown or malformed reference is left as written; of the
+   * resource limits only `maxTotalBytes` and `maxDepth` apply; markup that
+   * cannot be read at all (a tag without its `>`) still fails. Applies to
+   * XML without `dtd: "internal"`; otherwise reading is strict. Default
+   * `true`.
+   */
+  readonly strict?: boolean | undefined;
+}
 
 /**
  * Collect every SAX event into an array (convenient for tests and small inputs).
