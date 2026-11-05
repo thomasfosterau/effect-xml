@@ -30,7 +30,7 @@ import * as Predicate from "effect/Predicate";
 import * as Record from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { Xml, XQuery } from "../../src/index.ts";
+import { Encoding, Xml, XQuery } from "../../src/index.ts";
 import * as Fixtures from "./fixtures.ts";
 
 /** The vendored suite. */
@@ -718,6 +718,24 @@ const missing = (code: string, uri: string) =>
     XQuery.xqueryError(code, `${uri === "" ? "the default collection" : uri} is not available`),
   );
 
+/** The `charset` of a media type (`text/plain; charset=utf-16`). */
+const charsetOf = (mediaType: string): Option.Option<string> =>
+  Option.fromNullishOr(/;\s*charset\s*=\s*"?([^";\s]+)/i.exec(mediaType)?.[1]);
+
+/**
+ * A text resource decoded as F&O 3.1 §14.8.1 describes: the resource's
+ * declared encoding (or its media type's charset), else the encoding asked
+ * for, else a byte order mark or an XML declaration, else UTF-8. Bytes that
+ * are invalid in it, or an unknown encoding, are `err:FOUT1190`.
+ */
+const decodeResource = (resource: LoadedResource, asked: string | undefined) =>
+  Encoding.decodeBytes(resource.bytes, {
+    encoding:
+      Option.getOrUndefined(
+        Option.orElse(resource.encoding, () => Option.flatMap(resource.mediaType, charsetOf)),
+      ) ?? asked,
+  }).pipe(Effect.mapError((e) => XQuery.xqueryError("FOUT1190", e.message)));
+
 const resolverOf = (request: Request): XQuery.ResourceResolver => {
   return {
     document: (uri) =>
@@ -734,10 +752,10 @@ const resolverOf = (request: Request): XQuery.ResourceResolver => {
         onNone: () => missing("FODC0002", uri),
         onSome: Effect.succeed,
       }),
-    text: (uri) =>
+    text: (uri, encoding) =>
       Option.match(HashMap.get(request.resources, uri), {
         onNone: () => missing("FOUT1170", uri),
-        onSome: (r) => Effect.succeed(new TextDecoder().decode(r.bytes)),
+        onSome: (r) => decodeResource(r, encoding),
       }),
     module: (uri) =>
       Effect.succeed(

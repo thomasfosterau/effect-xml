@@ -11,11 +11,13 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { XQueryError, errorCode } from "../../../../XQuery/Error.ts";
+import { canonicalEncoding } from "../../../../Encoding.ts";
 import { AtomicValue } from "../../atomic.ts";
 import {
   atomize,
   effectiveBooleanValue,
   FunctionItem,
+  isNode,
   MapItem,
   stringValue,
   type Item,
@@ -351,6 +353,34 @@ const resources: ReadonlyArray<BuiltinSpec> = [
     impl: (args, call) => unparsedText(args, call),
   },
   {
+    name: "fn:unparsed-text-lines",
+    params: ["xs:string?"],
+    result: "xs:string*",
+    impl: (args, call) => textLines(unparsedText(args, call)),
+  },
+  {
+    name: "fn:unparsed-text-lines",
+    params: ["xs:string?", "xs:string"],
+    result: "xs:string*",
+    impl: (args, call) => textLines(unparsedText(args, call)),
+  },
+  {
+    name: "fn:uri-collection",
+    params: [],
+    result: "xs:anyURI*",
+    impl: (_, call) => uriCollection("", call),
+  },
+  {
+    name: "fn:uri-collection",
+    params: ["xs:string?"],
+    result: "xs:anyURI*",
+    impl: (args, call) =>
+      uriCollection(
+        isEmpty(arg(args, 0)) ? "" : absolute(text(arg(args, 0)), call, "FODC0002", "FODC0004"),
+        call,
+      ),
+  },
+  {
     name: "fn:unparsed-text-available",
     params: ["xs:string?"],
     result: "xs:boolean",
@@ -373,16 +403,44 @@ const collection = (uri: string, call: Call): Sequence => {
   return Predicate.isString(got) ? [] : got;
 };
 
+/**
+ * `fn:unparsed-text-lines`: a text's lines, split at CR LF, CR or LF, without
+ * the empty line after a final line ending.
+ */
+const textLines = (content: Sequence): Sequence => {
+  const [t] = content;
+  if (t === undefined) return [];
+  const lines = unwrap(stringValue(t)).split(/\r\n|\r|\n/);
+  return (lines.at(-1) === "" ? lines.slice(0, -1) : lines).map((l) => AtomicValue.string(l));
+};
+
+/**
+ * `fn:uri-collection`: the URIs of a collection's documents (the resolver's
+ * collection, read for its nodes' document URIs; other items have none).
+ */
+const uriCollection = (uri: string, call: Call): Sequence =>
+  collection(uri, call).flatMap((item) =>
+    isNode(item) ? Option.toArray(Option.map(item.documentUri, (u) => AtomicValue.anyURI(u))) : [],
+  );
+
+/** A character XML 1.0 does not allow (a lone surrogate included). */
+const NON_XML = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
+
 const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   if (isEmpty(arg(args, 0))) return [];
   const encoding = args.length > 1 ? text(arg(args, 1)) : undefined;
+  if (encoding !== undefined && canonicalEncoding(encoding) === null)
+    return raise("FOUT1190", `the encoding "${encoding}" is not supported`, call.offset);
   const got = fetchResource(
     call.ctx.dyn,
     // F&O 3.1 §14.8.1: a URI that can't be resolved is FOUT1170, as a missing resource is.
     { kind: "text", uri: absolute(text(arg(args, 0)), call, "FOUT1170", "FOUT1170"), encoding },
     call.offset,
   );
-  return Predicate.isString(got) ? str(got) : [];
+  if (!Predicate.isString(got)) return [];
+  return NON_XML.test(got)
+    ? raise("FOUT1190", "the resource contains a character that is not allowed in XML", call.offset)
+    : str(got);
 };
 
 const errorQName = (s: Sequence, call: Call): QName => {

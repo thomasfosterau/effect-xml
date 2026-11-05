@@ -22,11 +22,18 @@ import { ImplementationNamespace, XQueryError, xqueryError } from "../../../XQue
 
 /** A resource evaluation needs from the host before it can go on. */
 export interface ResourceRequest {
-  readonly kind: "document" | "collection" | "text";
-  /** The absolute URI; `""` for the default collection. */
+  /**
+   * What is asked for: a document, a collection or a text through the
+   * resolver, or a document parsed from text (`xml`: `fn:parse-xml`;
+   * `xml-fragment`: `fn:parse-xml-fragment`), which needs no resolver.
+   */
+  readonly kind: "document" | "collection" | "text" | "xml" | "xml-fragment";
+  /** The absolute URI (`""` for the default collection), or the text to parse. */
   readonly uri: string;
   /** The encoding asked for, for a text. */
   readonly encoding: string | undefined;
+  /** The base URI a parsed document gets. */
+  readonly base?: string | undefined;
 }
 
 /** Thrown to stop evaluation until the host has fetched a resource. */

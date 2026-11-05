@@ -189,7 +189,7 @@ export class Resources {
 
 /** Where a resource is cached. */
 export const resourceKey = (request: ResourceRequest): string =>
-  `${request.kind} ${request.encoding ?? ""} ${request.uri}`;
+  `${request.kind} ${request.encoding ?? ""} ${request.base ?? ""} ${request.uri}`;
 
 /** The dynamic context of one evaluation. */
 export interface Dynamic {
@@ -204,6 +204,8 @@ export interface Dynamic {
   readonly currentDateTime: string;
   /** The implicit timezone, in minutes east of UTC. */
   readonly implicitTimezone: number;
+  /** The environment variables `fn:environment-variable` reads, by name. */
+  readonly environment: Readonly<Record<string, string>>;
 }
 
 /** A resource from the cache; otherwise evaluation stops to have the host fetch it, or fails if it can't. */
@@ -214,7 +216,9 @@ export const fetchResource = (
 ): Sequence | string => {
   const cached = dyn.resources.get(resourceKey(request));
   if (Option.isSome(cached)) return unwrap(cached.value, offset);
-  if (dyn.resources.canFetch) throw new Suspend(request);
+  // Parsing needs no resolver: evaluation always stops for it.
+  if (dyn.resources.canFetch || request.kind === "xml" || request.kind === "xml-fragment")
+    throw new Suspend(request);
   return request.kind === "text"
     ? raise("FOUT1170", `the resource ${request.uri} is not available`, offset)
     : raise(

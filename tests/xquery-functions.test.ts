@@ -567,3 +567,69 @@ describe("formatting", () => {
     expect(code(`format-date(${d}, '[Y]', (), 'ZODIAC', ())`)).toBe("FOFD1340");
   });
 });
+
+describe("documents, serialization and the environment", () => {
+  test("parse-xml and parse-xml-fragment", () => {
+    expect(value("parse-xml('<a><b>x</b></a>')/a/b/string()")).toBe("x");
+    expect(value("parse-xml('<!DOCTYPE a [<!ENTITY e \"y\">]><a>&amp;e;</a>')/a/string()")).toBe(
+      "y",
+    );
+    expect(value("count(parse-xml-fragment('<a/>text<b/>')/node())")).toBe("3");
+    expect(value('parse-xml-fragment(\'<?xml version="1.0" encoding="utf-8"?>abc\')')).toBe(
+      "document(abc)",
+    );
+    expect(values("parse-xml(())")).toEqual([]);
+    expect(code("parse-xml('<a>')")).toBe("FODC0006");
+    expect(code("parse-xml-fragment('<?xml version=\"1.0\"?><a/>')")).toBe("FODC0006");
+  });
+
+  test("id and element-with-id find xml:id; idref finds nothing without typing", () => {
+    const tree = `document { <r><a xml:id=" one "/><b xml:id="two"/><c xml:id="one"/></r> }`;
+    expect(values(`id(('one', 'two', 'x'), ${tree})/name()`)).toEqual(["a", "b"]);
+    expect(values(`element-with-id('two three', ${tree})/name()`)).toEqual(["b"]);
+    expect(values(`idref('one', ${tree})`)).toEqual([]);
+    expect(code("id('one', <r/>)")).toBe("FODC0001");
+  });
+
+  test("serialize: xml, text, json and adaptive", () => {
+    expect(value("serialize(<a x='1'>b<c/></a>)")).toBe('<a x="1">b<c/></a>');
+    expect(value("serialize((1, 2, 3), map { 'item-separator': '|' })")).toBe("1|2|3");
+    expect(
+      value("serialize(<a/>, map { 'omit-xml-declaration': false(), 'standalone': true() })"),
+    ).toBe('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a/>');
+    expect(value("serialize(<a>$</a>, map { 'use-character-maps': map { '$': '£' } })")).toBe(
+      "<a>£</a>",
+    );
+    expect(value("serialize(<a>x<b>y</b></a>, map { 'method': 'text' })")).toBe("xy");
+    expect(value("serialize(map { 'a': [1, true(), ()] }, map { 'method': 'json' })")).toBe(
+      '{"a":[1,true,null]}',
+    );
+    expect(value("serialize(('a', 1, xs:date('2000-01-01')), map { 'method': 'adaptive' })")).toBe(
+      '"a"\n1\nxs:date("2000-01-01")',
+    );
+    expect(code("serialize((1, 2), map { 'method': 'json' })")).toBe("SERE0023");
+    expect(code("serialize(<a/>, map { 'indent': 'yes' })")).toBe("XPTY0004");
+    expect(code("serialize(attribute a { 1 })")).toBe("SENR0001");
+    expect(
+      code(`serialize(<a/>, <output:serialization-parameters
+        xmlns:output="http://www.w3.org/2010/xslt-xquery-serialization">
+        <output:indent value="maybe"/></output:serialization-parameters>)`),
+    ).toBe("SEPM0017");
+  });
+
+  test("unparsed-text-lines, environment variables", () => {
+    const resolver = XQuery.staticResolver({ texts: { "http://x/t": "a\r\nb\rc\n" } });
+    const lines = Effect.runSync(
+      XQuery.evaluate("unparsed-text-lines('http://x/t')").pipe(
+        Effect.provideService(XQuery.Resolver, resolver),
+      ),
+    );
+    expect(lines.map(show)).toEqual(["a", "b", "c"]);
+    expect(
+      values("available-environment-variables(), environment-variable('HOME')", {
+        environment: { HOME: "/home" },
+      }),
+    ).toEqual(["HOME", "/home"]);
+    expect(values("environment-variable('HOME')")).toEqual([]);
+  });
+});

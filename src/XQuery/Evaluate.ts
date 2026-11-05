@@ -30,6 +30,7 @@ import {
   Suspend,
   type ResourceRequest,
 } from "../internal/xquery/eval/raise.ts";
+import { parseXmlRequest } from "../internal/xquery/eval/parseXml.ts";
 import { Resources, resourceKey, type Dynamic } from "../internal/xquery/eval/runtime.ts";
 import { formatParts, partsAt } from "../internal/xquery/eval/temporal.ts";
 import { compile, type CompileOptions, type ModuleSource, type Query } from "./Compile.ts";
@@ -140,6 +141,12 @@ export interface EvaluateOptions {
   readonly variables?: Readonly<Record<string, Sequence | Item>> | undefined;
   /** The implicit timezone, in minutes east of UTC (default 0). */
   readonly implicitTimezone?: number | undefined;
+  /**
+   * The environment variables `fn:environment-variable` and
+   * `fn:available-environment-variables` see, by name (default: none; the
+   * process environment is never read).
+   */
+  readonly environment?: Readonly<Record<string, string>> | undefined;
   /** The current dateTime (default: now, from the `Clock`). */
   readonly currentDateTime?: Date | undefined;
   /** How to compile query text: the static context's options. */
@@ -202,6 +209,15 @@ const run = (
     if (Result.isSuccess(outcome)) return Effect.succeed(outcome.success);
     const failure = outcome.failure;
     if (!(failure instanceof Suspend)) return Effect.fail(failure);
+    const { request } = failure;
+    if (request.kind === "xml" || request.kind === "xml-fragment")
+      return parseXmlRequest(request).pipe(
+        Effect.result,
+        Effect.flatMap((parsed) => {
+          base.resources.set(resourceKey(request), parsed);
+          return run(compiled, base, resolver);
+        }),
+      );
     return Option.match(resolver, {
       onNone: () => Effect.fail(xqueryError("FODC0002", `${failure.request.uri} is not available`)),
       onSome: (r) =>
@@ -274,6 +290,7 @@ export const evaluate = (
         resources: new Resources(Option.isSome(resolver)),
         currentDateTime: nowIn(millis, tz),
         implicitTimezone: tz,
+        environment: options.environment ?? {},
       },
       resolver,
     );
