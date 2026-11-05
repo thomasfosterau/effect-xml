@@ -335,6 +335,7 @@ export default defineConfig({
           "src/internal/guard.ts",
           "src/internal/convert.ts",
           "src/internal/lenient.ts",
+          "src/internal/direct.ts",
           "src/internal/xmlBuilder.ts",
           "src/Xml/Plain.ts",
         ],
@@ -357,6 +358,7 @@ export default defineConfig({
         files: [
           "src/internal/scan.ts",
           "src/internal/lenient.ts",
+          "src/internal/direct.ts",
           "src/internal/lexer.ts",
           "src/internal/guard.ts",
           "src/internal/namespaces.ts",

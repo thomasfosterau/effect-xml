@@ -205,7 +205,7 @@ const matchState = LexState.$match;
  * the C0 controls other than tab, LF and CR (a CR never reaches the buffer),
  * and U+FFFE / U+FFFF. Surrogates come in pairs in decoded input.
  */
-const FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/;
+export const FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/;
 const DATA: LexState = LexState.Data();
 const PLAINTEXT: LexState = LexState.Plaintext();
 const RCDATA_TO_END: LexState = LexState.RcdataToEnd();

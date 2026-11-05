@@ -121,8 +121,23 @@ export const documents = (seed: number, count: number): ReadonlyArray<string> =>
     // Every fourth one is well-formed, so the failures don't hide the rest;
     // some have markup before and after the root element.
     const prolog =
-      i % 3 === 0 ? pick(next, ["<?pi x?>", "<!-- c -->\n", "<![CDATA[x]]>", " "]) : "";
-    const epilog = i % 5 === 0 ? pick(next, ["<!-- e -->", "<?pi?>", "\n", "<![CDATA[y]]>"]) : "";
+      i % 3 === 0
+        ? pick(next, [
+            "<?pi x?>",
+            "<!-- c -->\n",
+            "<![CDATA[x]]>",
+            " ",
+            '<?xml version="1.0"?>\n',
+            "<!DOCTYPE root>\n",
+            ' <?xml version="1.0"?>',
+            "x",
+            "&amp;",
+          ])
+        : "";
+    const epilog =
+      i % 5 === 0
+        ? pick(next, ["<!-- e -->", "<?pi?>", "\n", "<![CDATA[y]]>", "<!DOCTYPE r>"])
+        : "";
     return i % 4 === 0
       ? `${prolog}<root>${Arr.makeBy(4, () => element(next)).join("")}</root>${epilog}`
       : `${prolog}<root>${body}</root>${epilog}`;
