@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { Sax } from "../src/index.ts";
 import { narrowAt } from "./support/narrow.ts";
+import { plain } from "./support/plain.ts";
 
 const splitEvery = (s: string, n: number): ReadonlyArray<string> =>
   Arr.makeBy(Math.ceil(s.length / n), (i) => s.slice(i * n, i * n + n));
@@ -13,6 +14,10 @@ const tokenizeChunks = (chunks: ReadonlyArray<string>, options?: Sax.SaxOptions)
 
 const collectChunks = (chunks: ReadonlyArray<string>, options?: Sax.SaxOptions) =>
   Effect.runPromise(tokenizeChunks(chunks, options));
+
+/** Each event of `chunks` as {@link plain} data, materialized as it is emitted. */
+const plainAsEmitted = (chunks: ReadonlyArray<string>) =>
+  Stream.fromIterable(chunks).pipe(Sax.tokenize(), Stream.map(plain), Stream.runCollect);
 
 describe("Sax — true incremental streaming", () => {
   const document =
@@ -34,7 +39,47 @@ describe("Sax — true incremental streaming", () => {
         Arr.range(1, document.length),
         (size) =>
           tokenizeChunks(splitEvery(document, size)).pipe(
-            Effect.map((chunked) => expect(chunked).toStrictEqual(whole)),
+            Effect.map((chunked) => {
+              expect(chunked).toStrictEqual(whole);
+              expect(plain(chunked)).toStrictEqual(plain(whole));
+            }),
+          ),
+        { concurrency: 1, discard: true },
+      ),
+    );
+  });
+
+  test("lines and columns are identical regardless of chunk boundaries", async () => {
+    // LF, CRLF and lone CR line ends, inside text, markup and attribute values,
+    // so chunks split CRLFs and the lexer compacts its buffer.
+    const lined =
+      `<?xml version="1.0"?>\r\n<root>\r\n` +
+      Arr.makeBy(200, (i) => `  <item n="${i}"\r\n    k='v'>x\ry\r\n</item>\n`).join("") +
+      `<!-- a\r\ncomment -->\r</root>\r\n`;
+    const whole = plain(await collectChunks([lined]));
+    // Resolved on read, after all the input is in: the same as on the fly.
+    expect(await Effect.runPromise(plainAsEmitted([lined]))).toStrictEqual(whole);
+    expect(whole).toContainEqual(
+      expect.objectContaining({
+        _tag: "Comment",
+        span: {
+          start: { offset: lined.indexOf("<!--"), line: 803, column: 1 },
+          end: { offset: lined.indexOf("\r</root>"), line: 804, column: 12 },
+        },
+      }),
+    );
+    await Effect.runPromise(
+      Effect.forEach(
+        Arr.range(1, 64),
+        (size) =>
+          Effect.zip(
+            tokenizeChunks(splitEvery(lined, size)),
+            plainAsEmitted(splitEvery(lined, size)),
+          ).pipe(
+            Effect.map(([chunked, onTheFly]) => {
+              expect(plain(chunked)).toStrictEqual(whole);
+              expect(onTheFly).toStrictEqual(whole);
+            }),
           ),
         { concurrency: 1, discard: true },
       ),
