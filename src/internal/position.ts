@@ -144,13 +144,11 @@ export class LazyPosition implements Position, Equal.Equal {
 export const fixed = (offset: number, line: number, column: number): Position =>
   new LazyPosition(offset, 0, new Fixed(line, column));
 
-/** The end of a {@link LazySpan} that has not been read yet (compared by identity). */
-const unread: Position = /*#__PURE__*/ fixed(0, 1, 1);
-
 /**
- * A span that holds its ends as offsets and indices, making each end's
- * {@link LazyPosition} on first read (and keeping it). It has no own
- * enumerable properties; `toJSON` and the Node inspector show
+ * A span that holds its ends as offsets and indices, making both ends'
+ * {@link LazyPosition}s on the first read of either (and keeping them): one
+ * field to set per span rather than one per end, as most spans are never
+ * read. It has no own enumerable properties; `toJSON` and the Node inspector show
  * `{ start, end }`, and `Equal.equals` compares both ends.
  */
 export class LazySpan implements Span, Equal.Equal {
@@ -159,10 +157,6 @@ export class LazySpan implements Span, Equal.Equal {
   readonly #startIndex: number;
   readonly #endOffset: number;
   readonly #endIndex: number;
-  /** Each end, once read ({@link unread} until then). */
-  #start: Position = unread;
-  #end: Position = unread;
-
   constructor(
     lines: LineIndex,
     startOffset: number,
@@ -177,20 +171,28 @@ export class LazySpan implements Span, Equal.Equal {
     this.#endIndex = endIndex;
   }
 
+  /** Both ends, once either is read. */
+  #ends: Span | undefined = undefined;
+
+  /** Both ends, made on first read. */
+  private ends(): Span {
+    if (this.#ends === undefined) {
+      this.#ends = {
+        start: new LazyPosition(this.#startOffset, this.#startIndex, this.#lines),
+        end: new LazyPosition(this.#endOffset, this.#endIndex, this.#lines),
+      };
+    }
+    return this.#ends;
+  }
+
   /** Where the span starts. */
   get start(): Position {
-    if (this.#start === unread) {
-      this.#start = new LazyPosition(this.#startOffset, this.#startIndex, this.#lines);
-    }
-    return this.#start;
+    return this.ends().start;
   }
 
   /** Where the span ends (exclusive). */
   get end(): Position {
-    if (this.#end === unread) {
-      this.#end = new LazyPosition(this.#endOffset, this.#endIndex, this.#lines);
-    }
-    return this.#end;
+    return this.ends().end;
   }
 
   /** The span as a plain `{ start, end }` object. */
