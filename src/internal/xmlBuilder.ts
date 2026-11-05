@@ -596,7 +596,7 @@ const buildPass = (
   let last: Span = NO_SPAN;
   const error = runChunks(
     chunks,
-    { ...resolveSaxOptions(saxOptions), positions: !lean },
+    resolveSaxOptions(lean ? { ...saxOptions, positions: false } : saxOptions),
     (ev) => {
       last = ev.span;
       return builder.accept(ev);
