@@ -8,7 +8,7 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { DuplicateAttribute, type SaxError } from "../Error.ts";
 import type { QName, TagName } from "../Name.ts";
-import type { Position } from "../Position.ts";
+import type { Span } from "../Position.ts";
 import type { Attribute } from "../Sax.ts";
 import type { XmlAttribute } from "../Xml/Node.ts";
 import * as Nodes from "./nodes.ts";
@@ -52,7 +52,7 @@ class Seen {
 export const resolveAttributes = (
   element: TagName,
   attributes: ReadonlyArray<Attribute>,
-  resolve: (name: string, position: Position) => Result.Result<QName, SaxError>,
+  resolve: (name: string, at: Span) => Result.Result<QName, SaxError>,
 ): Result.Result<Array<XmlAttribute>, SaxError> => {
   const list: Array<XmlAttribute> = [];
   if (Arr.isReadonlyArrayEmpty(attributes)) return Result.succeed(list);
@@ -61,7 +61,7 @@ export const resolveAttributes = (
     Option.some(new DuplicateAttribute({ element, attribute: a.name, position: a.span.start }));
   const failure = Arr.findFirst(attributes, (a): Option.Option<SaxError> => {
     if (!seen.add(a.name)) return duplicate(a);
-    const resolved = resolve(a.name, a.span.start);
+    const resolved = resolve(a.name, a.span);
     if (Result.isFailure(resolved)) return Option.some(resolved.failure);
     const name = resolved.success;
     // Only a prefixed name can share its expanded name with an earlier one

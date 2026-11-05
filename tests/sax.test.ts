@@ -1,7 +1,8 @@
-import { describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import { Sax } from "../src/index.ts";
 import { at, narrowAt } from "./support/narrow.ts";
+import { plain } from "./support/plain.ts";
 
 const collect = (input: string, options?: Sax.SaxOptions) =>
   Effect.runPromise(Sax.collect(input, options));
@@ -135,7 +136,7 @@ describe("Sax.tokenize — whitespace policy", () => {
 describe("Sax — spans", () => {
   test("spans point at the right offsets", async () => {
     const evs = await collect("<a>hi</a>");
-    expect(at(evs, 0).span).toEqual({
+    expect(plain(at(evs, 0).span)).toEqual({
       start: { offset: 0, line: 1, column: 1 },
       end: { offset: 3, line: 1, column: 4 },
     });
@@ -145,6 +146,7 @@ describe("Sax — spans", () => {
   test("tracks lines and columns across newlines", async () => {
     const evs = await collect("<a>\n<b/>\n</a>");
     const b = evs.find((e) => Sax.isStartElement(e) && e.name === "b");
-    expect(b?.span.start).toEqual({ offset: 4, line: 2, column: 1 });
+    assert(b !== undefined, "expected <b>");
+    expect(plain(b.span.start)).toEqual({ offset: 4, line: 2, column: 1 });
   });
 });

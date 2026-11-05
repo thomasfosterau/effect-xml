@@ -39,6 +39,7 @@ import {
   type LexError,
 } from "../Error.ts";
 import type { Position, Span } from "../Position.ts";
+import { LazyPosition, LazySpan, LineIndex } from "./position.ts";
 import { declarationContexts } from "./declarations.ts";
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
@@ -191,12 +192,6 @@ const RCDATA_TO_END: LexState = LexState.RcdataToEnd();
 // -----------------------------------------------------------------------------
 
 /**
- * Line/column/offset of indices into the (CRLF-normalized) input. `offset`
- * counts raw UTF-16 units, so each collapsed `\r\n` adds one. Queries are
- * expected to move forward; one behind the last falls back to the anchor
- * (the start of the current token).
- */
-/**
  * The first position at or after `from` in the ascending CRLF records whose
  * index is not before `index` (a binary search: the records are sorted).
  */
@@ -218,85 +213,55 @@ const crlfSearch = (crlf: ReadonlyArray<number>, index: number, lo: number, hi: 
     : crlfSearch(crlf, index, lo, mid);
 };
 
+/**
+ * Positions of indices into the (CRLF-normalized) input. The `offset` is
+ * computed here: it counts raw UTF-16 units, so each collapsed `\r\n` adds
+ * one. The line and column are left to the {@link LineIndex}, resolved only
+ * when read. Queries are expected to move forward; one behind the last falls
+ * back to the anchor (the start of the current token).
+ */
 class Positions {
   /** Absolute indices of `\n`s that were `\r\n` in the raw input, ascending. */
   readonly crlf: Array<number> = [];
+  /** Every line break of the input, for the positions' lines and columns. */
+  readonly lines: LineIndex = new LineIndex();
   private anchorIndex = 0;
-  private anchorPos: Position = { offset: 0, line: 1, column: 1 };
+  private anchorOffset = 0;
   private anchorCrlf = 0;
   private index = 0;
-  private pos: Position = this.anchorPos;
+  private offset = 0;
   private crlfNext = 0;
-  /**
-   * The first `\n` at or after absolute index {@link newlineFrom}, or -1 if
-   * the buffer had none when it ended at {@link newlineLimit}. Each query
-   * moves forward from it, so every newline is searched for once, rather
-   * than the text between two positions being sliced and split per query.
-   */
-  private newlineFrom = 0;
-  private newline = -1;
-  private newlineLimit = 0;
-  private readonly source: { readonly buf: string; readonly base: number };
 
-  constructor(source: { readonly buf: string; readonly base: number }) {
-    this.source = source;
-  }
-
-  /** The first `\n` at or after absolute index `from` (at or after the buffer's start), or -1. */
-  private nextNewline(from: number): number {
-    const { buf, base } = this.source;
-    const end = base + buf.length;
-    const known = this.newline;
-    if (from >= this.newlineFrom && (known === -1 ? this.newlineLimit === end : from <= known)) {
-      return known;
+  /** The raw offset of absolute (normalized) index `index`. */
+  offsetAt(index: number): number {
+    if (index < this.index) {
+      this.index = this.anchorIndex;
+      this.offset = this.anchorOffset;
+      this.crlfNext = this.anchorCrlf;
     }
-    // Text before the limit is unchanged (input is only appended and the
-    // buffer only trimmed at the front), so a search that found nothing
-    // resumes at the limit.
-    const resume =
-      known === -1 && from >= this.newlineFrom ? Math.max(from, this.newlineLimit) : from;
-    const at = buf.indexOf("\n", resume - base);
-    this.newlineFrom = from;
-    this.newline = at === -1 ? -1 : base + at;
-    this.newlineLimit = end;
-    return this.newline;
+    if (index === this.index) return this.offset;
+    // One per character, plus one per collapsed CRLF.
+    const k = crlfBound(this.crlf, this.crlfNext, index);
+    this.offset += index - this.index + (k - this.crlfNext);
+    this.index = index;
+    this.crlfNext = k;
+    return this.offset;
   }
 
   at(index: number): Position {
-    if (index < this.index) {
-      this.index = this.anchorIndex;
-      this.pos = this.anchorPos;
-      this.crlfNext = this.anchorCrlf;
-    }
-    if (index === this.index) return this.pos;
-    let { line, column } = this.pos;
-    // Lines: count the newlines in between; the column restarts after the last.
-    // (The search starts at the buffer at the earliest.)
-    const from = Math.max(this.index, this.source.base);
-    const nl = this.nextNewline(from);
-    if (nl === -1 || nl >= index) {
-      column += index - this.index;
-    } else {
-      // From the first newline on: it is at index 0 of `between`.
-      const { buf, base } = this.source;
-      const between = buf.slice(nl - base, index - base);
-      line += between.split("\n").length - 1;
-      column = index - (nl + between.lastIndexOf("\n"));
-    }
-    // Offsets: one per character, plus one per collapsed CRLF.
-    const k = crlfBound(this.crlf, this.crlfNext, index);
-    const offset = this.pos.offset + (index - this.index) + (k - this.crlfNext);
-    this.index = index;
-    this.pos = { offset, line, column };
-    this.crlfNext = k;
-    return this.pos;
+    return new LazyPosition(this.offsetAt(index), index, this.lines);
+  }
+
+  /** The span of absolute indices `[start, end)`. */
+  span(start: number, end: number): Span {
+    const startOffset = this.offsetAt(start);
+    return new LazySpan(this.lines, startOffset, start, this.offsetAt(end), end);
   }
 
   /** Make `index` (the start of a token) the point to fall back to. */
   anchor(index: number): void {
-    const pos = this.at(index);
+    this.anchorOffset = this.offsetAt(index);
     this.anchorIndex = index;
-    this.anchorPos = pos;
     this.anchorCrlf = this.crlfNext;
   }
 
@@ -343,7 +308,7 @@ export class Lexer {
   /** XML: why the last token {@link misplaced} looked at is not well-formed. */
   private misplacement: Option.Option<InvalidDocumentStructure> = Option.none();
   private readonly grammars: Grammars;
-  private readonly positions: Positions = new Positions(this);
+  private readonly positions: Positions = new Positions();
 
   /**
    * When set by a coupled tree builder, raw-text/rcdata/plaintext elements are
@@ -415,6 +380,7 @@ export class Lexer {
       const i = s.search(FORBIDDEN);
       if (i !== -1) this.forbidden = this.base + this.buf.length + i;
     }
+    this.positions.lines.record(s, this.base + this.buf.length);
     this.buf += s;
   }
 
@@ -613,7 +579,7 @@ export class Lexer {
   }
 
   private span(t: { readonly start: number; readonly end: number }): Span {
-    return { start: this.at(t.start), end: this.at(t.end) };
+    return this.positions.span(this.base + t.start, this.base + t.end);
   }
 
   // A `switch`, not a `$match` table: this runs once per token, and a switch
@@ -625,7 +591,8 @@ export class Lexer {
   private event(t: Tok): LexEvent {
     switch (t._tag) {
       case "StartElement": {
-        const start = this.at(t.start);
+        // The tag's start offset first: offsets are computed moving forward.
+        const start = this.positions.offsetAt(this.base + t.start);
         const attributes = t.attributes.map((a): LexAttribute => ({
           name: a.name,
           value: a.value,
@@ -635,7 +602,13 @@ export class Lexer {
           name: t.name,
           attributes,
           selfClosing: t.selfClosing,
-          span: { start, end: this.at(t.end) },
+          span: new LazySpan(
+            this.positions.lines,
+            start,
+            this.base + t.start,
+            this.positions.offsetAt(this.base + t.end),
+            this.base + t.end,
+          ),
           _tag: "StartElement",
         };
       }

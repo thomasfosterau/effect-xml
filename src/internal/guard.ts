@@ -103,11 +103,7 @@ export class Guard {
 }
 
 /** The depth check for tree builders that keep their own stack of open elements. */
-export const depthExceeded = (
-  limits: Limits,
-  depth: number,
-  position: Position,
-): LimitExceeded | null =>
+export const depthExceeded = (limits: Limits, depth: number, at: Span): LimitExceeded | null =>
   depth > limits.maxDepth
-    ? new LimitExceeded({ limit: "maxDepth", max: limits.maxDepth, position })
+    ? new LimitExceeded({ limit: "maxDepth", max: limits.maxDepth, position: at.start })
     : null;

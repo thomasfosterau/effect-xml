@@ -26,7 +26,7 @@ import {
   type SaxError,
 } from "../../Error.ts";
 import { Namespaces, type QName } from "../../Name.ts";
-import { origin, type Position } from "../../Position.ts";
+import { origin, type Position, type Span } from "../../Position.ts";
 import type { Attribute, SaxEvent } from "../../Sax.ts";
 import { type XmlAttribute, XmlElement, type XmlNode } from "../../Xml/Node.ts";
 import * as Nodes from "../nodes.ts";
@@ -229,7 +229,8 @@ export class Validator {
   /** The element whose start tag is being checked, before it is pushed, and its index. */
   private opening: string | undefined = undefined;
   private openingIndex = 1;
-  private last: Position = origin;
+  /** The last event's span: its end is where an incomplete document is reported. */
+  private last: Span = { start: origin, end: origin };
 
   constructor(runtime: Runtime, options?: ValidatorOptions) {
     this.runtime = runtime;
@@ -251,7 +252,7 @@ export class Validator {
 
   /** Feed one event: `null` if it is valid so far, or why the document is not. */
   accept(ev: SaxEvent): Failure | null {
-    this.last = ev.span.end;
+    this.last = ev.span;
     return matchEvent(ev, this.handlers);
   }
 
@@ -272,12 +273,12 @@ export class Validator {
     const open = this.frames.at(-1);
     if (open !== undefined)
       return new InvalidDocumentStructure({
-        position: this.last,
+        position: this.last.end,
         reason: `unexpected end of input: <${open.raw}> was never closed`,
       });
     if (Option.isNone(this.done))
       return new InvalidDocumentStructure({
-        position: this.last,
+        position: this.last.end,
         reason: "the document has no root element",
       });
     const dangling = Arr.findFirst(this.refs, (r) => !MutableHashSet.has(this.ids, r.id));

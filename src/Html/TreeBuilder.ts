@@ -69,7 +69,7 @@ class FragmentBuilder {
       this.append(Nodes.htmlElement("html", name, attributes, [], null));
       return;
     }
-    const over = depthExceeded(this.limits, this.stack.length + 1, ev.span.start);
+    const over = depthExceeded(this.limits, this.stack.length + 1, ev.span);
     if (over !== null) throw over;
     this.stack.push({ name, attributes, children: [] });
   }

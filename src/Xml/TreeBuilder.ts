@@ -30,7 +30,7 @@ import { QNames } from "../internal/qnames.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
 import * as Nodes from "../internal/nodes.ts";
 import { Namespaces, type QName } from "../Name.ts";
-import { origin, type Position } from "../Position.ts";
+import { origin, type Position, type Span } from "../Position.ts";
 import { SaxEvent, type Attribute } from "../Sax.ts";
 import type {
   XmlDeclaration,
@@ -135,7 +135,7 @@ class Builder {
   private resolve(
     raw: string,
     isAttribute: boolean,
-    position: Position,
+    at: Span,
     own: Bindings,
   ): Result.Result<QName, SaxError> {
     const parsed = this.names.entry(raw);
@@ -149,7 +149,7 @@ class Builder {
     if (ns === null && this.recover) return Result.succeed(this.names.name(parsed, null));
     if (ns === null) {
       return Result.fail(
-        new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position }),
+        new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position: at.start }),
       );
     }
     return Result.succeed(this.names.name(parsed, ns));
@@ -166,7 +166,7 @@ class Builder {
     );
   }
 
-  private appendChild(node: XmlNode, position: Position): Effect.Effect<void, SaxError> {
+  private appendChild(node: XmlNode, at: Span): Effect.Effect<void, SaxError> {
     if (this.recover && this.rootEnded && this.stack.length === 1 && this.afterRoot(node)) {
       return Effect.void;
     }
@@ -184,14 +184,14 @@ class Builder {
       if (/^\s*$/.test(node.data)) return Effect.void;
       return Effect.fail(
         new InvalidDocumentStructure({
-          position,
+          position: at.start,
           reason: "character data is not allowed outside the root element",
         }),
       );
     }
     if (isElement(node) && this.top.some(isElement)) {
       return Effect.fail(
-        new InvalidDocumentStructure({ position, reason: "multiple root elements" }),
+        new InvalidDocumentStructure({ position: at.start, reason: "multiple root elements" }),
       );
     }
     this.top.push(node);
@@ -257,22 +257,22 @@ class Builder {
       ev: Extract<SaxEvent, { _tag: "StartElement" }>,
     ): Effect.Effect<void, SaxError> => this.startElement(ev),
     EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>): Effect.Effect<void, SaxError> =>
-      this.endElement(ev.name, ev.span.start),
+      this.endElement(ev.name, ev.span),
     Text: (ev: Extract<SaxEvent, { _tag: "Text" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(Nodes.text(ev.data), ev.span.start),
+      this.appendChild(Nodes.text(ev.data), ev.span),
     CData: (ev: Extract<SaxEvent, { _tag: "CData" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(Nodes.cdata(ev.data), ev.span.start),
+      this.appendChild(Nodes.cdata(ev.data), ev.span),
     Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(Nodes.comment(ev.data), ev.span.start),
+      this.appendChild(Nodes.comment(ev.data), ev.span),
     ProcessingInstruction: (
       ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>,
     ): Effect.Effect<void, SaxError> => {
       const error =
         this.namespaces && !this.recover
-          ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
+          ? checkNoColon(ev.target, "a processing instruction target", ev.span)
           : Option.none();
       if (Option.isSome(error)) return Effect.fail(error.value);
-      return this.appendChild(Nodes.processingInstruction(ev.target, ev.data), ev.span.start);
+      return this.appendChild(Nodes.processingInstruction(ev.target, ev.data), ev.span);
     },
     XmlDeclaration: (
       ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>,
@@ -283,7 +283,7 @@ class Builder {
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>): Effect.Effect<void, SaxError> => {
       const error =
         this.namespaces && !this.recover && ev.internalSubset !== null
-          ? checkSubset(ev.internalSubset, ev.span.start)
+          ? checkSubset(ev.internalSubset, ev.span)
           : Option.none();
       if (Option.isSome(error)) return Effect.fail(error.value);
       this.doctype = Nodes.doctype(ev.name, ev.publicId, ev.systemId, ev.internalSubset);
@@ -294,20 +294,20 @@ class Builder {
   private startElement(
     ev: Extract<SaxEvent, { _tag: "StartElement" }>,
   ): Effect.Effect<void, SaxError> {
-    const position = ev.span.start;
+    const at = ev.span;
     const invalid =
       this.namespaces && !this.recover
-        ? checkStartTag(ev.name, ev.attributes, position, this.unbinding)
+        ? checkStartTag(ev.name, ev.attributes, at, this.unbinding)
         : Option.none();
     if (Option.isSome(invalid)) return Effect.fail(invalid.value);
     // This element's own xmlns declarations are in scope for its name and attributes.
     const bindings = this.collectBindings(ev.attributes);
     // In document order: the first duplicate or unbound prefix is the one reported.
-    const resolveAttribute = (name: string, at: Position) => this.resolve(name, true, at, bindings);
+    const resolveAttribute = (name: string, span: Span) => this.resolve(name, true, span, bindings);
     const attributes = this.recover
       ? Result.succeed(recoverAttributes(ev.attributes, resolveAttribute))
       : resolveAttributes(ev.name, ev.attributes, resolveAttribute);
-    const opened = Result.flatMap(this.resolve(ev.name, false, position, bindings), (name) =>
+    const opened = Result.flatMap(this.resolve(ev.name, false, at, bindings), (name) =>
       Result.map(attributes, (attributes) => ({ name, attributes })),
     );
     return Result.match(opened, {
@@ -315,7 +315,7 @@ class Builder {
       onSuccess: ({ name, attributes }) => {
         if (ev.selfClosing) {
           // A complete, childless element.
-          return this.appendChild(Nodes.element(name, attributes, []), position);
+          return this.appendChild(Nodes.element(name, attributes, []), at);
         }
         this.stack.push({
           name,
@@ -330,7 +330,7 @@ class Builder {
     });
   }
 
-  private endElement(rawName: string, position: Position): Effect.Effect<void, SaxError> {
+  private endElement(rawName: string, at: Span): Effect.Effect<void, SaxError> {
     if (this.recover) {
       this.recoverEndTag(rawName);
       return Effect.void;
@@ -338,14 +338,14 @@ class Builder {
     const frame = this.stack.pop();
     if (frame !== undefined && !HashMap.isEmpty(frame.bindings)) this.scopes.pop();
     if (frame === undefined) {
-      return Effect.fail(new UnexpectedEndTag({ name: rawName, position }));
+      return Effect.fail(new UnexpectedEndTag({ name: rawName, position: at.start }));
     }
     if (frame.rawName !== rawName) {
       return Effect.fail(
-        new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position }),
+        new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position: at.start }),
       );
     }
-    return this.appendChild(closed(frame), position);
+    return this.appendChild(closed(frame), at);
   }
 
   /**
@@ -421,11 +421,11 @@ const synthesizedRoot = (): XmlElement =>
  */
 const recoverAttributes = (
   attributes: ReadonlyArray<Attribute>,
-  resolve: (name: string, position: Position) => Result.Result<QName, SaxError>,
+  resolve: (name: string, at: Span) => Result.Result<QName, SaxError>,
 ): Array<XmlAttribute> => {
   const seen = MutableHashSet.empty<string>();
   return Arr.reduce(attributes, Arr.empty<XmlAttribute>(), (list, a) => {
-    const name = Result.getOrElse(resolve(a.name, a.span.start), () => Nodes.qnameFromRaw(a.name));
+    const name = Result.getOrElse(resolve(a.name, a.span), () => Nodes.qnameFromRaw(a.name));
     // An expanded-name key has a space, which no raw name has, so the two never collide.
     const keys = name.namespace === null ? [a.name] : [a.name, `${name.namespace} ${name.local}`];
     if (Arr.some(keys, (key) => MutableHashSet.has(seen, key))) return list;
@@ -447,10 +447,11 @@ export const build =
   <E, R>(events: Stream.Stream<SaxEvent, E, R>): Effect.Effect<XmlDocument, SaxError | E, R> =>
     Effect.gen(function* () {
       const builder = new Builder(options);
-      let last: Position = origin;
+      // The last event's span: its end is where an incomplete document is reported.
+      let last: Span = { start: origin, end: origin };
       yield* Stream.runForEach(events, (ev) => {
-        last = ev.span.end;
+        last = ev.span;
         return builder.accept(ev);
       });
-      return yield* builder.finish(last);
+      return yield* builder.finish(last.end);
     });

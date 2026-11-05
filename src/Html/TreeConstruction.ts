@@ -25,7 +25,7 @@ import * as Stream from "effect/Stream";
 import * as Str from "effect/String";
 import type { SaxError } from "../Error.ts";
 import { defaultLimits, resolveLimits, type Limits } from "../Limits.ts";
-import { origin, type Position } from "../Position.ts";
+import { origin, type Span } from "../Position.ts";
 import { resolveSaxOptions, type SaxEvent } from "../Sax.ts";
 import { convert as convertLexEvent } from "../internal/convert.ts";
 import { depthExceeded, Guard } from "../internal/guard.ts";
@@ -787,7 +787,8 @@ class HtmlTreeBuilder {
    */
   private hasSelectedContent = false;
   /** Where the token being processed starts, for limit failures. */
-  private position: Position = origin;
+  /** The span of the token being processed (for a depth limit error). */
+  private span: Span = { start: origin, end: origin };
   private readonly limits: Limits;
   private readonly scripting: boolean;
   /** The fragment case's context element (never inserted); `null` for a document. */
@@ -958,7 +959,7 @@ class HtmlTreeBuilder {
 
   /** Push onto the stack of open elements, throwing {@link LimitExceeded} past `maxDepth`. */
   private pushOpen(el: MElement): void {
-    const over = depthExceeded(this.limits, this.open.length + 1, this.position);
+    const over = depthExceeded(this.limits, this.open.length + 1, this.span);
     if (over !== null) throw over;
     this.open.push(el);
   }
@@ -1060,7 +1061,7 @@ class HtmlTreeBuilder {
    * table in the program, so its calls go megamorphic (see `vite.config.ts`).
    */
   accept(ev: TreeEvent): void {
-    this.position = ev.span.start;
+    this.span = ev.span;
     switch (ev._tag) {
       case "Doctype":
         this.acceptDoctype(ev);
