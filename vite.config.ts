@@ -341,7 +341,7 @@ export default defineConfig({
       // looked up per element and attribute, where `HashMap` hashes each
       // string in JavaScript). Each `Arr` fold or search there allocated a
       // closure and an `Option` or `Result` per call. Written as loops, the
-      // SAX path went from ~700 ms to ~250 ms and `Xml.parse` from ~2400 ms
+      // SAX path went from ~700 ms to ~300 ms and `Xml.parse` from ~2400 ms
       // to ~450 ms on the benchmark's 8 MB worksheet (`vp run bench`).
       {
         files: [
