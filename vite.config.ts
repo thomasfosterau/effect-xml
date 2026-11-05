@@ -216,6 +216,31 @@ export default defineConfig({
           "effect/avoid-native-object-helpers": "off",
         },
       },
+      // Lookup tables on the XML Schema validator's per-element path (the
+      // names an element's children and their attributes resolve to, the
+      // counts of same-named siblings): a record keyed by names sliced from
+      // the input has to intern each one first, and `MutableHashMap.get`
+      // wraps every hit in an `Option`. `Lookup` is a `Map` that returns the
+      // value itself.
+      {
+        files: ["src/internal/lookup.ts"],
+        rules: {
+          "effect/avoid-native-object-helpers": "off",
+        },
+      },
+      // The XML Schema validator's per-element path: the scans of a start
+      // tag's attributes (duplicates, namespace declarations, `xsi:type` /
+      // `xsi:nil`, each attribute's check, the defaults) run once per element,
+      // and an `Arr` fold or search there allocates a closure and an `Option`
+      // or `Result` per call. Written as loops (with the `Option` / `Result`
+      // chains flattened), `Xsd.validate` and `Xsd.parse` were about 1.5
+      // times as fast on the benchmark's worksheet.
+      {
+        files: ["src/internal/xsd/validator.ts"],
+        rules: {
+          "effect/imperative-loops": "off",
+        },
+      },
       // The HTML tree builders' per-token dispatch, for the reason given for
       // the lexer below: `SaxEvent.$match` was a fifth of
       // `Html.parseDocument`'s profile and an eighth of `Html.parseFragment`'s.
