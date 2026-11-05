@@ -3,7 +3,8 @@ import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { Xml } from "../src/index.ts";
+import * as Stream from "effect/Stream";
+import { Sax, Xml } from "../src/index.ts";
 import { at } from "./support/narrow.ts";
 
 const parse = (input: string, options?: Xml.ParseOptions) =>
@@ -12,6 +13,10 @@ const parse = (input: string, options?: Xml.ParseOptions) =>
 /** An open start tag binding `a` and `b` to one namespace, then `n` attributes `a:k0`… */
 const opening = (n: number) =>
   `<e xmlns:a="urn:x" xmlns:b="urn:x"${Array.from({ length: n }, (_, i) => ` a:k${i}="v"`).join("")}`;
+
+/** The namespaces of `elements` and their descendant elements, in document order. */
+const namespacesOf = (elements: ReadonlyArray<Xml.XmlElement>): Array<string | null> =>
+  elements.flatMap((e) => [e.name.namespace].concat(namespacesOf(e.elements)));
 
 describe("Xml.parse — tree", () => {
   test("builds a typed element tree", async () => {
@@ -200,11 +205,24 @@ describe("Xml.parse — namespaces", () => {
     expect(at(elements, n).name.namespace).toBe("urn:9");
   });
 
+  test('xmlns="" undeclares the default namespace: no namespace is null (#109)', async () => {
+    const input = `<a xmlns="urn:x"><p xmlns=""><q/></p><r/></a>`;
+    const expected = ["urn:x", null, null, "urn:x"];
+    expect(namespacesOf([(await parse(input)).root])).toEqual(expected);
+    expect(namespacesOf([(await parse(input, { recover: true })).root])).toEqual(expected);
+    const selected = await Effect.runPromise(
+      Stream.make(input).pipe(Sax.tokenize(), Sax.select("/*/*"), Stream.runCollect),
+    );
+    expect(namespacesOf(Array.from(selected))).toEqual(expected.slice(1));
+  });
+
   test("XML 1.1 may undeclare a prefix", async () => {
     const doc = await parse(
       `<?xml version="1.1"?><a xmlns:p="urn:p"><p:b xmlns:p="urn:q"/><c xmlns:p=""/></a>`,
     );
     expect(at(doc.root.elements, 0).name.namespace).toBe("urn:q");
+    // The undeclaring element itself is in no namespace, as is its unprefixed name.
+    expect(at(doc.root.elements, 1).name.namespace).toBe(null);
     const r = await Effect.runPromise(
       Effect.result(Xml.parse(`<?xml version="1.1"?><a xmlns:p="urn:p"><p:b xmlns:p=""/></a>`)),
     );

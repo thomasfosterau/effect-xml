@@ -350,7 +350,7 @@
     },
     "fn-in-scope-prefixes": {
       "runnable": 57,
-      "passing": 54
+      "passing": 55
     },
     "fn-index-of": {
       "runnable": 53,
@@ -506,7 +506,7 @@
     },
     "fn-path": {
       "runnable": 17,
-      "passing": 16
+      "passing": 17
     },
     "fn-position": {
       "runnable": 67,
@@ -1960,7 +1960,7 @@
     },
     "fn-in-scope-prefixes": {
       "runnable": 8,
-      "passing": 7
+      "passing": 8
     },
     "fn-index-of": {
       "runnable": 53,
@@ -2116,7 +2116,7 @@
     },
     "fn-path": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-position": {
       "runnable": 67,
