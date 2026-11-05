@@ -214,6 +214,7 @@ const requestFor = (query: string): Request => ({
   modules: [],
   decimalFormats: [],
   defaultCollation: Option.none(),
+  xpath1Compatibility: false,
 });
 
 /** An engine that answers from a table of queries, and records what it was asked. */

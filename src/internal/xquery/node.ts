@@ -17,7 +17,6 @@
 import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Iterable from "effect/Iterable";
-import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Predicate from "effect/Predicate";
@@ -92,9 +91,14 @@ type Content =
   | { readonly _tag: "document"; readonly node: XmlDocument }
   | { readonly _tag: "element"; readonly node: XmlElement; readonly dom: number }
   | { readonly _tag: "attribute"; readonly node: XmlAttribute }
-  | { readonly _tag: "text"; readonly data: string }
-  | { readonly _tag: "comment"; readonly node: XmlComment }
-  | { readonly _tag: "processing-instruction"; readonly node: XmlProcessingInstruction }
+  /** `dom` and `end` delimit the run of DOM text and CDATA nodes merged into it (both -1 for a parentless one). */
+  | { readonly _tag: "text"; readonly data: string; readonly dom: number; readonly end: number }
+  | { readonly _tag: "comment"; readonly node: XmlComment; readonly dom: number }
+  | {
+      readonly _tag: "processing-instruction";
+      readonly node: XmlProcessingInstruction;
+      readonly dom: number;
+    }
   | { readonly _tag: "namespace"; readonly binding: NamespaceBinding };
 
 /** How many trees have been made: each new tree's place in the order between trees. */
@@ -109,13 +113,13 @@ const isTextLike = (node: XmlNode): node is Extract<XmlNode, { readonly data: st
 const isNamespaceDeclaration = (a: XmlAttribute): boolean =>
   a.name.prefix === "xmlns" || (a.name.prefix === null && a.name.local === "xmlns");
 
-/** Append a DOM text or CDATA node's data, merging it into a text node just before it. */
-const appendText = (out: Array<Content>, data: string): Array<Content> => {
+/** Append the data of the DOM text or CDATA node at `dom`, merging it into a text node just before it. */
+const appendText = (out: Array<Content>, data: string, dom: number): Array<Content> => {
   if (data === "") return out;
   const last = out.at(-1);
   if (last !== undefined && Predicate.isTagged(last, "text"))
-    out[out.length - 1] = { _tag: "text", data: last.data + data };
-  else out.push({ _tag: "text", data });
+    out[out.length - 1] = { _tag: "text", data: last.data + data, dom: last.dom, end: dom + 1 };
+  else out.push({ _tag: "text", data, dom, end: dom + 1 });
   return out;
 };
 
@@ -131,15 +135,22 @@ const push = (out: Array<Content>, content: Content): Array<Content> => {
  * (none when the run is empty).
  */
 const childContents = (nodes: ReadonlyArray<XmlNode>): ReadonlyArray<Content> =>
-  Arr.reduce(nodes, Arr.empty<Content>(), (out, node, dom) =>
-    Match.valueTags(node, {
-      XmlText: (t) => appendText(out, t.data),
-      XmlCData: (t) => appendText(out, t.data),
-      XmlElement: (e) => push(out, { _tag: "element", node: e, dom }),
-      XmlComment: (c) => push(out, { _tag: "comment", node: c }),
-      XmlProcessingInstruction: (pi) => push(out, { _tag: "processing-instruction", node: pi }),
-    }),
-  );
+  Arr.reduce(nodes, Arr.empty<Content>(), appendChild);
+
+/**
+ * Append the content of the DOM child at `dom`. Run once per child whenever
+ * a node's children are first read: tag guards, not a `Match` table, which
+ * would build its handlers for every child.
+ */
+const appendChild = (out: Array<Content>, node: XmlNode, dom: number): Array<Content> => {
+  if (Predicate.isTagged(node, "XmlElement")) return push(out, { _tag: "element", node, dom });
+  if (Predicate.isTagged(node, "XmlText") || Predicate.isTagged(node, "XmlCData"))
+    return appendText(out, node.data, dom);
+  if (Predicate.isTagged(node, "XmlComment")) return push(out, { _tag: "comment", node, dom });
+  return Predicate.isTagged(node, "XmlProcessingInstruction")
+    ? push(out, { _tag: "processing-instruction", node, dom })
+    : out;
+};
 
 /** The concatenated text under DOM nodes, without recursion. */
 const textUnder = (nodes: ReadonlyArray<XmlNode>): string =>
@@ -207,7 +218,7 @@ export class XdmNode {
     this.up = parent;
     this.list = list;
     this.index = index;
-    this.depth = Option.match(parent, { onNone: () => 0, onSome: (p) => p.depth + 1 });
+    this.depth = Option.isSome(parent) ? parent.value.depth + 1 : 0;
     this.content = content;
   }
 
@@ -248,12 +259,12 @@ export class XdmNode {
 
   /** A parentless text node: the root of a new tree, as a text constructor makes one. */
   static fromText(data: string, options?: NodeOptions): XdmNode {
-    return XdmNode.parentless({ _tag: "text", data }, options);
+    return XdmNode.parentless({ _tag: "text", data, dom: -1, end: -1 }, options);
   }
 
   /** A parentless comment node: the root of a new tree, as a comment constructor makes one. */
   static fromComment(comment: XmlComment, options?: NodeOptions): XdmNode {
-    return XdmNode.parentless({ _tag: "comment", node: comment }, options);
+    return XdmNode.parentless({ _tag: "comment", node: comment, dom: -1 }, options);
   }
 
   /**
@@ -264,7 +275,10 @@ export class XdmNode {
     instruction: XmlProcessingInstruction,
     options?: NodeOptions,
   ): XdmNode {
-    return XdmNode.parentless({ _tag: "processing-instruction", node: instruction }, options);
+    return XdmNode.parentless(
+      { _tag: "processing-instruction", node: instruction, dom: -1 },
+      options,
+    );
   }
 
   /** A parentless namespace node: the root of a new tree, as a namespace constructor makes one. */
@@ -404,15 +418,14 @@ export class XdmNode {
    * processing instruction's data or a namespace node's URI.
    */
   get stringValue(): string {
-    return Match.valueTags(this.content, {
-      document: (c) => textUnder(c.node.children),
-      element: (c) => c.node.textContent,
-      attribute: (c) => c.node.value,
-      text: (c) => c.data,
-      comment: (c) => c.node.data,
-      "processing-instruction": (c) => c.node.data,
-      namespace: (c) => c.binding.uri,
-    });
+    // Read whenever a node is atomized: tag guards, as for `name`.
+    const c = this.content;
+    if (Predicate.isTagged(c, "element")) return c.node.textContent;
+    if (Predicate.isTagged(c, "attribute")) return c.node.value;
+    if (Predicate.isTagged(c, "text")) return c.data;
+    if (Predicate.isTagged(c, "namespace")) return c.binding.uri;
+    if (Predicate.isTagged(c, "document")) return textUnder(c.node.children);
+    return c.node.data;
   }
 
   /**
@@ -428,15 +441,30 @@ export class XdmNode {
     | XmlProcessingInstruction
     | string
     | NamespaceBinding {
-    return Match.valueTags(this.content, {
-      document: (c) => c.node,
-      element: (c) => c.node,
-      attribute: (c) => c.node,
-      text: (c) => c.data,
-      comment: (c) => c.node,
-      "processing-instruction": (c) => c.node,
-      namespace: (c) => c.binding,
-    });
+    const c = this.content;
+    if (Predicate.isTagged(c, "text")) return c.data;
+    if (Predicate.isTagged(c, "namespace")) return c.binding;
+    return c.node;
+  }
+
+  /**
+   * @internal Where the node's DOM content starts among its parent's DOM
+   * `children`: an element's, comment's or processing instruction's index, or
+   * the first of the text and CDATA nodes a text node merges; -1 for a node
+   * that isn't a DOM child (a document, attribute or namespace node, or a
+   * parentless node).
+   */
+  get domStart(): number {
+    const c = this.content;
+    return Predicate.hasProperty(c, "dom") && Option.isSome(this.up) ? c.dom : -1;
+  }
+
+  /** @internal Where the node's DOM content ends among its parent's DOM `children` (exclusive); -1 as for {@link domStart}. */
+  get domEnd(): number {
+    const c = this.content;
+    if (Option.isNone(this.up)) return -1;
+    if (Predicate.isTagged(c, "text")) return c.end;
+    return Predicate.hasProperty(c, "dom") ? c.dom + 1 : -1;
   }
 
   /** The element this node stands for, if it is an element node. */
