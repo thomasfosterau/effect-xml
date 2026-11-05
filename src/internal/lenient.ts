@@ -27,6 +27,7 @@ import { origin, type Position } from "../Position.ts";
 import { unsafeAttrName, unsafeTagName } from "../Name.ts";
 import type { Attribute, ResolvedOptions, SaxEvent } from "../Sax.ts";
 import { endElement, startElement } from "./convert.ts";
+import { LazyPosition, LineIndex } from "./position.ts";
 import { namedReference, NO_SPAN, numericReference, type Ref, Reused } from "./scan.ts";
 import { grammars, type Tok } from "./tokens.ts";
 
@@ -400,13 +401,62 @@ const attributeList = (attributes: Attributes, count: number): ReadonlyArray<Att
 
 /** Hands what a lenient pass reads to `f` as SAX events, without positions, until it fails. */
 class SaxVisitor implements Visitor {
-  private readonly f: (event: SaxEvent) => SaxError | null;
+  private readonly f: (event: SaxEvent, position: () => Position) => SaxError | null;
   private readonly opts: ResolvedOptions;
+  private readonly input: string;
+  /** Where the token being handed over starts, in the CRLF-normalized text. */
+  private offset = 0;
+  /** The normalized text's line breaks, recorded on first use. */
+  private lines: LineIndex | undefined = undefined;
+  /** Where each CRLF collapsed, in the normalized text (its `\n`), ascending. */
+  private crlf: Array<number> = [];
+
+  /** Where the event being handed over starts (see `Sax.forEach`). */
+  private readonly position = (): Position => {
+    if (this.lines === undefined) this.lines = this.index();
+    const index = this.offset;
+    // The raw offset: one more for each CRLF collapsed before `index`.
+    let lo = 0;
+    let hi = this.crlf.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if ((this.crlf[mid] ?? index) < index) lo = mid + 1;
+      else hi = mid;
+    }
+    return new LazyPosition(index + lo, index, this.lines);
+  };
+
+  /** The line breaks of the text as read (CR and CRLF normalized), and where CRLFs collapsed. */
+  private index(): LineIndex {
+    const raw = this.input;
+    const lines = new LineIndex();
+    if (raw.indexOf("\r") === -1) {
+      lines.record(raw, 0);
+      return lines;
+    }
+    for (let r = raw.indexOf("\r\n"); r !== -1; r = raw.indexOf("\r\n", r + 2)) {
+      this.crlf.push(r - this.crlf.length);
+    }
+    lines.record(raw.replace(/\r\n?/g, "\n"), 0);
+    return lines;
+  }
+
+  /** Hand `ev` (read at `at`) to `f`. */
+  private emit(ev: SaxEvent, at: number): SaxError | null {
+    this.offset = at;
+    return this.f(ev, this.position);
+  }
 
   /** With `reuse`: the events, rewritten for each tag (for an `f` done with each before it returns). */
   private readonly reused: Reused | undefined;
 
-  constructor(f: (event: SaxEvent) => SaxError | null, opts: ResolvedOptions, reuse: boolean) {
+  constructor(
+    input: string,
+    f: (event: SaxEvent, position: () => Position) => SaxError | null,
+    opts: ResolvedOptions,
+    reuse: boolean,
+  ) {
+    this.input = input;
     this.f = f;
     this.opts = opts;
     this.reused = reuse ? new Reused() : undefined;
@@ -418,6 +468,7 @@ class SaxVisitor implements Visitor {
     attributes: Attributes,
     count: number,
     selfClosing: boolean,
+    at: number,
   ): SaxError | null {
     for (let k = 0; k < count; k++) {
       const a = reused.attributes[k];
@@ -434,7 +485,7 @@ class SaxVisitor implements Visitor {
     ev.attributes =
       count === 0 ? NO_ATTRIBUTES : (reused.lists[count] ??= reused.attributes.slice(0, count));
     ev.selfClosing = selfClosing;
-    return this.f(startElement(ev));
+    return this.emit(startElement(ev), at);
   }
 
   start(
@@ -442,49 +493,55 @@ class SaxVisitor implements Visitor {
     attributes: Attributes,
     count: number,
     selfClosing: boolean,
+    at: number,
   ): SaxError | null {
     const reused = this.reused;
-    if (reused !== undefined) return this.reusedStart(reused, name, attributes, count, selfClosing);
+    if (reused !== undefined) {
+      return this.reusedStart(reused, name, attributes, count, selfClosing, at);
+    }
     const list = count === 0 ? NO_ATTRIBUTES : attributeList(attributes, count);
     // SAFETY: as above, for the element's name.
-    return this.f({
-      name: unsafeTagName(name),
-      attributes: list,
-      selfClosing,
-      span: NO_SPAN,
-      _tag: "StartElement",
-    });
+    return this.emit(
+      {
+        name: unsafeTagName(name),
+        attributes: list,
+        selfClosing,
+        span: NO_SPAN,
+        _tag: "StartElement",
+      },
+      at,
+    );
   }
 
-  end(name: string): SaxError | null {
+  end(name: string, at: number): SaxError | null {
     const reused = this.reused;
     if (reused !== undefined) {
       reused.end.name = name;
-      return this.f(endElement(reused.end));
+      return this.emit(endElement(reused.end), at);
     }
     // SAFETY: as above.
-    return this.f({ name: unsafeTagName(name), span: NO_SPAN, _tag: "EndElement" });
+    return this.emit({ name: unsafeTagName(name), span: NO_SPAN, _tag: "EndElement" }, at);
   }
 
-  text(data: string): SaxError | null {
+  text(data: string, at: number): SaxError | null {
     const kept = policy(data, this.opts.whitespace, this.opts.dropWhitespaceOnlyText);
-    return kept === null ? null : this.f({ data: kept, span: NO_SPAN, _tag: "Text" });
+    return kept === null ? null : this.emit({ data: kept, span: NO_SPAN, _tag: "Text" }, at);
   }
 
-  cdata(data: string): SaxError | null {
-    return this.f({ data, span: NO_SPAN, _tag: "CData" });
+  cdata(data: string, at: number): SaxError | null {
+    return this.emit({ data, span: NO_SPAN, _tag: "CData" }, at);
   }
 
-  comment(data: string): SaxError | null {
-    return this.f({ data, span: NO_SPAN, _tag: "Comment" });
+  comment(data: string, at: number): SaxError | null {
+    return this.emit({ data, span: NO_SPAN, _tag: "Comment" }, at);
   }
 
-  pi(target: string, data: string): SaxError | null {
-    return this.f({ target, data, span: NO_SPAN, _tag: "ProcessingInstruction" });
+  pi(target: string, data: string, at: number): SaxError | null {
+    return this.emit({ target, data, span: NO_SPAN, _tag: "ProcessingInstruction" }, at);
   }
 
-  declaration(tok: DeclarationTok): SaxError | null {
-    return this.f(
+  declaration(tok: DeclarationTok, at: number): SaxError | null {
+    return this.emit(
       tok._tag === "XmlDeclaration"
         ? {
             version: tok.version,
@@ -502,6 +559,7 @@ class SaxVisitor implements Visitor {
             span: NO_SPAN,
             _tag: "Doctype",
           },
+      at,
     );
   }
 }
@@ -509,13 +567,13 @@ class SaxVisitor implements Visitor {
 /** `Sax.forEach` with `strict: false`, over complete text. */
 export const forEachLeniently = (
   input: string,
-  f: (event: SaxEvent) => void,
+  f: (event: SaxEvent, position: () => Position) => void,
   opts: ResolvedOptions,
 ): SaxError | null =>
   readEventsLeniently(
     input,
-    (event) => {
-      f(event);
+    (event, position) => {
+      f(event, position);
       return null;
     },
     opts,
@@ -528,7 +586,7 @@ export const forEachLeniently = (
  */
 export const readEventsLeniently = (
   input: string,
-  f: (event: SaxEvent) => SaxError | null,
+  f: (event: SaxEvent, position: () => Position) => SaxError | null,
   opts: ResolvedOptions,
   reuse = false,
-): SaxError | null => readLeniently(input, new SaxVisitor(f, opts, reuse), opts);
+): SaxError | null => readLeniently(input, new SaxVisitor(input, f, opts, reuse), opts);

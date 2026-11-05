@@ -664,7 +664,7 @@ Over the built package in Node 22, on an 8 MB spreadsheet worksheet and an 8 MB 
 | `Xml.parsePlain`                  | 30 MB/s   | 37 MB/s  |
 | `Xml.parsePlain`, `strict: false` | 57 MB/s   | 66 MB/s  |
 
-In the same runs, saxes and htmlparser2 read 44–58 MB/s, @eksml/xml's and easysax's SAX parsers 98–132 MB/s, and txml's and @eksml/xml's DOM parsers 42–67 MB/s, none of them with positions per event. `vp run bench` measures them when they are installed.
+In the same runs, saxes and htmlparser2 read 44–58 MB/s, @eksml/xml's and easysax's SAX parsers 98–132 MB/s, and txml's and @eksml/xml's DOM parsers 42–67 MB/s, none of them with positions per event. `Sax.forEach` hands its callback a second argument, `position()`, which returns where the current event starts and costs nothing until called: with `positions: false` it locates events as a classic SAX parser's current line and column does, and reading it on every start tag keeps the speed of saxes reading its `line`. `vp run bench` measures them when they are installed.
 
 ## Names and positions
 

@@ -70,11 +70,16 @@ export class LineIndex implements LineSource {
   /** The number of line breaks before `index`. */
   private before(index: number): number {
     if (index === this.lastIndex) return this.lastCount;
-    // Search the side of the last lookup that `index` is on.
-    const count =
-      index > this.lastIndex
-        ? breaksBefore(this.breaks, index, this.lastCount, this.breaks.length)
-        : breaksBefore(this.breaks, index, 0, this.lastCount);
+    const { breaks } = this;
+    let count = this.lastCount;
+    if (index > this.lastIndex) {
+      // Reads mostly move forward a little: step over a few breaks, then search.
+      const near = Math.min(count + 4, breaks.length);
+      while (count < near && (breaks[count] ?? index) < index) count++;
+      if (count === near) count = breaksBefore(breaks, index, count, breaks.length);
+    } else {
+      count = breaksBefore(breaks, index, 0, count);
+    }
     this.lastIndex = index;
     this.lastCount = count;
     return count;
