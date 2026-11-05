@@ -88,16 +88,15 @@ const QUESTION = 63;
 /** Whitespace as the tag grammars skip it (`\r` never reaches a pass). */
 const isWs = (c: number): boolean => c === 32 || c === 10 || c === 9 || c === 12;
 
-/** Does `c` end a name (whitespace, `/`, `>`, `=`, or the end of the input)? */
-const endsName = (c: number): boolean =>
-  c === 32 ||
-  c === 10 ||
-  c === 9 ||
-  c === 12 ||
-  c === SLASH ||
-  c === GT ||
-  c === EQ ||
-  Number.isNaN(c);
+/** Characters that end a name: whitespace, `/`, `>` and `=`. */
+const DELIMITERS = /*#__PURE__*/ (() => {
+  const t = new Uint8Array(128);
+  for (const c of [32, 10, 9, 12, SLASH, GT, EQ]) t[c] = 1;
+  return t;
+})();
+
+/** Does `c` end a name (a delimiter, or the end of the input)? */
+const endsName = (c: number): boolean => (c < 128 && DELIMITERS[c] === 1) || Number.isNaN(c);
 
 /**
  * Decode the predefined and numeric references in `s`, leaving any other
@@ -378,6 +377,26 @@ export const policy = (
   return dropWhitespaceOnlyText && /^\s*$/.test(out) ? null : out;
 };
 
+/** The attributes of the tags with none (never written to: events are read-only). */
+const NO_ATTRIBUTES: ReadonlyArray<Attribute> = [];
+
+/** One lenient attribute as a SAX attribute, without positions. */
+const attribute = (attributes: Attributes, k: number): Attribute => ({
+  // SAFETY: lenient reading (`strict: false`) does not check names: the
+  // caller has asked for whatever the document spells.
+  name: unsafeAttrName(attributes.names[k] ?? ""),
+  value: attributes.values[k] ?? "",
+  span: NO_SPAN,
+});
+
+/** A start tag's first `count` attributes, as an array of exactly that length. */
+const attributeList = (attributes: Attributes, count: number): ReadonlyArray<Attribute> =>
+  count === 1
+    ? [attribute(attributes, 0)]
+    : count === 2
+      ? [attribute(attributes, 0), attribute(attributes, 1)]
+      : Array.from({ length: count }, (_, k) => attribute(attributes, k));
+
 /** Hands what a lenient pass reads to `f` as SAX events, without positions. */
 class SaxVisitor implements Visitor {
   private readonly f: (event: SaxEvent) => void;
@@ -394,16 +413,7 @@ class SaxVisitor implements Visitor {
     count: number,
     selfClosing: boolean,
   ): SaxError | null {
-    const list: Array<Attribute> = [];
-    for (let k = 0; k < count; k++) {
-      list.push({
-        // SAFETY: lenient reading (`strict: false`) does not check names: the
-        // caller has asked for whatever the document spells.
-        name: unsafeAttrName(attributes.names[k] ?? ""),
-        value: attributes.values[k] ?? "",
-        span: NO_SPAN,
-      });
-    }
+    const list = count === 0 ? NO_ATTRIBUTES : attributeList(attributes, count);
     // SAFETY: as above, for the element's name.
     this.f({
       name: unsafeTagName(name),
