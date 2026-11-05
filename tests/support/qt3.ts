@@ -736,6 +736,12 @@ const resolverOf = (request: Request): XQuery.ResourceResolver => {
         onNone: () => missing("FOUT1170", uri),
         onSome: (r) => Effect.succeed(new TextDecoder().decode(r.bytes)),
       }),
+    module: (uri) =>
+      Effect.succeed(
+        request.modules
+          .filter((m) => m.uri === uri)
+          .map((m) => ({ text: m.text, location: m.location })),
+      ),
   };
 };
 

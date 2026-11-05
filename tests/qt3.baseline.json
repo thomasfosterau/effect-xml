@@ -58,7 +58,7 @@
     },
     "fn-collection": {
       "runnable": 30,
-      "passing": 23
+      "passing": 25
     },
     "fn-compare": {
       "runnable": 87,
@@ -130,7 +130,7 @@
     },
     "fn-doc": {
       "runnable": 45,
-      "passing": 40
+      "passing": 41
     },
     "fn-doc-available": {
       "runnable": 16,
@@ -886,11 +886,11 @@
     },
     "op-base64Binary-less-than": {
       "runnable": 32,
-      "passing": 30
+      "passing": 31
     },
     "op-base64Binary-greater-than": {
       "runnable": 32,
-      "passing": 30
+      "passing": 31
     },
     "op-boolean-equal": {
       "runnable": 57,
@@ -966,7 +966,7 @@
     },
     "op-except": {
       "runnable": 65,
-      "passing": 61
+      "passing": 64
     },
     "op-gDay-equal": {
       "runnable": 51,
@@ -994,15 +994,15 @@
     },
     "op-hexBinary-greater-than": {
       "runnable": 32,
-      "passing": 30
+      "passing": 31
     },
     "op-hexBinary-less-than": {
       "runnable": 32,
-      "passing": 30
+      "passing": 31
     },
     "op-intersect": {
       "runnable": 67,
-      "passing": 65
+      "passing": 67
     },
     "op-is-same-node": {
       "runnable": 38,
@@ -1146,7 +1146,7 @@
     },
     "op-union": {
       "runnable": 74,
-      "passing": 64
+      "passing": 74
     },
     "op-yearMonthDuration-greater-than": {
       "runnable": 34,
@@ -1162,7 +1162,7 @@
     },
     "prod-AllowingEmpty": {
       "runnable": 19,
-      "passing": 18
+      "passing": 19
     },
     "prod-Annotation": {
       "runnable": 58,
@@ -1218,7 +1218,7 @@
     },
     "prod-BaseURIDecl": {
       "runnable": 38,
-      "passing": 26
+      "passing": 27
     },
     "prod-BoundarySpaceDecl": {
       "runnable": 28,
@@ -1262,7 +1262,7 @@
     },
     "prod-CompNamespaceConstructor": {
       "runnable": 42,
-      "passing": 31
+      "passing": 36
     },
     "prod-CompPIConstructor": {
       "runnable": 55,
@@ -1282,7 +1282,7 @@
     },
     "prod-ContextItemDecl": {
       "runnable": 42,
-      "passing": 19
+      "passing": 22
     },
     "prod-ContextItemExpr": {
       "runnable": 45,
@@ -1294,7 +1294,7 @@
     },
     "prod-CountClause": {
       "runnable": 13,
-      "passing": 12
+      "passing": 13
     },
     "prod-CurlyArrayConstructor": {
       "runnable": 5,
@@ -1338,7 +1338,7 @@
     },
     "prod-EmptyOrderDecl": {
       "runnable": 32,
-      "passing": 8
+      "passing": 32
     },
     "prod-EQName": {
       "runnable": 45,
@@ -1358,7 +1358,7 @@
     },
     "prod-ForClause": {
       "runnable": 178,
-      "passing": 170
+      "passing": 173
     },
     "prod-FunctionCall": {
       "runnable": 94,
@@ -1394,7 +1394,7 @@
     },
     "prod-GroupByClause": {
       "runnable": 35,
-      "passing": 2
+      "passing": 26
     },
     "prod-IfExpr": {
       "runnable": 42,
@@ -1430,7 +1430,7 @@
     },
     "prod-ModuleImport": {
       "runnable": 105,
-      "passing": 31
+      "passing": 97
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,
@@ -1454,7 +1454,7 @@
     },
     "prod-OptionDecl.serialization": {
       "runnable": 30,
-      "passing": 28
+      "passing": 29
     },
     "prod-OrExpr": {
       "runnable": 371,
@@ -1462,11 +1462,11 @@
     },
     "prod-OrderByClause": {
       "runnable": 139,
-      "passing": 4
+      "passing": 137
     },
     "prod-OrderingModeDecl": {
       "runnable": 27,
-      "passing": 23
+      "passing": 27
     },
     "prod-PathExpr": {
       "runnable": 24,
@@ -1474,7 +1474,7 @@
     },
     "prod-ParenthesizedExpr": {
       "runnable": 20,
-      "passing": 19
+      "passing": 20
     },
     "prod-PositionalVar": {
       "runnable": 34,
@@ -1522,7 +1522,7 @@
     },
     "prod-TryCatchExpr": {
       "runnable": 173,
-      "passing": 151
+      "passing": 154
     },
     "prod-TypeswitchExpr": {
       "runnable": 67,
@@ -1558,7 +1558,7 @@
     },
     "prod-VersionDecl": {
       "runnable": 34,
-      "passing": 30
+      "passing": 34
     },
     "prod-WhereClause": {
       "runnable": 82,
@@ -1566,11 +1566,11 @@
     },
     "prod-WindowClause": {
       "runnable": 116,
-      "passing": 21
+      "passing": 103
     },
     "misc-CombinedErrorCodes": {
       "runnable": 230,
-      "passing": 171
+      "passing": 180
     },
     "misc-AnnexE": {
       "runnable": 8,
@@ -1586,7 +1586,7 @@
     },
     "misc-HigherOrderFunctions": {
       "runnable": 126,
-      "passing": 66
+      "passing": 68
     },
     "misc-JsonTestSuite": {
       "runnable": 318,

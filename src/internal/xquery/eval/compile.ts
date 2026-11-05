@@ -29,21 +29,20 @@ import { compareDocumentOrder, XdmNode } from "../node.ts";
 import { scopeOf, type ExpandedName } from "../parser/analyze.ts";
 import type {
   BinaryOp,
-  Clause as ClauseT,
   Decl as DeclT,
   EQName,
   Expr as ExprT,
-  ForBinding,
   KeySpecifier as KeySpecifierT,
   Param,
   SequenceType as SequenceTypeT,
   SingleType,
 } from "../parser/ast.ts";
-import { Clause, Decl, Expr, KeySpecifier, Module, NodeTest } from "../parser/ast.ts";
+import { Decl, Expr, KeySpecifier, Module, NodeTest } from "../parser/ast.ts";
 import { builtinArities, Namespaces } from "../parser/builtins.ts";
 import { atomicType, AtomicTypes, derivesFrom, type AtomicType } from "../types.ts";
 import { arithmetic, unary, type ArithOp } from "./arith.ts";
 import { combineNodes, documentOrder } from "./axes.ts";
+import { bindFor, checkType, flwor, type Bound } from "./flwor.ts";
 import {
   compAttribute,
   compComment,
@@ -771,35 +770,10 @@ const ifExpr = (e: Extract<ExprT, { readonly _tag: "If" }>, scope: Scope): Code 
   return (ctx) => (ebv(c(ctx), e.offset) ? t(ctx) : f(ctx));
 };
 
-/** A binding of `for`, `some` or `every`: its sequence's code, its slot and its declared type. */
-interface Bound {
-  readonly code: Code;
-  readonly slot: number;
-  readonly position: number | undefined;
-  readonly type: SeqType | undefined;
-  readonly allowingEmpty: boolean;
-}
-
-const bindFor = (b: ForBinding, scope: Scope): readonly [Scope, Bound] => {
-  const code = compileExpr(b.in, scope);
-  const type = Option.getOrUndefined(Option.map(b.type, (t) => seqTypeOf(t, scope)));
-  const [s1, slot] = bindLocal(scope, b.name);
-  const [s2, position] = Option.match(b.position, {
-    onNone: (): readonly [Scope, number | undefined] => [s1, undefined],
-    onSome: (p) => bindLocal(s1, p),
-  });
-  return [s2, { code, slot, position, type, allowingEmpty: b.allowingEmpty }];
-};
-
-const checkType = (t: SeqType | undefined, v: Sequence, offset: number): Sequence =>
-  t === undefined || sequenceMatches(t, v)
-    ? v
-    : raise("XPTY0004", `a value does not match ${t.text}`, offset);
-
 const quantified = (e: Extract<ExprT, { readonly _tag: "Quantified" }>, scope: Scope): Code => {
   const [inner, bound] = e.bindings.reduce<readonly [Scope, ReadonlyArray<Bound>]>(
     ([s, bs], b) => {
-      const [next, x] = bindFor(b, s);
+      const [next, x] = bindFor(b, s, compileExpr);
       return [next, [...bs, x]];
     },
     [scope, []],
@@ -818,120 +792,7 @@ const quantified = (e: Extract<ExprT, { readonly _tag: "Quantified" }>, scope: S
   return (ctx) => toBool(run(ctx, 0));
 };
 
-/** The rest of a FLWOR expression from some clause on: it adds the return values of each tuple to `out`. */
-type Tail = (ctx: Ctx, out: Array<Item>) => void;
-
 const integerValue = (n: number): Sequence => [AtomicValue.integer(BigInt(n))];
-
-const forClause = (b: ForBinding, scope: Scope, rest: (s: Scope) => Tail, offset: number): Tail => {
-  const [inner, bound] = bindFor(b, scope);
-  const next = rest(inner);
-  return (ctx, out) => {
-    const items = bound.code(ctx);
-    if (Arr.isReadonlyArrayEmpty(items) && bound.allowingEmpty) {
-      ctx.frame[bound.slot] = empty;
-      if (bound.position !== undefined) ctx.frame[bound.position] = integerValue(0);
-      next(ctx, out);
-      return;
-    }
-    items.forEach((item, i) => {
-      ctx.frame[bound.slot] = checkType(bound.type, [item], offset);
-      if (bound.position !== undefined) ctx.frame[bound.position] = integerValue(i + 1);
-      next(ctx, out);
-    });
-  };
-};
-
-const letClause = (
-  b: { readonly name: EQName; readonly type: Option.Option<SequenceTypeT>; readonly value: ExprT },
-  scope: Scope,
-  rest: (s: Scope) => Tail,
-  offset: number,
-): Tail => {
-  const code = compileExpr(b.value, scope);
-  const type = Option.getOrUndefined(Option.map(b.type, (t) => seqTypeOf(t, scope)));
-  const [inner, slot] = bindLocal(scope, b.name);
-  const next = rest(inner);
-  return (ctx, out) => {
-    ctx.frame[slot] = checkType(type, code(ctx), offset);
-    next(ctx, out);
-  };
-};
-
-const clauseTail = (
-  clauses: ReadonlyArray<ClauseT>,
-  i: number,
-  ret: ExprT,
-  scope: Scope,
-  counters: Array<number>,
-): Tail => {
-  const clause = clauses[i];
-  if (clause === undefined) {
-    const code = compileExpr(ret, scope);
-    return (ctx: Ctx, out: Array<Item>) => {
-      out.push(...code(ctx));
-    };
-  }
-  const rest = (s: Scope) => clauseTail(clauses, i + 1, ret, s, counters);
-  return Clause.$match(clause, {
-    For: ({ bindings, offset }) =>
-      chainBindings(bindings, scope, rest, (b, s, r) => forClause(b, s, r, offset)),
-    Let: ({ bindings, offset }) =>
-      chainBindings(bindings, scope, rest, (b, s, r) => letClause(b, s, r, offset)),
-    Where: ({ condition, offset }) => {
-      const c = compileExpr(condition, scope);
-      const next = rest(scope);
-      return (ctx: Ctx, out: Array<Item>) => {
-        if (ebv(c(ctx), offset)) next(ctx, out);
-      };
-    },
-    Count: ({ name }) => {
-      const [inner, slot] = bindLocal(scope, name);
-      counters.push(slot);
-      const next = rest(inner);
-      return (ctx: Ctx, out: Array<Item>) => {
-        const previous = ctx.frame[slot]?.[0];
-        const n =
-          previous instanceof AtomicValue && Predicate.isBigInt(previous.value)
-            ? previous.value + 1n
-            : 1n;
-        ctx.frame[slot] = [AtomicValue.integer(n)];
-        next(ctx, out);
-      };
-    },
-    Window: ({ offset }) => notImplemented("the window clause", offset),
-    GroupBy: ({ offset }) => notImplemented("the group by clause", offset),
-    OrderBy: ({ offset }) => notImplemented("the order by clause", offset),
-  });
-};
-
-/** Several bindings of one clause, each a clause of its own. */
-const chainBindings = <B>(
-  bindings: ReadonlyArray<B>,
-  scope: Scope,
-  rest: (s: Scope) => Tail,
-  one: (b: B, s: Scope, r: (s: Scope) => Tail) => Tail,
-): Tail => {
-  const go = (i: number, s: Scope): Tail => {
-    const b = bindings[i];
-    return b === undefined ? rest(s) : one(b, s, (next) => go(i + 1, next));
-  };
-  return go(0, scope);
-};
-
-const flwor = (e: Extract<ExprT, { readonly _tag: "Flwor" }>, scope: Scope): Code => {
-  const counters: Array<number> = [];
-  const tail = clauseTail(e.clauses, 0, e.return, scope, counters);
-  return (ctx) => {
-    // A count clause numbers the tuples of this evaluation: it starts again at 1.
-    counters.forEach((slot) => {
-      ctx.frame[slot] = empty;
-    });
-    const out: Array<Item> = [];
-    tail(ctx, out);
-    return out;
-  };
-};
 
 const switchExpr = (e: Extract<ExprT, { readonly _tag: "Switch" }>, scope: Scope): Code => {
   const operand = compileExpr(e.operand, scope);
@@ -1127,7 +988,7 @@ const compileExpr = (e: ExprT, scope: Scope): Code =>
     ArrowDynamic: (a) => dynamicCall(a.function, [a.base, ...a.args], a.offset, scope),
     If: (x) => ifExpr(x, scope),
     Quantified: (q) => quantified(q, scope),
-    Flwor: (f) => flwor(f, scope),
+    Flwor: (f) => flwor(f, scope, compileExpr),
     Switch: (s) => switchExpr(s, scope),
     Typeswitch: (t) => typeswitch(t, scope),
     TryCatch: (t) => tryCatch(t, scope),
@@ -1208,7 +1069,6 @@ const declareGlobals = (
         clark(resolve(scope, d.name, "function")),
         declaredFunction(d, scope),
       );
-    if (Decl.$is("ModuleImport")(d)) notImplemented("module import", d.offset);
     if (Decl.$is("SchemaImport")(d)) raise("XQST0009", "schema import is not supported", d.offset);
   });
 };
@@ -1269,10 +1129,20 @@ export const compileQuery = (query: Query, externals: ReadonlyArray<string>): Co
     declareGlobals([], scope, externals);
     return { body: compileExpr(query.expr, scope), layout, program, contextDefault: undefined };
   }
+  // Every library module's globals and functions go in the one program, so
+  // modules (even ones that import each other) reach each other's by name.
+  const libraries = query.libraries.map((l): readonly [ReadonlyArray<DeclT>, Scope] => [
+    l.module.prolog,
+    { statics: scopeOf(l.context), vars: HashMap.empty(), layout: new Layout(undefined), program },
+  ]);
   return Module.$match(query.module, {
     Library: (l) => notImplemented("evaluating a library module", l.offset),
     Main: (m) => {
-      declareGlobals(m.prolog, scope, externals);
+      // The host's variables first: a module's declaration of one replaces it.
+      declareGlobals([], scope, externals);
+      libraries.forEach(([decls, s]) => declareGlobals(decls, s, []));
+      declareGlobals(m.prolog, scope, []);
+      libraries.forEach(([decls, s]) => compileBodies(decls, s));
       const contextDefault = compileBodies(m.prolog, scope);
       return { body: compileExpr(m.body, scope), layout, program, contextDefault };
     },
