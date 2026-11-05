@@ -1738,7 +1738,7 @@
     "prod-ModuleImport": {
       "runnable": 105,
       "syntax": 105,
-      "static": 88
+      "static": 104
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,
@@ -1768,7 +1768,7 @@
     "prod-OptionDecl.serialization": {
       "runnable": 30,
       "syntax": 30,
-      "static": 29
+      "static": 30
     },
     "prod-OrExpr": {
       "runnable": 371,
@@ -1903,7 +1903,7 @@
     "misc-CombinedErrorCodes": {
       "runnable": 230,
       "syntax": 230,
-      "static": 218
+      "static": 223
     },
     "misc-AnnexE": {
       "runnable": 8,

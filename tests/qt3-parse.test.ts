@@ -110,7 +110,11 @@ const clark = (environment: Environment, name: string): string => {
 };
 
 /** The static context a test's environment gives its query. */
-const optionsOf = (testCase: TestCase, environment: Environment): XQuery.CompileOptions => ({
+const optionsOf = (
+  testCase: TestCase,
+  environment: Environment,
+  modules: Readonly<Record<string, ReadonlyArray<XQuery.ModuleSource>>>,
+): XQuery.CompileOptions => ({
   namespaces: Record.fromEntries(environment.namespaces.map((b) => [b.prefix, b.uri] as const)),
   variables: [
     ...environment.params.filter((p) => !p.declared).map((p) => clark(environment, p.name)),
@@ -128,7 +132,7 @@ const optionsOf = (testCase: TestCase, environment: Environment): XQuery.Compile
     () => undefined,
   ),
   collations: environment.collations.map((c) => c.uri),
-  opaqueNamespaces: testCase.modules.map((m) => m.uri),
+  modules,
 });
 
 interface Verdict {
@@ -139,10 +143,15 @@ interface Verdict {
 }
 
 /** The `err:` code compiling a query fails with, if it does. */
-const compileCode = (spec: Spec, testCase: TestCase, query: string): Option.Option<string> => {
+const compileCode = (
+  spec: Spec,
+  testCase: TestCase,
+  query: string,
+  modules: Readonly<Record<string, ReadonlyArray<XQuery.ModuleSource>>>,
+): Option.Option<string> => {
   const options = Result.match(testCase.environment, {
-    onFailure: (): XQuery.CompileOptions => ({}),
-    onSuccess: (environment) => optionsOf(testCase, environment),
+    onFailure: (): XQuery.CompileOptions => ({ modules }),
+    onSuccess: (environment) => optionsOf(testCase, environment, modules),
   });
   const compiled =
     spec === "XQ31" ? XQuery.compile(query, options) : XQuery.XPath.compile(query, options);
@@ -174,8 +183,13 @@ const staticAgrees = (want: Expected, code: Option.Option<string>): boolean =>
   });
 
 /** Compile one test's query and compare the result with what it expects. */
-const judge = (spec: Spec, testCase: TestCase, query: string): Verdict => {
-  const code = compileCode(spec, testCase, query);
+const judge = (
+  spec: Spec,
+  testCase: TestCase,
+  query: string,
+  modules: Readonly<Record<string, ReadonlyArray<XQuery.ModuleSource>>>,
+): Verdict => {
+  const code = compileCode(spec, testCase, query, modules);
   const want = expected(testCase.result);
   const why = `expected ${want.value ? "a value or " : ""}${want.codes.join(" | ") || "no error"}, got ${Option.getOrElse(code, () => "a query that compiles")}`;
   return {
@@ -190,11 +204,30 @@ const runSpec = (spec: Spec, tests: ReadonlyArray<TestCase>) =>
   Effect.forEach(
     tests.filter((t) => Option.isNone(notApplicable(spec, t))),
     (t) =>
-      Effect.map(
+      Effect.all([
         t.query._tag === "Inline"
           ? Effect.succeed(t.query.text)
           : Fixtures.readText(t.query.file, ""),
-        (query) => judge(spec, t, query),
+        // A module file the vendored selection lacks is left out (its import is XQST0059).
+        Effect.forEach(t.modules, (m) =>
+          Fixtures.readText(m.file, "").pipe(
+            Effect.map((text) => [{ uri: m.uri, source: { text, location: m.file.href } }]),
+            Effect.orElseSucceed(() => []),
+          ),
+        ).pipe(Effect.map(Arr.flatten)),
+      ]).pipe(
+        Effect.map(([query, modules]) =>
+          judge(
+            spec,
+            t,
+            query,
+            Arr.reduce(
+              modules,
+              {} as Record<string, ReadonlyArray<XQuery.ModuleSource>>,
+              (acc, m) => ({ ...acc, [m.uri]: [...(acc[m.uri] ?? []), m.source] }),
+            ),
+          ),
+        ),
       ),
     { concurrency: 1 },
   );

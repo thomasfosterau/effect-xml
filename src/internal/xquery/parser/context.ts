@@ -16,6 +16,22 @@ import type { Arity } from "./builtins.ts";
 import { Namespaces } from "./builtins.ts";
 import type { ItemType } from "./ast.ts";
 
+/** A URI literal as `xs:anyURI` normalizes it: whitespace collapsed and trimmed. */
+export const normalizeUri = (uri: string): string => uri.replace(/[ \t\r\n]+/g, " ").trim();
+
+/** A library module's source: its text, and where it was found (its static base URI). */
+export interface ModuleSource {
+  readonly text: string;
+  /** The module's location, the base URI its relative URIs resolve against. */
+  readonly location?: string | undefined;
+}
+
+/** What an imported library module makes visible: its public functions (Clark name and arity) and variables (Clark names). */
+export interface ModuleExports {
+  readonly functions: ReadonlyArray<readonly [clark: string, arity: number]>;
+  readonly variables: ReadonlyArray<string>;
+}
+
 /** The host's part of the static context: what a caller may set before compiling. */
 export interface StaticOptions {
   /** Prefix → namespace URI bindings, added to (and overriding) the predeclared ones. */
@@ -38,6 +54,12 @@ export interface StaticOptions {
    * query's behalf.
    */
   readonly opaqueNamespaces?: ReadonlyArray<string> | undefined;
+  /**
+   * Library modules' sources, by target namespace URI, for `import module`.
+   * When given, importing a namespace with no source here is `XQST0059`;
+   * when not, imported namespaces are opaque (their names are not checked).
+   */
+  readonly modules?: Readonly<Record<string, ReadonlyArray<ModuleSource>>> | undefined;
 }
 
 /** The static context a query is compiled in. */

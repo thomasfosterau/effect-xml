@@ -516,7 +516,31 @@ Effect.runSync(
 Effect.runSync(XQuery.evaluate("for $x in 1 to 3 return $x * $x")); // [1, 4, 9]
 ```
 
-Evaluation itself is synchronous. It is an `Effect` because `fn:doc`, `fn:collection` and `fn:unparsed-text` go through the `XQuery.Resolver` service when one is provided (`XQuery.staticResolver` serves documents, collections and texts from memory); without one those functions find nothing. Errors are `XQueryError`s with the specifications' codes (`err:XPTY0004`, `err:FOAR0001`, …) and the offset of the expression that raised them. The evaluator covers the expression language (paths and axes but the optional namespace axis, operators, comparisons, FLWOR expressions with every clause (`for` with `at` and `allowing empty`, `let`, tumbling and sliding `window`s, `where`, `group by`, `order by` with `stable`, empty least / greatest and the codepoint and HTML ASCII case-insensitive collations, `count`), quantifiers, conditionals, `switch`, `typeswitch`, `try`, sequence types and casts, function items and closures, maps, arrays and lookups, node constructors) and the prolog's variables and functions; of Functions and Operators 3.1, the core built-ins so far. A construct or function that isn't implemented yet (module import, most of the function library) fails with the code `NotImplemented` in `XQuery.ImplementationNamespace`.
+Evaluation itself is synchronous. It is an `Effect` because `fn:doc`, `fn:collection` and `fn:unparsed-text` go through the `XQuery.Resolver` service when one is provided (`XQuery.staticResolver` serves documents, collections and texts from memory); without one those functions find nothing. Errors are `XQueryError`s with the specifications' codes (`err:XPTY0004`, `err:FOAR0001`, …) and the offset of the expression that raised them. The evaluator covers the expression language (paths and axes but the optional namespace axis, operators, comparisons, FLWOR expressions with every clause (`for` with `at` and `allowing empty`, `let`, tumbling and sliding `window`s, `where`, `group by`, `order by` with `stable`, empty least / greatest and the codepoint and HTML ASCII case-insensitive collations, `count`), quantifiers, conditionals, `switch`, `typeswitch`, `try`, sequence types and casts, function items and closures, maps, arrays and lookups, node constructors) and the prolog's variables and functions; of Functions and Operators 3.1, the core built-ins so far. A construct or function that isn't implemented yet (most of the function library) fails with the code `NotImplemented` in `XQuery.ImplementationNamespace`.
+
+### Library modules
+
+`import module` loads library modules from `CompileOptions.modules` (sources by target namespace URI: compiling then checks the imported names, and `%private` functions and variables stay private), or, when a query was compiled without them, through the `Resolver`'s optional `module` method as the query is evaluated. Modules may import each other in cycles; a namespace with no module is `err:XQST0059`:
+
+```ts
+import * as Effect from "effect/Effect";
+import { XQuery } from "@thomasfosterau/effect-xml";
+
+const resolver: XQuery.ResourceResolver = {
+  ...XQuery.staticResolver({}),
+  module: (uri) =>
+    Effect.succeed(
+      uri === "urn:math"
+        ? [{ text: `module namespace m = "urn:math"; declare function m:square($x) { $x * $x };` }]
+        : [],
+    ),
+};
+Effect.runSync(
+  XQuery.evaluate(`import module namespace m = "urn:math"; m:square(7)`).pipe(
+    Effect.provideService(XQuery.Resolver, resolver),
+  ),
+); // [49]
+```
 
 ### Constructing nodes
 
