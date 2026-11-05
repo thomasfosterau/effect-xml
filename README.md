@@ -8,7 +8,7 @@ Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.websit
 | **`Xml`** | `@thomasfosterau/effect-xml/Xml` | A `Schema`-backed immutable DOM with namespace-aware tree building, queries and serialization. |
 | **`Html`** | `@thomasfosterau/effect-xml/Html` | Lenient HTML tokenizing, WHATWG tree construction (`parseDocument`, and `parseDocumentFragment` for the fragment case, passing all 1405 html5lib tree-construction cases) and a lenient fragment builder, all building an HTML DOM (`HtmlDocument`, `HtmlElement`, …) that `toXml` converts to the XML DOM. |
 | **`Xsd`** | `@thomasfosterau/effect-xml/Xsd` | XML Schema 1.0: compile a schema, then validate documents as they stream (failing at the first violation) into typed values, or generate a typed parser module from it. |
-| **`XQuery`** | `@thomasfosterau/effect-xml/XQuery` | XPath 3.1 and XQuery 3.1, in progress: so far the XDM 3.1 data model (nodes over the `Xml` DOM, typed atomic values, maps, arrays and function items), `XQueryError`, the compiler front end (`XQuery.compile` / `XQuery.XPath.compile`: the full grammar and the static checks) and the evaluator core (`XQuery.evaluate`). |
+| **`XQuery`** | `@thomasfosterau/effect-xml/XQuery` | XPath 3.1 and XQuery 3.1, in progress: so far the XDM 3.1 data model (nodes over the `Xml` DOM, typed atomic values, maps, arrays and function items), `XQueryError`, the compiler front end (`XQuery.compile` / `XQuery.XPath.compile`: the full grammar and the static checks) and the evaluator (`XQuery.evaluate`), with direct and computed node constructors. |
 
 Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxError`), names are branded (`TagName`, `AttrName`, `QName`), and the pipeline is ordinary `Stream` / `Effect` combinators. The root entry `@thomasfosterau/effect-xml` re-exports every layer as a namespace plus the shared errors, names and positions.
 
@@ -516,7 +516,28 @@ Effect.runSync(
 Effect.runSync(XQuery.evaluate("for $x in 1 to 3 return $x * $x")); // [1, 4, 9]
 ```
 
-Evaluation itself is synchronous. It is an `Effect` because `fn:doc`, `fn:collection` and `fn:unparsed-text` go through the `XQuery.Resolver` service when one is provided (`XQuery.staticResolver` serves documents, collections and texts from memory); without one those functions find nothing. Errors are `XQueryError`s with the specifications' codes (`err:XPTY0004`, `err:FOAR0001`, …) and the offset of the expression that raised them. The evaluator covers the expression language (paths and axes but the optional namespace axis, operators, comparisons, `for` / `let` / `where` / `count`, quantifiers, conditionals, `switch`, `typeswitch`, `try`, sequence types and casts, function items and closures, maps, arrays and lookups) and the prolog's variables and functions; of Functions and Operators 3.1, the core built-ins so far. A construct or function that isn't implemented yet (node constructors, `order by` and the other FLWOR clauses, most of the function library) fails with the code `NotImplemented` in `XQuery.ImplementationNamespace`.
+Evaluation itself is synchronous. It is an `Effect` because `fn:doc`, `fn:collection` and `fn:unparsed-text` go through the `XQuery.Resolver` service when one is provided (`XQuery.staticResolver` serves documents, collections and texts from memory); without one those functions find nothing. Errors are `XQueryError`s with the specifications' codes (`err:XPTY0004`, `err:FOAR0001`, …) and the offset of the expression that raised them. The evaluator covers the expression language (paths and axes but the optional namespace axis, operators, comparisons, `for` / `let` / `where` / `count`, quantifiers, conditionals, `switch`, `typeswitch`, `try`, sequence types and casts, function items and closures, maps, arrays and lookups, node constructors) and the prolog's variables and functions; of Functions and Operators 3.1, the core built-ins so far. A construct or function that isn't implemented yet (`order by` and the other FLWOR clauses, module import, most of the function library) fails with the code `NotImplemented` in `XQuery.ImplementationNamespace`.
+
+### Constructing nodes
+
+Direct constructors (`<a x="{…}">…</a>`, comments, processing instructions) and computed ones (`element`, `attribute`, `text`, `document`, `comment`, `processing-instruction`, `namespace`) build new `Xml` DOM values, so their results are XDM nodes with a fresh identity, and nodes in their content are copied. An element's in-scope namespaces are its namespace declarations plus the bindings its name and attributes use; the prolog's `boundary-space`, `construction` and `copy-namespaces` declarations are honoured. The DOM behind a constructed element is an ordinary `XmlElement`, ready for `Xml.serialize`, `Xml.Writer` or `Xml.C14n`:
+
+```ts
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { Xml, XQuery } from "@thomasfosterau/effect-xml";
+
+const doc = Effect.runSync(Xml.parse(`<items><i n="1">a</i><i n="2">b</i></items>`));
+const [list] = Effect.runSync(
+  XQuery.evaluate(
+    `<ul class="items">{ for $i in //i return <li id="i{ $i/@n }">{ $i/string() }</li> }</ul>`,
+    {
+      context: doc,
+    },
+  ),
+);
+if (list !== undefined && XQuery.isNode(list)) console.log(Option.map(list.element, Xml.serialize)); // Some(<ul class="items"><li id="i1">a</li><li id="i2">b</li></ul>)
+```
 
 ## Typed errors
 
