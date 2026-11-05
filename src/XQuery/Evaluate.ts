@@ -3,12 +3,9 @@
  * text) run against a context item and external variables, to an XDM
  * sequence or the first dynamic error.
  */
-import * as BigDecimal from "effect/BigDecimal";
 import * as Arr from "effect/Array";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Record from "effect/Record";
@@ -22,17 +19,11 @@ import {
 } from "../Xml/Node.ts";
 import type { Item, Sequence } from "../internal/xquery/item.ts";
 import { XdmNode } from "../internal/xquery/node.ts";
-import { AtomicTypes } from "../internal/xquery/types.ts";
 import { compileQuery, runCompiled, type Compiled } from "../internal/xquery/eval/compile.ts";
-import {
-  attempt,
-  attemptSync,
-  Suspend,
-  type ResourceRequest,
-} from "../internal/xquery/eval/raise.ts";
-import { parseXmlRequest } from "../internal/xquery/eval/parseXml.ts";
-import { Resources, resourceKey, type Dynamic } from "../internal/xquery/eval/runtime.ts";
-import { formatParts, partsAt } from "../internal/xquery/eval/temporal.ts";
+import { attemptSync } from "../internal/xquery/eval/raise.ts";
+import { resume } from "../internal/xquery/eval/resume.ts";
+import { dynamicContext } from "../internal/xquery/eval/dynamic.ts";
+import type { Dynamic } from "../internal/xquery/eval/runtime.ts";
 import { compile, type CompileOptions, type ModuleSource, type Query } from "./Compile.ts";
 import { importsOf, type UnresolvedImport } from "../internal/xquery/parser/modules.ts";
 import { parseXQuery } from "../internal/xquery/parser/parse.ts";
@@ -153,10 +144,6 @@ export interface EvaluateOptions {
   readonly compile?: CompileOptions | undefined;
 }
 
-const clarkKey = (name: string): string => (name.startsWith("{") ? name : `{}${name}`);
-
-const isSequence = (v: Sequence | Item): v is Sequence => Array.isArray(v);
-
 const isDocument = /*#__PURE__*/ Schema.is(XmlDocumentSchema);
 const isElement = /*#__PURE__*/ Schema.is(XmlElementSchema);
 
@@ -181,55 +168,13 @@ const programOf = (query: Query): Result.Result<Compiled, XQueryError> => {
   return compiled;
 };
 
-/** The current dateTime in the implicit timezone, as a lexical `xs:dateTimeStamp`. */
-const nowIn = (millis: number, tz: number): string =>
-  formatParts(
-    AtomicTypes.dateTimeStamp,
-    partsAt(BigDecimal.make(BigInt(Math.round(millis)), 3), tz),
-  );
-
-const fetchWith = (
-  resolver: ResourceResolver,
-  request: ResourceRequest,
-): Effect.Effect<Sequence | string, XQueryError> =>
-  request.kind === "document"
-    ? Effect.map(resolver.document(request.uri), (node): Sequence => [node])
-    : request.kind === "collection"
-      ? resolver.collection(request.uri)
-      : resolver.text(request.uri, request.encoding);
-
 /** Run a compiled query until it needs nothing more from the resolver. */
 const run = (
   compiled: Compiled,
   base: Omit<Dynamic, "globals">,
   resolver: Option.Option<ResourceResolver>,
 ): Effect.Effect<Sequence, XQueryError> =>
-  Effect.suspend(() => {
-    const outcome = attempt(() => runCompiled(compiled, { ...base, globals: [] }));
-    if (Result.isSuccess(outcome)) return Effect.succeed(outcome.success);
-    const failure = outcome.failure;
-    if (!(failure instanceof Suspend)) return Effect.fail(failure);
-    const { request } = failure;
-    if (request.kind === "xml" || request.kind === "xml-fragment")
-      return parseXmlRequest(request).pipe(
-        Effect.result,
-        Effect.flatMap((parsed) => {
-          base.resources.set(resourceKey(request), parsed);
-          return run(compiled, base, resolver);
-        }),
-      );
-    return Option.match(resolver, {
-      onNone: () => Effect.fail(xqueryError("FODC0002", `${failure.request.uri} is not available`)),
-      onSome: (r) =>
-        fetchWith(r, failure.request).pipe(
-          Effect.result,
-          Effect.flatMap((fetched) => {
-            base.resources.set(resourceKey(failure.request), fetched);
-            return run(compiled, base, resolver);
-          }),
-        ),
-    });
-  });
+  resume(() => runCompiled(compiled, { ...base, globals: [] }), base.resources, resolver);
 
 /**
  * Evaluate a query: a compiled {@link Query} (from {@link compile} or
@@ -274,26 +219,12 @@ export const evaluate = (
     const resolver = yield* Effect.serviceOption(Resolver);
     const withModules = yield* loadModules(compiled, resolver);
     const program = yield* Effect.fromResult(programOf(withModules));
-    const millis = options.currentDateTime?.getTime() ?? (yield* Clock.currentTimeMillis);
-    const tz = options.implicitTimezone ?? 0;
-    const externals = HashMap.fromIterable(
-      Record.toEntries(variables).map(([k, v]): readonly [string, Sequence] => [
-        clarkKey(k),
-        isSequence(v) ? v : [v],
-      ]),
+    const dynamic = yield* dynamicContext(
+      options,
+      contextOf(options.context),
+      Option.isSome(resolver),
     );
-    return yield* run(
-      program,
-      {
-        externals,
-        initialContext: contextOf(options.context),
-        resources: new Resources(Option.isSome(resolver)),
-        currentDateTime: nowIn(millis, tz),
-        implicitTimezone: tz,
-        environment: options.environment ?? {},
-      },
-      resolver,
-    );
+    return yield* run(program, dynamic, resolver);
   });
 
 /** The sources of the modules `imports` name and the modules they import, fetched through the resolver. */

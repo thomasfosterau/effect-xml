@@ -27,7 +27,7 @@ import {
 } from "./axes.ts";
 import { toNumber } from "./cast.ts";
 import { raise, unwrap } from "./raise.ts";
-import { callsFocusFunction } from "./walk.ts";
+import { callsFocusFunction, isDescendantOrSelfNode } from "./walk.ts";
 import { contextItem, type Code, type Ctx } from "./runtime.ts";
 import { resolve, type Scope } from "./scope.ts";
 import { itemTest } from "./seqtype.ts";
@@ -129,7 +129,7 @@ const compilePredicate = (e: ExprT, scope: Scope, sub: Sub): Pred => {
 };
 
 /** Whether a predicate's value selects the item at `position`: a number by position, anything else by its effective boolean value. */
-const selects = (value: Sequence, position: number, offset: number): boolean => {
+export const selects = (value: Sequence, position: number, offset: number): boolean => {
   const [first] = value;
   if (value.length === 1 && first !== undefined && isAtomic(first) && isNumericType(first.type))
     return toNumber(first) === position;
@@ -204,13 +204,6 @@ type StepC =
   | { readonly kind: "axis"; readonly step: AxisStepC }
   | { readonly kind: "expr"; readonly code: Code };
 
-const isDescendantOrSelfNode = (e: ExprT): boolean =>
-  Expr.$is("AxisStep")(e) &&
-  e.axis === "descendant-or-self" &&
-  Arr.isReadonlyArrayEmpty(e.predicates) &&
-  NodeTest.$is("Kind")(e.test) &&
-  e.test.test._tag === "AnyKind";
-
 /** Rewrite `descendant-or-self::node()/child::T[p]` as `descendant::T[p]` where `p` is position-free. */
 const rewriteSteps = (steps: ReadonlyArray<ExprT>): ReadonlyArray<ExprT> =>
   steps.reduce<Array<ExprT>>((out, step) => {
@@ -259,6 +252,10 @@ const exprFromAll = (
     return raise("XPTY0018", "a path's last step returns both nodes and other items", offset);
   return results;
 };
+
+/** Any expression as a path step over `input` (`input/E`): nodes in document order, or atomic values in order. */
+export const stepOver = (code: Code, input: Sequence, ctx: Ctx, offset: number): Sequence =>
+  exprFromAll(code, nodesOf(input, offset), ctx, offset);
 
 const applyStep = (step: StepC, input: Sequence, ctx: Ctx, offset: number): Sequence => {
   const nodes = nodesOf(input, offset);
