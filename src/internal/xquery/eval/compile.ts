@@ -40,7 +40,7 @@ import type {
   SingleType,
 } from "../parser/ast.ts";
 import { Clause, Decl, Expr, KeySpecifier, Module, NodeTest } from "../parser/ast.ts";
-import { builtinArities, Namespaces } from "../parser/builtins.ts";
+import { accepts, builtinArities, Namespaces } from "../parser/builtins.ts";
 import { atomicType, AtomicTypes, derivesFrom, type AtomicType } from "../types.ts";
 import { arithmetic, unary, type ArithOp } from "./arith.ts";
 import { combineNodes, documentOrder } from "./axes.ts";
@@ -55,7 +55,7 @@ import {
 import type { Statics } from "./functions/define.ts";
 import { lookupBuiltin, paramType, type Builtin } from "./functions/registry.ts";
 import { axisStepCode, filterCode, pathCode } from "./path.ts";
-import { catching, notImplemented, orElse, raise, unwrap } from "./raise.ts";
+import { catching, notImplemented, orElse, raise, raiseError, unwrap } from "./raise.ts";
 import {
   anySequence,
   arityOf,
@@ -468,7 +468,7 @@ const findFunction = (scope: Scope, name: EQName, arity: number, offset: number)
   }
   const builtin = lookupBuiltin(n.uri, n.local, arity);
   if (Option.isSome(builtin)) return { kind: "builtin", b: builtin.value };
-  if (Option.isSome(builtinArities(clark(n))))
+  if (Option.exists(builtinArities(clark(n)), (arities) => accepts(arities, arity)))
     return notImplemented(`the function ${name.local}#${arity}`, offset);
   return raise("XPST0017", `there is no function ${clark(n)}#${arity}`, offset);
 };
@@ -548,7 +548,7 @@ const functionCall = (
   scope: Scope,
 ): Code => {
   const target = findFunction(scope, name, argExprs.length, offset);
-  const statics = staticsOf(scope);
+  const statics = functionStatics(scope);
   const { all, codes } = compileArgs(argExprs, scope);
   if (codes === undefined) {
     const qname = qnameOf(resolve(scope, name, "function"), name);
@@ -587,7 +587,7 @@ const namedFunctionRef = (
   if (e.arity > MAX_ARITY)
     return raise("XPDY0130", `a function reference of arity ${e.arity} is too large`, e.offset);
   const target = findFunction(scope, e.name, e.arity, e.offset);
-  const statics = staticsOf(scope);
+  const statics = functionStatics(scope);
   const qname = qnameOf(resolve(scope, e.name, "function"), e.name);
   const sig = targetSignature(target, e.arity);
   return (ctx) => [
@@ -596,6 +596,50 @@ const namedFunctionRef = (
     ),
   ];
 };
+
+/**
+ * The function item a name and arity denote in `scope`, made in `ctx`, as
+ * `fn:function-lookup` finds it: `None` when the name and arity denote no
+ * function (or a constructor of an unknown or abstract type).
+ */
+const lookupFunction = (
+  scope: Scope,
+  name: QName,
+  arity: number,
+  ctx: Ctx,
+  offset: number,
+): Option.Option<Closure> => {
+  if (arity < 0 || arity > MAX_ARITY) return Option.none();
+  const written: EQName = {
+    prefix: Option.fromNullishOr(name.prefix),
+    local: name.local,
+    uri: Option.some(name.namespace ?? ""),
+    offset,
+  };
+  const statics = functionStatics(scope);
+  return catching(
+    () => {
+      const target = findFunction(scope, written, arity, offset);
+      const sig = targetSignature(target, arity);
+      return Option.some(
+        new Closure(Option.some(name), sig, (args) =>
+          invokeTarget(target, args, ctx, statics, offset),
+        ),
+      );
+    },
+    (e) =>
+      ["XPST0017", "XPST0051", "XPST0080", "XQST0052"].includes(e.code.local) &&
+      e.code.namespace === Namespaces.err
+        ? Option.none()
+        : raiseError(e),
+  );
+};
+
+/** The static context built-ins are called in: {@link staticsOf}, and `fn:function-lookup`'s view of the functions in scope. */
+const functionStatics = (scope: Scope): Statics => ({
+  ...staticsOf(scope),
+  lookup: (name, arity, ctx, offset) => lookupFunction(scope, name, arity, ctx, offset),
+});
 
 /** The parameter slots and signature of a function's parameters, bound in `scope`. */
 const bindParams = (

@@ -10,7 +10,8 @@
  * one that resolves names or URIs). It raises, as all evaluation code does.
  */
 import type * as Option from "effect/Option";
-import type { Sequence } from "../../item.ts";
+import type { QName } from "../../../../Name.ts";
+import type { FunctionItem, Sequence } from "../../item.ts";
 import type { Ctx } from "../runtime.ts";
 
 /** The parts of the static context a built-in can use. */
@@ -20,6 +21,14 @@ export interface Statics {
   readonly baseUri: Option.Option<string>;
   /** The default collation's URI. */
   readonly defaultCollation: string;
+  /**
+   * The function a name and arity denote in the static context, as a
+   * function item made in `ctx` (`fn:function-lookup`); `None` when there is
+   * none.
+   */
+  readonly lookup?:
+    | ((name: QName, arity: number, ctx: Ctx, offset: number) => Option.Option<FunctionItem>)
+    | undefined;
 }
 
 /** What a built-in is called with besides its arguments. */
