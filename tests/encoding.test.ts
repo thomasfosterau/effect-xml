@@ -211,6 +211,24 @@ describe("streaming byte input", () => {
     expect(chunked).toStrictEqual(Arr.replicate(whole, 9));
   });
 
+  test.each([
+    ["UTF-8", utf8(`<?xml version="1.0"?><a>${text}</a>`)],
+    ["UTF-16 with a BOM", utf16(`<a>${text}</a>`, true, true)],
+    ["UTF-32", utf32(`<?xml version="1.0" encoding="UTF-32"?><a>${text}</a>`, false, false)],
+    ["a declaration past the first window", utf8(`<?xml version="1.0"${" ".repeat(200)}?><a/>`)],
+    ["a truncated UTF-8 sequence", concat(utf8(`<a>${text}`), new Uint8Array([0xc3]))],
+    ["malformed markup before bad bytes", concat(utf8("<a><<b>"), new Uint8Array([0xc3]))],
+    ["an odd trailing UTF-16 byte", concat(utf16("<a/>", false, true), new Uint8Array([0x3c]))],
+    ["an unknown declared encoding", utf8(`<?xml version="1.0" encoding="x-no-such"?><a/>`)],
+    ["a tiny input", utf8("<a")],
+  ])("Xml.parseBytes matches parseBytesStream on one chunk: %s", async (_what, bytes) => {
+    const whole = await Effect.runPromise(Effect.result(Xml.parseBytes(bytes)));
+    const streamed = await Effect.runPromise(
+      Effect.result(Stream.make(bytes).pipe(Xml.parseBytesStream())),
+    );
+    expect(whole).toStrictEqual(streamed);
+  });
+
   test("Xml.parseBytesStream", async () => {
     const doc = await Effect.runPromise(
       Stream.fromIterable(chunks(utf16(`<a>${text}</a>`, false, true), 3)).pipe(

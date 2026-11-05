@@ -25,7 +25,7 @@ import { identity } from "effect/Function";
 import * as Result from "effect/Result";
 import { doctype as xmlDoctype, processingInstruction } from "./declarations.ts";
 import { decode, htmlLegacyEntities, type EntityLimit, type EntityTable } from "./entities.ts";
-import type { Dtd } from "./dtd.ts";
+import { DtdSlot } from "./dtd.ts";
 import { invalidNameAt } from "./names.ts";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
@@ -153,7 +153,7 @@ interface EntityConfig {
   readonly entities: EntityTable;
   readonly legacy: EntityTable | undefined;
   /** Declared entities (XML with `dtd: "internal"`). */
-  readonly dtd?: Dtd | undefined;
+  readonly dtd?: DtdSlot | undefined;
 }
 
 /**
@@ -240,7 +240,7 @@ const textRun = (cfg: EntityConfig): P<Step> => {
 };
 
 /** `&name;` where `name` is a declared entity whose replacement text contains markup. */
-const markupReference = (dtd: Dtd): Parser.Parser<string> =>
+const markupReference = (dtd: DtdSlot): Parser.Parser<string> =>
   Parser.delimited(
     Token.literal("&"),
     Token.takeTill(";&<>\"' \t\n\r", { min: 1 }),
@@ -740,6 +740,8 @@ export interface Grammars {
    * character references decoded.
    */
   readonly rcdataToEnd: P<Step>;
+  /** The slot to point at the document's DTD before each run (used with `dtd: "internal"` only). */
+  readonly dtd: DtdSlot;
 }
 
 /**
@@ -840,20 +842,34 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
     raw,
     plaintext: Compiler.jit(plaintext),
     rcdataToEnd: Compiler.jit(rcdataToEnd),
+    dtd: cfg.dtd ?? new DtdSlot(),
   };
 };
 
-const cache = new WeakMap<Record<string, string>, { xml?: Grammars; html?: Grammars }>();
+const cache = new WeakMap<
+  Record<string, string>,
+  { xml?: Grammars; html?: Grammars; dtd?: Grammars }
+>();
 
-/** The grammars for a mode and named-entity table (built once per table). */
+/**
+ * The grammars for a mode and named-entity table (built once per table). With
+ * `dtd: "internal"` (XML) they are built once per table too, reading the
+ * declared entities through their {@link Grammars.dtd} slot.
+ */
 export const grammars = (
   mode: "xml" | "html",
   entities: Record<string, string>,
-  dtd?: Dtd,
+  dtd: boolean,
 ): Grammars => {
-  if (dtd !== undefined) return makeGrammars({ strict: true, entities, legacy: undefined, dtd });
   let byMode = cache.get(entities);
   if (byMode === undefined) cache.set(entities, (byMode = {}));
+  if (dtd)
+    return (byMode.dtd ??= makeGrammars({
+      strict: true,
+      entities,
+      legacy: undefined,
+      dtd: new DtdSlot(),
+    }));
   return (byMode[mode] ??= makeGrammars({
     strict: mode === "xml",
     entities,
