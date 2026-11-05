@@ -298,12 +298,13 @@ export default defineConfig({
           "effect/avoid-try-catch": "off",
         },
       },
-      // A generic walk over every field of the XQuery syntax tree, whatever
-      // its variant (see its module comment): its input is the tree's own
-      // nodes, read field by field, so they are `unknown` and walked with
-      // `Object.values`.
+      // Generic walks over every field of the XQuery syntax tree, whatever
+      // its variant (see the modules' comments: the path compiler's test for
+      // focus functions, and the streamability analysis): their input is the
+      // tree's own nodes, read field by field, so they are `unknown` and
+      // walked with `Object.values`.
       {
-        files: ["src/internal/xquery/eval/walk.ts"],
+        files: ["src/internal/xquery/eval/walk.ts", "src/internal/xquery/stream/analyze.ts"],
         rules: {
           "effect/no-unknown-parameters": "off",
           "effect/avoid-native-object-helpers": "off",

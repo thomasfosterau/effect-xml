@@ -40,7 +40,8 @@ export const errorCode = (local: string): QName =>
 /**
  * The namespace of the error codes this implementation adds to the
  * specifications': `NotImplemented` (local name) for a construct or built-in
- * function it does not evaluate yet.
+ * function it does not evaluate yet, and `NotStreamable` for a query
+ * `stream` can't evaluate over SAX events (see `compileStream`).
  *
  * @since 0.3.0
  * @category errors

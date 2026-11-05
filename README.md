@@ -212,7 +212,7 @@ sheetBytes.pipe(
 );
 ```
 
-Streamable paths use child and descendant steps with element name tests, and predicates on the element's own attributes and name. A path that needs positions or content fails the stream with an `XPathError`.
+Streamable paths use child and descendant steps with element name tests, and predicates on the element's own attributes and name. A path that needs positions or content fails the stream with an `XPathError`. To run a whole query on each match, with positions among siblings and anything else XQuery can do within a subtree, see [Streaming queries](#streaming-queries).
 
 ## Decoding into a Schema
 
@@ -564,6 +564,41 @@ const [list] = Effect.runSync(
 );
 if (list !== undefined && XQuery.isNode(list)) console.log(Option.map(list.element, Xml.serialize)); // Some(<ul class="items"><li id="i1">a</li><li id="i2">b</li></ul>)
 ```
+
+### Streaming queries
+
+`XQuery.stream(query, options?)` evaluates a query over a stream of SAX events instead of a parsed document. Each subtree the query's path selects is built when its end tag arrives, the rest of the query runs on it, and the resulting XDM items stream out in document order: equal to what `XQuery.evaluate` gives for the parsed document, in memory bounded by the largest match.
+
+```ts
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import { Sax, XQuery } from "@thomasfosterau/effect-xml";
+
+const SPREADSHEETML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const sheet = Stream.make(
+  `<worksheet xmlns="${SPREADSHEETML}"><sheetData>` +
+    `<row r="1"><c><v>1</v></c><c><v>2</v></c></row><row r="2" hidden="1"/><row r="3"><c><v>5</v></c></row>` +
+    `</sheetData></worksheet>`,
+);
+
+const rows = sheet.pipe(
+  Sax.tokenize(),
+  XQuery.stream("//x:row[not(@hidden = '1')] ! concat('row ', @r, ': ', sum(x:c/x:v))", {
+    compile: { namespaces: { x: SPREADSHEETML } },
+  }),
+  Stream.map((item) => XQuery.atomicString(item as XQuery.AtomicValue)),
+  Stream.runCollect,
+);
+Effect.runSync(rows); // ["row 1: 3", "row 3: 5"]
+```
+
+A streamable query is a _selection_ followed by _operations_ on each match. `XQuery.compileStream(query, options?)` checks a query (text, or a compiled `Query`) and compiles it once for any number of streams; `XQuery.stream` takes the result, a `Query` or text.
+
+- **The selection** is a path (`/…`, `//…`, or relative to the document node) of `child`, `descendant`, `self` and `descendant-or-self` steps with element tests (a name, `*`, `p:*`, `*:local`, `element(…)`). Its predicates are decided at each start tag: they may read the element's attributes, its name (`local-name()`, `name()`, `namespace-uri()`, `node-name()`), variables, literals and functions of those, and on a `child` step (`//x` included) its position among the siblings seen so far (`[1]`, `[position() < 3]`). `last()` would need the siblings still to come.
+- **The operations** are the rest: the path's later steps (`/x:c/x:v`, `/@r`, `/text()`), predicates of the selection's last step that read its content (`row[x:c]`, which must not depend on positions), and the right-hand side of each `!`. They may do anything that stays within the match: not the `parent`, `ancestor`, `preceding` or `following` axes (nor `-sibling` and `-or-self`), paths from the root, `fn:root`, `fn:path`, `fn:id`, `fn:idref`, `fn:element-with-id`, `fn:generate-id` or `fn:function-lookup`, and not `position()` or `last()` of the matches.
+- **An XQuery prolog** may declare namespaces, options, functions (whose bodies follow the operations' rules) and variables (whose initializers can't read the context item); not a context item, and no module imports.
+
+A match nested in another match (`//s` inside an `s`) is selected too, after the outer one, as `evaluate` would. Nodes in the results belong to their match, whose ancestors are copies that keep only their names, attributes and namespaces, so `fn:lang`, `fn:base-uri` and in-scope namespaces are the document's. A query outside the subset fails with an `XQueryError` whose code is `XQuery.NotStreamableCode` (`NotStreamable` in `XQuery.ImplementationNamespace`), with a description of what can't be streamed and its offset; dynamic errors fail the stream after the items before them, and well-formedness errors fail it as `Sax.select`'s do. `Sax.select` and `Xsd.select` go through the same analysis, keeping to its `child` / `descendant` steps with predicates on attributes and names.
 
 ## Typed errors
 

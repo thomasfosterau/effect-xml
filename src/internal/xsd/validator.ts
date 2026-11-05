@@ -43,7 +43,7 @@ import {
   type ValueContext,
 } from "./datatypes.ts";
 import { evaluate, type Tables, type Typed, type TypeOf } from "./identity.ts";
-import { advance, selects, type StepLevel, type StreamStep } from "../streamPath.ts";
+import { advance, matchesAll, type StepLevel, type StreamStep } from "../streamPath.ts";
 import type { AttributeRule, ComplexRuntime, Runtime, TypeRuntime } from "./runtime.ts";
 import { Lookup } from "../lookup.ts";
 import { isIn, tagSet } from "../tagSet.ts";
@@ -453,7 +453,7 @@ export class Validator {
         ),
     );
     frame.level = Option.some(level);
-    frame.selected = selects(this.steps, level);
+    frame.selected = matchesAll(this.steps, level);
   }
 
   /**

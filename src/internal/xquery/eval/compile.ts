@@ -1193,6 +1193,32 @@ export const compileQuery = (query: Query, externals: ReadonlyArray<string>): Co
   });
 };
 
+/**
+ * Compile parts of a query's body on their own, in its static context: the
+ * prolog's globals and functions, then each expression of `parts` (each in
+ * the body's scope), as a streamed query compiles its predicates and the
+ * operations on each match.
+ */
+export const compileParts = (
+  query: Query,
+  externals: ReadonlyArray<string>,
+  parts: ReadonlyArray<ExprT>,
+): ReadonlyArray<Code> => {
+  const program = new Program();
+  const scope: Scope = {
+    statics: scopeOf(query.context),
+    vars: HashMap.empty(),
+    layout: new Layout(undefined),
+    program,
+  };
+  declareGlobals([], scope, externals);
+  if (query.language === "XQuery" && Module.$is("Main")(query.module)) {
+    declareGlobals(query.module.prolog, scope, []);
+    compileBodies(query.module.prolog, scope);
+  }
+  return parts.map((part) => compileExpr(part, scope));
+};
+
 /** Run a compiled query; a query that declares a default context item uses it when the host gives none. */
 export const runCompiled = (compiled: Compiled, dyn: Dynamic): Sequence => {
   const initial =
