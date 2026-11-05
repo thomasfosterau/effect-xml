@@ -89,12 +89,11 @@ export class Guard {
     if (ev.name.length > names) return this.fail("maxNameLength", ev.span.start);
     if (ev.attributes.length > this.limits.maxAttributes)
       return this.fail("maxAttributes", ev.span.start);
-    const over = ev.attributes.find((a) => a.name.length > names || a.value.length > text);
-    if (over !== undefined)
-      return this.fail(
-        over.name.length > names ? "maxNameLength" : "maxTextLength",
-        over.span.start,
-      );
+    // Once per start tag: a loop, without a closure per call.
+    for (const a of ev.attributes) {
+      if (a.name.length > names) return this.fail("maxNameLength", a.span.start);
+      if (a.value.length > text) return this.fail("maxTextLength", a.span.start);
+    }
     if (this.countDepth && !ev.selfClosing && ++this.depth > this.limits.maxDepth) {
       return this.fail("maxDepth", ev.span.start);
     }

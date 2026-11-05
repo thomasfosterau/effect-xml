@@ -35,6 +35,15 @@ export * from "./TreeBuilder.ts";
  * @category parsing
  */
 export * from "./Xml.ts";
+
+/**
+ * Plain trees: elements as plain objects and text as strings, built faster
+ * than the DOM.
+ *
+ * @since 0.3.0
+ * @category parsing
+ */
+export * from "./Plain.ts";
 /**
  * Writing XML: namespace management, indentation and streaming output.
  *

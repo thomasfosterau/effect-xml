@@ -40,6 +40,17 @@ import {
 } from "../Error.ts";
 import type { Position, Span } from "../Position.ts";
 import { LazyPosition, LazySpan, LineIndex } from "./position.ts";
+import {
+  type Context,
+  Fallback,
+  Incomplete,
+  NAME_SLOTS,
+  NO_SPAN,
+  Reused,
+  freshMarks,
+  resetMarks,
+  scanXml,
+} from "./scan.ts";
 import { declarationContexts } from "./declarations.ts";
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
@@ -154,6 +165,17 @@ export interface LexerOptions {
    * a browser with scripting enabled reads it.
    */
   readonly scripting?: boolean | undefined;
+  /**
+   * Whether events have positions (default `true`); without, every span is
+   * the origin. Faults keep theirs (see {@link Lexer.tokenPosition}).
+   */
+  readonly positions?: boolean | undefined;
+  /**
+   * Reuse the scanner's events (see `Context.reuse`; only without
+   * positions): for a caller that is done with each event before it reads
+   * the next.
+   */
+  readonly reuse?: boolean | undefined;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -340,8 +362,24 @@ export class Lexer {
 
   private readonly options: LexerOptions;
 
+  /** Whether {@link scanXml} reads the data state's tokens (XML without a DTD). */
+  private readonly scans: boolean;
+
   constructor(options: LexerOptions) {
     this.options = options;
+    this.scans = options.mode === "xml" && options.dtd === undefined;
+    this.scanner = {
+      entities: options.entities,
+      span: (from, to) => this.positions.span(this.base + from, this.base + to),
+      positions: options.positions ?? true,
+      reuse: options.reuse === true && options.positions === false,
+      end: 0,
+      count: 0,
+      inside: false,
+      names: Arr.allocate<string>(NAME_SLOTS),
+      reused: new Reused(),
+      marks: freshMarks(),
+    };
     this.grammars = grammars(options.mode, options.entities, options.dtd !== undefined);
   }
 
@@ -385,6 +423,7 @@ export class Lexer {
     }
     this.positions.lines.record(s, this.base + this.buf.length);
     this.buf += s;
+    resetMarks(this.scanner.marks);
   }
 
   /** Signal end of input (see {@link pull}). */
@@ -399,7 +438,18 @@ export class Lexer {
   pull(): ReadonlyArray<LexOutput> | null {
     if (this.failed || this.cursor >= this.buf.length) return null;
     if (!this.ended && this.buf.length < this.retryAt) return null;
+    if (this.scans) {
+      const ev = this.scan();
+      if (ev === null) return null;
+      if (ev !== undefined) return [ev];
+    }
+    return this.parse();
+  }
+
+  /** Lex the next token with the grammar (see {@link pull}). */
+  private parse(): ReadonlyArray<LexOutput> | null {
     const start = this.cursor;
+    this.tokenStart = start;
     const state = this.parseState(start);
     // The `dtd: "internal"` grammars are shared: point them at this document's DTD.
     const dtd = this.options.dtd;
@@ -458,8 +508,66 @@ export class Lexer {
    * stopped for the last reason.
    */
   pullEach(f: (output: LexOutput) => boolean, full?: () => boolean): boolean {
-    return drive(() => this.pull(), f, full);
+    if (!this.scans) return drive(() => this.pull(), f, full);
+    // The scanned tokens one by one, without a batch each.
+    for (;;) {
+      const more = this.next(f);
+      if (more !== true) return more === null;
+      if (full !== undefined && full()) return false;
+    }
   }
+
+  /**
+   * Hand the next token's outputs to `f`: whether it took them all, or
+   * `null` when no token can be read yet.
+   */
+  private next(f: (output: LexOutput) => boolean): boolean | null {
+    if (this.failed || this.cursor >= this.buf.length) return null;
+    if (!this.ended && this.buf.length < this.retryAt) return null;
+    const ev = this.scan();
+    if (ev === null) return null;
+    if (ev !== undefined) return f(ev);
+    // (The scanner has had its turn.)
+    const batch = this.parse();
+    return batch === null ? null : batch.every(f);
+  }
+
+  /**
+   * XML without a DTD: read the token at the cursor with {@link scanXml}.
+   * Returns its event, `null` when the token is incomplete, or `undefined`
+   * when the grammar reads it instead (other markup, every error, and text
+   * outside the root element, where a reference is misplaced).
+   */
+  private scan(): LexEvent | null | undefined {
+    const start = this.cursor;
+    const inside = this.depth > 0 || this.options.content;
+    if (!inside && this.buf.charCodeAt(start) !== 60) return undefined;
+    this.scanner.inside = inside;
+    // Offsets are computed forwards from the token's start.
+    this.tokenStart = start;
+    if (this.scanner.positions) this.positions.anchor(this.base + start);
+    const ev = scanXml(this.buf, start, !this.ended, this.scanner);
+    if (ev === Incomplete) {
+      this.retryAt = this.buf.length + 1 + ((this.buf.length - start) >> 1);
+      return null;
+    }
+    if (ev === Fallback) return undefined;
+    const end = this.scanner.end;
+    // The grammar reports a forbidden character the token takes in.
+    if (this.forbidden !== -1 && this.forbidden < this.base + end) return undefined;
+    // `misplaced`, for the tokens the scanner reads.
+    if (ev._tag === "StartElement") {
+      if (!ev.selfClosing) this.depth++;
+      this.prologEnded = true;
+    } else if (ev._tag === "EndElement" && this.depth > 0) this.depth--;
+    this.cursor = end;
+    this.retryAt = 0;
+    this.compact();
+    return ev;
+  }
+
+  /** What {@link scanXml} reads with. */
+  private readonly scanner: Context;
 
   private drain(): ReadonlyArray<LexOutput> {
     const out: Array<LexOutput> = [];
@@ -492,6 +600,10 @@ export class Lexer {
   }
 
   private trimTo(index: number): void {
+    resetMarks(this.scanner.marks);
+    // Without positions in events, nothing has computed the offsets up to
+    // here: compute them before the CRLF records that tell them go.
+    if (!this.scanner.positions) this.positions.anchor(this.base + index);
     this.buf = this.buf.slice(index);
     this.base += index;
     this.cursor -= index;
@@ -596,7 +708,20 @@ export class Lexer {
   }
 
   private span(t: { readonly start: number; readonly end: number }): Span {
-    return this.positions.span(this.base + t.start, this.base + t.end);
+    return this.scanner.positions
+      ? this.positions.span(this.base + t.start, this.base + t.end)
+      : NO_SPAN;
+  }
+
+  /** Buffer index of the start of the last token read. */
+  private tokenStart = 0;
+
+  /**
+   * Where the last token read starts: what a failure found in its event
+   * (a resource limit) points at when events have no positions.
+   */
+  tokenPosition(): Position {
+    return this.at(this.tokenStart);
   }
 
   // A `switch`, not a `$match` table: this runs once per token, and a switch
@@ -619,13 +744,15 @@ export class Lexer {
           name: t.name,
           attributes,
           selfClosing: t.selfClosing,
-          span: new LazySpan(
-            this.positions.lines,
-            start,
-            this.base + t.start,
-            this.positions.offsetAt(this.base + t.end),
-            this.base + t.end,
-          ),
+          span: this.scanner.positions
+            ? new LazySpan(
+                this.positions.lines,
+                start,
+                this.base + t.start,
+                this.positions.offsetAt(this.base + t.end),
+                this.base + t.end,
+              )
+            : NO_SPAN,
           _tag: "StartElement",
         };
       }

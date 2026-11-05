@@ -44,16 +44,18 @@ const split = (raw: string): Entry => {
 
 /** Names for raw `prefix:local` strings, built once per raw name and namespace. */
 export class QNames {
-  private readonly entries = MutableHashMap.empty<string, Entry>();
+  // A native `Map`: looked up once per element and attribute, where
+  // `MutableHashMap` hashes the string in JavaScript on every lookup.
+  private readonly entries = new Map<string, Entry>();
 
   /** The raw name split at its colon (prefix and local part, as `QName.fromRaw` has them). */
   entry(raw: string): Entry {
-    return Option.getOrElse(MutableHashMap.get(this.entries, raw), () => {
-      if (MutableHashMap.size(this.entries) >= CAPACITY) MutableHashMap.clear(this.entries);
-      const entry = split(raw);
-      MutableHashMap.set(this.entries, raw, entry);
-      return entry;
-    });
+    const known = this.entries.get(raw);
+    if (known !== undefined) return known;
+    if (this.entries.size >= CAPACITY) this.entries.clear();
+    const entry = split(raw);
+    this.entries.set(raw, entry);
+    return entry;
   }
 
   /** The name with `entry`'s prefix and local part in `namespace`. */
