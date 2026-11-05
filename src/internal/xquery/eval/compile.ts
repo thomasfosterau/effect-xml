@@ -56,8 +56,10 @@ import {
   dirPI,
 } from "./construct.ts";
 import { castAtomic } from "./cast.ts";
+import { compatibleArgument, numericOperand } from "./compat.ts";
 import {
   generalCompare,
+  generalCompareCompatible,
   generalToValue,
   valueCompare,
   atomicDeepEqual,
@@ -282,10 +284,23 @@ const binary = (e: Extract<ExprT, { readonly _tag: "Binary" }>, scope: Scope): C
   const r = compileExpr(e.right, scope);
   const { op, offset } = e;
   const general = generalToValue(op);
+  const compatible = scope.statics.context.xpath1Compatibility;
+  if (general !== undefined && compatible)
+    return (ctx) =>
+      toBool(generalCompareCompatible(general, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset));
   if (general !== undefined)
     return (ctx) =>
       toBool(generalCompare(general, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset));
   if (isValueOp(op)) return valueComparison(op, l, r, offset);
+  if (isArithOp(op) && compatible)
+    return (ctx) =>
+      arithmetic(
+        op,
+        numericOperand(l(ctx), offset),
+        numericOperand(r(ctx), offset),
+        ctx.dyn.implicitTimezone,
+        offset,
+      );
   if (isArithOp(op))
     return (ctx) => arithmetic(op, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset);
   if (op === "and" || op === "or") return logical(op, l, r, offset);
@@ -578,6 +593,17 @@ const functionCall = (
         ctx.dyn,
         offset,
       );
+  if (target.kind === "builtin" && scope.statics.context.xpath1Compatibility) {
+    const b = target.b;
+    return (ctx) =>
+      callBuiltin(
+        b,
+        codes.map((c, i) => compatibleArgument(paramType(b, i), c(ctx), offset)),
+        ctx,
+        statics,
+        offset,
+      );
+  }
   return (ctx) =>
     invokeTarget(
       target,
@@ -1019,7 +1045,9 @@ const compileExpr = (e: ExprT, scope: Scope): Code =>
     Binary: (b) => binary(b, scope),
     Unary: ({ op, operand, offset }) => {
       const code = compileExpr(operand, scope);
-      return (ctx: Ctx) => unary(op, code(ctx), offset);
+      return scope.statics.context.xpath1Compatibility
+        ? (ctx: Ctx) => unary(op, numericOperand(code(ctx), offset), offset)
+        : (ctx: Ctx) => unary(op, code(ctx), offset);
     },
     InstanceOf: (x) => instanceOf(x, scope),
     TreatAs: (x) => treatAs(x, scope),
@@ -1197,6 +1225,6 @@ export const runCompiled = (compiled: Compiled, dyn: Dynamic): Sequence => {
     (compiled.contextDefault === undefined
       ? undefined
       : compiled.contextDefault(new Ctx(undefined, 0, 0, [], dyn))[0]);
-  const run = { ...dyn, initialContext: initial };
+  const run = initial === dyn.initialContext ? dyn : { ...dyn, initialContext: initial };
   return compiled.body(new Ctx(initial, 1, 1, [], run));
 };

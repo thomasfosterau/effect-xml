@@ -66,7 +66,7 @@ export * as C14n from "./C14n.ts";
  */
 export * as Ns from "./Ns.ts";
 /**
- * A subset of XPath 1.0 location paths, compiled and evaluated over the DOM.
+ * XPath 1.0 (in XPath 3.1's compatibility mode), compiled and evaluated over the DOM.
  *
  * @since 0.3.0
  * @category modules

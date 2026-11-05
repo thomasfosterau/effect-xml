@@ -2,7 +2,7 @@
  * Identity constraints (`xs:unique`, `xs:key`, `xs:keyref`), evaluated over
  * the subtree of the element that declares them once it is complete.
  *
- * Selectors and fields are compiled with the library's XPath subset (a
+ * Selectors and fields are compiled with `Xml.XPath` (a
  * selector's `|` alternatives one by one). Field values are compared as typed
  * values in their value spaces (XSD 1.0 §3.11.4), through the simple type the
  * validator checked the selected attribute or element against; a node with no
@@ -176,7 +176,7 @@ const checkReferences = (
  * `typeOf` gives the simple type of a selected node, so fields compare as
  * typed values.
  */
-export const evaluate = (
+export const evaluateConstraints = (
   constraints: ReadonlyArray<IdentityConstraint>,
   scope: XmlElement,
   tables: Tables,

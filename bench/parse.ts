@@ -23,6 +23,7 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Html, Sax, Xml, Xsd, XQuery } from "../src/index.ts";
 
@@ -150,6 +151,48 @@ const rowsQuery = await Effect.runPromise(
 await time("effect-xml XPath (XQuery.evaluate)", () =>
   Effect.runPromise(
     Effect.asVoid(XQuery.evaluate(rowsQuery, { context: XQuery.XdmNode.fromDocument(sheetDom) })),
+  ),
+);
+
+// Xml.XPath over the same DOM: a document-wide selection with an attribute
+// predicate, and small lookups compiled once and run from every row (the
+// shape of a configuration lookup, and of XSD identity-constraint fields).
+const cellsPath = Xml.XPath.compile("//x:row/x:c[@t = 's']/x:v", { namespaces: { x: SML } });
+const cellPath = Xml.XPath.compile("x:c[starts-with(@r, 'B')]/x:v", { namespaces: { x: SML } });
+const rowElements = sheetDom.root.elements.flatMap((data) => data.elements);
+if (Result.isSuccess(cellsPath) && Result.isSuccess(cellPath)) {
+  const cells = cellsPath.success;
+  const cell = cellPath.success;
+  await time("effect-xml XPath (Xml.XPath.select)", () => {
+    Xml.XPath.select(cells, sheetDom);
+  });
+  await time("effect-xml XPath lookups (per row)", () => {
+    for (const row of rowElements) Xml.XPath.first(cell, row);
+  });
+}
+
+// The worksheet again, against its schema with identity constraints: a key
+// over the rows' numbers and, in each row, unique cell references, so the
+// selectors and fields are evaluated once per row and once per cell.
+const keyedSchema = worksheetSchema
+  .replace(
+    `</xs:sequence></xs:complexType></xs:element>
+  </xs:sequence></xs:complexType></xs:element>`,
+    `</xs:sequence></xs:complexType>
+      <xs:key name="row" xmlns:x="${SML}"><xs:selector xpath="x:row"/><xs:field xpath="@r"/></xs:key>
+    </xs:element>
+  </xs:sequence></xs:complexType></xs:element>`,
+  )
+  .replace(
+    `<xs:element name="row" type="CT_Row" minOccurs="0" maxOccurs="unbounded"/>`,
+    `<xs:element name="row" type="CT_Row" minOccurs="0" maxOccurs="unbounded">
+        <xs:unique name="cell" xmlns:x="${SML}"><xs:selector xpath="x:c"/><xs:field xpath="@r"/></xs:unique>
+      </xs:element>`,
+  );
+const keyedModel = await Effect.runPromise(Xsd.compile(keyedSchema));
+await time("effect-xml XSD identity (Xsd.validate)", () =>
+  Effect.runPromise(
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), Xsd.validate(keyedModel), Stream.runDrain),
   ),
 );
 

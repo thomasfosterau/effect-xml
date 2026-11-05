@@ -194,7 +194,7 @@ describe("XPath subset", () => {
     expect(compileError("//q:x").reason).toContain(`"q" is not bound`);
     expect(compileError("//x[").reason).toContain("expected an expression");
     expect(compileError("//x[count()]").reason).toContain("count() takes 1 argument");
-    expect(compileError("count(//x)").offset).toBe(5);
+    expect(compileError("//x[@a = ]").offset).toBe(9);
   });
 });
 
