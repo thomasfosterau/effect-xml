@@ -5,8 +5,11 @@
  */
 import * as Arr from "effect/Array";
 import { AtomicValue } from "../../atomic.ts";
-import { ArrayItem, MapItem, stringValue, type Item, type Sequence } from "../../item.ts";
+import { ArrayItem, isNode, MapItem, stringValue, type Item, type Sequence } from "../../item.ts";
+import type { XdmNode } from "../../node.ts";
 import { raise, unwrap } from "../raise.ts";
+import { contextItem } from "../runtime.ts";
+import type { Call } from "./define.ts";
 
 /** A single `xs:boolean`. */
 export const bool = (b: boolean): Sequence => [AtomicValue.boolean(b)];
@@ -60,3 +63,15 @@ export const optionalAtom = (s: Sequence): AtomicValue | undefined => {
 /** The atomic values of an atomic sequence argument. */
 export const atomsOf = (s: Sequence): ReadonlyArray<AtomicValue> =>
   s.filter((i): i is AtomicValue => i instanceof AtomicValue);
+
+/** The context item, which must be a node: `err:XPTY0004` otherwise. */
+export const contextNode = (call: Call): XdmNode => {
+  const item = contextItem(call.ctx, call.offset);
+  return isNode(item) ? item : raise("XPTY0004", "the context item is not a node", call.offset);
+};
+
+/** The node of an optional `node()?` argument. */
+export const optionalNode = (s: Sequence): XdmNode | undefined => {
+  const [n] = s;
+  return n !== undefined && isNode(n) ? n : undefined;
+};

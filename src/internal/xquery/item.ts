@@ -14,6 +14,7 @@ import { QName } from "../../Name.ts";
 import { type XQueryError, xqueryError } from "../../XQuery/Error.ts";
 import { AtomicValue, atomicString } from "./atomic.ts";
 import type { XdmNode } from "./node.ts";
+import { partsOf, timelineSeconds } from "./eval/temporal.ts";
 import { AtomicTypes, derivesFrom, isNumericType } from "./types.ts";
 
 /**
@@ -242,9 +243,11 @@ const numericKey = (atomic: AtomicValue): string => {
  *
  * Numbers are compared by their exact values across types (`NaN` is the same
  * key as `NaN`); strings, `xs:anyURI` and `xs:untypedAtomic` by code points;
- * QNames by namespace and local name; binary values by bytes; and the other
- * types by their canonical form within their primitive type. Dates and times
- * with and without a timezone are different keys.
+ * QNames by namespace and local name; dates and times by the instant they
+ * denote within their primitive type (so `12:00:00Z` and `13:00:00+01:00` are
+ * one key, but a value with a timezone and one without are never the same
+ * key); binary values by bytes; and the other types by their canonical form
+ * within their primitive type.
  *
  * @since 0.3.0
  * @category maps
@@ -260,6 +263,11 @@ export const sameKey = (atomic: AtomicValue): string => {
   )
     return `s:${atomicString(atomic)}`;
   if (isQName(v)) return `q:{${v.namespace ?? ""}}${v.local}`;
+  // Dates and times by the instant they denote (24:00:00 is the next day's
+  // midnight): with a timezone on the timeline, without one as local time.
+  const parts = partsOf(atomic);
+  if (Option.isSome(parts))
+    return `${type.primitive}:${parts.value.tz === undefined ? "l" : "z"}${BigDecimal.format(BigDecimal.normalize(timelineSeconds(parts.value, 0)))}`;
   // Binary values by their bytes, durations of every type by value, and every
   // other type by its canonical form, each within its primitive type.
   const canonical =
