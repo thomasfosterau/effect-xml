@@ -197,6 +197,21 @@ export const valueCompare = (
     compareAtomic(asString(a), asString(b), op !== "eq" && op !== "ne", implicitTimezone, offset),
   );
 
+/**
+ * The order of two atomic values (untypedAtomic as string), as `order by`
+ * sorts them: negative, zero or positive; `err:XPTY0004` for values with no
+ * order between them.
+ */
+export const orderCompare = (
+  a: AtomicValue,
+  b: AtomicValue,
+  implicitTimezone: number,
+  offset?: number,
+): number => {
+  const c = compareAtomic(asString(a), asString(b), true, implicitTimezone, offset);
+  return Number.isNaN(c) ? 0 : c;
+};
+
 /** The operands of one pair of a general comparison, `xs:untypedAtomic` converted as XPath 3.1 §3.7.2 says. */
 const generalPair = (
   a: AtomicValue,
