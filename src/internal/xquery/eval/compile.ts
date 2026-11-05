@@ -1069,7 +1069,6 @@ const declareGlobals = (
         clark(resolve(scope, d.name, "function")),
         declaredFunction(d, scope),
       );
-    if (Decl.$is("ModuleImport")(d)) notImplemented("module import", d.offset);
     if (Decl.$is("SchemaImport")(d)) raise("XQST0009", "schema import is not supported", d.offset);
   });
 };
@@ -1130,10 +1129,20 @@ export const compileQuery = (query: Query, externals: ReadonlyArray<string>): Co
     declareGlobals([], scope, externals);
     return { body: compileExpr(query.expr, scope), layout, program, contextDefault: undefined };
   }
+  // Every library module's globals and functions go in the one program, so
+  // modules (even ones that import each other) reach each other's by name.
+  const libraries = query.libraries.map((l): readonly [ReadonlyArray<DeclT>, Scope] => [
+    l.module.prolog,
+    { statics: scopeOf(l.context), vars: HashMap.empty(), layout: new Layout(undefined), program },
+  ]);
   return Module.$match(query.module, {
     Library: (l) => notImplemented("evaluating a library module", l.offset),
     Main: (m) => {
-      declareGlobals(m.prolog, scope, externals);
+      // The host's variables first: a module's declaration of one replaces it.
+      declareGlobals([], scope, externals);
+      libraries.forEach(([decls, s]) => declareGlobals(decls, s, []));
+      declareGlobals(m.prolog, scope, []);
+      libraries.forEach(([decls, s]) => compileBodies(decls, s));
       const contextDefault = compileBodies(m.prolog, scope);
       return { body: compileExpr(m.body, scope), layout, program, contextDefault };
     },

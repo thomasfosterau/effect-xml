@@ -4,6 +4,7 @@
  * sequence or the first dynamic error.
  */
 import * as BigDecimal from "effect/BigDecimal";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -31,7 +32,9 @@ import {
 } from "../internal/xquery/eval/raise.ts";
 import { Resources, resourceKey, type Dynamic } from "../internal/xquery/eval/runtime.ts";
 import { formatParts, partsAt } from "../internal/xquery/eval/temporal.ts";
-import { compile, type CompileOptions, type Query } from "./Compile.ts";
+import { compile, type CompileOptions, type ModuleSource, type Query } from "./Compile.ts";
+import { importsOf, type UnresolvedImport } from "../internal/xquery/parser/modules.ts";
+import { parseXQuery } from "../internal/xquery/parser/parse.ts";
 import { type XQueryError, xqueryError } from "./Error.ts";
 
 /**
@@ -46,6 +49,17 @@ import { type XQueryError, xqueryError } from "./Error.ts";
  * @category resolving
  */
 export interface ResourceResolver {
+  /**
+   * The library modules with a target namespace, for `import module` (with
+   * the import's location hints); optional: without it, a query that imports
+   * a module it was not compiled with fails with `err:XQST0059`.
+   */
+  readonly module?:
+    | ((
+        uri: string,
+        locations: ReadonlyArray<string>,
+      ) => Effect.Effect<ReadonlyArray<ModuleSource>, XQueryError>)
+    | undefined;
   /** The document node of the document at `uri`. */
   readonly document: (uri: string) => Effect.Effect<XdmNode, XQueryError>;
   /** The collection at `uri`; `""` is the default collection. */
@@ -241,8 +255,9 @@ export const evaluate = (
     const compiled: Query = Predicate.isString(query)
       ? yield* compileText(query, options.compile, Record.keys(variables))
       : query;
-    const program = yield* Effect.fromResult(programOf(compiled));
     const resolver = yield* Effect.serviceOption(Resolver);
+    const withModules = yield* loadModules(compiled, resolver);
+    const program = yield* Effect.fromResult(programOf(withModules));
     const millis = options.currentDateTime?.getTime() ?? (yield* Clock.currentTimeMillis);
     const tz = options.implicitTimezone ?? 0;
     const externals = HashMap.fromIterable(
@@ -263,6 +278,53 @@ export const evaluate = (
       resolver,
     );
   });
+
+/** The sources of the modules `imports` name and the modules they import, fetched through the resolver. */
+const fetchModules = (
+  load: NonNullable<ResourceResolver["module"]>,
+  pending: ReadonlyArray<UnresolvedImport>,
+  fetched: Readonly<Record<string, ReadonlyArray<ModuleSource>>>,
+): Effect.Effect<Readonly<Record<string, ReadonlyArray<ModuleSource>>>, XQueryError> => {
+  const [next, ...rest] = pending;
+  if (next === undefined) return Effect.succeed(fetched);
+  if (next.uri in fetched) return fetchModules(load, rest, fetched);
+  return load(next.uri, next.at).pipe(
+    // A module the resolver can't find is left out: compiling reports `err:XQST0059`.
+    Effect.orElseSucceed((): ReadonlyArray<ModuleSource> => []),
+    Effect.flatMap((sources) =>
+      fetchModules(
+        load,
+        [
+          ...rest,
+          ...sources.flatMap((m) =>
+            Result.match(parseXQuery(m.text), {
+              onFailure: () => [],
+              onSuccess: (parsed) => importsOf(parsed),
+            }),
+          ),
+        ],
+        Arr.isReadonlyArrayEmpty(sources) ? fetched : { ...fetched, [next.uri]: sources },
+      ),
+    ),
+  );
+};
+
+/** A query whose module imports were not given at compile time, recompiled with them fetched through the resolver. */
+const loadModules = (
+  query: Query,
+  resolver: Option.Option<ResourceResolver>,
+): Effect.Effect<Query, XQueryError> => {
+  if (query.language === "XPath" || Arr.isReadonlyArrayEmpty(query.unresolvedImports))
+    return Effect.succeed(query);
+  const load = Option.getOrUndefined(Option.flatMapNullishOr(resolver, (r) => r.module));
+  return (
+    load === undefined ? Effect.succeed({}) : fetchModules(load, query.unresolvedImports, {})
+  ).pipe(
+    Effect.flatMap((modules) =>
+      Effect.fromResult(compile(query.source, { ...query.options, modules })),
+    ),
+  );
+};
 
 const compileText = (
   text: string,

@@ -1218,7 +1218,7 @@
     },
     "prod-BaseURIDecl": {
       "runnable": 38,
-      "passing": 26
+      "passing": 27
     },
     "prod-BoundarySpaceDecl": {
       "runnable": 28,
@@ -1262,7 +1262,7 @@
     },
     "prod-CompNamespaceConstructor": {
       "runnable": 42,
-      "passing": 31
+      "passing": 36
     },
     "prod-CompPIConstructor": {
       "runnable": 55,
@@ -1282,7 +1282,7 @@
     },
     "prod-ContextItemDecl": {
       "runnable": 42,
-      "passing": 19
+      "passing": 22
     },
     "prod-ContextItemExpr": {
       "runnable": 45,
@@ -1430,7 +1430,7 @@
     },
     "prod-ModuleImport": {
       "runnable": 105,
-      "passing": 31
+      "passing": 97
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,
@@ -1454,7 +1454,7 @@
     },
     "prod-OptionDecl.serialization": {
       "runnable": 30,
-      "passing": 28
+      "passing": 29
     },
     "prod-OrExpr": {
       "runnable": 371,
@@ -1570,7 +1570,7 @@
     },
     "misc-CombinedErrorCodes": {
       "runnable": 230,
-      "passing": 173
+      "passing": 180
     },
     "misc-AnnexE": {
       "runnable": 8,
@@ -1586,7 +1586,7 @@
     },
     "misc-HigherOrderFunctions": {
       "runnable": 126,
-      "passing": 66
+      "passing": 68
     },
     "misc-JsonTestSuite": {
       "runnable": 318,
