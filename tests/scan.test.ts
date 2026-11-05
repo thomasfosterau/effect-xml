@@ -113,6 +113,22 @@ describe("the XML scanner", () => {
     });
   });
 
+  test("Sax.forEach, read directly, stops at a broken limit exactly where the lexer does", () => {
+    const limits = [
+      { maxDepth: 2 },
+      { maxAttributes: 1 },
+      { maxNameLength: 2 },
+      { maxTextLength: 3 },
+    ];
+    Arr.forEach(docs.slice(0, 500), (doc) =>
+      Arr.forEach(limits, (limit) =>
+        expect(located(each(doc, { limits: limit })), doc).toStrictEqual(
+          located(tokenize(doc, { limits: limit }, doc.length)),
+        ),
+      ),
+    );
+  });
+
   test("Xml.parse, built without positions, agrees with Xml.parseStream", () => {
     Arr.forEach(docs, (doc) =>
       expect(Effect.runSync(Effect.exit(Xml.parse(doc))), doc).toStrictEqual(

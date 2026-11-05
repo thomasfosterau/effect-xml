@@ -23,6 +23,7 @@ import {
   Lexer,
   type LexOutput,
 } from "./lexer.ts";
+import { readDirectly } from "./direct.ts";
 import { quote } from "./quote.ts";
 
 /**
@@ -157,9 +158,23 @@ export const runChunks = (
   f: (ev: SaxEvent) => SaxError | null,
   reuse = false,
 ): SaxError | null => {
+  // XML without a DTD, all of it here: read it directly, and with the lexer
+  // only from where that stops (the events up to there are the same).
+  let skip = 0;
+  if (last === undefined && opts.mode === "xml" && opts.dtd === "ignore") {
+    const direct = readDirectly(chunks.join(""), opts, f, reuse);
+    if (direct === null || !Predicate.hasProperty(direct, "stoppedAfter")) return direct;
+    skip = direct.stoppedAfter;
+  }
   const tokenizer = new Tokenizer(opts, reuse);
   let failure: SaxError | null = null;
-  const sink = (ev: SaxEvent): boolean => (failure = f(ev)) === null;
+  const sink = (ev: SaxEvent): boolean => {
+    if (skip > 0) {
+      skip--;
+      return true;
+    }
+    return (failure = f(ev)) === null;
+  };
   const early = Arr.findFirst(chunks, (chunk): Option.Option<SaxError> => {
     if (chunk === "") return Option.none();
     const over = tokenizer.write(chunk);
