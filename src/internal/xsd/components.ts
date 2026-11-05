@@ -104,6 +104,9 @@ export const derivedTypes = (model: Model, key: string): ReadonlyArray<string> =
     (k) => !k.startsWith("#") && k !== key && Option.isSome(derivationPath(model, k, key)),
   );
 
+/** The head of the substitution group a declaration joins, if any. */
+const headOf = (decl: ElementDeclaration) => decl.substitutionGroup;
+
 /**
  * The elements that may appear where the global element `head` is expected
  * (`head` itself included unless abstract), as `[name, declaration key]`. A
@@ -114,7 +117,6 @@ export const substitutionsOf = (
   model: Model,
 ): ((head: string) => ReadonlyArray<readonly [string, string]>) => {
   const cache = MutableHashMap.empty<string, ReadonlyArray<readonly [string, string]>>();
-  const headOf = (decl: ElementDeclaration) => decl.substitutionGroup;
   const inGroup = (key: string, head: string, depth: number): boolean => {
     if (key === head) return true;
     const next = Option.flatMap(Record.get(model.elements, key), (d) =>

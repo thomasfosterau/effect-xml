@@ -52,6 +52,10 @@ const read = Effect.fnUntraced(function* (path: string) {
 const exampleSchema = new URL("../../../examples/xsd/order.xsd", import.meta.url).pathname;
 const exampleModule = new URL("../../../examples/xsd/order.generated.ts", import.meta.url).pathname;
 
+/** How `--check` fails against the example schema with `out` as the module. */
+const checkFailure = (out: string) =>
+  Effect.flip(generate({ schema: exampleSchema, out, check: true }));
+
 describe("generate", () => {
   test("writes the module Xsd.generate makes, naming the schema relative to it", async () => {
     const [outcome, written, expected] = await inTemp((dir) =>
@@ -87,9 +91,11 @@ describe("generate", () => {
       Effect.gen(function* () {
         const stale = `${dir}/stale.ts`;
         yield* write(stale, "// old\n");
-        const run = (out: string) =>
-          Effect.flip(generate({ schema: exampleSchema, out, check: true }));
-        return [yield* run(stale), yield* run(`${dir}/missing.ts`), yield* read(stale)] as const;
+        return [
+          yield* checkFailure(stale),
+          yield* checkFailure(`${dir}/missing.ts`),
+          yield* read(stale),
+        ] as const;
       }),
     );
     const [stale, missing, unchanged] = failures;

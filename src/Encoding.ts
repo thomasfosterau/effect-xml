@@ -577,6 +577,10 @@ export class ByteDecoder {
   }
 }
 
+/** A decoder's output as an effect: the text, or its failure. */
+const lift = (out: string | DecodeError | LimitExceeded) =>
+  Predicate.isString(out) ? Effect.succeed(out) : Effect.fail(out);
+
 /**
  * Decode a stream of bytes into a stream of text, detecting the encoding from
  * the input (see {@link sniffXml} and {@link sniffHtml}). Chunks may split
@@ -592,8 +596,6 @@ export const decode =
   ): Stream.Stream<string, E | DecodeError | LimitExceeded, R> =>
     Stream.suspend(() => {
       const decoder = new ByteDecoder(options);
-      const lift = (out: string | DecodeError | LimitExceeded) =>
-        Predicate.isString(out) ? Effect.succeed(out) : Effect.fail(out);
       const body = input.pipe(Stream.mapEffect((chunk) => lift(decoder.write(chunk))));
       const tail = Stream.fromEffect(Effect.suspend(() => lift(decoder.end())));
       return Stream.concat(body, tail).pipe(Stream.filter(Str.isNonEmpty));

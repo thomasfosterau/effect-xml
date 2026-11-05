@@ -716,6 +716,13 @@ const plainBody = (name: string) => {
   );
 };
 
+/** A run of script text, or one `<` or `-` that does not start `stop`. */
+const dashOrLt = (stop: Parser.Parser<unknown>) =>
+  Parser.alt(
+    Token.takeTill("<-", { min: 1 }),
+    Parser.preceded(Parser.not(stop), Token.oneOf("<-")),
+  );
+
 /**
  * Script data, with its escape states (WHATWG §13.2.5.15–31): inside
  * `<!-- … -->` a `<script>` starts a "double escaped" section, in which
@@ -723,11 +730,6 @@ const plainBody = (name: string) => {
  */
 const scriptBody: Parser.Parser<string> = (() => {
   const end = appropriateEndTag("script");
-  const dashOrLt = (stop: Parser.Parser<unknown>) =>
-    Parser.alt(
-      Token.takeTill("<-", { min: 1 }),
-      Parser.preceded(Parser.not(stop), Token.oneOf("<-")),
-    );
   const doubleStart = Parser.seq(Token.literal("<"), Ascii.caseless("script"), endTagDelimiter);
   const doubleEnd = Parser.seq(endTagOpen, Ascii.caseless("script"), endTagDelimiter);
   const escapedEnd = Token.literal("-->");

@@ -144,9 +144,6 @@ export default defineConfig({
       // Adoption allowances (#61): sites that predate the `suspicious`
       // category. A new site is a defect; when a count reaches zero, delete
       // the line so the rule is back at `error`.
-      // 13 sites in src/, 25 in tests: helpers declared inside the function
-      // or test that uses them.
-      "unicorn/consistent-function-scoping": "warn",
       // Type-aware (tsgolint) rules. oxlint applies `overrides` to none of
       // them, so each relaxation here is global and counted.
       // 14 sites (13 in src/, 1 in tests), each with a `SAFETY:` comment: the

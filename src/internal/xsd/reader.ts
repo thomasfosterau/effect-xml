@@ -357,6 +357,115 @@ const xmlAttributes: Readonly<Record<string, AttributeDeclaration>> = Record.fro
   ),
 );
 
+/** Whether the built-in `key` is one of the list types. */
+const isListBuiltin = (key: string) =>
+  [builtin("NMTOKENS"), builtin("IDREFS"), builtin("ENTITIES")].includes(key);
+
+/** The attribute-less complex type whose content is the simple type `key`. */
+const simpleContentType = (key: string): ComplexType => ({
+  _tag: "ComplexType",
+  name: key,
+  attributes: [],
+  content: { _tag: "Simple", type: key },
+});
+
+/** The derivations a type blocks: its own `block`, or its document's `blockDefault`. */
+const block = (node: Node): ReadonlyArray<Derivation> | undefined =>
+  Option.match(attr(node, "block"), {
+    onNone: () =>
+      Arr.isReadonlyArrayEmpty(node.doc.blockDefault) ? undefined : node.doc.blockDefault,
+    onSome: (v) => derivations(v),
+  });
+
+/** A complex type's content, from its particle and whether it is mixed. */
+const contentOf = (particle: Option.Option<Particle>, mixed: boolean): Content =>
+  Option.match(
+    Option.filter(particle, (p) => mixed || hasTerms(p)),
+    {
+      onNone: (): Content =>
+        mixed
+          ? { _tag: "Elements", particle: { _tag: "Sequence", particles: [] } }
+          : { _tag: "Empty" },
+      onSome: (p): Content => ({ _tag: "Elements", particle: p }),
+    },
+  );
+
+/** The `xs:extension` or `xs:restriction` of a simple or complex content, with its base. */
+const derivationOf = (node: Node): R<readonly [Node, "extension" | "restriction", string]> =>
+  Option.match(kid(node, "extension", "restriction"), {
+    onNone: () => fail(node.doc, `xs:${node.el.name.local} has no extension or restriction`),
+    onSome: (d) =>
+      Result.map(
+        Result.flatMap(qnameAttr(d, "base"), (b) =>
+          Result.fromOption(
+            b,
+            () =>
+              new XsdSchemaError({
+                reason: "a derivation has no base",
+                location: d.doc.location,
+              }),
+          ),
+        ),
+        (base) => [d, d.el.name.local === "extension" ? "extension" : "restriction", base] as const,
+      ),
+  });
+
+/** An `xs:unique`, `xs:key` or `xs:keyref`. */
+const identityConstraint = (node: Node): R<IdentityConstraint> =>
+  Result.gen(function* () {
+    const local = attr(node, "name");
+    if (Option.isNone(local)) return yield* fail(node.doc, "an identity constraint has no name");
+    const selector = Option.flatMap(kid(node, "selector"), (s) => attr(s, "xpath"));
+    if (Option.isNone(selector))
+      return yield* fail(node.doc, `the identity constraint ${local.value} has no selector`);
+    const fields = Arr.filterMap(kids(node), (k) =>
+      isXs(k, "field") ? Result.fromOption(attr(k, "xpath"), () => undefined) : Result.failVoid,
+    );
+    const refer = yield* qnameAttr(node, "refer");
+    const tag =
+      node.el.name.local === "key" ? "Key" : node.el.name.local === "keyref" ? "KeyRef" : "Unique";
+    const constraint: IdentityConstraint = {
+      _tag: tag,
+      name: clark(node.doc.tns, local.value),
+      refer: Option.getOrUndefined(refer),
+      selector: selector.value,
+      fields,
+      namespaces: Record.filter(node.ns, (_, prefix) => prefix !== ""),
+    };
+    if (tag === "KeyRef" && Option.isNone(refer))
+      return yield* fail(node.doc, `the keyref ${local.value} has no refer`);
+    return constraint;
+  });
+
+/** The content of an extension: the base's content particle, then its own. */
+const extendContent = (
+  base: Content,
+  particle: Option.Option<Particle>,
+  mixed: boolean,
+): Content => {
+  const own = Option.filter(particle, hasTerms);
+  if (!Predicate.isTagged(base, "Elements")) return contentOf(own, mixed);
+  return Option.match(own, {
+    onNone: () => base,
+    onSome: (p) => ({
+      _tag: "Elements",
+      particle: { _tag: "Sequence", particles: [base.particle, p] },
+    }),
+  });
+};
+
+/** The identity constraints an element declaration defines. */
+const constraintsOf = (node: Node): R<ReadonlyArray<IdentityConstraint>> =>
+  Result.all(
+    Arr.map(
+      Arr.filter(kids(node), (k) => isXs(k, "unique", "key", "keyref")),
+      (k) => identityConstraint(k),
+    ),
+  );
+
+/** An attribute of a schema element, as written (`attr` trims it). */
+const rawAttr = (n: Node, name: string) => n.el.attributeNS(null, name);
+
 /**
  * Compile a set of schema documents (the entry and everything it includes and
  * imports, in any order) into a model.
@@ -423,9 +532,6 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   // ---------------------------------------------------------------------------
   // Simple types
   // ---------------------------------------------------------------------------
-
-  const isListBuiltin = (key: string) =>
-    [builtin("NMTOKENS"), builtin("IDREFS"), builtin("ENTITIES")].includes(key);
 
   /** The variety of a simple type, compiling it if needed. */
   const variety = (node: Node, key: string): R<SimpleType["variety"]> => {
@@ -646,13 +752,6 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     );
   };
 
-  const simpleContentType = (key: string): ComplexType => ({
-    _tag: "ComplexType",
-    name: key,
-    attributes: [],
-    content: { _tag: "Simple", type: key },
-  });
-
   interface Attributes {
     readonly uses: ReadonlyArray<AttributeUse>;
     readonly prohibited: ReadonlyArray<string>;
@@ -670,12 +769,11 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       const declared = Option.isSome(ref)
         ? MutableHashMap.get(index.attributes, ref.value)
         : Option.none();
-      const raw = (n: Node, name: string) => n.el.attributeNS(null, name);
-      const fixedValue = Option.orElse(raw(node, "fixed"), () =>
-        Option.flatMap(declared, (d) => raw(d, "fixed")),
+      const fixedValue = Option.orElse(rawAttr(node, "fixed"), () =>
+        Option.flatMap(declared, (d) => rawAttr(d, "fixed")),
       );
-      const defaultValue = Option.orElse(raw(node, "default"), () =>
-        Option.flatMap(declared, (d) => raw(d, "default")),
+      const defaultValue = Option.orElse(rawAttr(node, "default"), () =>
+        Option.flatMap(declared, (d) => rawAttr(d, "default")),
       );
       const out: AttributeUse = {
         ...base,
@@ -789,25 +887,6 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   // Complex types
   // ---------------------------------------------------------------------------
 
-  const block = (node: Node): ReadonlyArray<Derivation> | undefined =>
-    Option.match(attr(node, "block"), {
-      onNone: () =>
-        Arr.isReadonlyArrayEmpty(node.doc.blockDefault) ? undefined : node.doc.blockDefault,
-      onSome: (v) => derivations(v),
-    });
-
-  const contentOf = (particle: Option.Option<Particle>, mixed: boolean): Content =>
-    Option.match(
-      Option.filter(particle, (p) => mixed || hasTerms(p)),
-      {
-        onNone: (): Content =>
-          mixed
-            ? { _tag: "Elements", particle: { _tag: "Sequence", particles: [] } }
-            : { _tag: "Empty" },
-        onSome: (p): Content => ({ _tag: "Elements", particle: p }),
-      },
-    );
-
   /** The content particle among a type's (or derivation's) children, if any. */
   const ownParticle = (node: Node): R<Option.Option<Particle>> =>
     Option.match(kid(node, "sequence", "choice", "all", "group"), {
@@ -844,26 +923,6 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     });
 
   type Header = Pick<ComplexType, "_tag" | "name" | "abstract" | "block">;
-
-  const derivationOf = (node: Node): R<readonly [Node, "extension" | "restriction", string]> =>
-    Option.match(kid(node, "extension", "restriction"), {
-      onNone: () => fail(node.doc, `xs:${node.el.name.local} has no extension or restriction`),
-      onSome: (d) =>
-        Result.map(
-          Result.flatMap(qnameAttr(d, "base"), (b) =>
-            Result.fromOption(
-              b,
-              () =>
-                new XsdSchemaError({
-                  reason: "a derivation has no base",
-                  location: d.doc.location,
-                }),
-            ),
-          ),
-          (base) =>
-            [d, d.el.name.local === "extension" ? "extension" : "restriction", base] as const,
-        ),
-    });
 
   const simpleContent = (node: Node, header: Header): R<ComplexType> =>
     Result.gen(function* () {
@@ -950,22 +1009,6 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       };
       return def;
     });
-
-  const extendContent = (
-    base: Content,
-    particle: Option.Option<Particle>,
-    mixed: boolean,
-  ): Content => {
-    const own = Option.filter(particle, hasTerms);
-    if (!Predicate.isTagged(base, "Elements")) return contentOf(own, mixed);
-    return Option.match(own, {
-      onNone: () => base,
-      onSome: (p) => ({
-        _tag: "Elements",
-        particle: { _tag: "Sequence", particles: [base.particle, p] },
-      }),
-    });
-  };
 
   // ---------------------------------------------------------------------------
   // Particles and element declarations
@@ -1066,44 +1109,6 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
         return decl.type;
       }
       return anyType;
-    });
-
-  const constraintsOf = (node: Node): R<ReadonlyArray<IdentityConstraint>> =>
-    Result.all(
-      Arr.map(
-        Arr.filter(kids(node), (k) => isXs(k, "unique", "key", "keyref")),
-        (k) => identityConstraint(k),
-      ),
-    );
-
-  const identityConstraint = (node: Node): R<IdentityConstraint> =>
-    Result.gen(function* () {
-      const local = attr(node, "name");
-      if (Option.isNone(local)) return yield* fail(node.doc, "an identity constraint has no name");
-      const selector = Option.flatMap(kid(node, "selector"), (s) => attr(s, "xpath"));
-      if (Option.isNone(selector))
-        return yield* fail(node.doc, `the identity constraint ${local.value} has no selector`);
-      const fields = Arr.filterMap(kids(node), (k) =>
-        isXs(k, "field") ? Result.fromOption(attr(k, "xpath"), () => undefined) : Result.failVoid,
-      );
-      const refer = yield* qnameAttr(node, "refer");
-      const tag =
-        node.el.name.local === "key"
-          ? "Key"
-          : node.el.name.local === "keyref"
-            ? "KeyRef"
-            : "Unique";
-      const constraint: IdentityConstraint = {
-        _tag: tag,
-        name: clark(node.doc.tns, local.value),
-        refer: Option.getOrUndefined(refer),
-        selector: selector.value,
-        fields,
-        namespaces: Record.filter(node.ns, (_, prefix) => prefix !== ""),
-      };
-      if (tag === "KeyRef" && Option.isNone(refer))
-        return yield* fail(node.doc, `the keyref ${local.value} has no refer`);
-      return constraint;
     });
 
   const declaration = (node: Node, name: string): R<ElementDeclaration> =>

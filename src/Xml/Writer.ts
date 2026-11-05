@@ -801,15 +801,17 @@ export const writeBytes =
 // DOM
 // -----------------------------------------------------------------------------
 
+/** The `[prefix, namespace]` binding a name needs, if any (`xml:` and `xmlns:` need none). */
+const prefixed = (n: QName): ReadonlyArray<readonly [string, string]> =>
+  n.prefix !== null &&
+  n.namespace !== null &&
+  n.namespace !== Namespaces.xml &&
+  n.namespace !== Namespaces.xmlns
+    ? [[n.prefix, n.namespace]]
+    : [];
+
 /** The namespaces a tree uses with a prefix, keyed by prefix (the first URI seen wins). */
 const usedPrefixes = (node: XmlNode | XmlDocument): Bindings => {
-  const prefixed = (n: QName): ReadonlyArray<readonly [string, string]> =>
-    n.prefix !== null &&
-    n.namespace !== null &&
-    n.namespace !== Namespaces.xml &&
-    n.namespace !== Namespaces.xmlns
-      ? [[n.prefix, n.namespace]]
-      : [];
   const none: Bindings = {};
   return Iterable.reduce(events(node), none, (found, ev) =>
     !isStartEvent(ev)
