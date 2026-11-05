@@ -34,6 +34,16 @@ export interface ParseOptions extends BuildOptions {
   readonly limits?: Partial<Limits> | undefined;
   /** Interpret the DOCTYPE internal subset (see {@link Sax.SaxOptions.dtd}); default `"ignore"`. */
   readonly dtd?: "ignore" | "internal" | undefined;
+  /**
+   * `parse` and `parseBytes`: with `false`, build the tree from a lenient
+   * reading, as `Sax.forEach` reads (see `Sax.ForEachOptions.strict`), for
+   * documents known to be well-formed: a well-formed document gives the same
+   * tree, about twice as fast. If lenient reading fails, the document is read
+   * strictly, so a failure is always the strict one. Default `true`.
+   *
+   * @since 0.3.0
+   */
+  readonly strict?: boolean | undefined;
 }
 
 const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
@@ -65,7 +75,7 @@ export const parse = (
   input: string,
   options?: ParseOptions,
 ): Effect.Effect<XmlDocument, SaxError> =>
-  buildChunks(() => ({ chunks: [input] }), saxOptions(options), options);
+  buildChunks(() => ({ chunks: [input] }), saxOptions(options), options, options?.strict !== false);
 
 /**
  * Parse a stream of XML chunks into a typed document. Chunks may split markup
@@ -114,6 +124,7 @@ export const parseBytes = (
     () => decodeChunks(input, Sax.decodeOptions(bytesOptions(options))),
     bytesOptions(options),
     options,
+    options?.strict !== false,
   );
 
 /**

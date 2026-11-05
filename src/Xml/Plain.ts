@@ -25,10 +25,23 @@ import {
   UnexpectedEndTag,
 } from "../Error.ts";
 import { exactly } from "../internal/exact.ts";
+import {
+  type Attributes,
+  policy,
+  positionAt,
+  readLeniently,
+  type Visitor,
+} from "../internal/lenient.ts";
 import { type Chunks, decodeChunks, runChunks } from "../internal/tokenizer.ts";
 import type { Limits } from "../Limits.ts";
 import { origin, type Position } from "../Position.ts";
-import { type Attribute, decodeOptions, resolveSaxOptions, type SaxEvent } from "../Sax.ts";
+import {
+  type Attribute,
+  decodeOptions,
+  type ResolvedOptions,
+  resolveSaxOptions,
+  type SaxEvent,
+} from "../Sax.ts";
 
 /**
  * An element of a plain tree: its name as written (`prefix:local`), its
@@ -71,6 +84,13 @@ export interface PlainOptions {
   readonly dtd?: "ignore" | "internal" | undefined;
   /** Bytes only: an external encoding hint (see `Sax.SaxBytesOptions.encoding`). */
   readonly encoding?: string | undefined;
+  /**
+   * With `false`, read leniently, as `Sax.forEach` does (see
+   * `Sax.ForEachOptions.strict`): about twice as fast again, for documents
+   * known to be well-formed. A well-formed document gives the same tree;
+   * tags must still balance and there must be one root. Default `true`.
+   */
+  readonly strict?: boolean | undefined;
 }
 
 /** The children, or attributes, of the (many) elements with none: shared (never written to). */
@@ -79,8 +99,13 @@ const NO_ATTRIBUTES: Readonly<Record<string, string>> = {};
 
 const isWhitespace = (s: string): boolean => /^\s*$/.test(s);
 
-/** Folds SAX events into a plain tree; each step returns its failure, or `null`. */
-class PlainBuilder {
+/**
+ * Folds SAX events (strict reading), or what a lenient pass reads (as its
+ * {@link Visitor}), into a plain tree; each step returns its failure, or
+ * `null`. A step's position is the event's, or a lenient pass's offset,
+ * made a position only for a failure.
+ */
+class PlainBuilder implements Visitor {
   /** The open elements' names, attributes, and where their children start in {@link nodes}. */
   private readonly names: Array<string> = [];
   private readonly attributes: Array<Readonly<Record<string, string>>> = [];
@@ -89,57 +114,116 @@ class PlainBuilder {
   private readonly nodes: Array<PlainNode> = [];
   private count = 0;
   private root: PlainElement | undefined = undefined;
+  /** Lenient reading: the input offsets are into, and the whitespace policy. */
+  private readonly input: string;
+  private readonly opts: ResolvedOptions | undefined;
+
+  constructor(input = "", opts?: ResolvedOptions) {
+    this.input = input;
+    this.opts = opts;
+  }
 
   // A `switch`, not a `$match` table: this runs once per event (see `vite.config.ts`).
   accept(ev: SaxEvent): SaxError | null {
     switch (ev._tag) {
-      case "StartElement":
-        return this.start(ev);
+      case "StartElement": {
+        const attributes = Arr.isReadonlyArrayEmpty(ev.attributes)
+          ? NO_ATTRIBUTES
+          : record(ev.name, ev.attributes);
+        if (attributes instanceof DuplicateAttribute) return attributes;
+        return this.open(ev.name, attributes, ev.selfClosing, ev.span.start);
+      }
       case "EndElement":
-        return this.end(ev.name, ev.span.start);
+        return this.close(ev.name, ev.span.start);
       case "Text":
       case "CData":
-        return this.text(ev.data, ev.span.start);
+        return this.addText(ev.data, ev.span.start);
       default:
         // Comments, processing instructions, the declaration and DOCTYPE.
         return null;
     }
   }
 
-  private start(ev: Extract<SaxEvent, { readonly _tag: "StartElement" }>): SaxError | null {
-    const attributes = Arr.isReadonlyArrayEmpty(ev.attributes)
-      ? NO_ATTRIBUTES
-      : record(ev.name, ev.attributes);
-    if (attributes instanceof DuplicateAttribute) return attributes;
-    if (ev.selfClosing) {
-      return this.append({ name: ev.name, attributes, children: NO_CHILDREN }, ev.span.start);
-    }
-    this.names.push(ev.name);
+  // The lenient pass's steps (see `internal/lenient.ts`).
+
+  start(
+    name: string,
+    attributes: Attributes,
+    count: number,
+    selfClosing: boolean,
+    at: number,
+  ): SaxError | null {
+    const record = count === 0 ? NO_ATTRIBUTES : leniently(attributes, count);
+    return this.open(name, record, selfClosing, at);
+  }
+
+  end(name: string, at: number): SaxError | null {
+    return this.close(name, at);
+  }
+
+  text(data: string, at: number): SaxError | null {
+    const opts = this.opts;
+    const kept =
+      opts === undefined ? data : policy(data, opts.whitespace, opts.dropWhitespaceOnlyText);
+    return kept === null ? null : this.addText(kept, at);
+  }
+
+  cdata(data: string, at: number): SaxError | null {
+    return this.addText(data, at);
+  }
+
+  comment(): SaxError | null {
+    return null;
+  }
+
+  pi(): SaxError | null {
+    return null;
+  }
+
+  declaration(): SaxError | null {
+    return null;
+  }
+
+  /** The position of a step's `at`. */
+  private where(at: Position | number): Position {
+    return Predicate.isNumber(at) ? positionAt(this.input, at) : at;
+  }
+
+  private open(
+    name: string,
+    attributes: Readonly<Record<string, string>>,
+    selfClosing: boolean,
+    at: Position | number,
+  ): SaxError | null {
+    if (selfClosing) return this.append({ name, attributes, children: NO_CHILDREN }, at);
+    this.names.push(name);
     this.attributes.push(attributes);
     this.froms.push(this.count);
     return null;
   }
 
-  private end(name: string, position: Position): SaxError | null {
+  private close(name: string, at: Position | number): SaxError | null {
     const open = this.names.pop();
     const attributes = this.attributes.pop();
     const from = this.froms.pop();
     if (open === undefined || attributes === undefined || from === undefined) {
-      return new UnexpectedEndTag({ name, position });
+      return new UnexpectedEndTag({ name, position: this.where(at) });
     }
-    if (open !== name) return new MismatchedEndTag({ expected: open, actual: name, position });
+    if (open !== name) {
+      return new MismatchedEndTag({ expected: open, actual: name, position: this.where(at) });
+    }
     const children = from === this.count ? NO_CHILDREN : exactly(this.nodes, from, this.count);
     this.count = from;
-    return this.append({ name, attributes, children }, position);
+    return this.append({ name, attributes, children }, at);
   }
 
-  private text(data: string, position: Position): SaxError | null {
+  private addText(data: string, at: Position | number): SaxError | null {
     if (Arr.isArrayEmpty(this.names)) {
       // Top level: only whitespace.
       return isWhitespace(data)
         ? null
         : new InvalidDocumentStructure({
-            position,
+            position: this.where(at),
             reason: "character data is not allowed outside the root element",
           });
     }
@@ -153,35 +237,60 @@ class PlainBuilder {
     return null;
   }
 
-  private append(element: PlainElement, position: Position): SaxError | null {
+  private append(element: PlainElement, at: Position | number): SaxError | null {
     if (Arr.isArrayNonEmpty(this.names)) {
       this.nodes[this.count++] = element;
       return null;
     }
     if (this.root !== undefined) {
-      return new InvalidDocumentStructure({ position, reason: "multiple root elements" });
+      return new InvalidDocumentStructure({
+        position: this.where(at),
+        reason: "multiple root elements",
+      });
     }
     this.root = element;
     return null;
   }
 
-  finish(position: Position): Result.Result<PlainElement, SaxError> {
+  finish(at: Position | number): Result.Result<PlainElement, SaxError> {
     const open = this.names.at(-1);
     if (open !== undefined) {
       return Result.fail(
         new InvalidDocumentStructure({
-          position,
+          position: this.where(at),
           reason: `unexpected end of input: <${open}> was never closed`,
         }),
       );
     }
     return this.root === undefined
       ? Result.fail(
-          new InvalidDocumentStructure({ position, reason: "document has no root element" }),
+          new InvalidDocumentStructure({
+            position: this.where(at),
+            reason: "document has no root element",
+          }),
         )
       : Result.succeed(this.root);
   }
 }
+
+/** A lenient pass's first `count` attributes by name (a repeated name: the last value). */
+const leniently = (attributes: Attributes, count: number) => {
+  const out: Record<string, string> = {};
+  for (let k = 0; k < count; k++) set(out, attributes.names[k] ?? "", attributes.values[k] ?? "");
+  return out;
+};
+
+/** Set an attribute (`__proto__` would set the prototype rather than an attribute). */
+const set = (out: Record<string, string>, name: string, value: string): void => {
+  if (name === "__proto__") {
+    Object.defineProperty(out, name, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  } else out[name] = value;
+};
 
 /** A start tag's attributes by name, or the first one that repeats a name. */
 const record = (
@@ -193,15 +302,7 @@ const record = (
     if (Object.hasOwn(out, a.name)) {
       return new DuplicateAttribute({ element, attribute: a.name, position: a.span.start });
     }
-    // (`__proto__` would set the prototype rather than an attribute.)
-    if (a.name === "__proto__") {
-      Object.defineProperty(out, a.name, {
-        value: a.value,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    } else out[a.name] = a.value;
+    set(out, a.name, a.value);
   }
   return out;
 };
@@ -252,6 +353,16 @@ export const parsePlain = (
     const chunks: Chunks = Predicate.isString(input)
       ? { chunks: [input] }
       : decodeChunks(input, decodeOptions({ ...options, mode: "xml" }));
+    const opts = resolveSaxOptions({ ...options, mode: "xml" });
+    if (options?.strict === false && opts.dtd === "ignore") {
+      if (chunks.failure !== undefined) return Effect.fail(chunks.failure);
+      const text = chunks.chunks.join("");
+      const builder = new PlainBuilder(text, opts);
+      const failure = readLeniently(text, builder, opts);
+      return Effect.fromResult(
+        failure === null ? builder.finish(text.length) : Result.fail(failure),
+      );
+    }
     // The builder reads positions only to report a failure: build without,
     // and report one from a second pass with them, which fails the same way.
     const lean = plainPass(chunks, options, false);

@@ -23,9 +23,16 @@ import { QNames } from "./qnames.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "./namespaces.ts";
 import * as Nodes from "./nodes.ts";
 import { Namespaces, type QName, type TagName } from "../Name.ts";
-import type { Position, Span } from "../Position.ts";
+import { origin, type Position, type Span } from "../Position.ts";
 import { NO_SPAN } from "./scan.ts";
-import { type Attribute, resolveSaxOptions, type SaxEvent, type SaxOptions } from "../Sax.ts";
+import {
+  type Attribute,
+  type ResolvedOptions,
+  resolveSaxOptions,
+  type SaxEvent,
+  type SaxOptions,
+} from "../Sax.ts";
+import { readEventsLeniently } from "./lenient.ts";
 import { type Chunks, runChunks } from "./tokenizer.ts";
 import type {
   XmlDeclaration,
@@ -145,13 +152,16 @@ export class Builder {
   /** Why the last {@link resolve} returned `undefined`. */
   private failure: SaxError | null = null;
 
-  /** Whether to check the namespace constraints on names (§3, §5, §7). */
+  /**
+   * Whether to check the namespace constraints on names (§3, §5, §7): not
+   * when built from a lenient reading, which checks no names.
+   */
   private readonly checks: boolean;
 
-  constructor(options: BuildOptions) {
+  constructor(options: BuildOptions, lenient = false) {
     this.namespaces = options.namespaces ?? true;
     this.recover = options.recover ?? false;
-    this.checks = this.namespaces && !this.recover;
+    this.checks = this.namespaces && !this.recover && !lenient;
   }
 
   /** The URI `prefix` is bound to: `own` (the element being opened) first, then the open elements, innermost first. */
@@ -575,14 +585,34 @@ export const buildChunks = (
   input: () => Chunks,
   saxOptions: SaxOptions,
   options: BuildOptions = {},
+  strict = true,
 ): Effect.Effect<XmlDocument, SaxError> =>
   Effect.suspend(() => {
     const chunks = input();
+    // `strict: false`: build from a lenient pass; if it fails at all, the
+    // strict passes below report the failure exactly.
+    const opts = resolveSaxOptions(saxOptions);
+    if (!strict && opts.mode === "xml" && opts.dtd === "ignore" && chunks.failure === undefined) {
+      const lenient = lenientPass(chunks.chunks.join(""), opts, options);
+      if (Result.isSuccess(lenient)) return Effect.succeed(lenient.success);
+    }
     const lean = buildPass(chunks, saxOptions, options, true);
     return Result.isSuccess(lean)
       ? Effect.succeed(lean.success)
       : Effect.fromResult(buildPass(chunks, saxOptions, options, false));
   });
+
+/** A lenient pass of {@link buildChunks}. */
+const lenientPass = (
+  input: string,
+  opts: ResolvedOptions,
+  options: BuildOptions,
+): Result.Result<XmlDocument, SaxError> => {
+  const builder = new Builder(options, true);
+  // (The builder is done with each event before the next: they can be reused.)
+  const failure = readEventsLeniently(input, (ev) => builder.accept(ev), opts, true);
+  return failure === null ? builder.finish(origin) : Result.fail(failure);
+};
 
 /** One pass of {@link buildChunks}. */
 const buildPass = (

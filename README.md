@@ -66,7 +66,7 @@ Stream.fromIterable(["<order id=", '"7"><item>Wid', "get</item></order>"]).pipe(
 | `Sax.tokenize(options?)` | `(Stream<string, E, R>) => Stream<SaxEvent, SaxError \| E, R>` | the core combinator |
 | `Sax.tokenizeString(input, options?)` | `Stream<SaxEvent, SaxError>` | a whole string |
 | `Sax.collect(input, options?)` | `Effect<ReadonlyArray<SaxEvent>, SaxError>` | every event, for small inputs and tests |
-| `Sax.forEach(input, f, options?)` | `Effect<void, SaxError>` | every event of a whole string or byte array to a callback, without a stream: the fastest way to read a document in memory |
+| `Sax.forEach(input, f, options?)` | `Effect<void, SaxError>` | every event of a whole string or byte array to a callback, without a stream: the fastest way to read a document in memory (with `strict: false`, faster still: see [Performance](#performance)) |
 | `Sax.startElements`, `Sax.endElements`, `Sax.texts`, `Sax.named(name)` | stream selectors |  |
 | `Sax.tokenizeBytes(options?)` | `(Stream<Uint8Array, E, R>) => Stream<SaxEvent, SaxError \| E, R>` | bytes, with encoding detection |
 | `Sax.select(path, options?)` | `(Stream<SaxEvent, E, R>) => Stream<XmlElement, SaxError \| XPathError \| E, R>` | matching subtrees, built as they end |
@@ -612,19 +612,24 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 | `scripting` | `Html` (and `Sax.tokenize` in HTML mode) | `false` | the HTML scripting flag: when `true`, `<noscript>` content is raw text, as in a browser with scripting enabled |
 | `context` | `Html.parseDocumentFragment` | `"body"` | the context element of the fragment parse |
 | `positions` | `Sax` | `true` | when `false`, events carry no positions (every span is the origin); failures keep theirs |
+| `strict` | `Sax.forEach`, `Xml.parsePlain`, `Xml.parse`, `Xml.parseBytes` | `true` | when `false`, read leniently (see [Performance](#performance)); `Xml.parse` then rereads strictly on any failure, so its failures are the strict ones |
 
 ## Performance
 
-The XML tokenizer reads text, tags, comments, CDATA sections and processing instructions with a hand-written scanner, and leaves everything else (and every error) to its grammars, so it is strict and still fast. Over the built package in Node 22, on an 8 MB spreadsheet worksheet and an 8 MB feed with namespaces, comments, CDATA and references:
+The XML tokenizer reads text, tags, comments, CDATA sections and processing instructions with a hand-written scanner, and leaves everything else (and every error) to its grammars, so it is strict and still fast. For documents known to be well-formed, `Sax.forEach`, `Xml.parsePlain` and `Xml.parse` also read leniently with `strict: false`: a well-formed document gives the same events (without positions) or the same tree, but names, duplicate attributes and characters XML forbids are not checked, an unknown reference is left as written, only the `maxTotalBytes` and `maxDepth` limits apply, and a malformed document may be read rather than rejected (markup that cannot be read at all, and unbalanced tags in a tree, still fail).
 
-|                                   | worksheet | feed    |
-| --------------------------------- | --------- | ------- |
-| `Sax.tokenizeString`              | 30 MB/s   | 37 MB/s |
-| `Sax.forEach`, `positions: false` | 37 MB/s   | 49 MB/s |
-| `Xml.parse`                       | 21 MB/s   | 27 MB/s |
-| `Xml.parsePlain`                  | 31 MB/s   | 38 MB/s |
+Over the built package in Node 22, on an 8 MB spreadsheet worksheet and an 8 MB feed with namespaces, comments, CDATA and references:
 
-`vp run bench` measures them, and other parsers when they are installed. Each event carries its span and every name and reference is checked; saxes and htmlparser2 (40–60 MB/s here, with no positions per event) are 1.1–1.2 times as fast as `Sax.forEach` with `positions: false`, and lenient parsers that check less (easysax, @eksml/xml, txml) faster still.
+|                                   | worksheet | feed     |
+| --------------------------------- | --------- | -------- |
+| `Sax.tokenizeString`              | 28 MB/s   | 36 MB/s  |
+| `Sax.forEach`, `positions: false` | 41 MB/s   | 49 MB/s  |
+| `Sax.forEach`, `strict: false`    | 104 MB/s  | 114 MB/s |
+| `Xml.parse`                       | 21 MB/s   | 27 MB/s  |
+| `Xml.parsePlain`                  | 30 MB/s   | 37 MB/s  |
+| `Xml.parsePlain`, `strict: false` | 57 MB/s   | 66 MB/s  |
+
+In the same runs, saxes and htmlparser2 read 44–58 MB/s, @eksml/xml's and easysax's SAX parsers 98–132 MB/s, and txml's and @eksml/xml's DOM parsers 42–67 MB/s, none of them with positions per event. `vp run bench` measures them when they are installed.
 
 ## Names and positions
 

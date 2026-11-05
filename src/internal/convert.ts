@@ -14,6 +14,22 @@ import type { LexEvent } from "./lexer.ts";
 
 const isWhitespaceOnly = (s: string): boolean => /^\s*$/.test(s);
 
+/** A lexer's start tag as the SAX event it already is. */
+export const startElement = (
+  ev: Extract<LexEvent, { readonly _tag: "StartElement" }>,
+): Extract<SaxEvent, { readonly _tag: "StartElement" }> =>
+  // SAFETY: the lexer has already validated tag and attribute names, so the
+  // event's names are `TagName`s and `AttrName`s (or the caller has asked
+  // for lenient reading, which does not check them).
+  ev as Extract<SaxEvent, { readonly _tag: "StartElement" }>;
+
+/** A lexer's end tag as the SAX event it already is. */
+export const endElement = (
+  ev: Extract<LexEvent, { readonly _tag: "EndElement" }>,
+): Extract<SaxEvent, { readonly _tag: "EndElement" }> =>
+  // SAFETY: as above, for the end tag's name.
+  ev as Extract<SaxEvent, { readonly _tag: "EndElement" }>;
+
 /**
  * Convert a lexer event into a SAX event, applying the whitespace policy; `null` drops it.
  *
@@ -25,12 +41,9 @@ const isWhitespaceOnly = (s: string): boolean => /^\s*$/.test(s);
 export const convert = (ev: LexEvent, opts: ResolvedOptions): SaxEvent | null => {
   switch (ev._tag) {
     case "StartElement":
-      // SAFETY: the lexer has already validated tag and attribute names, so
-      // the event's names are `TagName`s and `AttrName`s.
-      return ev as Extract<SaxEvent, { readonly _tag: "StartElement" }>;
+      return startElement(ev);
     case "EndElement":
-      // SAFETY: as above, for the end tag's name.
-      return ev as Extract<SaxEvent, { readonly _tag: "EndElement" }>;
+      return endElement(ev);
     case "Text": {
       if (opts.whitespace === "preserve" && !opts.dropWhitespaceOnlyText) return ev;
       const data = opts.whitespace === "collapse" ? ev.data.replace(/\s+/g, " ").trim() : ev.data;
