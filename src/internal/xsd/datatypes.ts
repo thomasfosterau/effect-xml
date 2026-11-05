@@ -77,8 +77,16 @@ export const normalize = (s: string, ws: WhiteSpace): string =>
   ws === "preserve"
     ? s
     : ws === "replace"
-      ? s.replace(/[\t\n\r]/g, " ")
-      : s.replace(/[\t\n\r ]+/g, " ").replace(/^ | $/g, "");
+      ? controls.test(s)
+        ? s.replace(/[\t\n\r]/g, " ")
+        : s
+      : uncollapsed.test(s)
+        ? s.replace(/[\t\n\r ]+/g, " ").replace(/^ | $/g, "")
+        : s;
+
+// Most values are already normalized: testing first spares building a copy of each.
+const controls = /[\t\n\r]/;
+const uncollapsed = /[\t\n\r]|^ | $| {2}/;
 
 /** The typed value of a raw lexical form. */
 export const decode = (
@@ -291,10 +299,13 @@ const decimalPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
 
 const parseDecimal = (s: string): Result.Result<SimpleValue, string> => {
   if (!decimalPattern.test(s)) return invalid(s, "decimal");
-  const unsigned = s.replace(/^\+/, "");
-  const leading = unsigned.replace(/^(-?)\./, "$10.");
+  // The common form (digits, maybe a sign and a point between digits) needs no rewriting.
+  const plain =
+    s.charCodeAt(0) !== 43 && !s.startsWith(".") && !s.startsWith("-.") && !s.endsWith(".");
+  const unsigned = plain ? s : s.replace(/^\+/, "");
+  const leading = plain ? s : unsigned.replace(/^(-?)\./, "$10.");
   return Result.fromOption(
-    BigDecimal.fromString(leading.replace(/\.$/, "")),
+    BigDecimal.fromString(plain ? s : leading.replace(/\.$/, "")),
     () => `${quote(s)} is not a valid decimal`,
   );
 };
@@ -310,15 +321,31 @@ const parseFloating =
   };
 
 /** An integer type with optional bounds; `asNumber` for the types that fit a `number`. */
-const integerType =
-  (name: string, min: bigint | undefined, max: bigint | undefined, asNumber: boolean) =>
-  (s: string): Result.Result<SimpleValue, string> => {
-    if (!/^[+-]?\d+$/.test(s)) return invalid(s, name);
-    const n = BigInt(s.replace(/^\+/, ""));
+const integerType = (
+  name: string,
+  min: bigint | undefined,
+  max: bigint | undefined,
+  asNumber: boolean,
+) => {
+  const low = min === undefined ? -Infinity : Number(min);
+  const high = max === undefined ? Infinity : Number(max);
+  return (s: string): Result.Result<SimpleValue, string> => {
+    if (!integerPattern.test(s)) return invalid(s, name);
+    // Up to 15 digits a `number` holds the value exactly (`|| 0` makes `-0` the `0` `BigInt` gives).
+    if (asNumber && s.length <= 15) {
+      const n = Number(s) || 0;
+      return n < low || n > high
+        ? Result.fail(`${s} is out of range for ${name}`)
+        : Result.succeed(n);
+    }
+    const n = BigInt(s.charCodeAt(0) === 43 ? s.slice(1) : s);
     if ((min !== undefined && n < min) || (max !== undefined && n > max))
       return Result.fail(`${s} is out of range for ${name}`);
     return Result.succeed(asNumber ? Number(n) : n);
   };
+};
+
+const integerPattern = /^[+-]?\d+$/;
 
 const hexPattern = /^(?:[0-9a-fA-F]{2})*$/;
 
@@ -354,7 +381,7 @@ const parseBoolean = (s: string): Result.Result<SimpleValue, string> =>
       : invalid(s, "boolean");
 
 const parseQName = (s: string, context: ValueContext): Result.Result<SimpleValue, string> => {
-  if (!isValidName(s)) return invalid(s, "QName");
+  if (!isQName(s)) return invalid(s, "QName");
   const colon = s.indexOf(":");
   const prefix = colon < 0 ? "" : s.slice(0, colon);
   const namespace = context.resolve(prefix);
@@ -365,8 +392,19 @@ const parseQName = (s: string, context: ValueContext): Result.Result<SimpleValue
 
 const matches = (grammar: Parser.Parser<string>) => (s: string) =>
   Result.isSuccess(Parser.parse(grammar, s));
-const isXmlName = matches(NameGrammar);
-const isNmtoken = matches(Nmtoken);
+/**
+ * `test`, answered by `ascii` first when it can be: names are mostly ASCII,
+ * and an ASCII name the expression matches is one the grammar accepts.
+ */
+const orAscii =
+  (ascii: RegExp, test: (s: string) => boolean) =>
+  (s: string): boolean =>
+    ascii.test(s) || test(s);
+
+const isXmlName = orAscii(/^[A-Za-z_:][\w.:-]*$/, matches(NameGrammar));
+const isNmtoken = orAscii(/^[\w.:-]+$/, matches(Nmtoken));
+const isNCName = orAscii(/^[A-Za-z_][\w.-]*$/, isValidNCName);
+const isQName = orAscii(/^[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?$/, isValidName);
 
 const named =
   (type: string, test: (s: string) => boolean) =>
@@ -436,10 +474,10 @@ const builtins: Readonly<Record<string, Builtin>> = {
     named("language", (s) => languagePattern.test(s)),
   ),
   Name: stringLike("token", "collapse", named("Name", isXmlName)),
-  NCName: stringLike("Name", "collapse", named("NCName", isValidNCName)),
-  ID: { ...stringLike("NCName", "collapse", named("ID", isValidNCName)), identity: "ID" },
-  IDREF: { ...stringLike("NCName", "collapse", named("IDREF", isValidNCName)), identity: "IDREF" },
-  ENTITY: stringLike("NCName", "collapse", named("ENTITY", isValidNCName)),
+  NCName: stringLike("Name", "collapse", named("NCName", isNCName)),
+  ID: { ...stringLike("NCName", "collapse", named("ID", isNCName)), identity: "ID" },
+  IDREF: { ...stringLike("NCName", "collapse", named("IDREF", isNCName)), identity: "IDREF" },
+  ENTITY: stringLike("NCName", "collapse", named("ENTITY", isNCName)),
   NMTOKEN: stringLike("token", "collapse", named("NMTOKEN", isNmtoken)),
   anyURI: stringLike("anySimpleType", "collapse"),
   NMTOKENS: { ...stringLike("anySimpleType", "collapse"), kind: "list", listOf: "NMTOKEN" },
@@ -573,34 +611,52 @@ type FacetTest = (normalized: string, value: SimpleValue) => Option.Option<strin
 const failsWhen = (failed: boolean, reason: () => string): Option.Option<string> =>
   failed ? Option.some(reason()) : Option.none();
 
+// Each facet's test, for the facets a restriction gives: a value is only tested by those.
+
 const lengthTests = (base: SimpleChecker, facets: Facets): ReadonlyArray<FacetTest> => {
-  const bound =
-    (limit: number | undefined, ok: (n: number, l: number) => boolean, what: string): FacetTest =>
-    (normalized, value) =>
-      limit === undefined
-        ? Option.none()
-        : Option.flatMap(lengthOf(base.kind, normalized, value), (n) =>
-            failsWhen(!ok(n, limit), () => `the length ${n} is not ${what} ${limit}`),
-          );
+  const bound = (
+    limit: number | undefined,
+    ok: (n: number, l: number) => boolean,
+    what: string,
+  ): ReadonlyArray<FacetTest> =>
+    limit === undefined
+      ? []
+      : [
+          (normalized, value) =>
+            Option.flatMap(lengthOf(base.kind, normalized, value), (n) =>
+              failsWhen(!ok(n, limit), () => `the length ${n} is not ${what} ${limit}`),
+            ),
+        ];
   return [
-    bound(facets.length, (n, l) => n === l, "exactly"),
-    bound(facets.minLength, (n, l) => n >= l, "at least"),
-    bound(facets.maxLength, (n, l) => n <= l, "at most"),
+    ...bound(facets.length, (n, l) => n === l, "exactly"),
+    ...bound(facets.minLength, (n, l) => n >= l, "at least"),
+    ...bound(facets.maxLength, (n, l) => n <= l, "at most"),
   ];
 };
 
-const digitTests = (facets: Facets): ReadonlyArray<FacetTest> => [
-  (normalized) =>
-    failsWhen(
-      facets.totalDigits !== undefined && digitsOf(normalized)[0] > facets.totalDigits,
-      () => `${normalized} has more than ${facets.totalDigits} digits`,
-    ),
-  (normalized) =>
-    failsWhen(
-      facets.fractionDigits !== undefined && digitsOf(normalized)[1] > facets.fractionDigits,
-      () => `${normalized} has more than ${facets.fractionDigits} fraction digits`,
-    ),
-];
+const digitTests = (facets: Facets): ReadonlyArray<FacetTest> => {
+  const { totalDigits, fractionDigits } = facets;
+  return [
+    ...(totalDigits === undefined
+      ? []
+      : [
+          (normalized: string) =>
+            failsWhen(
+              digitsOf(normalized)[0] > totalDigits,
+              () => `${normalized} has more than ${totalDigits} digits`,
+            ),
+        ]),
+    ...(fractionDigits === undefined
+      ? []
+      : [
+          (normalized: string) =>
+            failsWhen(
+              digitsOf(normalized)[1] > fractionDigits,
+              () => `${normalized} has more than ${fractionDigits} fraction digits`,
+            ),
+        ]),
+  ];
+};
 
 const rangeBounds = [
   ["minInclusive", (o: number) => o >= 0, "at least"],
@@ -614,10 +670,10 @@ const rangeTests = (
   facets: Facets,
 ): Result.Result<ReadonlyArray<FacetTest>, string> =>
   Result.all(
-    Arr.map(rangeBounds, ([facet, ok, what]) => {
+    Arr.flatMap(rangeBounds, ([facet, ok, what]) => {
       const lexical = facets[facet];
-      if (lexical === undefined) return Result.succeed<FacetTest>(() => Option.none());
-      return Result.map(
+      if (lexical === undefined) return [];
+      const test = Result.map(
         Result.mapError(
           decode(base, lexical, noContext),
           (reason) => `the ${facet} facet is invalid: ${reason}`,
@@ -629,30 +685,31 @@ const rangeTests = (
               () => `${quote(normalized)} is not ${what} ${lexical}`,
             ),
       );
+      return [test];
     }),
   );
 
 const patternTest = (
   patterns: ReadonlyArray<string> | undefined,
-): Result.Result<FacetTest, string> => {
-  if (patterns === undefined || Arr.isReadonlyArrayEmpty(patterns))
-    return Result.succeed(() => Option.none());
+): Result.Result<ReadonlyArray<FacetTest>, string> => {
+  if (patterns === undefined || Arr.isReadonlyArrayEmpty(patterns)) return Result.succeed([]);
   return Result.map(
     Result.all(Arr.map(patterns, translate)),
-    (regexes): FacetTest =>
+    (regexes): ReadonlyArray<FacetTest> => [
       (normalized) =>
         failsWhen(
           !regexes.some((r) => r.test(normalized)),
           () => `${quote(normalized)} does not match the pattern ${patterns.join(" | ")}`,
         ),
+    ],
   );
 };
 
 const enumerationTest = (
   base: SimpleChecker,
   enumeration: ReadonlyArray<string> | undefined,
-): Result.Result<FacetTest, string> => {
-  if (enumeration === undefined) return Result.succeed(() => Option.none());
+): Result.Result<ReadonlyArray<FacetTest>, string> => {
+  if (enumeration === undefined) return Result.succeed([]);
   // QName values are enumerated in Clark notation, which is what they decode to.
   const decoded = Result.all(
     Arr.map(enumeration, (lexical) =>
@@ -663,12 +720,13 @@ const enumerationTest = (
   );
   return Result.map(
     Result.mapError(decoded, (reason) => `an enumerated value is invalid: ${reason}`),
-    (values): FacetTest =>
+    (values): ReadonlyArray<FacetTest> => [
       (normalized, value) =>
         failsWhen(
           !values.some((v) => equalValues(v, value)),
           () => `${quote(normalized)} is not one of ${enumeration.map(quote).join(", ")}`,
         ),
+    ],
   );
 };
 
@@ -688,23 +746,35 @@ export const restrict = (
         ...lengthTests(base, facets),
         ...digitTests(facets),
         ...ranges,
-        pattern,
-        enumeration,
+        ...pattern,
+        ...enumeration,
       ];
       return {
         ...base,
         whiteSpace: facets.whiteSpace ?? base.whiteSpace,
         enumeration: facets.enumeration ?? base.enumeration,
-        check: (normalized, context) =>
-          Result.flatMap(base.check(normalized, context), (value) =>
-            Option.match(
-              Arr.findFirst(tests, (t) => t(normalized, value)),
-              { onNone: () => Result.succeed(value), onSome: Result.fail },
-            ),
-          ),
+        check: (normalized, context) => {
+          const checked = base.check(normalized, context);
+          return Result.isFailure(checked)
+            ? checked
+            : firstFailure(tests, normalized, checked.success, checked);
+        },
       };
     },
   );
+
+/** `checked` (of `value`), unless one of `tests` fails the value: the first one's reason then. */
+const firstFailure = (
+  tests: ReadonlyArray<FacetTest>,
+  normalized: string,
+  value: SimpleValue,
+  checked: Result.Result<SimpleValue, string>,
+): Result.Result<SimpleValue, string> =>
+  Arr.reduce(tests, checked, (acc, test) => {
+    if (Result.isFailure(acc)) return acc;
+    const failed = test(normalized, value);
+    return Option.isSome(failed) ? Result.fail(failed.value) : acc;
+  });
 
 /** The checker for a built-in type, if `key` names one. */
 export const builtinChecker = (key: string): Option.Option<SimpleChecker> =>
