@@ -20,7 +20,9 @@ import type { SeqType, Signature } from "../runtime.ts";
 import { sequenceType, type Resolve } from "../seqtype.ts";
 import { core } from "./core.ts";
 import type { BuiltinSpec } from "./define.ts";
+import { dates } from "./dates.ts";
 import { higherOrder } from "./higher.ts";
+import { json } from "./json.ts";
 import { numerics } from "./numerics.ts";
 import { sequences } from "./sequences.ts";
 import { strings } from "./strings.ts";
@@ -32,6 +34,8 @@ const libraries: ReadonlyArray<ReadonlyArray<BuiltinSpec>> = [
   numerics,
   sequences,
   higherOrder,
+  dates,
+  json,
 ];
 
 /** A built-in function, ready to call: its spec, its expanded name and its parsed signature. */

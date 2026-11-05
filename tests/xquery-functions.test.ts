@@ -304,6 +304,29 @@ describe("higher-order functions, maps and arrays", () => {
     expect(code("filter(1, function($x) { 1 })")).toBe("XPTY0004");
   });
 
+  test("maps and arrays are coerced to the function types they are passed as", () => {
+    // A map or array whose values do not all match is wrapped, and each call's result is checked.
+    expect(values("filter((4, 5, 6), [1, 2, 3, true(), false(), true()])")).toEqual(["4", "6"]);
+    expect(values("array:filter([1, 2, 3], map { 1: true(), 2: false(), 3: true() })?*")).toEqual([
+      "1",
+      "3",
+    ]);
+    expect(value("for-each(('a', 'b'), map { 'a': 1, 'b': 2 }) => sum()")).toBe("3");
+    expect(code("filter(1, ['x'])")).toBe("XPTY0004");
+    expect(code("filter(1, map {})")).toBe("XPTY0004");
+    expect(code("filter(2, [true()])")).toBe("FOAY0001");
+    expect(code("filter(1, concat#2)")).toBe("XPTY0004");
+    // One that already matches the function type stays a map or array; one that does not becomes a function.
+    const kind = (type: string, arg: string) =>
+      value(
+        `declare function local:f($f as ${type}) { $f instance of map(*), $f instance of array(*) }; local:f(${arg})`,
+      );
+    expect(kind("function(xs:anyAtomicType) as item()*", "map { 1: 2 }")).toBe("true false");
+    expect(kind("function(xs:integer) as item()*", "[1]")).toBe("false true");
+    expect(kind("function(item()) as xs:boolean", "map { 1: 'a' }")).toBe("false false");
+    expect(kind("function(item()) as xs:boolean", "['a']")).toBe("false false");
+  });
+
   test("map:merge, find, put, remove, for-each", () => {
     expect(values("map:merge((map { 1: 'a' }, map { 1: 'b' }))(1)")).toEqual(["a"]);
     expect(
@@ -368,5 +391,106 @@ describe("higher-order functions, maps and arrays", () => {
       "4",
       "6",
     ]);
+  });
+});
+
+/** `adjust-dateTime-to-timezone` of a fixed dateTime to `tz`. */
+const at = (tz: string) =>
+  `adjust-dateTime-to-timezone(xs:dateTime('2002-03-07T10:00:00-07:00'), ${tz})`;
+
+describe("dates, times and durations", () => {
+  test("components, with 24:00:00 as the next day's midnight", () => {
+    expect(
+      values(
+        "year-from-dateTime(xs:dateTime('1999-12-31T24:00:00')), hours-from-time(xs:time('24:00:00'))",
+      ),
+    ).toEqual(["2000", "0"]);
+    expect(
+      values(
+        "seconds-from-dateTime(xs:dateTime('2000-01-01T10:00:12.5Z')), timezone-from-date(xs:date('2000-01-01-05:00'))",
+      ),
+    ).toEqual(["12.5", "-PT5H"]);
+    expect(values("timezone-from-time(xs:time('10:00:00')), month-from-date(())")).toEqual([]);
+    expect(
+      values(
+        "days-from-duration(xs:duration('-P3DT10H')), hours-from-duration(xs:duration('-P3DT10H')), seconds-from-duration(xs:dayTimeDuration('PT1.5S'))",
+      ),
+    ).toEqual(["-3", "-10", "1.5"]);
+    expect(
+      values(
+        "years-from-duration(xs:yearMonthDuration('-P20M')), months-from-duration(xs:yearMonthDuration('-P20M'))",
+      ),
+    ).toEqual(["-1", "-8"]);
+  });
+
+  test("dateTime and timezone adjustment", () => {
+    expect(value("dateTime(xs:date('1999-12-31'), xs:time('12:00:00Z'))")).toBe(
+      "1999-12-31T12:00:00Z",
+    );
+    expect(code("dateTime(xs:date('1999-12-31+01:00'), xs:time('12:00:00Z'))")).toBe("FORG0008");
+    expect(values(`${at("xs:dayTimeDuration('PT10H')")}, ${at("()")}`)).toEqual([
+      "2002-03-08T03:00:00+10:00",
+      "2002-03-07T10:00:00",
+    ]);
+    expect(
+      value("adjust-date-to-timezone(xs:date('2002-03-07-07:00'), xs:dayTimeDuration('-PT10H'))"),
+    ).toBe("2002-03-06-10:00");
+    expect(value("adjust-time-to-timezone(xs:time('10:00:00'))")).toBe("10:00:00Z");
+    expect(code(at("xs:dayTimeDuration('PT15H')"))).toBe("FODT0003");
+  });
+
+  test("parse-ietf-date", () => {
+    expect(value("parse-ietf-date('Wed, 06 Jun 1994 07:29:35 GMT')")).toBe("1994-06-06T07:29:35Z");
+    expect(value("parse-ietf-date('Sun Nov  6 08:49:37 1994')")).toBe("1994-11-06T08:49:37Z");
+    expect(value("parse-ietf-date('6-Jun-94 7:29 EST')")).toBe("1994-06-06T07:29:00-05:00");
+    expect(value("parse-ietf-date('06 Jun 1994 07:29:35 +0130 (GMT)')")).toBe(
+      "1994-06-06T07:29:35+01:30",
+    );
+    expect(code("parse-ietf-date('31 Feb 2000 00:00')")).toBe("FORG0010");
+  });
+
+  test("map keys: dates and times by the instant they denote", () => {
+    expect(code("map { xs:time('12:00:00Z'): 1, xs:time('13:00:00+01:00'): 2 }")).toBe("XQDY0137");
+    expect(value("map:size(map { xs:time('12:00:00Z'): 1, xs:time('12:00:00'): 2 })")).toBe("2");
+    expect(
+      value(
+        "map:contains(map { xs:dateTime('1999-12-31T24:00:00'): 1 }, xs:dateTime('2000-01-01T00:00:00'))",
+      ),
+    ).toBe("true");
+  });
+});
+
+describe("JSON", () => {
+  test("parse-json: values, null, escapes, duplicates and errors", () => {
+    expect(values(`parse-json('{"a": [1, true, null, "x\\u0041\\n"]}')?a?*`)).toEqual([
+      "1",
+      "true",
+      "xA\n",
+    ]);
+    expect(value(`parse-json('[1.5e2]')?1 instance of xs:double`)).toBe("true");
+    expect(values(`parse-json('null')`)).toEqual([]);
+    expect(value(`parse-json('"\\uD83D\\uDE00"')`)).toBe("😀");
+    expect(value(`parse-json('"\\u0000"')`)).toBe("\uFFFD");
+    expect(value(`parse-json('"a\\u0000\\\\"', map { 'escape': true() })`)).toBe("a\\u0000\\\\");
+    expect(
+      value(`parse-json('"\\u0000"', map { 'fallback': function($s) { '[' || $s || ']' } })`),
+    ).toBe("[\\u0000]");
+    expect(value(`parse-json('{"a": 1, "a": 2}')?a`)).toBe("1");
+    expect(value(`parse-json('{"a": 1, "a": 2}', map { 'duplicates': 'use-last' })?a`)).toBe("2");
+    expect(code(`parse-json('{"a": 1, "a": 2}', map { 'duplicates': 'reject' })`)).toBe("FOJS0003");
+    expect(code(`parse-json('[1, 2')`)).toBe("FOJS0001");
+    expect(code(`parse-json('[1 2]')`)).toBe("FOJS0001");
+    expect(code(`parse-json('{"a" 1}')`)).toBe("FOJS0001");
+    expect(code(`parse-json('1', map { 'duplicates': 'maybe' })`)).toBe("FOJS0005");
+  });
+
+  test("json-to-xml and xml-to-json round-trip", () => {
+    const xml = `json-to-xml('{"a": [1, true, null, "x/"], "b": {}}')`;
+    expect(value(`${xml}/*/local-name()`)).toBe("map");
+    expect(values(`${xml}/*/*/@key/string()`)).toEqual(["a", "b"]);
+    expect(value(`namespace-uri(${xml}/*)`)).toBe("http://www.w3.org/2005/xpath-functions");
+    expect(value(`xml-to-json(${xml})`)).toBe(`{"a":[1,true,null,"x\\/"],"b":{}}`);
+    expect(value(`xml-to-json(json-to-xml('[1e6]'))`)).toBe("[1.0E6]");
+    expect(code(`xml-to-json(json-to-xml('[1]')/*/*/text())`)).toBe("FOJS0006");
   });
 });
