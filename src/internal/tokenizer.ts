@@ -3,7 +3,7 @@
  * DOCTYPE's entities (with `dtd: "internal"`) and the conversion to SAX
  * events, fed input and drained as a consumer pulls. `Sax.tokenize` streams
  * its events; {@link runChunks} hands the events of complete input to a
- * callback, synchronously, for the tree builders.
+ * callback, synchronously, for `Sax.forEach` and the tree builders.
  */
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";

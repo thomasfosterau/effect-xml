@@ -66,6 +66,7 @@ Stream.fromIterable(["<order id=", '"7"><item>Wid', "get</item></order>"]).pipe(
 | `Sax.tokenize(options?)` | `(Stream<string, E, R>) => Stream<SaxEvent, SaxError \| E, R>` | the core combinator |
 | `Sax.tokenizeString(input, options?)` | `Stream<SaxEvent, SaxError>` | a whole string |
 | `Sax.collect(input, options?)` | `Effect<ReadonlyArray<SaxEvent>, SaxError>` | every event, for small inputs and tests |
+| `Sax.forEach(input, f, options?)` | `Effect<void, SaxError>` | every event of a whole string or byte array to a callback, without a stream: the fastest way to read a document in memory |
 | `Sax.startElements`, `Sax.endElements`, `Sax.texts`, `Sax.named(name)` | stream selectors |  |
 | `Sax.tokenizeBytes(options?)` | `(Stream<Uint8Array, E, R>) => Stream<SaxEvent, SaxError \| E, R>` | bytes, with encoding detection |
 | `Sax.select(path, options?)` | `(Stream<SaxEvent, E, R>) => Stream<XmlElement, SaxError \| XPathError \| E, R>` | matching subtrees, built as they end |
@@ -90,7 +91,7 @@ const describe = (event: Sax.SaxEvent): string =>
   });
 ```
 
-Every event carries a `span` (`start` / `end` positions with `offset`, `line` and `column`; offsets count UTF-16 code units of the raw input, CRLF included).
+Every event carries a `span` (`start` / `end` positions with `offset`, `line` and `column`; offsets count UTF-16 code units of the raw input, CRLF included). A consumer that never reads them can pass `positions: false`: every span is then the origin, and tokenizing is about a third faster (failures still say where they happened).
 
 Spans are lazy, so events cost little when nobody reads them: an event's `span` holds two offsets and makes each end's `Position` on first read, and a position computes its `line` and `column` on first read too, from a per-input index of line breaks (one number per line read, kept for as long as any of its positions is). The values are the ones they always were. They are getters, though, not own properties: `JSON.stringify` (via `toJSON`) and `Equal.equals` see `{ start, end }` and `{ offset, line, column }`, but `Object.keys`, spreading, `structuredClone` and structural matchers such as `toEqual` see only a position's `offset` (and nothing on a span), so compare `JSON.parse(JSON.stringify(span))` or read the fields. Errors copy their `position` into a plain `{ offset, line, column }` object.
 
@@ -100,6 +101,7 @@ Spans are lazy, so events cost little when nobody reads them: an event's `span` 
 | --- | --- |
 | `Xml.parse(input, options?)` | `Effect<XmlDocument, SaxError>` |
 | `Xml.parseStream(options?)` | `(Stream<string, E, R>) => Effect<XmlDocument, SaxError \| E, R>` — builds the tree without holding the input |
+| `Xml.parsePlain(input, options?)` | `Effect<PlainElement, SaxError>` — a plain tree of `{ name, attributes, children }` objects and text strings, about twice as fast as the DOM; as strict as `Xml.parse` with `namespaces: false`, without comments, PIs or the DOCTYPE |
 | `Xml.events(input, options?)` | `Stream<SaxEvent, SaxError>` |
 | `Xml.serialize(node)`, `Xml.serializeDocument(doc)` | `string` |
 | `Xml.element(name, attributes?, children?)`, `Xml.attr(name, value)`, `Xml.text(data)` | builders |
@@ -609,17 +611,20 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 | `encoding` | the `*Bytes` entry points | detected | an external encoding hint; overrides the declaration, not a BOM |
 | `scripting` | `Html` (and `Sax.tokenize` in HTML mode) | `false` | the HTML scripting flag: when `true`, `<noscript>` content is raw text, as in a browser with scripting enabled |
 | `context` | `Html.parseDocumentFragment` | `"body"` | the context element of the fragment parse |
+| `positions` | `Sax` | `true` | when `false`, events carry no positions (every span is the origin); failures keep theirs |
 
 ## Performance
 
 The XML tokenizer reads text, tags, comments, CDATA sections and processing instructions with a hand-written scanner, and leaves everything else (and every error) to its grammars, so it is strict and still fast. Over the built package in Node 22, on an 8 MB spreadsheet worksheet and an 8 MB feed with namespaces, comments, CDATA and references:
 
-|                      | worksheet | feed    |
-| -------------------- | --------- | ------- |
-| `Sax.tokenizeString` | 30 MB/s   | 37 MB/s |
-| `Xml.parse`          | 21 MB/s   | 27 MB/s |
+|                                   | worksheet | feed    |
+| --------------------------------- | --------- | ------- |
+| `Sax.tokenizeString`              | 30 MB/s   | 37 MB/s |
+| `Sax.forEach`, `positions: false` | 37 MB/s   | 49 MB/s |
+| `Xml.parse`                       | 21 MB/s   | 27 MB/s |
+| `Xml.parsePlain`                  | 31 MB/s   | 38 MB/s |
 
-`vp run bench` measures them, and other parsers when they are installed. Each event carries its span and every name and reference is checked; saxes and htmlparser2 (40–60 MB/s here, with no positions per event) and lenient parsers that check less (easysax, @eksml/xml, txml) are faster.
+`vp run bench` measures them, and other parsers when they are installed. Each event carries its span and every name and reference is checked; saxes and htmlparser2 (40–60 MB/s here, with no positions per event) are 1.1–1.2 times as fast as `Sax.forEach` with `positions: false`, and lenient parsers that check less (easysax, @eksml/xml, txml) faster still.
 
 ## Names and positions
 

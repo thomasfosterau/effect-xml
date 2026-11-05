@@ -11,7 +11,7 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Stream from "effect/Stream";
-import { Sax, Xml } from "../src/index.ts";
+import { origin, Sax, Xml } from "../src/index.ts";
 import { documents } from "./support/documents.ts";
 import { plain } from "./support/plain.ts";
 
@@ -29,7 +29,28 @@ const tokenize = (doc: string, options: Sax.SaxOptions, size: number) =>
 const located = <E>(exit: Exit.Exit<Iterable<Sax.SaxEvent>, E>) =>
   Exit.map(exit, (events) => plain(Arr.fromIterable(events)));
 
+/** The events `Sax.forEach` hands over (or its failure). */
+const each = (doc: string | Uint8Array, options: Sax.SaxBytesOptions) => {
+  const events: Array<Sax.SaxEvent> = [];
+  const exit = Effect.runSync(
+    Effect.exit(Sax.forEach(doc, (event) => events.push(event), options)),
+  );
+  return Exit.map(exit, () => events);
+};
+
 const docs = documents(1, 3000);
+
+const nowhere = { start: origin, end: origin };
+
+/** An event as `positions: false` gives it: every span the origin. */
+const unplaced = (ev: Sax.SaxEvent): Sax.SaxEvent =>
+  Sax.isStartElement(ev)
+    ? Sax.SaxEvent.StartElement({
+        ...ev,
+        attributes: ev.attributes.map((a) => ({ ...a, span: nowhere })),
+        span: nowhere,
+      })
+    : { ...ev, span: nowhere };
 
 describe("the XML scanner", () => {
   test("agrees with the token grammars: events, spans and failures", () => {
@@ -54,6 +75,42 @@ describe("the XML scanner", () => {
     const exits = docs.map((doc) => tokenize(doc, {}, doc.length));
     expect(exits.filter(Exit.isSuccess).length).toBeGreaterThan(600);
     expect(exits.filter(Exit.isFailure).length).toBeGreaterThan(750);
+  });
+
+  test("without positions: the same events at the origin, and the same failures", () => {
+    Arr.forEach(docs, (doc) =>
+      Arr.forEach([doc.length, 3], (size) =>
+        expect(tokenize(doc, { positions: false }, size), doc).toStrictEqual(
+          Exit.map(tokenize(doc, {}, size), (events) => Arr.map(events, unplaced)),
+        ),
+      ),
+    );
+  });
+
+  test("without positions, a limit points at the start of the token that broke it", () => {
+    const doc = `<root>\n  <a x="1" y="${"z".repeat(40)}"/></root>`;
+    const failure = (positions: boolean) =>
+      Effect.runSync(Effect.flip(Sax.collect(doc, { positions, limits: { maxTextLength: 10 } })));
+    expect(failure(true)).toMatchObject({
+      _tag: "LimitExceeded",
+      position: { line: 2, column: 12 },
+    });
+    expect(failure(false)).toMatchObject({
+      _tag: "LimitExceeded",
+      position: { line: 2, column: 3 },
+    });
+  });
+
+  test("Sax.forEach hands over the events Sax.tokenize streams, and its failure", () => {
+    Arr.forEach(docs, (doc) => {
+      expect(located(each(doc, {})), doc).toStrictEqual(located(tokenize(doc, {}, doc.length)));
+      // (Encoding replaces a lone surrogate: compare with the text the bytes are.)
+      const bytes = new TextEncoder().encode(doc);
+      const text = new TextDecoder().decode(bytes);
+      expect(each(bytes, { positions: false }), doc).toStrictEqual(
+        tokenize(text, { positions: false }, text.length),
+      );
+    });
   });
 
   test("Xml.parse, built without positions, agrees with Xml.parseStream", () => {

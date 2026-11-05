@@ -19,7 +19,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
-import { Tokenizer } from "./internal/tokenizer.ts";
+import { decodeChunks, runChunks, Tokenizer } from "./internal/tokenizer.ts";
 import { xmlEntities, htmlEntities } from "./internal/entities.ts";
 import type { AttrName, TagName } from "./Name.ts";
 import type { Span } from "./Position.ts";
@@ -200,6 +200,16 @@ export interface SaxOptions {
    * content is raw text, as a browser with scripting enabled reads it.
    */
   readonly scripting?: boolean | undefined;
+  /**
+   * Whether events carry their positions (default `true`). With `false`,
+   * every event's (and attribute's) `span` is the origin, and tokenizing is
+   * about a third faster; failures still carry where they happened, a
+   * resource limit the start of the token that broke it. For consumers that
+   * never read spans.
+   *
+   * @since 0.3.0
+   */
+  readonly positions?: boolean | undefined;
 }
 
 /** @internal */
@@ -211,7 +221,6 @@ export interface ResolvedOptions {
   readonly limits: Limits;
   readonly dtd: "ignore" | "internal";
   readonly scripting: boolean;
-  /** Whether events carry positions (internal: `false` for the lean pass of `Xml.parse`). */
   readonly positions: boolean;
 }
 
@@ -226,7 +235,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     limits: resolveLimits(options?.limits),
     dtd: options?.dtd ?? "ignore",
     scripting: options?.scripting ?? false,
-    positions: true,
+    positions: options?.positions ?? true,
   };
 };
 
@@ -375,6 +384,47 @@ export const tokenizeString = (
   input: string,
   options?: SaxOptions,
 ): Stream.Stream<SaxEvent, SaxError> => Stream.make(input).pipe(tokenize(options));
+
+/**
+ * Hand every event of a complete document to `f`, in order, synchronously:
+ * the classic SAX handler, without a stream. Bytes are decoded as
+ * {@link tokenizeBytes} decodes them. The events are `f`'s to keep. The
+ * effect fails with the first failure; `f` has had every event before it.
+ * The fastest way to read a document in memory, especially with
+ * `positions: false`.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import { Sax } from "@thomasfosterau/effect-xml"
+ *
+ * let elements = 0
+ * Effect.runSync(
+ *   Sax.forEach("<a><b/><b/></a>", (event) => {
+ *     if (Sax.isStartElement(event)) elements++
+ *   }),
+ * )
+ * console.log(elements) // 3
+ * ```
+ *
+ * @since 0.3.0
+ * @category tokenizing
+ */
+export const forEach = (
+  input: string | Uint8Array,
+  f: (event: SaxEvent) => void,
+  options?: SaxBytesOptions,
+): Effect.Effect<void, SaxError> =>
+  Effect.suspend(() => {
+    const chunks = Predicate.isString(input)
+      ? { chunks: [input] }
+      : decodeChunks(input, decodeOptions(options));
+    const failure = runChunks(chunks, resolveSaxOptions(options), (ev) => {
+      f(ev);
+      return null;
+    });
+    return failure === null ? Effect.void : Effect.fail(failure);
+  });
 
 /**
  * Collect every SAX event into an array (convenient for tests and small inputs).

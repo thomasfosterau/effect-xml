@@ -334,6 +334,7 @@ export default defineConfig({
           "src/internal/guard.ts",
           "src/internal/convert.ts",
           "src/internal/xmlBuilder.ts",
+          "src/Xml/Plain.ts",
         ],
         rules: {
           "effect/avoid-direct-tag-checks": "off",
@@ -358,6 +359,7 @@ export default defineConfig({
           "src/internal/namespaces.ts",
           "src/internal/qnames.ts",
           "src/internal/xmlBuilder.ts",
+          "src/Xml/Plain.ts",
         ],
         rules: {
           "effect/imperative-loops": "off",
