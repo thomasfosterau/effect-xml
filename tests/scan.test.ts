@@ -97,7 +97,12 @@ const pick = <A>(next: () => number, items: ReadonlyArray<A>): A =>
 
 /** A well-formed element, with attributes, text and references. */
 const element = (next: () => number): string => {
-  const name = (): string => pick(next, ["a", "row", "x:c", "v_1", "a.b-c"]);
+  // ASCII names, names with non-ASCII characters, and now and then a name
+  // a non-ASCII character unmakes.
+  const name = (): string =>
+    next() < 0.9
+      ? pick(next, ["a", "row", "x:c", "v_1", "a.b-c", "日本", "é", "x·y", "a\u0300", "ü:ß"])
+      : pick(next, ["\u00d7", "a\u00d7", "\u{1F600}", "\uD800"]);
   // Mostly valid values, and the ones the grammar rejects.
   const value = (): string =>
     next() < 0.85
@@ -165,7 +170,7 @@ describe("the XML scanner", () => {
 
   test("covers documents that parse, and ones that fail", () => {
     const exits = docs.map((doc) => tokenize(doc, {}, doc.length));
-    expect(exits.filter(Exit.isSuccess).length).toBeGreaterThan(750);
+    expect(exits.filter(Exit.isSuccess).length).toBeGreaterThan(600);
     expect(exits.filter(Exit.isFailure).length).toBeGreaterThan(750);
   });
 

@@ -204,6 +204,34 @@ class Builder {
 
   /** The URI `prefix` is bound to: `own` (the element being opened) first, then the open elements, innermost first. */
   private resolvePrefix(prefix: string | null, own: Bindings): string | null {
+    if (prefix === null && own === NO_BINDINGS) {
+      // Most elements: the default namespace in scope, looked up once per scope.
+      if (this.defaultUri === undefined) this.defaultUri = this.lookup(null, own);
+      return this.defaultUri;
+    }
+    return this.lookup(prefix, own);
+  }
+
+  /**
+   * The default namespace of the open elements (`null` when there is none),
+   * once looked up; `undefined` when a scope has opened or closed since.
+   */
+  private defaultUri: string | null | undefined = undefined;
+
+  /** Open a scope of namespace declarations. */
+  private pushScope(bindings: Bindings): void {
+    this.scopes.push(bindings);
+    this.defaultUri = undefined;
+  }
+
+  /** Close the innermost scope of namespace declarations. */
+  private popScope(): void {
+    this.scopes.pop();
+    this.defaultUri = undefined;
+  }
+
+  /** {@link resolvePrefix}, through the scopes. */
+  private lookup(prefix: string | null, own: Bindings): string | null {
     if (prefix === "xml") return Namespaces.xml;
     if (prefix === "xmlns") return Namespaces.xmlns;
     const key = prefix ?? "";
@@ -471,7 +499,7 @@ class Builder {
       return this.appendChild(Nodes.element(name, attributes, NO_NODES), position);
     }
     this.stack.push({ name, attributes, from: this.count, bindings, rawName: ev.name });
-    if (bindings.size > 0) this.scopes.push(bindings);
+    if (bindings.size > 0) this.pushScope(bindings);
     return null;
   }
 
@@ -482,7 +510,7 @@ class Builder {
     }
     const frame = this.stack.pop();
     if (frame === undefined) return new UnexpectedEndTag({ name: rawName, position });
-    if (frame.bindings.size > 0) this.scopes.pop();
+    if (frame.bindings.size > 0) this.popScope();
     if (frame.rawName !== rawName) {
       return new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position });
     }
@@ -512,7 +540,7 @@ class Builder {
   private closeTop(): void {
     const frame = this.stack.pop();
     if (frame === undefined) return;
-    if (frame.bindings.size > 0) this.scopes.pop();
+    if (frame.bindings.size > 0) this.popScope();
     const node = this.closed(frame);
     const parent = this.stack.at(-1);
     if (parent === undefined) this.top.push(node);

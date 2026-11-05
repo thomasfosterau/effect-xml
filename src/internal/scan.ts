@@ -17,6 +17,7 @@
  */
 import { origin, type Position, type Span } from "../Position.ts";
 import { isXmlChar } from "./entities.ts";
+import { invalidNameAt } from "./names.ts";
 import type { LexEvent } from "./lexer.ts";
 
 /** The input does not end the token yet (partial mode): try again with more. */
@@ -252,6 +253,26 @@ const skipName = (buf: string, i: number, end: number): number => {
   return j;
 };
 
+/** Can `c` start a name as the tag grammars read one (any non-ASCII character can)? */
+const startsName = (c: number): boolean => c >= 128 || is(c, NAME_START);
+
+/**
+ * The end of a name whose first character is at `i`, taking non-ASCII
+ * characters in too. With `check`, -1 when one of those makes it no XML
+ * `Name` (§2.3), as the grammar would find (a start tag's and attribute's
+ * names are checked; an end tag's is matched against its start tag's).
+ */
+const wideName = (buf: string, i: number, end: number, check: boolean): number => {
+  let j = i + 1;
+  let wide = buf.charCodeAt(i) >= 128;
+  for (; j < end; j++) {
+    const c = buf.charCodeAt(j);
+    if (c >= 128) wide = true;
+    else if (!is(c, NAME)) break;
+  }
+  return wide && check && j < end && invalidNameAt(buf.slice(i, j)) !== -1 ? -1 : j;
+};
+
 /** The end of the whitespace from `i`. */
 const skipWs = (buf: string, i: number, end: number): number => {
   let j = i;
@@ -297,12 +318,12 @@ const text = (buf: string, pos: number, partial: boolean, ctx: Context): ScanRes
   return { data, span: { start: ctx.at(pos), end: ctx.at(to) }, _tag: "Text" };
 };
 
-/** `</name>` or `</name   >`, with an ASCII name. */
+/** `</name>` or `</name   >`. */
 const endTag = (buf: string, pos: number, partial: boolean, ctx: Context): ScanResult => {
   const end = buf.length;
   if (pos + 2 >= end) return partial ? Incomplete : Fallback;
-  if (!is(buf.charCodeAt(pos + 2), NAME_START)) return Fallback;
-  const nameEnd = skipName(buf, pos + 3, end);
+  if (!startsName(buf.charCodeAt(pos + 2))) return Fallback;
+  const nameEnd = wideName(buf, pos + 2, end, false);
   const i = skipWs(buf, nameEnd, end);
   if (i >= end) return partial ? Incomplete : Fallback;
   if (buf.charCodeAt(i) !== GT) return Fallback;
@@ -385,11 +406,12 @@ const MORE = -1;
 /** Not a number of {@link readAttributes} and {@link attributeAt}: the grammar's to read. */
 const GRAMMAR = -2;
 
-/** `<name attr="value" …>` or `/>`, with ASCII names. */
+/** `<name attr="value" …>` or `/>`. */
 const startTag = (buf: string, pos: number, partial: boolean, ctx: Context): ScanResult => {
   const end = buf.length;
-  if (!is(buf.charCodeAt(pos + 1), NAME_START)) return Fallback;
-  const nameEnd = skipName(buf, pos + 2, end);
+  if (!startsName(buf.charCodeAt(pos + 1))) return Fallback;
+  const nameEnd = wideName(buf, pos + 1, end, true);
+  if (nameEnd === -1) return Fallback;
   if (nameEnd >= end) return partial ? Incomplete : Fallback;
   const start = ctx.lean ? origin : ctx.at(pos);
   const name = nameAt(buf, pos + 1, nameEnd, ctx);
@@ -464,8 +486,9 @@ const readAttributes = (buf: string, from: number, ctx: Context): number => {
  */
 const attributeAt = (buf: string, start: number, ctx: Context, k: number): number => {
   const end = buf.length;
-  if (!is(buf.charCodeAt(start), NAME_START)) return GRAMMAR;
-  const nameEnd = skipName(buf, start + 1, end);
+  if (!startsName(buf.charCodeAt(start))) return GRAMMAR;
+  const nameEnd = wideName(buf, start, end, true);
+  if (nameEnd === -1) return GRAMMAR;
   let i = skipWs(buf, nameEnd, end);
   if (i >= end) return MORE;
   if (buf.charCodeAt(i) !== EQ) return GRAMMAR;
