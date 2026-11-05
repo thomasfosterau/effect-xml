@@ -66,11 +66,20 @@ export interface StaticOptions {
    * `grouping-separator`, …), the others keeping their defaults.
    */
   readonly decimalFormats?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined;
+  /**
+   * XPath 1.0 compatibility mode (XPath 3.1 §2.1.1), for XPath only (XQuery
+   * has no such mode, and `XQuery.compile` ignores it): general comparisons,
+   * arithmetic and function arguments convert their operands as XPath 1.0
+   * did, so an XPath 1.0 expression gives XPath 1.0's result.
+   */
+  readonly xpath1Compatibility?: boolean | undefined;
 }
 
 /** The static context a query is compiled in. */
 export interface StaticContext {
   readonly xquery: boolean;
+  /** XPath 1.0 compatibility mode: always false in XQuery. */
+  readonly xpath1Compatibility: boolean;
   /** Statically known namespaces: prefix → URI. */
   readonly namespaces: HashMap.HashMap<string, string>;
   /** `""` when element and type names are in no namespace by default. */
@@ -121,6 +130,7 @@ const toArities = (ns: ReadonlyArray<number>): ReadonlyArray<Arity> =>
 /** The static context before the prolog: the predeclared namespaces and the host's options. */
 export const initialContext = (xquery: boolean, options: StaticOptions = {}): StaticContext => ({
   xquery,
+  xpath1Compatibility: !xquery && options.xpath1Compatibility === true,
   namespaces: HashMap.fromIterable([
     ...predeclared(xquery),
     ...Record.toEntries(options.namespaces ?? {}).filter(([prefix]) => prefix !== "xml"),

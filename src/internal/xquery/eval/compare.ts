@@ -18,6 +18,7 @@ import { AtomicValue, atomicString } from "../atomic.ts";
 import {
   ArrayItem,
   atomize,
+  effectiveBooleanValue,
   isAtomic,
   isNode,
   MapItem,
@@ -27,7 +28,7 @@ import {
 import type { XdmNode } from "../node.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../types.ts";
 import { castAtomic, isStringLike, toDecimal, toNumber } from "./cast.ts";
-import { raise, unwrap } from "./raise.ts";
+import { orElse, raise, unwrap } from "./raise.ts";
 import { durationOf, isTemporal, partsOf, timelineSeconds } from "./temporal.ts";
 
 /** A value comparison operator. */
@@ -269,6 +270,58 @@ export const generalCompare = (
     ys.some((y) => {
       const [a, b] = generalPair(x, y, offset);
       return holds(op, compareAtomic(a, b, op !== "eq" && op !== "ne", implicitTimezone, offset));
+    }),
+  );
+};
+
+/** `fn:number` of an atomic value: the value as an `xs:double`, NaN when it has none. */
+export const numberOf = (a: AtomicValue): AtomicValue =>
+  orElse(() => castAtomic(a, AtomicTypes.double), AtomicValue.double(Number.NaN));
+
+/** A sequence's one `xs:boolean`, when it is exactly that. */
+const singleBoolean = (s: Sequence): boolean | undefined => {
+  const [only] = s;
+  return s.length === 1 &&
+    only !== undefined &&
+    isAtomic(only) &&
+    derivesFrom(only.type, AtomicTypes.boolean)
+    ? only.value === true
+    : undefined;
+};
+
+/**
+ * A general comparison in XPath 1.0 compatibility mode (XPath 3.1 §3.7.2):
+ * against a single `xs:boolean`, the other operand is taken as its effective
+ * boolean value; the ordering operators compare every item as an
+ * `xs:double`; and a pair with a number in it compares as two doubles, so
+ * the result is what XPath 1.0 gives, and never a type error between them.
+ */
+export const generalCompareCompatible = (
+  op: ValueOp,
+  left: Sequence,
+  right: Sequence,
+  implicitTimezone: number,
+  offset?: number,
+): boolean => {
+  const ordering = op !== "eq" && op !== "ne";
+  const lb = singleBoolean(left);
+  const rb = singleBoolean(right);
+  if (lb !== undefined || rb !== undefined) {
+    const a = lb ?? unwrap(effectiveBooleanValue(left), offset);
+    const b = rb ?? unwrap(effectiveBooleanValue(right), offset);
+    return ordering ? holds(op, Number(a) - Number(b)) : holds(op, a === b ? 0 : 1);
+  }
+  const xs = unwrap(atomize(left), offset);
+  const ys = unwrap(atomize(right), offset);
+  const as = ordering ? xs.map(numberOf) : xs;
+  const bs = ordering ? ys.map(numberOf) : ys;
+  return as.some((x) =>
+    bs.some((y) => {
+      const [a, b] =
+        isNumericType(x.type) || isNumericType(y.type)
+          ? [numberOf(x), numberOf(y)]
+          : generalPair(x, y, offset);
+      return holds(op, compareAtomic(a, b, ordering, implicitTimezone, offset));
     }),
   );
 };

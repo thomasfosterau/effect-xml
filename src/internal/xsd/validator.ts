@@ -42,7 +42,7 @@ import {
   type SimpleValue,
   type ValueContext,
 } from "./datatypes.ts";
-import { evaluate, type Tables, type Typed, type TypeOf } from "./identity.ts";
+import { evaluateConstraints, type Tables, type Typed, type TypeOf } from "./identity.ts";
 import { advance, matchesAll, type StepLevel, type StreamStep } from "../streamPath.ts";
 import type { AttributeRule, ComplexRuntime, Runtime, TypeRuntime } from "./runtime.ts";
 import { Lookup } from "../lookup.ts";
@@ -978,7 +978,7 @@ export class Validator {
     const constraints = frame.decl?.constraints;
     if (constraints === undefined || element === undefined || frame.tables === undefined)
       return null;
-    return Result.match(evaluate(constraints, element, frame.tables, this.typeOf), {
+    return Result.match(evaluateConstraints(constraints, element, frame.tables, this.typeOf), {
       onFailure: (reason) => this.invalid("IdentityConstraint", reason, position),
       onSuccess: () => null,
     });

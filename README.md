@@ -176,9 +176,9 @@ for (const c of root.descendants(rdf("Description"))) {
 }
 ```
 
-### XPath subset
+### XPath
 
-`Xml.XPath.compile` takes location paths with namespace prefixes, `//`, `.`, `..`, `@`, `*`, `prefix:*`, `text()`, `node()`, the common axes, and predicates with positions, comparisons, `and` / `or` and a few functions (`not`, `position`, `last`, `count`, `string`, `local-name`, `contains`, `starts-with`, `normalize-space`). It returns a `Result`, failing with a typed `XPathError` that has the `offset` of the problem:
+`Xml.XPath` is XPath 1.0 over the DOM: the whole language (location paths over every axis but `namespace`, predicates, unions, arithmetic, variables and every XPath 1.0 function), evaluated by the `XQuery` engine's XPath 3.1 in XPath 1.0 compatibility mode, so comparisons, arithmetic and function arguments convert their operands as XPath 1.0 did (and the rest of XPath 3.1 is there too). Name tests are namespace-aware: prefixes are bound when compiling, and unprefixed element names are in no namespace unless a `defaultNamespace` is given. `compile` returns a `Result`, failing with a typed `XPathError` that has the `offset` of the problem and the error code in its `reason`:
 
 ```ts
 import * as Result from "effect/Result";
@@ -193,7 +193,16 @@ if (Result.isSuccess(title)) {
   Xml.XPath.elements(title.success, doc); // just the elements
   Xml.XPath.cursors(title.success, doc); // as cursors, with inherited values
 }
+
+const priced = Xml.XPath.compile("sum(//item[@price > $min]/@price) div 2", { variables: ["min"] });
+if (Result.isSuccess(priced)) {
+  Xml.XPath.number(priced.success, doc, { variables: { min: 10 } }); // a number (NaN if none)
+  Xml.XPath.boolean(priced.success, doc, { variables: { min: 10 } }); // its boolean()
+  Xml.XPath.evaluate(priced.success, doc, { variables: { min: 10 } }); // Result<every item, XPathError>
+}
 ```
+
+Results are the DOM's own nodes. As in the XPath data model, adjacent text and CDATA nodes are one text node (`select` returns the DOM nodes it is made of), and from a document `/` is the document node, whose children include the comments and processing instructions around the root element. Only XPath 3.1's additions can raise a dynamic error; `evaluate` returns it, and the other functions then return nothing.
 
 ### Streaming selection
 
