@@ -520,9 +520,12 @@ const invokeTarget = (
 
 const isPlaceholder = (e: ExprT): boolean => Expr.$is("Placeholder")(e);
 
-/** A function item that calls `call` with the placeholders filled by its arguments. */
+/**
+ * A function item that calls `call` with the placeholders filled by its
+ * arguments. It is anonymous whatever it partially applies (XPath 3.1
+ * §3.1.5.2), so `fn:function-name` of it is the empty sequence.
+ */
 const partial = (
-  name: Option.Option<QName>,
   signature: Signature,
   args: ReadonlyArray<Code | undefined>,
   ctx: Ctx,
@@ -534,7 +537,7 @@ const partial = (
     params: holes.map((i) => signature.params[i] ?? anySequence),
     result: signature.result,
   };
-  return new Closure(name, sig, (given) => {
+  return new Closure(Option.none(), sig, (given) => {
     const full = fixed.map((v, i) => v ?? given[holes.indexOf(i)] ?? empty);
     return call(full);
   });
@@ -562,12 +565,9 @@ const functionCall = (
   const statics = functionStatics(scope);
   const { all, codes } = compileArgs(argExprs, scope);
   if (codes === undefined) {
-    const qname = qnameOf(resolve(scope, name, "function"), name);
     const sig = targetSignature(target, argExprs.length);
     return (ctx) => [
-      partial(Option.some(qname), sig, all, ctx, (full) =>
-        invokeTarget(target, full, ctx, statics, offset),
-      ),
+      partial(sig, all, ctx, (full) => invokeTarget(target, full, ctx, statics, offset)),
     ];
   }
   if (target.kind === "user")
@@ -726,10 +726,7 @@ const dynamicCall = (
   if (codes === undefined)
     return (ctx) => {
       const item = theFunction(f(ctx), all.length, offset);
-      const name = item instanceof FunctionItem ? item.name : Option.none();
-      return [
-        partial(name, signatureOf(item), all, ctx, (full) => callFunction(item, full, offset)),
-      ];
+      return [partial(signatureOf(item), all, ctx, (full) => callFunction(item, full, offset))];
     };
   return (ctx) => {
     const item = theFunction(f(ctx), codes.length, offset);

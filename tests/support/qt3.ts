@@ -1089,6 +1089,32 @@ interface QNameLike {
   readonly local: string;
 }
 
+/** `fn:codepoints-to-string(13)`, a carriage return no end-of-line handling can reach. */
+const CR = "Q{http://www.w3.org/2005/xpath-functions}codepoints-to-string(13)";
+
+/** A comment (not nested, which no assertion needs) or a string literal, as XPath delimits them. */
+const commentOrLiteral = /\(:[\s\S]*?:\)|"(?:[^"]|"")*"|'(?:[^']|'')*'/g;
+
+/**
+ * An assertion's XPath with each carriage return in a string literal spelt
+ * as a call, so the engine's end-of-line handling leaves it be.
+ *
+ * The catalog is XML, so its literal CRs and CRLFs are already line feeds:
+ * a CR left in an assertion was written as a character reference (`&#xD;`)
+ * and means U+000D. XPath has no character references, so the literal is
+ * split around it: `"a&#xD;b"` reads `("a" || CR || "b")`. A CR outside a
+ * literal is whitespace and stays as it is.
+ */
+const keepCarriageReturns = (xpath: string): string =>
+  xpath.includes("\r")
+    ? xpath.replace(commentOrLiteral, (token) => {
+        const quote = token.charAt(0);
+        return quote === "(" || !token.includes("\r")
+          ? token
+          : `(${token.replaceAll("\r", `${quote} || ${CR} || ${quote}`)})`;
+      })
+    : xpath;
+
 /** Evaluate an assertion's XPath with the result bound to `$result`. */
 const evaluateWith = (
   context: CheckContext,
@@ -1098,7 +1124,7 @@ const evaluateWith = (
   context.engine.evaluate({
     ...context.request,
     spec: "XP31",
-    query,
+    query: keepCarriageReturns(query),
     contextItem: Option.none(),
     variables: [
       ...context.request.variables,
