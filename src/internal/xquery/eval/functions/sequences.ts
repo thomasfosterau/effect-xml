@@ -21,10 +21,21 @@ import { axisNodes, documentOrder } from "../axes.ts";
 import { isStringLike, toNumber } from "../cast.ts";
 import { atomicDeepEqual, deepEqual } from "../compare.ts";
 import { raise } from "../raise.ts";
-import { contextItem } from "../runtime.ts";
 import { collate, collationArg, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
-import { arg, atomOf, atomsOf, bool, int, isEmpty, optionalAtom, str, text } from "./values.ts";
+import {
+  arg,
+  atomOf,
+  atomsOf,
+  bool,
+  contextNode,
+  int,
+  isEmpty,
+  optionalAtom,
+  optionalNode,
+  str,
+  text,
+} from "./values.ts";
 
 /** How strings compare under a collation, as the comparison helpers take it. */
 const order =
@@ -165,17 +176,6 @@ const sequenceFunctions: ReadonlyArray<BuiltinSpec> = [
 // -----------------------------------------------------------------------------
 // Nodes
 // -----------------------------------------------------------------------------
-
-/** The context item, which must be a node: `err:XPTY0004` otherwise. */
-const contextNode = (call: Call): XdmNode => {
-  const item = contextItem(call.ctx, call.offset);
-  return isNode(item) ? item : raise("XPTY0004", "the context item is not a node", call.offset);
-};
-
-const optionalNode = (s: Sequence): XdmNode | undefined => {
-  const [n] = s;
-  return n !== undefined && isNode(n) ? n : undefined;
-};
 
 /** A function of an optional node, also defined with no argument (the context node). */
 const ofNode = (

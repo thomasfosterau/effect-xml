@@ -370,3 +370,69 @@ describe("higher-order functions, maps and arrays", () => {
     ]);
   });
 });
+
+/** `adjust-dateTime-to-timezone` of a fixed dateTime to `tz`. */
+const at = (tz: string) =>
+  `adjust-dateTime-to-timezone(xs:dateTime('2002-03-07T10:00:00-07:00'), ${tz})`;
+
+describe("dates, times and durations", () => {
+  test("components, with 24:00:00 as the next day's midnight", () => {
+    expect(
+      values(
+        "year-from-dateTime(xs:dateTime('1999-12-31T24:00:00')), hours-from-time(xs:time('24:00:00'))",
+      ),
+    ).toEqual(["2000", "0"]);
+    expect(
+      values(
+        "seconds-from-dateTime(xs:dateTime('2000-01-01T10:00:12.5Z')), timezone-from-date(xs:date('2000-01-01-05:00'))",
+      ),
+    ).toEqual(["12.5", "-PT5H"]);
+    expect(values("timezone-from-time(xs:time('10:00:00')), month-from-date(())")).toEqual([]);
+    expect(
+      values(
+        "days-from-duration(xs:duration('-P3DT10H')), hours-from-duration(xs:duration('-P3DT10H')), seconds-from-duration(xs:dayTimeDuration('PT1.5S'))",
+      ),
+    ).toEqual(["-3", "-10", "1.5"]);
+    expect(
+      values(
+        "years-from-duration(xs:yearMonthDuration('-P20M')), months-from-duration(xs:yearMonthDuration('-P20M'))",
+      ),
+    ).toEqual(["-1", "-8"]);
+  });
+
+  test("dateTime and timezone adjustment", () => {
+    expect(value("dateTime(xs:date('1999-12-31'), xs:time('12:00:00Z'))")).toBe(
+      "1999-12-31T12:00:00Z",
+    );
+    expect(code("dateTime(xs:date('1999-12-31+01:00'), xs:time('12:00:00Z'))")).toBe("FORG0008");
+    expect(values(`${at("xs:dayTimeDuration('PT10H')")}, ${at("()")}`)).toEqual([
+      "2002-03-08T03:00:00+10:00",
+      "2002-03-07T10:00:00",
+    ]);
+    expect(
+      value("adjust-date-to-timezone(xs:date('2002-03-07-07:00'), xs:dayTimeDuration('-PT10H'))"),
+    ).toBe("2002-03-06-10:00");
+    expect(value("adjust-time-to-timezone(xs:time('10:00:00'))")).toBe("10:00:00Z");
+    expect(code(at("xs:dayTimeDuration('PT15H')"))).toBe("FODT0003");
+  });
+
+  test("parse-ietf-date", () => {
+    expect(value("parse-ietf-date('Wed, 06 Jun 1994 07:29:35 GMT')")).toBe("1994-06-06T07:29:35Z");
+    expect(value("parse-ietf-date('Sun Nov  6 08:49:37 1994')")).toBe("1994-11-06T08:49:37Z");
+    expect(value("parse-ietf-date('6-Jun-94 7:29 EST')")).toBe("1994-06-06T07:29:00-05:00");
+    expect(value("parse-ietf-date('06 Jun 1994 07:29:35 +0130 (GMT)')")).toBe(
+      "1994-06-06T07:29:35+01:30",
+    );
+    expect(code("parse-ietf-date('31 Feb 2000 00:00')")).toBe("FORG0010");
+  });
+
+  test("map keys: dates and times by the instant they denote", () => {
+    expect(code("map { xs:time('12:00:00Z'): 1, xs:time('13:00:00+01:00'): 2 }")).toBe("XQDY0137");
+    expect(value("map:size(map { xs:time('12:00:00Z'): 1, xs:time('12:00:00'): 2 })")).toBe("2");
+    expect(
+      value(
+        "map:contains(map { xs:dateTime('1999-12-31T24:00:00'): 1 }, xs:dateTime('2000-01-01T00:00:00'))",
+      ),
+    ).toBe("true");
+  });
+});
