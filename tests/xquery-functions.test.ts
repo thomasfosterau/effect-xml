@@ -304,6 +304,29 @@ describe("higher-order functions, maps and arrays", () => {
     expect(code("filter(1, function($x) { 1 })")).toBe("XPTY0004");
   });
 
+  test("maps and arrays are coerced to the function types they are passed as", () => {
+    // A map or array whose values do not all match is wrapped, and each call's result is checked.
+    expect(values("filter((4, 5, 6), [1, 2, 3, true(), false(), true()])")).toEqual(["4", "6"]);
+    expect(values("array:filter([1, 2, 3], map { 1: true(), 2: false(), 3: true() })?*")).toEqual([
+      "1",
+      "3",
+    ]);
+    expect(value("for-each(('a', 'b'), map { 'a': 1, 'b': 2 }) => sum()")).toBe("3");
+    expect(code("filter(1, ['x'])")).toBe("XPTY0004");
+    expect(code("filter(1, map {})")).toBe("XPTY0004");
+    expect(code("filter(2, [true()])")).toBe("FOAY0001");
+    expect(code("filter(1, concat#2)")).toBe("XPTY0004");
+    // One that already matches the function type stays a map or array; one that does not becomes a function.
+    const kind = (type: string, arg: string) =>
+      value(
+        `declare function local:f($f as ${type}) { $f instance of map(*), $f instance of array(*) }; local:f(${arg})`,
+      );
+    expect(kind("function(xs:anyAtomicType) as item()*", "map { 1: 2 }")).toBe("true false");
+    expect(kind("function(xs:integer) as item()*", "[1]")).toBe("false true");
+    expect(kind("function(item()) as xs:boolean", "map { 1: 'a' }")).toBe("false false");
+    expect(kind("function(item()) as xs:boolean", "['a']")).toBe("false false");
+  });
+
   test("map:merge, find, put, remove, for-each", () => {
     expect(values("map:merge((map { 1: 'a' }, map { 1: 'b' }))(1)")).toEqual(["a"]);
     expect(
@@ -434,5 +457,40 @@ describe("dates, times and durations", () => {
         "map:contains(map { xs:dateTime('1999-12-31T24:00:00'): 1 }, xs:dateTime('2000-01-01T00:00:00'))",
       ),
     ).toBe("true");
+  });
+});
+
+describe("JSON", () => {
+  test("parse-json: values, null, escapes, duplicates and errors", () => {
+    expect(values(`parse-json('{"a": [1, true, null, "x\\u0041\\n"]}')?a?*`)).toEqual([
+      "1",
+      "true",
+      "xA\n",
+    ]);
+    expect(value(`parse-json('[1.5e2]')?1 instance of xs:double`)).toBe("true");
+    expect(values(`parse-json('null')`)).toEqual([]);
+    expect(value(`parse-json('"\\uD83D\\uDE00"')`)).toBe("😀");
+    expect(value(`parse-json('"\\u0000"')`)).toBe("\uFFFD");
+    expect(value(`parse-json('"a\\u0000\\\\"', map { 'escape': true() })`)).toBe("a\\u0000\\\\");
+    expect(
+      value(`parse-json('"\\u0000"', map { 'fallback': function($s) { '[' || $s || ']' } })`),
+    ).toBe("[\\u0000]");
+    expect(value(`parse-json('{"a": 1, "a": 2}')?a`)).toBe("1");
+    expect(value(`parse-json('{"a": 1, "a": 2}', map { 'duplicates': 'use-last' })?a`)).toBe("2");
+    expect(code(`parse-json('{"a": 1, "a": 2}', map { 'duplicates': 'reject' })`)).toBe("FOJS0003");
+    expect(code(`parse-json('[1, 2')`)).toBe("FOJS0001");
+    expect(code(`parse-json('[1 2]')`)).toBe("FOJS0001");
+    expect(code(`parse-json('{"a" 1}')`)).toBe("FOJS0001");
+    expect(code(`parse-json('1', map { 'duplicates': 'maybe' })`)).toBe("FOJS0005");
+  });
+
+  test("json-to-xml and xml-to-json round-trip", () => {
+    const xml = `json-to-xml('{"a": [1, true, null, "x/"], "b": {}}')`;
+    expect(value(`${xml}/*/local-name()`)).toBe("map");
+    expect(values(`${xml}/*/*/@key/string()`)).toEqual(["a", "b"]);
+    expect(value(`namespace-uri(${xml}/*)`)).toBe("http://www.w3.org/2005/xpath-functions");
+    expect(value(`xml-to-json(${xml})`)).toBe(`{"a":[1,true,null,"x\\/"],"b":{}}`);
+    expect(value(`xml-to-json(json-to-xml('[1e6]'))`)).toBe("[1.0E6]");
+    expect(code(`xml-to-json(json-to-xml('[1]')/*/*/text())`)).toBe("FOJS0006");
   });
 });
