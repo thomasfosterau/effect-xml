@@ -1,0 +1,5 @@
+---
+"@thomasfosterau/effect-xml": minor
+---
+
+XQuery streaming: `XQuery.stream(query, options?)` evaluates a query over a stream of SAX events, building each subtree its path selects when the subtree ends and running the rest of the query on it, so results stream out in document order (equal to `XQuery.evaluate` over the parsed document) in memory bounded by the largest match. `XQuery.compileStream` checks and compiles a query once for any number of streams. The streamable subset is a selection of `child`, `descendant`, `self` and `descendant-or-self` steps with element tests, whose predicates read attributes, names and positions among the siblings seen so far, followed by `/` steps, content predicates and `!` expressions that stay within each match; a query outside it fails with an `XQueryError` whose code is `XQuery.NotStreamableCode` (`NotStreamable` in `XQuery.ImplementationNamespace`). `Sax.select` and `Xsd.select` now go through the same analysis, with the same behaviour as before (they also accept predicates such as `count(@*) > 1` over the element's attributes).

@@ -15,190 +15,15 @@
  * rejected with an {@link XPathError}. A match nested inside a selected
  * subtree is part of that subtree, not selected again.
  */
-import * as Arr from "effect/Array";
-import * as Data from "effect/Data";
-import * as HashMap from "effect/HashMap";
-import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
-import {
-  InvalidDocumentStructure,
-  MismatchedEndTag,
-  UnboundNamespacePrefix,
-  UnexpectedEndTag,
-  type SaxError,
-} from "../Error.ts";
-import { resolveAttributes } from "../internal/attributes.ts";
-import { QNames } from "../internal/qnames.ts";
-import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
-import * as Nodes from "../internal/nodes.ts";
-import { Namespaces, QName } from "../Name.ts";
-import { origin, type Span } from "../Position.ts";
+import type { SaxError } from "../Error.ts";
 import type { SaxEvent } from "../Sax.ts";
-import {
-  advance,
-  selects,
-  compileStreamable,
-  unmatched,
-  type StepLevel,
-  type StreamStep,
-} from "../internal/streamPath.ts";
-import { type XmlAttribute, XmlElement, type XmlNode } from "./Node.ts";
-import { XPathError, type CompileOptions, type Path } from "./XPath.ts";
-
-interface Level extends StepLevel {
-  readonly rawName: string;
-  /** The namespaces this element declares, prefix (`""`: default) to URI. */
-  readonly bindings: HashMap.HashMap<string, string>;
-}
-
-interface Frame {
-  readonly name: QName;
-  readonly attributes: ReadonlyArray<XmlAttribute>;
-  readonly children: Array<XmlNode>;
-}
-
-// (Built here rather than imported from `Sax.ts`, which imports this module.)
-const matchSaxEvent = Data.taggedEnum<SaxEvent>().$match;
-
-class Selector {
-  private readonly levels: Array<Level> = [];
-  /** The subtree being built, innermost element last, and the level it started at. */
-  private readonly capture: Array<Frame> = [];
-  private captureDepth = -1;
-  private unbinding = false;
-  /** The names built so far, so each raw name and namespace is built once. */
-  private readonly names = new QNames();
-  /** The span of the last event (its end is where an unclosed element is reported). */
-  last: Span = { start: origin, end: origin };
-
-  private readonly steps: ReadonlyArray<StreamStep>;
-
-  constructor(steps: ReadonlyArray<StreamStep>) {
-    this.steps = steps;
-  }
-
-  private resolve(
-    raw: string,
-    isAttribute: boolean,
-    bindings: HashMap.HashMap<string, string>,
-    at: Span,
-  ): QName | SaxError {
-    const parsed = this.names.entry(raw);
-    if (parsed.prefix === "xml") return this.names.name(parsed, Namespaces.xml);
-    if (parsed.prefix === "xmlns") return this.names.name(parsed, Namespaces.xmlns);
-    if (parsed.prefix === null && isAttribute) return this.names.name(parsed, null);
-    const key = parsed.prefix ?? "";
-    const ns = Option.getOrUndefined(
-      HashMap.get(bindings, key).pipe(
-        Option.orElse(() => Arr.findLast(this.levels, (level) => HashMap.get(level.bindings, key))),
-      ),
-    );
-    // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
-    if (ns === undefined || (ns === "" && parsed.prefix !== null)) {
-      if (parsed.prefix === null) return this.names.name(parsed, null);
-      return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position: at.start });
-    }
-    // `xmlns=""` undeclares the default namespace.
-    return this.names.name(parsed, ns === "" ? null : ns);
-  }
-
-  /** Feed one event; returns a completed subtree, an error, or nothing. */
-  accept(ev: SaxEvent): XmlElement | SaxError | null {
-    this.last = ev.span;
-    return matchSaxEvent(ev, this.handlers);
-  }
-
-  /** What each event kind does; built once per selector. */
-  private readonly handlers = {
-    StartElement: (ev: Extract<SaxEvent, { _tag: "StartElement" }>) => this.start(ev),
-    EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>) => this.end(ev.name, ev.span),
-    Text: (ev: Extract<SaxEvent, { _tag: "Text" }>) => this.append(Nodes.text(ev.data)),
-    CData: (ev: Extract<SaxEvent, { _tag: "CData" }>) => this.append(Nodes.cdata(ev.data)),
-    Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>) => this.append(Nodes.comment(ev.data)),
-    ProcessingInstruction: (ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>) =>
-      Option.getOrElse(checkNoColon(ev.target, "a processing instruction target", ev.span), () =>
-        this.append(Nodes.processingInstruction(ev.target, ev.data)),
-      ),
-    Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>) =>
-      ev.internalSubset === null ? null : Option.getOrNull(checkSubset(ev.internalSubset, ev.span)),
-    XmlDeclaration: (ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>) => {
-      // Only an XML 1.1 document may undeclare a prefix with `xmlns:p=""`.
-      this.unbinding = ev.version === "1.1";
-      return null;
-    },
-  };
-
-  private append(node: XmlNode): null {
-    this.capture.at(-1)?.children.push(node);
-    return null;
-  }
-
-  private start(ev: Extract<SaxEvent, { _tag: "StartElement" }>): XmlElement | SaxError | null {
-    const invalid = checkStartTag(ev.name, ev.attributes, ev.span, this.unbinding);
-    if (Option.isSome(invalid)) return invalid.value;
-    const bindings = Arr.reduce(ev.attributes, HashMap.empty<string, string>(), (acc, a) =>
-      a.name === "xmlns"
-        ? HashMap.set(acc, "", a.value)
-        : a.name.startsWith("xmlns:")
-          ? HashMap.set(acc, a.name.slice(6), a.value)
-          : acc,
-    );
-    const name = this.resolve(ev.name, false, bindings, ev.span);
-    if (!(name instanceof QName)) return name;
-    // In document order; the first duplicate or unbound prefix ends the element.
-    const resolved = resolveAttributes(ev.name, ev.attributes, (attribute, at) => {
-      const qname = this.resolve(attribute, true, bindings, at);
-      return qname instanceof QName ? Result.succeed(qname) : Result.fail(qname);
-    });
-    if (Result.isFailure(resolved)) return resolved.failure;
-    const attributes = resolved.success;
-
-    if (Arr.isReadonlyArrayNonEmpty(this.capture)) {
-      // Inside a selected subtree: just build.
-      this.capture.push({ name, attributes, children: [] });
-    } else {
-      const level = advance(this.steps, Option.fromUndefinedOr(this.levels.at(-1)), name, () =>
-        Nodes.element(name, attributes, []),
-      );
-      this.levels.push({ rawName: ev.name, bindings, ...level });
-      if (selects(this.steps, level)) {
-        this.captureDepth = this.levels.length - 1;
-        this.capture.push({ name, attributes, children: [] });
-      }
-      if (ev.selfClosing) return this.end(ev.name, ev.span);
-      return null;
-    }
-    this.levels.push({ rawName: ev.name, bindings, ...unmatched });
-    return ev.selfClosing ? this.end(ev.name, ev.span) : null;
-  }
-
-  private end(rawName: string, at: Span): XmlElement | SaxError | null {
-    const level = this.levels.pop();
-    if (level === undefined) return new UnexpectedEndTag({ name: rawName, position: at.start });
-    if (level.rawName !== rawName)
-      return new MismatchedEndTag({ expected: level.rawName, actual: rawName, position: at.start });
-    const frame = this.capture.pop();
-    if (frame === undefined) return null;
-    const element = Nodes.element(frame.name, frame.attributes, frame.children);
-    if (this.levels.length === this.captureDepth) {
-      this.captureDepth = -1;
-      return element;
-    }
-    this.capture.at(-1)?.children.push(element);
-    return null;
-  }
-
-  finish(): SaxError | null {
-    const open = this.levels.at(-1);
-    return open === undefined
-      ? null
-      : new InvalidDocumentStructure({
-          position: this.last.end,
-          reason: `unexpected end of input: <${open.rawName}> was never closed`,
-        });
-  }
-}
+import { selectFrom, Selector } from "../internal/selector.ts";
+import { compileStreamable } from "../internal/streamPath.ts";
+import { Cursor } from "./Cursor.ts";
+import type { XmlElement } from "./Node.ts";
+import type { XPathError, CompileOptions, Path } from "./XPath.ts";
 
 /**
  * Select the subtrees matching `path` from a stream of SAX events, each built
@@ -242,27 +67,14 @@ export const select =
     Stream.suspend((): Stream.Stream<XmlElement, E | SaxError | XPathError, R> => {
       const steps = compileStreamable(path, options);
       if (Result.isFailure(steps)) return Stream.fail(steps.failure);
-      const selector = new Selector(steps.success);
-      // A chunk of events at a time, folded synchronously up to the first
-      // error: a stream per event cost more than the selection.
-      const body = events.pipe(
-        Stream.chunks,
-        Stream.flatMap((chunk) => {
-          const selected: Array<XmlElement> = [];
-          const failed = Arr.findFirst(chunk, (ev) => {
-            const out = selector.accept(ev);
-            if (out instanceof XmlElement) selected.push(out);
-            return out === null || out instanceof XmlElement ? Option.none() : Option.some(out);
-          });
-          return Option.match(failed, {
-            onNone: () => Stream.fromArray(selected),
-            onSome: (error) => Stream.concat(Stream.fromArray(selected), Stream.fail(error)),
-          });
-        }),
-      );
-      const tail = Stream.suspend(() => {
-        const error = selector.finish();
-        return error === null ? Stream.empty : Stream.fail(error);
+      const selector = new Selector({
+        steps: steps.success,
+        view: (element: XmlElement) => Cursor.root(element),
+        passes: (predicate: (cursor: Cursor) => boolean, cursor: Cursor) => predicate(cursor),
+        nested: false,
+        ancestors: false,
       });
-      return Stream.concat(body, tail);
+      return selectFrom(events, selector, (matches) =>
+        Stream.fromArray(matches.map((m) => m.element)),
+      );
     });

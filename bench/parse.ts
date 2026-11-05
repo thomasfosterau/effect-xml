@@ -6,8 +6,9 @@
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
  * stream (whole string and 64 KiB chunks), as bytes, as a DOM, with
  * streaming selection of rows, and validated against a schema for the
- * worksheet (as events, and as typed values), and queried with XPath
- * (`XQuery.evaluate` over the parsed DOM). A generated product catalog is
+ * worksheet (as events, and as typed values), queried with XPath
+ * (`XQuery.evaluate` over the parsed DOM), and queried with `XQuery.stream`
+ * against parsing and evaluating the same query over the DOM. A generated product catalog is
  * validated against a schema that uses substitution groups, derivation,
  * choices and facets, which the worksheet's schema does not. HTML is measured with
  * `Html.parseDocument` and `Html.parseFragment` on a generated page that
@@ -149,6 +150,44 @@ const rowsQuery = await Effect.runPromise(
 await time("effect-xml XPath (XQuery.evaluate)", () =>
   Effect.runPromise(
     Effect.asVoid(XQuery.evaluate(rowsQuery, { context: XQuery.XdmNode.fromDocument(sheetDom) })),
+  ),
+);
+
+// The same queries streamed (`XQuery.stream` over the SAX events of 64 KiB
+// chunks, each row built and queried as it ends), against the DOM: parsing
+// the document and evaluating the query over it, as a caller without
+// streaming would.
+const rowsStream = await Effect.runPromise(Effect.fromResult(XQuery.compileStream(rowsQuery)));
+await time("effect-xml XQuery.stream (rows)", () =>
+  Effect.runPromise(
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), XQuery.stream(rowsStream), Stream.runDrain),
+  ),
+);
+await time("effect-xml XQuery DOM (rows)", () =>
+  Effect.runPromise(
+    Effect.asVoid(
+      Effect.flatMap(Xml.parse(input), (dom) => XQuery.evaluate(rowsQuery, { context: dom })),
+    ),
+  ),
+);
+const mapQuery = await Effect.runPromise(
+  Effect.fromResult(
+    XQuery.compile("//x:row ! map { 'r': string(@r), 'cells': array { x:c/x:v ! string() } }", {
+      namespaces: { x: SML },
+    }),
+  ),
+);
+const mapStream = await Effect.runPromise(Effect.fromResult(XQuery.compileStream(mapQuery)));
+await time("effect-xml XQuery.stream (row maps)", () =>
+  Effect.runPromise(
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), XQuery.stream(mapStream), Stream.runDrain),
+  ),
+);
+await time("effect-xml XQuery DOM (row maps)", () =>
+  Effect.runPromise(
+    Effect.asVoid(
+      Effect.flatMap(Xml.parse(input), (dom) => XQuery.evaluate(mapQuery, { context: dom })),
+    ),
   ),
 );
 
