@@ -62,6 +62,8 @@ const FEATURES: HashMap.HashMap<string, boolean> = /*#__PURE__*/ HashMap.make(
   ["collection-stability", true],
   ["olson-timezone", true],
   ["non_empty_sequence_collection", true],
+  // XPath only: a test that depends on it is compiled in the mode (`xpath1Compatibility`).
+  ["xpath-1.0-compatibility", true],
   // Unsupported (#70): schema awareness, static typing, the namespace axis,
   // UCA collations, typed data.
   ["schemaImport", false],
@@ -76,7 +78,6 @@ const FEATURES: HashMap.HashMap<string, boolean> = /*#__PURE__*/ HashMap.make(
   // Unsupported for now: candidates for later phases.
   ["serialization", false],
   ["infoset-dtd", false],
-  ["xpath-1.0-compatibility", false],
   ["fn-load-xquery-module", false],
   ["fn-format-integer-CLDR", false],
   // Out of scope: needs an XSLT processor, the network or a file system.
@@ -680,6 +681,8 @@ export interface Request {
   }>;
   readonly decimalFormats: ReadonlyArray<DecimalFormat>;
   readonly defaultCollation: Option.Option<string>;
+  /** Whether the test asks for XPath 1.0 compatibility mode (the `xpath-1.0-compatibility` feature). */
+  readonly xpath1Compatibility: boolean;
 }
 
 /** The engine can't run this yet: never a pass, whatever the test expects. */
@@ -783,6 +786,7 @@ const compileCached = (spec: Spec, query: string, options: XQuery.CompileOptions
     Record.toEntries(options.namespaces ?? {}).join(" "),
     (options.variables ?? []).join(" "),
     options.baseUri ?? "",
+    String(options.xpath1Compatibility ?? false),
     Record.toEntries(options.decimalFormats ?? {})
       .map(([name, properties]) => `${name}=${Record.toEntries(properties).join(",")}`)
       .join(" "),
@@ -802,6 +806,7 @@ export const xqueryEngine: Engine = {
       namespaces: Record.fromEntries(request.namespaces.map((b) => [b.prefix, b.uri] as const)),
       variables: request.variables.map((v) => clarkOf(request, v.name)),
       baseUri: Option.getOrUndefined(request.baseUri),
+      xpath1Compatibility: request.xpath1Compatibility,
       decimalFormats: Record.fromEntries(
         request.decimalFormats.map((f) => [
           Option.match(f.name, {
@@ -1006,6 +1011,9 @@ const buildRequest = Effect.fnUntraced(function* (
     resources: HashMap.fromIterable(resources),
     modules,
     decimalFormats: environment.decimalFormats,
+    xpath1Compatibility: test.dependencies.some(
+      (d) => d.type === "feature" && d.value === "xpath-1.0-compatibility" && d.satisfied,
+    ),
     defaultCollation: Option.map(
       Arr.findFirst(environment.collations, (c) => c.isDefault),
       (c) => c.uri,

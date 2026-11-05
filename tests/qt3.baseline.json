@@ -502,7 +502,7 @@
     },
     "fn-parse-xml-fragment": {
       "runnable": 25,
-      "passing": 23
+      "passing": 24
     },
     "fn-path": {
       "runnable": 17,
@@ -1903,8 +1903,8 @@
       "passing": 71
     },
     "fn-format-number": {
-      "runnable": 248,
-      "passing": 248
+      "runnable": 252,
+      "passing": 252
     },
     "fn-format-time": {
       "runnable": 88,
@@ -1923,8 +1923,8 @@
       "passing": 21
     },
     "fn-generate-id": {
-      "runnable": 18,
-      "passing": 18
+      "runnable": 19,
+      "passing": 19
     },
     "fn-has-children": {
       "runnable": 33,
@@ -2112,7 +2112,7 @@
     },
     "fn-parse-xml-fragment": {
       "runnable": 25,
-      "passing": 23
+      "passing": 24
     },
     "fn-path": {
       "runnable": 12,

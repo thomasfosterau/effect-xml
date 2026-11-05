@@ -256,14 +256,14 @@
       "static": 119
     },
     "fn-format-dateTime": {
-      "runnable": 83,
-      "syntax": 83,
-      "static": 83
+      "runnable": 91,
+      "syntax": 91,
+      "static": 91
     },
     "fn-format-integer": {
-      "runnable": 64,
-      "syntax": 64,
-      "static": 64
+      "runnable": 71,
+      "syntax": 71,
+      "static": 71
     },
     "fn-format-number": {
       "runnable": 263,
@@ -2208,19 +2208,19 @@
       "static": 118
     },
     "fn-format-dateTime": {
-      "runnable": 78,
-      "syntax": 78,
-      "static": 78
+      "runnable": 86,
+      "syntax": 86,
+      "static": 86
     },
     "fn-format-integer": {
-      "runnable": 64,
-      "syntax": 64,
-      "static": 64
+      "runnable": 71,
+      "syntax": 71,
+      "static": 71
     },
     "fn-format-number": {
-      "runnable": 248,
-      "syntax": 248,
-      "static": 248
+      "runnable": 252,
+      "syntax": 252,
+      "static": 252
     },
     "fn-format-time": {
       "runnable": 88,
@@ -2243,9 +2243,9 @@
       "static": 22
     },
     "fn-generate-id": {
-      "runnable": 18,
-      "syntax": 18,
-      "static": 18
+      "runnable": 19,
+      "syntax": 19,
+      "static": 19
     },
     "fn-has-children": {
       "runnable": 33,
