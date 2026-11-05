@@ -11,131 +11,8 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Stream from "effect/Stream";
-import { Sax, Xml } from "../src/index.ts";
-
-/** A deterministic generator (mulberry32), so a failure reproduces. */
-const random = (seed: number) => {
-  let a = seed;
-  return (): number => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-
-/** Pieces that make up tags, text and their near misses. */
-const pieces = [
-  "<",
-  ">",
-  "/",
-  "</",
-  "/>",
-  "a",
-  "b:c",
-  "x1",
-  "_",
-  "-",
-  ".",
-  "9",
-  "é",
-  "\u{1F600}",
-  " ",
-  "\t",
-  "\n",
-  "\r\n",
-  "\f",
-  "=",
-  '"',
-  "'",
-  "&",
-  "amp;",
-  "&lt;",
-  "&gt;",
-  "&quot;",
-  "&apos;",
-  "&#65;",
-  "&#x41;",
-  "&#X41;",
-  "&#0;",
-  "&#x110000;",
-  "&#99999999999;",
-  "&nope;",
-  "&a-b;",
-  "]]>",
-  "]]",
-  "<!--c-->",
-  "<!---->",
-  "<!--->",
-  "<!-- a -- b -->",
-  "<!-- a --->",
-  "<!--",
-  "<!-",
-  "<!x",
-  "<?pi x?>",
-  "<?pi?>",
-  "<?pi\t \n x ?>",
-  "<?pi\fx?>",
-  "<?pix?>",
-  "<?xml-stylesheet href='a'?>",
-  "<?xml version='1.0'?>",
-  "<?XmL x?>",
-  "<?é x?>",
-  "<?",
-  "?>",
-  "<![CDATA[x]]>",
-  "<![CDATA[]]>",
-  "<![CDATA[a]]b]]>",
-  "<![CDATA[",
-  "<![cdata[x]]>",
-  "text",
-  "\u0001",
-];
-
-const pick = <A>(next: () => number, items: ReadonlyArray<A>): A =>
-  Arr.getUnsafe(items, Math.floor(next() * items.length));
-
-/** A well-formed element, with attributes, text and references. */
-const element = (next: () => number): string => {
-  // ASCII names, names with non-ASCII characters, and now and then a name
-  // a non-ASCII character unmakes.
-  const name = (): string =>
-    next() < 0.9
-      ? pick(next, ["a", "row", "x:c", "v_1", "a.b-c", "日本", "é", "x·y", "a\u0300", "ü:ß"])
-      : pick(next, ["\u00d7", "a\u00d7", "\u{1F600}", "\uD800"]);
-  // Mostly valid values, and the ones the grammar rejects.
-  const value = (): string =>
-    next() < 0.85
-      ? pick(next, ["", "1", "a&amp;b", "x\ty", "&#x41;", "q'q", "\n", "é"])
-      : pick(next, ["a<b", "&nope;", "&#0;", "&#X41;", "&", "&amp", "]]>"]);
-  const attrs = Arr.makeBy(Math.floor(next() * 3), (i) => {
-    const q = next() < 0.5 ? '"' : "'";
-    const v = value().replaceAll(q, "");
-    return `${next() < 0.2 ? "\n" : " "}${name()}${i}${next() < 0.2 ? " = " : "="}${q}${v}${q}`;
-  }).join("");
-  const n = name();
-  return next() < 0.3
-    ? `<${n}${attrs}${next() < 0.5 ? " " : ""}/>`
-    : `<${n}${attrs}>${next() < 0.5 ? "t &lt; u\r\n" : ""}</${n}${next() < 0.2 ? "  " : ""}>`;
-};
-
-/** Documents: well-formed elements with near misses spliced in now and then. */
-const documents = (seed: number, count: number): ReadonlyArray<string> => {
-  const next = random(seed);
-  return Arr.makeBy(count, (i) => {
-    const body = Arr.makeBy(1 + Math.floor(next() * 6), () =>
-      next() < 0.6 ? element(next) : pick(next, pieces),
-    ).join("");
-    // Every fourth one is well-formed, so the failures don't hide the rest;
-    // some have markup before and after the root element.
-    const prolog =
-      i % 3 === 0 ? pick(next, ["<?pi x?>", "<!-- c -->\n", "<![CDATA[x]]>", " "]) : "";
-    const epilog = i % 5 === 0 ? pick(next, ["<!-- e -->", "<?pi?>", "\n", "<![CDATA[y]]>"]) : "";
-    return i % 4 === 0
-      ? `${prolog}<root>${Arr.makeBy(4, () => element(next)).join("")}</root>${epilog}`
-      : `${prolog}<root>${body}</root>${epilog}`;
-  });
-};
+import { origin, Sax, Xml } from "../src/index.ts";
+import { documents } from "./support/documents.ts";
 
 /** The events of `doc` (or its failure), whole or in chunks of `size`. */
 const tokenize = (doc: string, options: Sax.SaxOptions, size: number) =>
@@ -148,6 +25,18 @@ const tokenize = (doc: string, options: Sax.SaxOptions, size: number) =>
   );
 
 const docs = documents(1, 3000);
+
+const nowhere = { start: origin, end: origin };
+
+/** An event as `positions: false` gives it: every span the origin. */
+const unplaced = (ev: Sax.SaxEvent): Sax.SaxEvent =>
+  Sax.isStartElement(ev)
+    ? Sax.SaxEvent.StartElement({
+        ...ev,
+        attributes: ev.attributes.map((a) => ({ ...a, span: nowhere })),
+        span: nowhere,
+      })
+    : { ...ev, span: nowhere };
 
 describe("the XML scanner", () => {
   test("agrees with the token grammars: events, spans and failures", () => {
@@ -172,6 +61,49 @@ describe("the XML scanner", () => {
     const exits = docs.map((doc) => tokenize(doc, {}, doc.length));
     expect(exits.filter(Exit.isSuccess).length).toBeGreaterThan(600);
     expect(exits.filter(Exit.isFailure).length).toBeGreaterThan(750);
+  });
+
+  test("without positions: the same events at the origin, and the same failures", () => {
+    Arr.forEach(docs, (doc) =>
+      Arr.forEach([doc.length, 3], (size) =>
+        expect(tokenize(doc, { positions: false }, size), doc).toStrictEqual(
+          Exit.map(tokenize(doc, {}, size), (events) => Arr.map(events, unplaced)),
+        ),
+      ),
+    );
+  });
+
+  test("without positions, a limit points at the start of the token that broke it", () => {
+    const doc = `<root>\n  <a x="1" y="${"z".repeat(40)}"/></root>`;
+    const failure = (positions: boolean) =>
+      Effect.runSync(Effect.flip(Sax.collect(doc, { positions, limits: { maxTextLength: 10 } })));
+    expect(failure(true)).toMatchObject({
+      _tag: "LimitExceeded",
+      position: { line: 2, column: 12 },
+    });
+    expect(failure(false)).toMatchObject({
+      _tag: "LimitExceeded",
+      position: { line: 2, column: 3 },
+    });
+  });
+
+  test("Sax.forEach hands over the events Sax.tokenize streams, and its failure", () => {
+    const each = (doc: string | Uint8Array, options: Sax.SaxBytesOptions) => {
+      const events: Array<Sax.SaxEvent> = [];
+      const exit = Effect.runSync(
+        Effect.exit(Sax.forEach(doc, (event) => events.push(event), options)),
+      );
+      return Exit.map(exit, () => events);
+    };
+    Arr.forEach(docs, (doc) => {
+      expect(each(doc, {}), doc).toStrictEqual(tokenize(doc, {}, doc.length));
+      // (Encoding replaces a lone surrogate: compare with the text the bytes are.)
+      const bytes = new TextEncoder().encode(doc);
+      const text = new TextDecoder().decode(bytes);
+      expect(each(bytes, { positions: false }), doc).toStrictEqual(
+        tokenize(text, { positions: false }, text.length),
+      );
+    });
   });
 
   test("Xml.parse, built without positions, agrees with Xml.parseStream", () => {

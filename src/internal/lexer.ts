@@ -38,7 +38,7 @@ import {
   UnexpectedEndOfInput,
   type LexError,
 } from "../Error.ts";
-import type { Position, Span } from "../Position.ts";
+import { origin, type Position, type Span } from "../Position.ts";
 import { declarationContexts } from "./declarations.ts";
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
@@ -48,6 +48,7 @@ import {
   Fallback,
   Incomplete,
   NAME_SLOTS,
+  NO_SPAN,
   Reused,
   freshMarks,
   resetMarks,
@@ -163,11 +164,16 @@ export interface LexerOptions {
    */
   readonly scripting?: boolean | undefined;
   /**
-   * Leave positions out where the scanner reads a token (see
-   * `Context.lean`): for a caller that reads them only to report a failure
-   * and runs again with them when one happens.
+   * Whether events have positions (default `true`); without, every span is
+   * the origin. Faults keep theirs (see {@link Lexer.tokenPosition}).
    */
-  readonly lean?: boolean | undefined;
+  readonly positions?: boolean | undefined;
+  /**
+   * Reuse the scanner's events (see `Context.reuse`; only without
+   * positions): for a caller that is done with each event before it reads
+   * the next.
+   */
+  readonly reuse?: boolean | undefined;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -428,7 +434,8 @@ export class Lexer {
     this.scanner = {
       entities: options.entities,
       at: (index) => this.positions.at(this.base + index),
-      lean: options.lean ?? false,
+      positions: options.positions ?? true,
+      reuse: options.reuse === true && options.positions === false,
       end: 0,
       count: 0,
       inside: false,
@@ -504,6 +511,7 @@ export class Lexer {
   /** Lex the next token with the grammar (see {@link pull}). */
   private parse(): ReadonlyArray<LexOutput> | null {
     const start = this.cursor;
+    this.tokenStart = start;
     const state = this.parseState(start);
     // The `dtd: "internal"` grammars are shared: point them at this document's DTD.
     const dtd = this.options.dtd;
@@ -598,7 +606,8 @@ export class Lexer {
     if (!inside && this.buf.charCodeAt(start) !== 60) return undefined;
     this.scanner.inside = inside;
     // Positions are read forwards from the token's start.
-    if (!this.scanner.lean) this.positions.anchor(this.base + start);
+    this.tokenStart = start;
+    if (this.scanner.positions) this.positions.anchor(this.base + start);
     const ev = scanXml(this.buf, start, !this.ended, this.scanner);
     if (ev === Incomplete) {
       this.retryAt = this.buf.length + 1 + ((this.buf.length - start) >> 1);
@@ -653,6 +662,9 @@ export class Lexer {
 
   private trimTo(index: number): void {
     resetMarks(this.scanner.marks);
+    // Without positions in events, nothing has read the positions up to
+    // here: read them before the text that tells them goes.
+    if (!this.scanner.positions) this.positions.anchor(this.base + index);
     this.buf = this.buf.slice(index);
     this.base += index;
     this.cursor -= index;
@@ -743,7 +755,18 @@ export class Lexer {
   }
 
   private span(t: { readonly start: number; readonly end: number }): Span {
-    return { start: this.at(t.start), end: this.at(t.end) };
+    return this.scanner.positions ? { start: this.at(t.start), end: this.at(t.end) } : NO_SPAN;
+  }
+
+  /** Buffer index of the start of the last token read. */
+  private tokenStart = 0;
+
+  /**
+   * Where the last token read starts: what a failure found in its event
+   * (a resource limit) points at when events have no positions.
+   */
+  tokenPosition(): Position {
+    return this.at(this.tokenStart);
   }
 
   // A `switch`, not a `$match` table: this runs once per token, and a switch
@@ -755,7 +778,8 @@ export class Lexer {
   private event(t: Tok): LexEvent {
     switch (t._tag) {
       case "StartElement": {
-        const start = this.at(t.start);
+        // (The tag's start first: positions are read forwards.)
+        const start = this.scanner.positions ? this.at(t.start) : origin;
         const attributes = t.attributes.map((a): LexAttribute => ({
           name: a.name,
           value: a.value,
@@ -765,7 +789,7 @@ export class Lexer {
           name: t.name,
           attributes,
           selfClosing: t.selfClosing,
-          span: { start, end: this.at(t.end) },
+          span: this.scanner.positions ? { start, end: this.at(t.end) } : NO_SPAN,
           _tag: "StartElement",
         };
       }

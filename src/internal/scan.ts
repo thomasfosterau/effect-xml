@@ -33,15 +33,15 @@ export interface Context {
   readonly entities: Record<string, string>;
   /** The position of a buffer index (the lexer's position table). */
   readonly at: (index: number) => Position;
+  /** Whether events have positions (without, every span is {@link NO_SPAN}). */
+  readonly positions: boolean;
   /**
-   * Whether to leave positions out (every span is {@link NO_SPAN}) and to
-   * reuse the events: each token's is the scanner's own, rewritten by the
-   * next. For a caller that reads positions only to report a failure (and
-   * runs again with them when one happens), and is done with each event
-   * before it reads the next.
+   * Whether to reuse the events (only without {@link positions}): each
+   * token's is the scanner's own, rewritten by the next. For a caller that
+   * is done with each event before it reads the next.
    */
-  readonly lean: boolean;
-  /** The events {@link lean} reuses. */
+  readonly reuse: boolean;
+  /** The events {@link reuse} reuses. */
   readonly reused: Reused;
   /** Where the last token read ends, as a buffer index. */
   end: number;
@@ -87,14 +87,18 @@ const mark = (buf: string, ctx: Context, k: number, from: number): number => {
   return next;
 };
 
-/** The span of every token read with {@link Context.lean}. */
-const NO_SPAN: Span = { start: origin, end: origin };
+/** The span of every token read without {@link Context.positions}. */
+export const NO_SPAN: Span = { start: origin, end: origin };
 
 type Writable<T> = { -readonly [K in keyof T]: T[K] };
 type Event<Tag extends LexEvent["_tag"]> = Writable<Extract<LexEvent, { readonly _tag: Tag }>>;
 type Attribute = Writable<Event<"StartElement">["attributes"][number]>;
 
-/** The events of a {@link Context.lean} scanner, rewritten for each token. */
+/** The span of `buf[from, to)`, or {@link NO_SPAN} without {@link Context.positions}. */
+const spanOf = (ctx: Context, from: number, to: number): Span =>
+  ctx.positions ? { start: ctx.at(from), end: ctx.at(to) } : NO_SPAN;
+
+/** The events of a {@link Context.reuse} scanner, rewritten for each token. */
 export class Reused {
   readonly text: Event<"Text"> = { data: "", span: NO_SPAN, _tag: "Text" };
   readonly end: Event<"EndElement"> = { name: "", span: NO_SPAN, _tag: "EndElement" };
@@ -107,7 +111,7 @@ export class Reused {
   };
   /** The attributes of a tag, by index. */
   readonly attributes: Array<Attribute> = [];
-  /** Without {@link Context.lean}: the attributes of the tag being read (copied into its event). */
+  /** Without {@link Context.reuse}: the attributes of the tag being read (copied into its event). */
   readonly pending: Array<Attribute> = [];
   /** For each count `n`, the first `n` of {@link attributes} (as a tag's list of them). */
   readonly lists: Array<ReadonlyArray<Attribute>> = [];
@@ -310,12 +314,12 @@ const text = (buf: string, pos: number, partial: boolean, ctx: Context): ScanRes
     data = decoded;
   }
   ctx.end = to;
-  if (ctx.lean) {
+  if (ctx.reuse) {
     const ev = ctx.reused.text;
     ev.data = data;
     return ev;
   }
-  return { data, span: { start: ctx.at(pos), end: ctx.at(to) }, _tag: "Text" };
+  return { data, span: spanOf(ctx, pos, to), _tag: "Text" };
 };
 
 /** `</name>` or `</name   >`. */
@@ -329,12 +333,12 @@ const endTag = (buf: string, pos: number, partial: boolean, ctx: Context): ScanR
   if (buf.charCodeAt(i) !== GT) return Fallback;
   ctx.end = i + 1;
   const name = nameAt(buf, pos + 2, nameEnd, ctx);
-  if (ctx.lean) {
+  if (ctx.reuse) {
     const ev = ctx.reused.end;
     ev.name = name;
     return ev;
   }
-  return { name, span: { start: ctx.at(pos), end: ctx.at(i + 1) }, _tag: "EndElement" };
+  return { name, span: spanOf(ctx, pos, i + 1), _tag: "EndElement" };
 };
 
 // The other markup the scanner reads: comments, CDATA sections and
@@ -350,7 +354,7 @@ const markupEvent = (
   cdata: boolean,
 ): ScanResult => {
   ctx.end = end;
-  const span = ctx.lean ? NO_SPAN : { start: ctx.at(pos), end: ctx.at(end) };
+  const span = spanOf(ctx, pos, end);
   return cdata ? { data, span, _tag: "CData" } : { data, span, _tag: "Comment" };
 };
 
@@ -394,7 +398,7 @@ const processingInstruction = (buf: string, pos: number, ctx: Context): ScanResu
   if (close === -1) return Fallback;
   ctx.end = close + 2;
   const data = buf.slice(from, close);
-  const span = ctx.lean ? NO_SPAN : { start: ctx.at(pos), end: ctx.at(close + 2) };
+  const span = spanOf(ctx, pos, close + 2);
   return { target, data, span, _tag: "ProcessingInstruction" };
 };
 
@@ -413,7 +417,7 @@ const startTag = (buf: string, pos: number, partial: boolean, ctx: Context): Sca
   const nameEnd = wideName(buf, pos + 1, end, true);
   if (nameEnd === -1) return Fallback;
   if (nameEnd >= end) return partial ? Incomplete : Fallback;
-  const start = ctx.lean ? origin : ctx.at(pos);
+  const start = ctx.positions ? ctx.at(pos) : origin;
   const name = nameAt(buf, pos + 1, nameEnd, ctx);
   const i = readAttributes(buf, nameEnd, ctx);
   if (i === GRAMMAR) return Fallback;
@@ -439,7 +443,7 @@ const closeStart = (
   ctx.end = after;
   const count = ctx.count;
   const { reused } = ctx;
-  if (ctx.lean) {
+  if (ctx.reuse) {
     const ev = reused.start;
     ev.name = name;
     ev.attributes =
@@ -451,7 +455,7 @@ const closeStart = (
     name,
     attributes: count === 0 ? none : reused.pending.slice(0, count),
     selfClosing,
-    span: { start, end: ctx.at(after) },
+    span: ctx.positions ? { start, end: ctx.at(after) } : NO_SPAN,
     _tag: "StartElement",
   };
 };
@@ -504,7 +508,7 @@ const attributeAt = (buf: string, start: number, ctx: Context, k: number): numbe
   const value = attributeValue(buf.slice(from, close), flags, ctx);
   if (value === undefined) return GRAMMAR;
   const name = nameAt(buf, start, nameEnd, ctx);
-  if (ctx.lean) {
+  if (ctx.reuse) {
     const reused = ctx.reused.attributes;
     const a = reused[k];
     if (a === undefined) reused[k] = { name, value, span: NO_SPAN };
@@ -513,7 +517,7 @@ const attributeAt = (buf: string, start: number, ctx: Context, k: number): numbe
       a.value = value;
     }
   } else {
-    ctx.reused.pending[k] = { name, value, span: { start: ctx.at(start), end: ctx.at(close + 1) } };
+    ctx.reused.pending[k] = { name, value, span: spanOf(ctx, start, close + 1) };
   }
   return close + 1;
 };

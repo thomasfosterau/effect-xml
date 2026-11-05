@@ -9,7 +9,9 @@ import type * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import * as Sax from "../Sax.ts";
-import { build, buildChunks, type BuildOptions } from "./TreeBuilder.ts";
+import { decodeChunks } from "../internal/tokenizer.ts";
+import { buildChunks } from "../internal/xmlBuilder.ts";
+import { build, type BuildOptions } from "./TreeBuilder.ts";
 import type { XmlDocument, XmlNode } from "./Node.ts";
 import { serializeSync } from "./Writer.ts";
 import * as Result from "effect/Result";
@@ -109,7 +111,7 @@ export const parseBytes = (
   options?: ParseBytesOptions,
 ): Effect.Effect<XmlDocument, SaxError> =>
   buildChunks(
-    () => Sax.decodeByteArray(input, bytesOptions(options)),
+    () => decodeChunks(input, Sax.decodeOptions(bytesOptions(options))),
     bytesOptions(options),
     options,
   );

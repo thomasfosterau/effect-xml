@@ -19,20 +19,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
-import { type LimitExceeded, MalformedDeclaration } from "./Error.ts";
-import { Dtd } from "./internal/dtd.ts";
-import { applyDefaults, Expander } from "./internal/expansion.ts";
-import { Guard } from "./internal/guard.ts";
-import {
-  isDoctypeEvent,
-  isEntityReferenceEvent,
-  isFault,
-  isStartElementEvent,
-  Lexer,
-  type LexOutput,
-} from "./internal/lexer.ts";
-import { convert } from "./internal/convert.ts";
-import { quote } from "./internal/quote.ts";
+import { decodeChunks, runChunks, Tokenizer } from "./internal/tokenizer.ts";
 import { xmlEntities, htmlEntities } from "./internal/entities.ts";
 import type { AttrName, TagName } from "./Name.ts";
 import type { Span } from "./Position.ts";
@@ -207,6 +194,16 @@ export interface SaxOptions {
    * content is raw text, as a browser with scripting enabled reads it.
    */
   readonly scripting?: boolean | undefined;
+  /**
+   * Whether events carry their positions (default `true`). With `false`,
+   * every event's (and attribute's) `span` is the origin, and tokenizing is
+   * about a third faster; failures still carry where they happened, a
+   * resource limit the start of the token that broke it. For consumers that
+   * never read spans.
+   *
+   * @since 0.3.0
+   */
+  readonly positions?: boolean | undefined;
 }
 
 /** @internal */
@@ -218,6 +215,7 @@ export interface ResolvedOptions {
   readonly limits: Limits;
   readonly dtd: "ignore" | "internal";
   readonly scripting: boolean;
+  readonly positions: boolean;
 }
 
 /** @internal */
@@ -231,6 +229,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     limits: resolveLimits(options?.limits),
     dtd: options?.dtd ?? "ignore",
     scripting: options?.scripting ?? false,
+    positions: options?.positions ?? true,
   };
 };
 
@@ -312,167 +311,6 @@ export const tokenize =
   };
 
 /**
- * @internal One stream's tokenizing: the lexer, the limits, and (with `dtd:
- * "internal"`) the DOCTYPE's entities, turning written input into SAX events.
- * Lexes token by token, so a limit stops the lexer at the offending token
- * rather than after the whole chunk, converting each output as it comes.
- */
-export class Tokenizer {
-  /** The failure that ended the events, once there is one. */
-  fault: SaxError | undefined = undefined;
-  private ended = false;
-  private readonly lexer: Lexer;
-  private readonly guard: Guard;
-  private readonly opts: ResolvedOptions;
-  private readonly dtd: Dtd | undefined;
-  private readonly expander: Expander | undefined;
-  /** The callback {@link run} hands events to. */
-  private sink: (ev: SaxEvent) => boolean = () => true;
-
-  /** `lean`: leave positions out where the lexer can (see `LexerOptions.lean`). */
-  constructor(opts: ResolvedOptions, lean = false) {
-    this.opts = opts;
-    const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined;
-    this.dtd = dtd;
-    this.lexer = new Lexer({
-      mode: opts.mode,
-      entities: opts.entities,
-      dtd,
-      content: false,
-      scripting: opts.scripting,
-      lean,
-    });
-    this.expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
-    this.guard = new Guard(opts.limits, opts.mode === "xml");
-  }
-
-  /** Add input; a limit it breaks, if it does. */
-  write(chunk: string): LimitExceeded | undefined {
-    const over = this.guard.input(chunk.length, this.lexer);
-    if (over !== null) return over;
-    this.lexer.push(chunk);
-    return undefined;
-  }
-
-  /** Signal the end of the input. */
-  close(): void {
-    this.ended = true;
-    this.lexer.close();
-  }
-
-  /**
-   * Hand the events of the input written so far to `f`, stopping when it
-   * returns `false`, or after a whole token once `full` returns `true`.
-   * Returns whether the lexer ran dry (or failed, setting {@link fault}).
-   */
-  run(f: (ev: SaxEvent) => boolean, full?: () => boolean): boolean {
-    if (this.fault !== undefined) return true;
-    this.sink = f;
-    const dry = this.lexer.pullEach(this.each, full);
-    if (dry && !this.ended && this.fault === undefined) {
-      this.fault = this.guard.pending(this.lexer) ?? undefined;
-    }
-    return dry || this.fault !== undefined;
-  }
-
-  /** Keep one output; `false` once it is (or has become) a fault, or the sink is full. */
-  private readonly accept = (o: LexOutput): boolean => {
-    if (isFault(o)) {
-      this.fault = o.error;
-      return false;
-    }
-    const over = this.guard.event(o);
-    if (over !== null) {
-      this.fault = over;
-      return false;
-    }
-    const ev = convert(o, this.opts);
-    return ev === null || this.sink(ev);
-  };
-
-  /** Interpret a DOCTYPE or an entity reference (with `dtd: "internal"`). */
-  private interpret(o: LexOutput): ReadonlyArray<LexOutput> {
-    const { dtd, expander } = this;
-    if (dtd === undefined || expander === undefined) return [o];
-    if (isDoctypeEvent(o)) {
-      const subset = o.internalSubset;
-      const error = subset === null ? null : dtd.declare(subset);
-      if (subset === null || error === null) return [o];
-      const found = subset.slice(error.offset, error.offset + 1);
-      const fault = new MalformedDeclaration({
-        construct: "DOCTYPE internal subset",
-        expected: error.expected,
-        found: found === "" ? "end of input" : quote(found),
-        position: o.span.start,
-      });
-      return [{ _tag: "Fault", error: fault }];
-    }
-    if (isEntityReferenceEvent(o)) return expander.expand(o);
-    return [o];
-  }
-
-  // Only a DOCTYPE or an entity reference can stand for other outputs; the
-  // rest are kept one for one, without an array per output.
-  private readonly each = (raw: LexOutput): boolean => {
-    const dtd = this.dtd;
-    if (dtd === undefined) return this.accept(raw);
-    return isDoctypeEvent(raw) || isEntityReferenceEvent(raw)
-      ? this.interpret(raw).every(this.accept)
-      : this.accept(isStartElementEvent(raw) ? applyDefaults(dtd, raw) : raw);
-  };
-}
-
-/**
- * @internal Tokenize complete input synchronously, handing each event to `f`
- * (as {@link tokenize} would emit them for these chunks) until it returns a
- * failure. Returns the first failure, the tokenizer's or `f`'s. With `lean`,
- * events may have no positions (see `LexerOptions.lean`).
- */
-export const runChunks = (
-  { chunks, failure: last }: Chunks,
-  options: SaxOptions | undefined,
-  f: (ev: SaxEvent) => SaxError | null,
-  lean = false,
-): SaxError | null => {
-  const tokenizer = new Tokenizer(resolveSaxOptions(options), lean);
-  let failure: SaxError | null = null;
-  const sink = (ev: SaxEvent): boolean => (failure = f(ev)) === null;
-  const early = Arr.findFirst(chunks, (chunk): Option.Option<SaxError> => {
-    if (chunk === "") return Option.none();
-    const over = tokenizer.write(chunk);
-    if (over !== undefined) return Option.some(over);
-    tokenizer.run(sink);
-    return Option.fromNullishOr(failure ?? tokenizer.fault);
-  });
-  if (Option.isSome(early)) return early.value;
-  if (last !== undefined) return last;
-  tokenizer.close();
-  tokenizer.run(sink);
-  return failure ?? tokenizer.fault ?? null;
-};
-
-/**
- * @internal Complete input as chunks of text, and the failure that follows
- * them (a decoding failure at the end of the bytes), if any.
- */
-export interface Chunks {
-  readonly chunks: ReadonlyArray<string>;
-  readonly failure?: SaxError | undefined;
-}
-
-/**
- * @internal The text of a complete byte array, in the chunks {@link
- * tokenizeByteArray} tokenizes.
- */
-export const decodeByteArray = (input: Uint8Array, options?: SaxBytesOptions): Chunks => {
-  const decoder = new Encoding.ByteDecoder(decodeOptions(options));
-  const first = decoder.write(input);
-  if (!Predicate.isString(first)) return { chunks: [], failure: first };
-  const rest = decoder.end();
-  return Predicate.isString(rest) ? { chunks: [first, rest] } : { chunks: [first], failure: rest };
-};
-
-/**
  * Options for byte input: the SAX options plus an external encoding hint.
  *
  * @since 0.3.0
@@ -540,6 +378,47 @@ export const tokenizeString = (
   input: string,
   options?: SaxOptions,
 ): Stream.Stream<SaxEvent, SaxError> => Stream.make(input).pipe(tokenize(options));
+
+/**
+ * Hand every event of a complete document to `f`, in order, synchronously:
+ * the classic SAX handler, without a stream. Bytes are decoded as
+ * {@link tokenizeBytes} decodes them. The events are `f`'s to keep. The
+ * effect fails with the first failure; `f` has had every event before it.
+ * The fastest way to read a document in memory, especially with
+ * `positions: false`.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import { Sax } from "@thomasfosterau/effect-xml"
+ *
+ * let elements = 0
+ * Effect.runSync(
+ *   Sax.forEach("<a><b/><b/></a>", (event) => {
+ *     if (Sax.isStartElement(event)) elements++
+ *   }),
+ * )
+ * console.log(elements) // 3
+ * ```
+ *
+ * @since 0.3.0
+ * @category tokenizing
+ */
+export const forEach = (
+  input: string | Uint8Array,
+  f: (event: SaxEvent) => void,
+  options?: SaxBytesOptions,
+): Effect.Effect<void, SaxError> =>
+  Effect.suspend(() => {
+    const chunks = Predicate.isString(input)
+      ? { chunks: [input] }
+      : decodeChunks(input, decodeOptions(options));
+    const failure = runChunks(chunks, resolveSaxOptions(options), (ev) => {
+      f(ev);
+      return null;
+    });
+    return failure === null ? Effect.void : Effect.fail(failure);
+  });
 
 /**
  * Collect every SAX event into an array (convenient for tests and small inputs).
