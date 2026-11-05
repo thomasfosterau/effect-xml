@@ -322,10 +322,39 @@ export default defineConfig({
       // bench`, 64 KiB chunks: ~495 ms against ~360 ms). Here a `switch` on
       // `_tag` and direct tag guards are the fix.
       {
-        files: ["src/internal/lexer.ts", "src/internal/guard.ts", "src/internal/convert.ts"],
+        files: [
+          "src/internal/lexer.ts",
+          "src/internal/guard.ts",
+          "src/internal/convert.ts",
+          "src/Xml/TreeBuilder.ts",
+        ],
         rules: {
           "effect/avoid-direct-tag-checks": "off",
           "effect/prefer-match-over-switch": "off",
+        },
+      },
+      // The per-token and per-element loops of the XML path: the hand-written
+      // scanner (`scan.ts`: char-code loops over the buffer, as every fast
+      // tokenizer is written), the lexer's drive loop, the limit check of a
+      // tag's attributes, and the tree builder's steps (its name cache,
+      // namespace scopes and duplicate checks as native `Map`s / `Set`s,
+      // looked up per element and attribute, where `HashMap` hashes each
+      // string in JavaScript). Each `Arr` fold or search there allocated a
+      // closure and an `Option` or `Result` per call. Written as loops, the
+      // SAX path went from ~700 ms to ~250 ms and `Xml.parse` from ~2400 ms
+      // to ~450 ms on the benchmark's 8 MB worksheet (`vp run bench`).
+      {
+        files: [
+          "src/internal/scan.ts",
+          "src/internal/lexer.ts",
+          "src/internal/guard.ts",
+          "src/internal/namespaces.ts",
+          "src/internal/qnames.ts",
+          "src/Xml/TreeBuilder.ts",
+        ],
+        rules: {
+          "effect/imperative-loops": "off",
+          "effect/avoid-native-object-helpers": "off",
         },
       },
       // The lexer's check for the characters XML 1.0 does not allow (§2.2

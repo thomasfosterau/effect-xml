@@ -12,26 +12,24 @@
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as HashMap from "effect/HashMap";
-import * as MutableHashSet from "effect/MutableHashSet";
+import { absurd } from "effect/Function";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
-import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import {
+  DuplicateAttribute,
   InvalidDocumentStructure,
   MismatchedEndTag,
   UnboundNamespacePrefix,
   UnexpectedEndTag,
   type SaxError,
 } from "../Error.ts";
-import { resolveAttributes } from "../internal/attributes.ts";
 import { QNames } from "../internal/qnames.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "../internal/namespaces.ts";
 import * as Nodes from "../internal/nodes.ts";
-import { Namespaces, type QName } from "../Name.ts";
+import { Namespaces, type QName, type TagName } from "../Name.ts";
 import { origin, type Position } from "../Position.ts";
-import { SaxEvent, type Attribute } from "../Sax.ts";
+import { type Attribute, type Chunks, runChunks, type SaxEvent, type SaxOptions } from "../Sax.ts";
 import type {
   XmlDeclaration,
   XmlDoctype,
@@ -76,23 +74,73 @@ export interface BuildOptions {
 /** The name of the root element a recovering parse synthesizes when the document has none. */
 const SYNTHESIZED_ROOT = "root";
 
-/** Namespace bindings an element declares: prefix (`""` for the default) to URI. */
-type Bindings = HashMap.HashMap<string, string>;
+/**
+ * Namespace bindings an element declares: prefix (`""` for the default) to
+ * URI. Never written to once the element is open.
+ */
+type Bindings = ReadonlyMap<string, string>;
+
+/**
+ * The attributes, or children, of the (many) elements that have none: one
+ * empty array for all of them (DOM arrays are never written to).
+ */
+const NO_NODES: Array<never> = [];
+
+/** The bindings of the (many) elements that declare no namespaces. */
+const NO_BINDINGS: Bindings = new Map();
 
 /** An open element: what it becomes once closed (see {@link closed}), built only then. */
 interface Frame {
   readonly name: QName;
   readonly attributes: ReadonlyArray<XmlAttribute>;
-  readonly children: Array<XmlNode>;
+  /** Where its children start in {@link Builder.nodes}. */
+  readonly from: number;
   readonly bindings: Bindings;
   readonly rawName: string;
 }
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
-const isText = (node: XmlNode): node is XmlText => Predicate.isTagged(node, "XmlText");
+const isElement = (node: XmlNode): node is XmlElement => node._tag === "XmlElement";
+const isText = (node: XmlNode): node is XmlText => node._tag === "XmlText";
+const isWhitespace = (s: string): boolean => /^\s*$/.test(s);
 
-const matchSaxEvent = SaxEvent.$match;
+/**
+ * Up to this many attributes, a repeated name is found by scanning the names
+ * seen: cheaper than hashing each one.
+ */
+const SCAN_LIMIT = 8;
 
+/** Record `key` in `set`; whether it is new. */
+const added = (set: Set<string>, key: string): boolean => {
+  if (set.has(key)) return false;
+  set.add(key);
+  return true;
+};
+
+/** Whether an attribute before `i` has the raw name of attribute `i`. */
+const repeats = (attributes: ReadonlyArray<Attribute>, i: number): boolean => {
+  const name = attributes[i]?.name;
+  for (let j = 0; j < i; j++) if (attributes[j]?.name === name) return true;
+  return false;
+};
+
+/** Whether one of the first `n` attributes resolved has the expanded name of `name`. */
+const expands = (list: ReadonlyArray<XmlAttribute>, n: number, name: QName): boolean => {
+  for (let j = 0; j < n; j++) {
+    const a = list[j];
+    if (a?.name.namespace === name.namespace && a?.name.local === name.local) return true;
+  }
+  return false;
+};
+
+const duplicateAttribute = (element: TagName, a: Attribute): DuplicateAttribute =>
+  new DuplicateAttribute({ element, attribute: a.name, position: a.span.start });
+
+/**
+ * Folds SAX events into a document. Each step runs once per event, so it is
+ * synchronous and returns its failure (or `null`): an `Effect` per event, a
+ * `Result` per name or an `Option` per lookup made `Xml.parse` several times
+ * slower than the tokenizer under it.
+ */
 class Builder {
   private readonly namespaces: boolean;
   private readonly recover: boolean;
@@ -108,6 +156,27 @@ class Builder {
   private readonly trailing: Array<XmlNode> = [];
   /** The names built so far, so each raw name and namespace is built once. */
   private readonly names = new QNames();
+  /**
+   * The children of the open elements, each element's after its parent's:
+   * an element's become an array of their own, exactly as long, when it
+   * closes (an array grown a push at a time keeps room for more).
+   */
+  private readonly nodes: Array<XmlNode> = [];
+  /** How many of {@link nodes} are children of open elements. */
+  private count = 0;
+
+  private pushNode(node: XmlNode): void {
+    this.nodes[this.count++] = node;
+  }
+
+  /** Push `nodes`; where they start. */
+  private pushNodes(nodes: ReadonlyArray<XmlNode>): number {
+    const from = this.count;
+    for (const node of nodes) this.pushNode(node);
+    return from;
+  }
+  /** Why the last {@link resolve} returned `undefined`. */
+  private failure: SaxError | null = null;
 
   constructor(options: BuildOptions) {
     this.namespaces = options.namespaces ?? true;
@@ -119,10 +188,11 @@ class Builder {
     if (prefix === "xml") return Namespaces.xml;
     if (prefix === "xmlns") return Namespaces.xmlns;
     const key = prefix ?? "";
-    const uri = HashMap.get(own, key).pipe(
-      Option.orElse(() => Arr.findLast(this.scopes, (scope) => HashMap.get(scope, key))),
-      Option.getOrNull,
-    );
+    let uri = own.get(key);
+    for (let i = this.scopes.length - 1; uri === undefined && i >= 0; i--) {
+      uri = this.scopes[i]?.get(key);
+    }
+    if (uri === undefined) return null;
     // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
     return uri === "" && prefix !== null ? null : uri;
   }
@@ -132,70 +202,62 @@ class Builder {
     return this.declaration?.version === "1.1";
   }
 
+  /** The name `raw` stands for, or `undefined` with {@link failure} set. */
   private resolve(
     raw: string,
     isAttribute: boolean,
     position: Position,
     own: Bindings,
-  ): Result.Result<QName, SaxError> {
+  ): QName | undefined {
     const parsed = this.names.entry(raw);
-    if (!this.namespaces) return Result.succeed(this.names.name(parsed, null));
+    if (!this.namespaces) return this.names.name(parsed, null);
     // Default namespace does not apply to attributes (XML Namespaces §6.2).
     if (parsed.prefix === null) {
-      const ns = isAttribute ? null : this.resolvePrefix(null, own);
-      return Result.succeed(this.names.name(parsed, ns));
+      return this.names.name(parsed, isAttribute ? null : this.resolvePrefix(null, own));
     }
     const ns = this.resolvePrefix(parsed.prefix, own);
-    if (ns === null && this.recover) return Result.succeed(this.names.name(parsed, null));
-    if (ns === null) {
-      return Result.fail(
-        new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position }),
-      );
-    }
-    return Result.succeed(this.names.name(parsed, ns));
+    if (ns !== null || this.recover) return this.names.name(parsed, ns);
+    this.failure = new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position });
+    return undefined;
   }
 
   private collectBindings(attributes: ReadonlyArray<Attribute>): Bindings {
-    if (!this.namespaces) return HashMap.empty();
-    return Arr.reduce(attributes, HashMap.empty<string, string>(), (bindings, a) =>
-      a.name === "xmlns"
-        ? HashMap.set(bindings, "", a.value)
-        : a.name.startsWith("xmlns:")
-          ? HashMap.set(bindings, a.name.slice(6), a.value)
-          : bindings,
-    );
+    if (!this.namespaces) return NO_BINDINGS;
+    let bindings: Map<string, string> | undefined = undefined;
+    for (const a of attributes) {
+      if (!a.name.startsWith("xmlns")) continue;
+      if (a.name === "xmlns") (bindings ??= new Map()).set("", a.value);
+      else if (a.name.startsWith("xmlns:")) (bindings ??= new Map()).set(a.name.slice(6), a.value);
+    }
+    return bindings ?? NO_BINDINGS;
   }
 
-  private appendChild(node: XmlNode, position: Position): Effect.Effect<void, SaxError> {
-    if (this.recover && this.rootEnded && this.stack.length === 1 && this.afterRoot(node)) {
-      return Effect.void;
-    }
+  private appendChild(node: XmlNode, position: Position): SaxError | null {
     const frame = this.stack.at(-1);
     if (frame !== undefined) {
-      frame.children.push(node);
-      return Effect.void;
+      if (this.recover && this.rootEnded && this.stack.length === 1 && this.afterRoot(node)) {
+        return null;
+      }
+      this.pushNode(node);
+      return null;
     }
     if (this.recover) {
       this.appendTopLevel(node);
-      return Effect.void;
+      return null;
     }
     // Top level: only elements, comments and PIs are allowed (plus whitespace text).
     if (isText(node)) {
-      if (/^\s*$/.test(node.data)) return Effect.void;
-      return Effect.fail(
-        new InvalidDocumentStructure({
-          position,
-          reason: "character data is not allowed outside the root element",
-        }),
-      );
+      if (isWhitespace(node.data)) return null;
+      return new InvalidDocumentStructure({
+        position,
+        reason: "character data is not allowed outside the root element",
+      });
     }
     if (isElement(node) && this.top.some(isElement)) {
-      return Effect.fail(
-        new InvalidDocumentStructure({ position, reason: "multiple root elements" }),
-      );
+      return new InvalidDocumentStructure({ position, reason: "multiple root elements" });
     }
     this.top.push(node);
-    return Effect.void;
+    return null;
   }
 
   /**
@@ -205,10 +267,10 @@ class Builder {
    * one) becomes the root and stays open; comments and PIs stay top-level.
    */
   private appendTopLevel(node: XmlNode): void {
-    if (isText(node) || Predicate.isTagged(node, "XmlCData")) {
-      if (isText(node) && /^\s*$/.test(node.data)) return;
+    if (isText(node) || node._tag === "XmlCData") {
+      if (isText(node) && isWhitespace(node.data)) return;
       this.openRoot(synthesizedRoot());
-      this.stack.at(-1)?.children.push(node);
+      this.pushNode(node);
     } else if (isElement(node)) {
       // A self-closing root: complete, but kept open for what follows it.
       this.openRoot(node);
@@ -225,11 +287,8 @@ class Builder {
    * Whether `node` was placed; anything else goes under the root.
    */
   private afterRoot(node: XmlNode): boolean {
-    if (isText(node)) return /^\s*$/.test(node.data);
-    if (
-      Predicate.isTagged(node, "XmlComment") ||
-      Predicate.isTagged(node, "XmlProcessingInstruction")
-    ) {
+    if (isText(node)) return isWhitespace(node.data);
+    if (node._tag === "XmlComment" || node._tag === "XmlProcessingInstruction") {
       this.trailing.push(node);
       return true;
     }
@@ -241,111 +300,152 @@ class Builder {
     this.stack.push({
       name: element.name,
       attributes: element.attributes,
-      children: [...element.children],
-      bindings: HashMap.empty(),
+      from: this.pushNodes(element.children),
+      bindings: NO_BINDINGS,
       rawName: element.name.qualified,
     });
   }
 
-  accept(ev: SaxEvent): Effect.Effect<void, SaxError> {
-    return matchSaxEvent(ev, this.handlers);
+  /** Take in one event; its failure, if it has one. */
+  // A `switch`, not a `$match` table: this runs once per event (see `vite.config.ts`).
+  accept(ev: SaxEvent): SaxError | null {
+    switch (ev._tag) {
+      case "StartElement":
+        return this.startElement(ev);
+      case "EndElement":
+        return this.endElement(ev.name, ev.span.start);
+      case "Text":
+        return this.appendChild(Nodes.text(ev.data), ev.span.start);
+      case "CData":
+        return this.appendChild(Nodes.cdata(ev.data), ev.span.start);
+      case "Comment":
+        return this.appendChild(Nodes.comment(ev.data), ev.span.start);
+      case "ProcessingInstruction": {
+        const error =
+          this.namespaces && !this.recover
+            ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
+            : Option.none();
+        if (Option.isSome(error)) return error.value;
+        return this.appendChild(Nodes.processingInstruction(ev.target, ev.data), ev.span.start);
+      }
+      case "XmlDeclaration":
+        this.declaration = Nodes.declaration(ev.version, ev.encoding, ev.standalone);
+        return null;
+      case "Doctype": {
+        const error =
+          this.namespaces && !this.recover && ev.internalSubset !== null
+            ? checkSubset(ev.internalSubset, ev.span.start)
+            : Option.none();
+        if (Option.isSome(error)) return error.value;
+        this.doctype = Nodes.doctype(ev.name, ev.publicId, ev.systemId, ev.internalSubset);
+        return null;
+      }
+      default:
+        return absurd(ev);
+    }
   }
 
-  /** What each event kind does; built once per builder, not per event. */
-  private readonly handlers = {
-    StartElement: (
-      ev: Extract<SaxEvent, { _tag: "StartElement" }>,
-    ): Effect.Effect<void, SaxError> => this.startElement(ev),
-    EndElement: (ev: Extract<SaxEvent, { _tag: "EndElement" }>): Effect.Effect<void, SaxError> =>
-      this.endElement(ev.name, ev.span.start),
-    Text: (ev: Extract<SaxEvent, { _tag: "Text" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(Nodes.text(ev.data), ev.span.start),
-    CData: (ev: Extract<SaxEvent, { _tag: "CData" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(Nodes.cdata(ev.data), ev.span.start),
-    Comment: (ev: Extract<SaxEvent, { _tag: "Comment" }>): Effect.Effect<void, SaxError> =>
-      this.appendChild(Nodes.comment(ev.data), ev.span.start),
-    ProcessingInstruction: (
-      ev: Extract<SaxEvent, { _tag: "ProcessingInstruction" }>,
-    ): Effect.Effect<void, SaxError> => {
-      const error =
-        this.namespaces && !this.recover
-          ? checkNoColon(ev.target, "a processing instruction target", ev.span.start)
-          : Option.none();
-      if (Option.isSome(error)) return Effect.fail(error.value);
-      return this.appendChild(Nodes.processingInstruction(ev.target, ev.data), ev.span.start);
-    },
-    XmlDeclaration: (
-      ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>,
-    ): Effect.Effect<void, SaxError> => {
-      this.declaration = Nodes.declaration(ev.version, ev.encoding, ev.standalone);
-      return Effect.void;
-    },
-    Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>): Effect.Effect<void, SaxError> => {
-      const error =
-        this.namespaces && !this.recover && ev.internalSubset !== null
-          ? checkSubset(ev.internalSubset, ev.span.start)
-          : Option.none();
-      if (Option.isSome(error)) return Effect.fail(error.value);
-      this.doctype = Nodes.doctype(ev.name, ev.publicId, ev.systemId, ev.internalSubset);
-      return Effect.void;
-    },
-  };
+  /**
+   * The attributes of a start tag, resolved with its own `bindings` in
+   * scope. No two may have the same name, nor the same expanded name once
+   * resolved (Namespaces in XML 1.0 §6.3); in document order, the first
+   * duplicate or failed resolution is the failure. `undefined` with
+   * {@link failure} set on a failure.
+   */
+  private attributes(
+    element: TagName,
+    attributes: ReadonlyArray<Attribute>,
+    bindings: Bindings,
+  ): Array<XmlAttribute> | undefined {
+    const n = attributes.length;
+    if (n === 0) return NO_NODES;
+    const list: Array<XmlAttribute> = [];
+    // Few attributes: compare with the ones before. Many: a set of the raw
+    // names and expanded names (which have a space, as no raw name does).
+    const set = n > SCAN_LIMIT ? new Set<string>() : undefined;
+    for (let i = 0; i < n; i++) {
+      const a = attributes[i];
+      const resolved =
+        a === undefined
+          ? undefined
+          : this.attribute(element, attributes, i, a, list, set, bindings);
+      if (resolved === undefined) return undefined;
+      list.push(resolved);
+    }
+    return list;
+  }
 
-  private startElement(
-    ev: Extract<SaxEvent, { _tag: "StartElement" }>,
-  ): Effect.Effect<void, SaxError> {
+  /**
+   * Attribute `i` of a start tag (`a`), resolved, unless it repeats the name
+   * or the expanded name of one before it (in `list`, or `set` for many).
+   * `undefined` with {@link failure} set on a failure.
+   */
+  private attribute(
+    element: TagName,
+    attributes: ReadonlyArray<Attribute>,
+    i: number,
+    a: Attribute,
+    list: ReadonlyArray<XmlAttribute>,
+    set: Set<string> | undefined,
+    bindings: Bindings,
+  ): XmlAttribute | undefined {
+    if (set === undefined ? repeats(attributes, i) : !added(set, a.name)) {
+      this.failure = duplicateAttribute(element, a);
+      return undefined;
+    }
+    const name = this.resolve(a.name, true, a.span.start, bindings);
+    if (name === undefined) return undefined;
+    // Only a prefixed name can share its expanded name with an earlier one spelt differently.
+    const expanded =
+      name.prefix !== null &&
+      name.namespace !== null &&
+      (set === undefined ? expands(list, i, name) : !added(set, `${name.namespace} ${name.local}`));
+    if (expanded) {
+      this.failure = duplicateAttribute(element, a);
+      return undefined;
+    }
+    return Nodes.attribute(name, a.value);
+  }
+
+  private startElement(ev: Extract<SaxEvent, { _tag: "StartElement" }>): SaxError | null {
     const position = ev.span.start;
-    const invalid =
-      this.namespaces && !this.recover
-        ? checkStartTag(ev.name, ev.attributes, position, this.unbinding)
-        : Option.none();
-    if (Option.isSome(invalid)) return Effect.fail(invalid.value);
+    if (this.namespaces && !this.recover) {
+      const invalid = checkStartTag(ev.name, ev.attributes, position, this.unbinding);
+      if (Option.isSome(invalid)) return invalid.value;
+    }
     // This element's own xmlns declarations are in scope for its name and attributes.
     const bindings = this.collectBindings(ev.attributes);
     // In document order: the first duplicate or unbound prefix is the one reported.
-    const resolveAttribute = (name: string, at: Position) => this.resolve(name, true, at, bindings);
     const attributes = this.recover
-      ? Result.succeed(recoverAttributes(ev.attributes, resolveAttribute))
-      : resolveAttributes(ev.name, ev.attributes, resolveAttribute);
-    const opened = Result.flatMap(this.resolve(ev.name, false, position, bindings), (name) =>
-      Result.map(attributes, (attributes) => ({ name, attributes })),
-    );
-    return Result.match(opened, {
-      onFailure: Effect.fail,
-      onSuccess: ({ name, attributes }) => {
-        if (ev.selfClosing) {
-          // A complete, childless element.
-          return this.appendChild(Nodes.element(name, attributes, []), position);
-        }
-        this.stack.push({
-          name,
-          attributes,
-          children: [],
-          bindings,
-          rawName: ev.name,
-        });
-        if (!HashMap.isEmpty(bindings)) this.scopes.push(bindings);
-        return Effect.void;
-      },
-    });
+      ? recoverAttributes(ev.attributes, (raw, at) => {
+          const name = this.resolve(raw, true, at, bindings);
+          return name === undefined ? Nodes.qnameFromRaw(raw) : name;
+        })
+      : this.attributes(ev.name, ev.attributes, bindings);
+    if (attributes === undefined) return this.failure;
+    const name = this.resolve(ev.name, false, position, bindings);
+    if (name === undefined) return this.failure;
+    if (ev.selfClosing) {
+      // A complete, childless element.
+      return this.appendChild(Nodes.element(name, attributes, NO_NODES), position);
+    }
+    this.stack.push({ name, attributes, from: this.count, bindings, rawName: ev.name });
+    if (bindings.size > 0) this.scopes.push(bindings);
+    return null;
   }
 
-  private endElement(rawName: string, position: Position): Effect.Effect<void, SaxError> {
+  private endElement(rawName: string, position: Position): SaxError | null {
     if (this.recover) {
       this.recoverEndTag(rawName);
-      return Effect.void;
+      return null;
     }
     const frame = this.stack.pop();
-    if (frame !== undefined && !HashMap.isEmpty(frame.bindings)) this.scopes.pop();
-    if (frame === undefined) {
-      return Effect.fail(new UnexpectedEndTag({ name: rawName, position }));
-    }
+    if (frame === undefined) return new UnexpectedEndTag({ name: rawName, position });
+    if (frame.bindings.size > 0) this.scopes.pop();
     if (frame.rawName !== rawName) {
-      return Effect.fail(
-        new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position }),
-      );
+      return new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position });
     }
-    return this.appendChild(closed(frame), position);
+    return this.appendChild(this.closed(frame), position);
   }
 
   /**
@@ -364,23 +464,31 @@ class Builder {
 
   /** Recovery: close the open elements above stack entry `depth - 1`, innermost first. */
   private closeAbove(depth: number): void {
-    Arr.forEach(Array.from({ length: Math.max(this.stack.length - depth, 0) }), () =>
-      this.closeTop(),
-    );
+    while (this.stack.length > depth) this.closeTop();
   }
 
   /** Close the innermost open element into its parent (or the top level). */
   private closeTop(): void {
     const frame = this.stack.pop();
     if (frame === undefined) return;
-    if (!HashMap.isEmpty(frame.bindings)) this.scopes.pop();
-    const node = closed(frame);
+    if (frame.bindings.size > 0) this.scopes.pop();
+    const node = this.closed(frame);
     const parent = this.stack.at(-1);
     if (parent === undefined) this.top.push(node);
-    else parent.children.push(node);
+    else this.pushNode(node);
   }
 
-  finish(position: Position): Effect.Effect<XmlDocument, SaxError> {
+  /** The element an open frame becomes once it is closed (popped from the stack). */
+  private closed(frame: Frame): XmlElement {
+    const children =
+      frame.from === this.count ? NO_NODES : this.nodes.slice(frame.from, this.count);
+    // (The slots past `count` are overwritten, never trimmed: shrinking the
+    // array's length reallocates it, which was a tenth of `Xml.parse`.)
+    this.count = frame.from;
+    return Nodes.element(frame.name, frame.attributes, children);
+  }
+
+  finish(position: Position): Result.Result<XmlDocument, SaxError> {
     if (this.recover) {
       if (!Arr.isReadonlyArrayNonEmpty(this.stack) && !this.top.some(isElement)) {
         this.openRoot(synthesizedRoot());
@@ -390,7 +498,7 @@ class Builder {
     }
     const open = this.stack.at(-1);
     if (open !== undefined) {
-      return Effect.fail(
+      return Result.fail(
         new InvalidDocumentStructure({
           position,
           reason: `unexpected end of input: <${open.rawName}> was never closed`,
@@ -398,17 +506,14 @@ class Builder {
       );
     }
     if (!this.top.some(isElement)) {
-      return Effect.fail(
+      return Result.fail(
         new InvalidDocumentStructure({ position, reason: "document has no root element" }),
       );
     }
-    return Effect.succeed(Nodes.document(this.declaration, this.doctype, this.top));
+    this.nodes.length = 0;
+    return Result.succeed(Nodes.document(this.declaration, this.doctype, this.top));
   }
 }
-
-/** The element an open frame becomes once it is closed. */
-const closed = (frame: Frame): XmlElement =>
-  Nodes.element(frame.name, frame.attributes, frame.children);
 
 /** A recovering parse's root for a document that has none. */
 const synthesizedRoot = (): XmlElement =>
@@ -421,18 +526,19 @@ const synthesizedRoot = (): XmlElement =>
  */
 const recoverAttributes = (
   attributes: ReadonlyArray<Attribute>,
-  resolve: (name: string, position: Position) => Result.Result<QName, SaxError>,
+  resolve: (name: string, position: Position) => QName,
 ): Array<XmlAttribute> => {
-  const seen = MutableHashSet.empty<string>();
-  return Arr.reduce(attributes, Arr.empty<XmlAttribute>(), (list, a) => {
-    const name = Result.getOrElse(resolve(a.name, a.span.start), () => Nodes.qnameFromRaw(a.name));
+  const seen = new Set<string>();
+  const list: Array<XmlAttribute> = [];
+  for (const a of attributes) {
+    const name = resolve(a.name, a.span.start);
     // An expanded-name key has a space, which no raw name has, so the two never collide.
     const keys = name.namespace === null ? [a.name] : [a.name, `${name.namespace} ${name.local}`];
-    if (Arr.some(keys, (key) => MutableHashSet.has(seen, key))) return list;
-    Arr.forEach(keys, (key) => MutableHashSet.add(seen, key));
+    if (keys.some((key) => seen.has(key))) continue;
+    for (const key of keys) seen.add(key);
     list.push(Nodes.attribute(name, a.value));
-    return list;
-  });
+  }
+  return list;
 };
 
 /**
@@ -448,9 +554,57 @@ export const build =
     Effect.gen(function* () {
       const builder = new Builder(options);
       let last: Position = origin;
-      yield* Stream.runForEach(events, (ev) => {
-        last = ev.span.end;
-        return builder.accept(ev);
+      // A batch of events at a time: the steps themselves are synchronous.
+      yield* Stream.runForEachArray(events, (batch) => {
+        for (const ev of batch) {
+          last = ev.span.end;
+          const error = builder.accept(ev);
+          if (error !== null) return Effect.fail(error);
+        }
+        return Effect.void;
       });
-      return yield* builder.finish(last);
+      return yield* Effect.fromResult(builder.finish(last));
     });
+
+/**
+ * @internal Build a document from complete input, tokenized and built in one
+ * synchronous pass (as {@link build} does over its stream of events, without
+ * the stream).
+ *
+ * The builder reads positions only to report a failure, so the first pass
+ * leaves them out (`lean`: a third less to allocate, and to collect); a
+ * failure is reported from a second pass with them, which fails the same way.
+ */
+export const buildChunks = (
+  input: () => Chunks,
+  saxOptions: SaxOptions,
+  options: BuildOptions = {},
+): Effect.Effect<XmlDocument, SaxError> =>
+  Effect.suspend(() => {
+    const chunks = input();
+    const lean = buildPass(chunks, saxOptions, options, true);
+    return Result.isSuccess(lean)
+      ? Effect.succeed(lean.success)
+      : Effect.fromResult(buildPass(chunks, saxOptions, options, false));
+  });
+
+/** One pass of {@link buildChunks}. */
+const buildPass = (
+  chunks: Chunks,
+  saxOptions: SaxOptions,
+  options: BuildOptions,
+  lean: boolean,
+): Result.Result<XmlDocument, SaxError> => {
+  const builder = new Builder(options);
+  let last: Position = origin;
+  const error = runChunks(
+    chunks,
+    saxOptions,
+    (ev) => {
+      last = ev.span.end;
+      return builder.accept(ev);
+    },
+    lean,
+  );
+  return error === null ? builder.finish(last) : Result.fail(error);
+};

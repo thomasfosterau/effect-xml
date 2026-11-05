@@ -43,6 +43,16 @@ import { declarationContexts } from "./declarations.ts";
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
 import type { Dtd } from "./dtd.ts";
+import {
+  type Context,
+  Fallback,
+  Incomplete,
+  NAME_SLOTS,
+  Reused,
+  freshMarks,
+  resetMarks,
+  scanXml,
+} from "./scan.ts";
 import { grammars, type Grammars, Issue, type RawKind, type Tok } from "./tokens.ts";
 
 // -----------------------------------------------------------------------------
@@ -152,6 +162,12 @@ export interface LexerOptions {
    * a browser with scripting enabled reads it.
    */
   readonly scripting?: boolean | undefined;
+  /**
+   * Leave positions out where the scanner reads a token (see
+   * `Context.lean`): for a caller that reads them only to report a failure
+   * and runs again with them when one happens.
+   */
+  readonly lean?: boolean | undefined;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -262,11 +278,26 @@ class Positions {
     return this.newline;
   }
 
+  /**
+   * The last index known to be on the line of {@link index} (the next `\n`,
+   * or the end of the buffer when it had none): positions up to it only move
+   * along the line. (Every CRLF record is at a `\n`, so none is in between.)
+   */
+  private clear = -1;
+
   at(index: number): Position {
+    const d = index - this.index;
+    if (d > 0 && index <= this.clear) {
+      // The common case: further along the same line.
+      const p = this.pos;
+      this.index = index;
+      return (this.pos = { offset: p.offset + d, line: p.line, column: p.column + d });
+    }
     if (index < this.index) {
       this.index = this.anchorIndex;
       this.pos = this.anchorPos;
       this.crlfNext = this.anchorCrlf;
+      this.clear = -1;
     }
     if (index === this.index) return this.pos;
     let { line, column } = this.pos;
@@ -289,6 +320,13 @@ class Positions {
     this.index = index;
     this.pos = { offset, line, column };
     this.crlfNext = k;
+    const next = index >= this.source.base ? this.nextNewline(index) : -1;
+    this.clear =
+      next === -1
+        ? index >= this.source.base
+          ? this.source.base + this.source.buf.length
+          : -1
+        : next;
     return this.pos;
   }
 
@@ -372,8 +410,22 @@ export class Lexer {
 
   private readonly options: LexerOptions;
 
+  /** Whether {@link scanXml} reads the data state's tokens (XML without a DTD). */
+  private readonly scans: boolean;
+
   constructor(options: LexerOptions) {
     this.options = options;
+    this.scans = options.mode === "xml" && options.dtd === undefined;
+    this.scanner = {
+      entities: options.entities,
+      at: (index) => this.positions.at(this.base + index),
+      lean: options.lean ?? false,
+      end: 0,
+      count: 0,
+      names: Arr.allocate<string>(NAME_SLOTS),
+      reused: new Reused(),
+      marks: freshMarks(),
+    };
     this.grammars = grammars(options.mode, options.entities, options.dtd !== undefined);
   }
 
@@ -416,6 +468,7 @@ export class Lexer {
       if (i !== -1) this.forbidden = this.base + this.buf.length + i;
     }
     this.buf += s;
+    resetMarks(this.scanner.marks);
   }
 
   /** Signal end of input (see {@link pull}). */
@@ -430,6 +483,16 @@ export class Lexer {
   pull(): ReadonlyArray<LexOutput> | null {
     if (this.failed || this.cursor >= this.buf.length) return null;
     if (!this.ended && this.buf.length < this.retryAt) return null;
+    if (this.scans) {
+      const ev = this.scan();
+      if (ev === null) return null;
+      if (ev !== undefined) return [ev];
+    }
+    return this.parse();
+  }
+
+  /** Lex the next token with the grammar (see {@link pull}). */
+  private parse(): ReadonlyArray<LexOutput> | null {
     const start = this.cursor;
     const state = this.parseState(start);
     // The `dtd: "internal"` grammars are shared: point them at this document's DTD.
@@ -489,8 +552,64 @@ export class Lexer {
    * stopped for the last reason.
    */
   pullEach(f: (output: LexOutput) => boolean, full?: () => boolean): boolean {
-    return drive(() => this.pull(), f, full);
+    if (!this.scans) return drive(() => this.pull(), f, full);
+    // The scanned tokens one by one, without a batch each.
+    for (;;) {
+      const more = this.next(f);
+      if (more !== true) return more === null;
+      if (full !== undefined && full()) return false;
+    }
   }
+
+  /**
+   * Hand the next token's outputs to `f`: whether it took them all, or
+   * `null` when no token can be read yet.
+   */
+  private next(f: (output: LexOutput) => boolean): boolean | null {
+    if (this.failed || this.cursor >= this.buf.length) return null;
+    if (!this.ended && this.buf.length < this.retryAt) return null;
+    const ev = this.scan();
+    if (ev === null) return null;
+    if (ev !== undefined) return f(ev);
+    // (The scanner has had its turn.)
+    const batch = this.parse();
+    return batch === null ? null : batch.every(f);
+  }
+
+  /**
+   * XML without a DTD: read the token at the cursor with {@link scanXml}.
+   * Returns its event, `null` when the token is incomplete, or `undefined`
+   * when the grammar reads it instead (other markup, every error, and text
+   * outside the root element, where a reference is misplaced).
+   */
+  private scan(): LexEvent | null | undefined {
+    const start = this.cursor;
+    if (this.depth === 0 && !this.options.content && this.buf.charCodeAt(start) !== 60) {
+      return undefined;
+    }
+    // Positions are read forwards from the token's start.
+    if (!this.scanner.lean) this.positions.anchor(this.base + start);
+    const ev = scanXml(this.buf, start, !this.ended, this.scanner);
+    if (ev === Incomplete) {
+      this.retryAt = this.buf.length + 1 + ((this.buf.length - start) >> 1);
+      return null;
+    }
+    if (ev === Fallback) return undefined;
+    const end = this.scanner.end;
+    // The grammar reports a forbidden character the token takes in.
+    if (this.forbidden !== -1 && this.forbidden < this.base + end) return undefined;
+    // `misplaced`, for the tokens the scanner reads.
+    if (ev._tag === "StartElement") {
+      if (!ev.selfClosing) this.depth++;
+    } else if (ev._tag === "EndElement" && this.depth > 0) this.depth--;
+    this.cursor = end;
+    this.retryAt = 0;
+    this.compact();
+    return ev;
+  }
+
+  /** What {@link scanXml} reads with. */
+  private readonly scanner: Context;
 
   private drain(): ReadonlyArray<LexOutput> {
     const out: Array<LexOutput> = [];
@@ -523,6 +642,7 @@ export class Lexer {
   }
 
   private trimTo(index: number): void {
+    resetMarks(this.scanner.marks);
     this.buf = this.buf.slice(index);
     this.base += index;
     this.cursor -= index;
