@@ -123,8 +123,9 @@ class Builder {
       Option.orElse(() => Arr.findLast(this.scopes, (scope) => HashMap.get(scope, key))),
       Option.getOrNull,
     );
-    // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
-    return uri === "" && prefix !== null ? null : uri;
+    // `xmlns=""` undeclares the default namespace, and `xmlns:p=""` undeclares
+    // `p` (XML 1.1; an error in 1.0, reported earlier): either way, no namespace.
+    return uri === "" ? null : uri;
   }
 
   /** Whether `xmlns:p=""` may undeclare a prefix: an XML 1.1 document (Namespaces in XML 1.1 §5). */
