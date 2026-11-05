@@ -18,6 +18,8 @@ export interface Statics {
   /** Resolves an in-scope namespace prefix (`""` for the default element namespace). */
   readonly namespace: (prefix: string) => string | undefined;
   readonly baseUri: Option.Option<string>;
+  /** The default collation's URI. */
+  readonly defaultCollation: string;
 }
 
 /** What a built-in is called with besides its arguments. */

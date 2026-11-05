@@ -12,6 +12,7 @@
  */
 import { Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
+import * as Data from "effect/Data";
 import * as Option from "effect/Option";
 import * as Record from "effect/Record";
 import * as Result from "effect/Result";
@@ -210,30 +211,37 @@ const blockList: ReadonlyArray<readonly [string, ReadonlyArray<readonly [number,
 const blocks = Record.fromEntries(blockList);
 
 /** `\p{…}` (or, negated, `\P{…}`) for a category or `Is` block name. */
-const property = (name: string, negated: boolean): Option.Option<string> => {
+const property = (
+  name: string,
+  negated: boolean,
+  known: Readonly<Record<string, ReadonlyArray<readonly [number, number]>>>,
+): Option.Option<string> => {
   if (isIn(categories, name)) return Option.some(`\\${negated ? "P" : "p"}{${name}}`);
   if (!name.startsWith("Is")) return Option.none();
   return Option.map(
-    Record.get(blocks, name.slice(2)),
+    Record.get(known, name.slice(2)),
     (rs) => `[${negated ? "^" : ""}${ranges(rs)}]`,
   );
 };
 
 const lit = Token.literal;
 
-/** `\p{…}` and `\P{…}`. */
-const categoryEscape: Parser.Parser<string> = Parser.flatMap(
-  Parser.seq(
-    Parser.alt(lit("\\p{"), lit("\\P{")),
-    Token.takeWhile((c: string) => c !== "}", { min: 1 }),
-    lit("}"),
-  ),
-  ([open, name]) =>
-    Option.match(property(name, open === "\\P{"), {
-      onNone: () => Parser.failMessage(`unknown character property \\p{${name}}`),
-      onSome: (out) => Parser.succeed(out),
-    }),
-);
+/** `\p{…}` and `\P{…}`, with these block names. */
+const categoryEscapeOf = (
+  known: Readonly<Record<string, ReadonlyArray<readonly [number, number]>>>,
+): Parser.Parser<string> =>
+  Parser.flatMap(
+    Parser.seq(
+      Parser.alt(lit("\\p{"), lit("\\P{")),
+      Token.takeWhile((c: string) => c !== "}", { min: 1 }),
+      lit("}"),
+    ),
+    ([open, name]) =>
+      Option.match(property(name, open === "\\P{", known), {
+        onNone: () => Parser.failMessage(`unknown character property \\p{${name}}`),
+        onSome: (out) => Parser.succeed(out),
+      }),
+  );
 
 /** `\s`, `\i`, `\d`, …: a class written as a whole class or escape. */
 const multiCharEscape: Parser.Parser<string> = Parser.map(
@@ -247,70 +255,85 @@ const singleCharEscape: Parser.Parser<string> = Parser.map(
   (c) => singleCharEscapes[c] ?? c,
 );
 
-const classEscape = Parser.alt(categoryEscape, multiCharEscape);
+const classEscape = Parser.alt(categoryEscapeOf(blocks), multiCharEscape);
 
 /** A character that stands for itself outside a class. */
 const normalChar = Parser.map(Token.noneOf(".\\?*+{}()|[]"), escape);
 
-/** A single character inside a class (escaped or not), as the character itself. */
-const classChar = Parser.alt(singleCharEscape, Token.noneOf("[]\\-"));
+/**
+ * `[…]`, `[^…]` and `[…-[…]]`, for a dialect's single-character escapes
+ * (XPath adds `\$` to XML Schema's).
+ */
+const charClassOf = (
+  singleEscape: Parser.Parser<string>,
+  classEsc: Parser.Parser<string>,
+): Parser.Parser<string> => {
+  /** A single character inside a class (escaped or not), as the character itself. */
+  const classChar = Parser.alt(singleEscape, Token.noneOf("[]\\-"));
 
-/** `a`, `a-z`, or a `-` that can only be a literal one. */
-const classRange: Parser.Parser<string> = Parser.flatMap(
-  Parser.seq(
-    classChar,
-    Parser.opt(
-      Parser.preceded(Parser.seq(lit("-"), Parser.not(lit("["))), Parser.alt(classChar, lit("-"))),
-    ),
-  ),
-  ([from, to]) =>
-    Option.match(to, {
-      onNone: () => Parser.succeed(escape(from)),
-      onSome: (end) =>
-        (end.codePointAt(0) ?? 0) < (from.codePointAt(0) ?? 0)
-          ? Parser.failMessage(`the range ${from}-${end} is backwards`)
-          : Parser.succeed(`${escape(from)}-${escape(end)}`),
-    }),
-);
-
-/** A `-` at the start or end of a group stands for itself. */
-const literalDash = Parser.map(
-  Parser.terminated(lit("-"), Parser.peek(Parser.alt(lit("]"), lit("-[")))),
-  escape,
-);
-
-const classItems: Parser.Parser<string> = Parser.map(
-  Parser.seq(
-    Parser.opt(Parser.map(lit("-"), escape)),
-    Parser.repeat(Parser.alt(classEscape, classRange, literalDash), { min: 1 }),
-  ),
-  ([dash, items]) => Option.getOrElse(dash, () => "") + items.join(""),
-);
-
-/** `[…]`, `[^…]` and `[…-[…]]`. */
-const charClassExpr: Parser.Parser<string> = Parser.map(
-  Parser.delimited(
-    lit("["),
+  /** `a`, `a-z`, or a `-` that can only be a literal one. */
+  const classRange: Parser.Parser<string> = Parser.flatMap(
     Parser.seq(
-      Parser.opt(lit("^")),
-      classItems,
+      classChar,
       Parser.opt(
         Parser.preceded(
-          lit("-"),
-          Parser.suspend(() => charClassExpr),
+          Parser.seq(lit("-"), Parser.not(lit("["))),
+          Parser.alt(classChar, lit("-")),
         ),
       ),
     ),
-    lit("]"),
-  ),
-  ([negated, items, subtracted]) => {
-    const base = `[${Option.isSome(negated) ? "^" : ""}${items}]`;
-    return Option.match(subtracted, {
-      onNone: () => base,
-      onSome: (sub) => `[${base}--${sub}]`,
-    });
-  },
-);
+    ([from, to]) =>
+      Option.match(to, {
+        onNone: () => Parser.succeed(escape(from)),
+        onSome: (end) =>
+          (end.codePointAt(0) ?? 0) < (from.codePointAt(0) ?? 0)
+            ? Parser.failMessage(`the range ${from}-${end} is backwards`)
+            : Parser.succeed(`${escape(from)}-${escape(end)}`),
+      }),
+  );
+
+  /** A `-` at the start or end of a group stands for itself. */
+  const literalDash = Parser.map(
+    Parser.terminated(lit("-"), Parser.peek(Parser.alt(lit("]"), lit("-[")))),
+    escape,
+  );
+
+  const classItems: Parser.Parser<string> = Parser.map(
+    Parser.seq(
+      Parser.opt(Parser.map(lit("-"), escape)),
+      Parser.repeat(Parser.alt(classEsc, classRange, literalDash)),
+    ),
+    ([dash, items]) => Option.getOrElse(dash, () => "") + items.join(""),
+  ).pipe(Parser.filter((items) => items !== ""));
+
+  const charClassExpr: Parser.Parser<string> = Parser.map(
+    Parser.delimited(
+      lit("["),
+      Parser.seq(
+        Parser.opt(lit("^")),
+        classItems,
+        Parser.opt(
+          Parser.preceded(
+            lit("-"),
+            Parser.suspend(() => charClassExpr),
+          ),
+        ),
+      ),
+      lit("]"),
+    ),
+    ([negated, items, subtracted]) => {
+      const base = `[${Option.isSome(negated) ? "^" : ""}${items}]`;
+      return Option.match(subtracted, {
+        onNone: () => base,
+        onSome: (sub) => `[${base}--${sub}]`,
+      });
+    },
+  );
+  return charClassExpr;
+};
+
+/** `[…]`, `[^…]` and `[…-[…]]`. */
+const charClassExpr = charClassOf(singleCharEscape, classEscape);
 
 const atom: Parser.Parser<string> = Parser.alt(
   normalChar,
@@ -328,13 +351,13 @@ const atom: Parser.Parser<string> = Parser.alt(
   ),
 );
 
-const digits = Token.takeWhile(Token.range("0", "9"), { min: 1 });
+const quantityDigits = Token.takeWhile(Token.range("0", "9"), { min: 1 });
 
 /** `{n}`, `{n,}` or `{n,m}`. */
 const quantity: Parser.Parser<string> = Parser.flatMap(
   Parser.delimited(
     lit("{"),
-    Parser.seq(digits, Parser.opt(Parser.preceded(lit(","), Parser.opt(digits)))),
+    Parser.seq(quantityDigits, Parser.opt(Parser.preceded(lit(","), Parser.opt(quantityDigits)))),
     lit("}"),
   ),
   ([min, rest]) =>
@@ -371,3 +394,267 @@ export const translate = (pattern: string): Result.Result<RegExp, string> =>
     onFailure: (error) => Result.fail(`invalid pattern ${quote(pattern)}: ${error.message}`),
     onSuccess: (source) => Result.succeed(new RegExp(`^(?:${source})$`, "v")),
   });
+
+// -----------------------------------------------------------------------------
+// The XPath dialect (F&O 3.1 §5.6.1)
+// -----------------------------------------------------------------------------
+
+/**
+ * A piece of a translated XPath regular expression: translated source, or a
+ * construct whose translation depends on the flags or on the groups around
+ * it, resolved once the whole expression is parsed.
+ */
+type Segment = Data.TaggedEnum<{
+  Source: { readonly text: string };
+  /** `.`, `^` or `$`, whose meaning the flags set. */
+  Meta: { readonly char: "." | "^" | "$" };
+  /** A capturing group's opening or closing parenthesis. */
+  Group: { readonly open: boolean };
+  BackRef: { readonly digits: string };
+}>;
+
+const Segment = Data.taggedEnum<Segment>();
+
+const src = (text: string): Segment => Segment.Source({ text });
+
+/** XPath's single-character escapes: XML Schema's and `\$`. */
+const xpSingleCharEscape: Parser.Parser<string> = Parser.map(
+  Parser.preceded(lit("\\"), Token.oneOf("nrt\\|.?*+(){}$-[]^")),
+  (c) => singleCharEscapes[c] ?? c,
+);
+
+/**
+ * Block names XPath takes beyond XML Schema 1.0's: blocks added or renamed
+ * in later versions of Unicode, as later XML Schema versions allow.
+ */
+const laterBlocks: ReadonlyArray<readonly [string, ReadonlyArray<readonly [number, number]>]> = [
+  ["GreekandCoptic", [[0x370, 0x3ff]]],
+  ["CombiningDiacriticalMarksforSymbols", [[0x20d0, 0x20ff]]],
+  ["PrivateUseArea", [[0xe000, 0xf8ff]]],
+  ["SupplementaryPrivateUseArea-A", [[0xf0000, 0xfffff]]],
+  ["SupplementaryPrivateUseArea-B", [[0x100000, 0x10ffff]]],
+  ["Specials", [[0xfff0, 0xffff]]],
+  ["Emoticons", [[0x1f600, 0x1f64f]]],
+  ["CyrillicSupplement", [[0x500, 0x52f]]],
+  ["PhoneticExtensions", [[0x1d00, 0x1d7f]]],
+  ["MiscellaneousSymbolsandArrows", [[0x2b00, 0x2bff]]],
+  ["MiscellaneousSymbolsandPictographs", [[0x1f300, 0x1f5ff]]],
+  ["TransportandMapSymbols", [[0x1f680, 0x1f6ff]]],
+  ["SupplementalArrows-A", [[0x27f0, 0x27ff]]],
+  ["SupplementalArrows-B", [[0x2900, 0x297f]]],
+  ["SupplementalMathematicalOperators", [[0x2a00, 0x2aff]]],
+  ["HighSurrogates", [[0xd800, 0xdb7f]]],
+  ["LowSurrogates", [[0xdc00, 0xdfff]]],
+];
+
+const xpBlocks = Record.fromEntries([...blockList, ...laterBlocks]);
+
+const xpClassEscape = Parser.alt(categoryEscapeOf(xpBlocks), multiCharEscape);
+
+const xpCharClassExpr = charClassOf(xpSingleCharEscape, xpClassEscape);
+
+/** `\1` … `\99`: a back-reference, its digits resolved against the groups closed before it. */
+const backReference: Parser.Parser<Segment> = Parser.map(
+  Parser.preceded(
+    lit("\\"),
+    Parser.seq(Token.oneOf("123456789"), Token.takeWhile(Token.range("0", "9"))),
+  ),
+  ([first, rest]) => Segment.BackRef({ digits: first + rest }),
+);
+
+const xpAtom: Parser.Parser<ReadonlyArray<Segment>> = Parser.alt(
+  Parser.map(Token.noneOf(".\\?*+{}()|[]^$"), (c) => [src(escape(c))]),
+  Parser.map(Token.oneOf(".^$"), (c) => [
+    Segment.Meta({ char: c === "." ? "." : c === "^" ? "^" : "$" }),
+  ]),
+  Parser.map(xpClassEscape, (c) => [src(c)]),
+  Parser.map(backReference, (b) => [b]),
+  Parser.map(xpSingleCharEscape, (c) => [src(escape(c))]),
+  Parser.map(xpCharClassExpr, (c) => [src(c)]),
+  Parser.map(
+    Parser.delimited(
+      lit("(?:"),
+      Parser.suspend(() => xpRegExp),
+      lit(")"),
+    ),
+    (inner): ReadonlyArray<Segment> => [src("(?:"), ...inner, src(")")],
+  ),
+  Parser.map(
+    Parser.delimited(
+      lit("("),
+      Parser.suspend(() => xpRegExp),
+      lit(")"),
+    ),
+    (inner): ReadonlyArray<Segment> => [
+      Segment.Group({ open: true }),
+      ...inner,
+      Segment.Group({ open: false }),
+    ],
+  ),
+);
+
+/** An atom and its quantifier, which may be reluctant (`*?`, `{2,3}?`). */
+const xpPiece: Parser.Parser<ReadonlyArray<Segment>> = Parser.map(
+  Parser.seq(
+    xpAtom,
+    Parser.opt(Parser.seq(Parser.alt(Token.oneOf("?*+"), quantity), Parser.opt(lit("?")))),
+  ),
+  ([a, q]) =>
+    Option.match(q, {
+      onNone: () => a,
+      onSome: ([quantifier, reluctant]) => [
+        src("(?:"),
+        ...a,
+        src(")"),
+        src(quantifier + Option.getOrElse(reluctant, () => "")),
+      ],
+    }),
+);
+
+const xpRegExp: Parser.Parser<ReadonlyArray<Segment>> = Parser.map(
+  Parser.separated(
+    Parser.map(Parser.repeat(xpPiece), (ps) => ps.flat()),
+    lit("|"),
+  ),
+  (branches) => branches.flatMap((b, i) => (i === 0 ? b : [src("|"), ...b])),
+);
+
+/** How an XPath regular expression is read: the `s`, `m` and `q` flags. */
+export interface XPathRegexOptions {
+  /** `s`: `.` matches every character, newlines included. */
+  readonly dotAll: boolean;
+  /** `m`: `^` and `$` match at the start and end of every line. */
+  readonly multiline: boolean;
+  /** `q`: every character of the pattern stands for itself. */
+  readonly literal: boolean;
+}
+
+/** An XPath regular expression translated to the source of a `v`-flag `RegExp` (unanchored). */
+export interface XPathRegex {
+  readonly source: string;
+  /** How many capturing groups it has. */
+  readonly groups: number;
+  /** The group each group is nested in, by group number (`0` for none): `parents[n - 1]` is group `n`'s. */
+  readonly parents: ReadonlyArray<number>;
+}
+
+interface Resolved {
+  readonly out: ReadonlyArray<string>;
+  readonly opened: number;
+  /** Groups opened and not yet closed, innermost last. */
+  readonly stack: ReadonlyArray<number>;
+  /** The groups closed so far. */
+  readonly closed: ReadonlyArray<number>;
+  readonly parents: ReadonlyArray<number>;
+}
+
+/**
+ * The group a back-reference's digits name (as many digits as still name a
+ * group opened before it) and the digits left over, which stand for
+ * themselves; the group must be closed before the back-reference.
+ */
+const backReferenceTo = (
+  digits: string,
+  state: Resolved,
+): Result.Result<readonly [number, string], string> => {
+  const k = Option.getOrElse(
+    Arr.findLast(Arr.range(1, digits.length), (n) => Number(digits.slice(0, n)) <= state.opened),
+    () => 1,
+  );
+  const group = Number(digits.slice(0, k));
+  return state.closed.includes(group)
+    ? Result.succeed([group, digits.slice(k)] as const)
+    : Result.fail(`the back-reference \\${group} is not to a group closed before it`);
+};
+
+const resolveSegment = (
+  state: Resolved,
+  segment: Segment,
+  options: XPathRegexOptions,
+): Result.Result<Resolved, string> => {
+  const emit = (text: string) => Result.succeed({ ...state, out: [...state.out, text] });
+  const innermost = Option.getOrElse(Arr.last(state.stack), () => 0);
+  return Segment.$match(segment, {
+    Source: ({ text }) => emit(text),
+    Meta: ({ char }) =>
+      emit(
+        char === "."
+          ? options.dotAll
+            ? "[^]"
+            : "[^\\u{a}\\u{d}]"
+          : char === "^"
+            ? // As in Java: at the start, and after every newline but a final one.
+              options.multiline
+              ? "(?:^|(?<=\\u{a})(?!$))"
+              : "^"
+            : options.multiline
+              ? "(?=$|\\u{a})"
+              : "$",
+      ),
+    Group: ({ open }) => {
+      if (!open)
+        return Result.succeed({
+          ...state,
+          out: [...state.out, ")"],
+          stack: state.stack.slice(0, -1),
+          closed: [...state.closed, innermost],
+        });
+      const n = state.opened + 1;
+      return Result.succeed({
+        out: [...state.out, "("],
+        opened: n,
+        stack: [...state.stack, n],
+        closed: state.closed,
+        parents: [...state.parents, innermost],
+      });
+    },
+    BackRef: ({ digits }) =>
+      Result.map(backReferenceTo(digits, state), ([n, rest]) => ({
+        ...state,
+        out: [...state.out, `(?:\\${n})`, ...Arr.map(Arr.fromIterable(rest), escape)],
+      })),
+  });
+};
+
+const initialResolved: Result.Result<Resolved, string> = Result.succeed({
+  out: [],
+  opened: 0,
+  stack: [],
+  closed: [],
+  parents: [],
+});
+
+/** Whitespace outside character classes, which the `x` flag removes. */
+const extendedWhitespace = /\\[^\t\n\r ]|\[(?:\\[^]|\[(?:\\[^]|[^\\\]])*\]|[^\\\]])*\]|[\t\n\r ]+/g;
+
+/** A pattern with the `x` flag's whitespace removed: all of it outside character classes. */
+export const stripWhitespace = (pattern: string): string =>
+  pattern.replace(extendedWhitespace, (m) => (/^[\t\n\r ]/.test(m) ? "" : m));
+
+/**
+ * The `RegExp` source an XPath 3.1 regular expression denotes, with the
+ * number and nesting of its capturing groups, or why the pattern isn't a
+ * valid XPath regular expression. The source is for the `v` flag, and
+ * matches anywhere in a string (it is not anchored).
+ */
+export const translateXPath = (
+  pattern: string,
+  options: XPathRegexOptions,
+): Result.Result<XPathRegex, string> => {
+  if (options.literal)
+    return Result.succeed({
+      source: Arr.map(Arr.fromIterable(pattern), escape).join(""),
+      groups: 0,
+      parents: [],
+    });
+  return Result.match(Parser.parse(xpRegExp, pattern), {
+    onFailure: (error) => Result.fail(`invalid pattern ${quote(pattern)}: ${error.message}`),
+    onSuccess: (segments) =>
+      Result.map(
+        Arr.reduce(segments, initialResolved, (acc, segment) =>
+          Result.flatMap(acc, (state) => resolveSegment(state, segment, options)),
+        ),
+        (state) => ({ source: state.out.join(""), groups: state.opened, parents: state.parents }),
+      ),
+  });
+};
