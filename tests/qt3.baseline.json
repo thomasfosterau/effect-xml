@@ -6,7 +6,7 @@
     },
     "array-filter": {
       "runnable": 12,
-      "passing": 10
+      "passing": 12
     },
     "array-flatten": {
       "runnable": 10,
@@ -258,7 +258,7 @@
     },
     "fn-filter": {
       "runnable": 27,
-      "passing": 26
+      "passing": 27
     },
     "fn-floor": {
       "runnable": 88,
@@ -814,7 +814,7 @@
     },
     "misc-HigherOrderFunctions": {
       "runnable": 126,
-      "passing": 124
+      "passing": 125
     },
     "misc-JsonTestSuite": {
       "runnable": 318,
@@ -1616,7 +1616,7 @@
     },
     "array-filter": {
       "runnable": 12,
-      "passing": 10
+      "passing": 12
     },
     "array-flatten": {
       "runnable": 7,
@@ -1868,7 +1868,7 @@
     },
     "fn-filter": {
       "runnable": 25,
-      "passing": 24
+      "passing": 25
     },
     "fn-floor": {
       "runnable": 88,
