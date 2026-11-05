@@ -44,7 +44,8 @@ import {
 } from "./datatypes.ts";
 import { evaluate, type Tables, type Typed, type TypeOf } from "./identity.ts";
 import { advance, selects, type StepLevel, type StreamStep } from "../streamPath.ts";
-import type { ComplexRuntime, Runtime, TypeRuntime } from "./runtime.ts";
+import type { AttributeRule, ComplexRuntime, Runtime, TypeRuntime } from "./runtime.ts";
+import { Lookup } from "../lookup.ts";
 import { isIn, tagSet } from "../tagSet.ts";
 
 /** Anything that stops validation. */
@@ -62,7 +63,11 @@ class Frame {
   readonly bindings: Readonly<Record<string, string>>;
   readonly index: number;
   /** How many child elements of each name have started, for paths (made on the first child). */
-  counts: Record<string, number> | undefined = undefined;
+  counts: Lookup<string, number> | undefined = undefined;
+  /** The names its children resolve to while they declare no namespaces of their own, by raw name. */
+  names: Lookup<string, Expanded> | undefined = undefined;
+  /** The same, for the attributes of those children. */
+  attributeNames: Lookup<string, Expanded> | undefined = undefined;
   /** The declaration and type it is validated against; `undefined` for content that is skipped. */
   readonly decl: ElementDeclaration | undefined;
   readonly type: TypeRuntime | undefined;
@@ -70,7 +75,8 @@ class Frame {
   readonly xsiType: string | undefined;
   readonly nil: boolean;
   readonly props: Props;
-  state: Option.Option<State>;
+  /** The state of its content model, when its type has element content. */
+  state: State | undefined;
   text = "";
   /** The children, when the element is being built as a DOM element. */
   readonly dom: Array<XmlNode> | undefined;
@@ -86,43 +92,42 @@ class Frame {
   /** Selected values held until this element, an identity-constraint scope, closes. */
   held: Option.Option<Array<XsdValue>> = Option.none();
 
-  constructor(init: {
-    readonly via: Frame["via"];
-    readonly raw: string;
-    readonly name: Expanded;
-    readonly bindings: Readonly<Record<string, string>>;
-    readonly index: number;
-    readonly decl: ElementDeclaration | undefined;
-    readonly type: TypeRuntime | undefined;
-    readonly xsiType: string | undefined;
-    readonly nil: boolean;
-    readonly props: Props;
-    readonly dom: boolean;
-    readonly domAttributes: ReadonlyArray<XmlAttribute>;
-    readonly tables: boolean;
-  }) {
-    this.via = init.via;
-    this.raw = init.raw;
-    this.name = init.name;
-    this.key = init.name.clark;
-    this.bindings = init.bindings;
-    this.index = init.index;
-    this.decl = init.decl;
-    this.type = init.type;
-    this.xsiType = init.xsiType;
-    this.nil = init.nil;
-    this.props = init.props;
+  // Positional, not an options object: one is built per element.
+  constructor(
+    via: Frame["via"],
+    opening: Opening,
+    decl: ElementDeclaration | undefined,
+    type: TypeRuntime | undefined,
+    nil: boolean,
+    props: Props,
+    dom: boolean,
+    domAttributes: ReadonlyArray<XmlAttribute>,
+    tables: boolean,
+  ) {
+    this.via = via;
+    this.raw = opening.ev.name;
+    this.name = opening.name;
+    this.key = opening.name.clark;
+    this.bindings = opening.bindings;
+    this.index = opening.index;
+    this.decl = decl;
+    this.type = type;
+    this.xsiType =
+      decl === undefined || type === undefined || type.key === decl.type ? undefined : type.key;
+    this.nil = nil;
+    this.props = props;
     this.state =
-      init.type !== undefined && Predicate.isTagged(init.type, "Complex")
-        ? Option.map(init.type.automaton, (a) => a.start)
-        : Option.none();
-    this.dom = init.dom ? [] : undefined;
-    this.domAttributes = init.domAttributes;
-    this.tables = init.tables ? MutableHashMap.empty() : undefined;
+      type !== undefined && Predicate.isTagged(type, "Complex") && Option.isSome(type.automaton)
+        ? type.automaton.value.start
+        : undefined;
+    this.dom = dom ? [] : undefined;
+    this.domAttributes = domAttributes;
+    this.tables = tables ? MutableHashMap.empty() : undefined;
   }
 }
 
-const ok: Result.Result<void, Failure> = Result.void;
+/** The attributes of an element that isn't built as a DOM element: none, never written to. */
+const noAttributes: ReadonlyArray<XmlAttribute> = [];
 
 const isWhitespace = (s: string): boolean => /^[ \t\r\n]*$/.test(s);
 
@@ -139,31 +144,51 @@ const describe =
       : `<${localOf(term.name)}> (${ns === "" ? "in no namespace" : `in ${ns}`})`;
   };
 
-/** The namespaces in scope after an element's declarations. */
+/** The namespaces in scope after an element's declarations: `parent` itself when it declares none. */
 const declare = (
   parent: Readonly<Record<string, string>>,
   attributes: ReadonlyArray<Attribute>,
-): Readonly<Record<string, string>> =>
-  Arr.reduce(attributes, parent, (scope, a) =>
-    a.name === "xmlns"
-      ? { ...scope, "": a.value }
-      : a.name.startsWith("xmlns:")
-        ? { ...scope, [a.name.slice(6)]: a.value }
-        : scope,
-  );
+): Readonly<Record<string, string>> => {
+  let scope: Record<string, string> | undefined = undefined;
+  for (const a of attributes) {
+    if (a.name === "xmlns") {
+      scope ??= { ...parent };
+      scope[""] = a.value;
+    } else if (a.name.startsWith("xmlns:")) {
+      scope ??= { ...parent };
+      scope[a.name.slice(6)] = a.value;
+    }
+  }
+  return scope ?? parent;
+};
+
+/** The first attribute of a start tag named like an earlier one, if there is one. */
+const duplicateOf = (attributes: ReadonlyArray<Attribute>): Attribute | undefined => {
+  for (let i = 1; i < attributes.length; i++) {
+    const name = attributes[i]?.name;
+    for (let j = 0; j < i; j++) if (attributes[j]?.name === name) return attributes[i];
+  }
+  return undefined;
+};
 
 /** The `xsi:` attribute with this local name, if the start tag has one. */
 const xsiAttribute = (
   attributes: ReadonlyArray<Attribute>,
   bindings: Readonly<Record<string, string>>,
   local: string,
-): Option.Option<Attribute> =>
-  Arr.findFirst(attributes, (a) => {
+): Attribute | undefined => {
+  for (const a of attributes) {
     const colon = a.name.indexOf(":");
-    return (
-      colon > 0 && a.name.slice(colon + 1) === local && bindings[a.name.slice(0, colon)] === XSI
-    );
-  });
+    if (
+      colon > 0 &&
+      a.name.length === colon + 1 + local.length &&
+      a.name.endsWith(local) &&
+      bindings[a.name.slice(0, colon)] === XSI
+    )
+      return a;
+  }
+  return undefined;
+};
 
 const isNamespaceDeclaration = (a: Attribute) => a.name === "xmlns" || a.name.startsWith("xmlns:");
 
@@ -190,6 +215,8 @@ export class Validator {
   /** Selected values completed and ready to emit. */
   private emitted: Array<XsdValue> = [];
   private readonly ids = MutableHashSet.empty<string>();
+  /** The decoded defaults of attributes, for those whose default means the same everywhere. */
+  private readonly defaults = new WeakMap<AttributeRule, SimpleValue>();
   /** The simple types of DOM nodes built for identity constraints, for comparing their fields. */
   private readonly types = new WeakMap<object, Typed>();
   private readonly typeOf: TypeOf = (node) => Option.fromUndefinedOr(this.types.get(node));
@@ -199,8 +226,9 @@ export class Validator {
     readonly path: string;
   }> = [];
   private done: Option.Option<Validated> = Option.none();
-  /** The element whose start tag is being checked, before it is pushed. */
+  /** The element whose start tag is being checked, before it is pushed, and its index. */
   private opening: string | undefined = undefined;
+  private openingIndex = 1;
   private last: Position = origin;
 
   constructor(runtime: Runtime, options?: ValidatorOptions) {
@@ -232,9 +260,9 @@ export class Validator {
     EndElement: (ev: Event<"EndElement">) => this.end(ev.name, ev.span.start),
     Text: (ev: Event<"Text">) => this.text(ev.data, ev.span.start, false),
     CData: (ev: Event<"CData">) => this.text(ev.data, ev.span.start, true),
-    Comment: (ev: Event<"Comment">) => this.capture(Nodes.comment(ev.data)),
+    Comment: (ev: Event<"Comment">) => this.capture(() => Nodes.comment(ev.data)),
     ProcessingInstruction: (ev: Event<"ProcessingInstruction">) =>
-      this.capture(Nodes.processingInstruction(ev.target, ev.data)),
+      this.capture(() => Nodes.processingInstruction(ev.target, ev.data)),
     Doctype: () => null,
     XmlDeclaration: () => null,
   };
@@ -271,7 +299,10 @@ export class Validator {
 
   private path(): string {
     const steps = Arr.map(this.frames, (f) => `/${f.raw}${f.index > 1 ? `[${f.index}]` : ""}`);
-    const own = this.opening === undefined ? "" : `/${this.opening}`;
+    const own =
+      this.opening === undefined
+        ? ""
+        : `/${this.opening}${this.openingIndex > 1 ? `[${this.openingIndex}]` : ""}`;
     return steps.join("") + own || "/";
   }
 
@@ -301,10 +332,28 @@ export class Validator {
     return expanded(prefix, local, ns === undefined || ns === "" ? null : ns);
   }
 
+  /**
+   * {@link resolve}, remembered in `names` (the parent's table, when the
+   * element declares no namespaces of its own): the elements and attributes
+   * of a document repeat a few names, and a name resolved once is also one
+   * string for the lookups keyed by it.
+   */
+  private resolveIn(
+    names: Lookup<string, Expanded> | undefined,
+    raw: string,
+    isAttribute: boolean,
+    bindings: Readonly<Record<string, string>>,
+    position: Position,
+  ): Expanded | UnboundNamespacePrefix {
+    const known = names?.get(raw);
+    if (known !== undefined) return known;
+    const name = this.resolve(raw, isAttribute, bindings, position);
+    if (names !== undefined && !(name instanceof UnboundNamespacePrefix)) names.set(raw, name);
+    return name;
+  }
+
   private contextOf(bindings: Readonly<Record<string, string>>): ValueContext {
-    return {
-      resolve: (prefix) => (prefix === "xml" ? Namespaces.xml : bindings[prefix]),
-    };
+    return new BindingsContext(bindings);
   }
 
   /** Decode a value, recording IDs and references; the reason when it is invalid. */
@@ -314,23 +363,25 @@ export class Validator {
     bindings: Readonly<Record<string, string>>,
     position: Position,
   ): Result.Result<SimpleValue, string> {
-    return Result.flatMap(decode(checker, raw, this.contextOf(bindings)), (v) => {
-      if (checker.identity === "ID" && Predicate.isString(v)) {
-        if (MutableHashSet.has(this.ids, v)) return Result.fail(`the ID "${v}" is used twice`);
-        MutableHashSet.add(this.ids, v);
-      }
-      if (checker.identity === "IDREF" && Predicate.isString(v))
-        this.refs.push({ id: v, position, path: this.path() });
-      if (checker.identity === "IDREFS" && Arr.isArray(v))
-        Arr.forEach(Arr.filter(v, Predicate.isString), (id) =>
-          this.refs.push({ id, position, path: this.path() }),
-        );
-      return Result.succeed(v);
-    });
+    const decoded = decode(checker, raw, this.contextOf(bindings));
+    if (Result.isFailure(decoded) || checker.identity === "none") return decoded;
+    const v = decoded.success;
+    if (checker.identity === "ID" && Predicate.isString(v)) {
+      if (MutableHashSet.has(this.ids, v)) return Result.fail(`the ID "${v}" is used twice`);
+      MutableHashSet.add(this.ids, v);
+    }
+    if (checker.identity === "IDREF" && Predicate.isString(v))
+      this.refs.push({ id: v, position, path: this.path() });
+    if (checker.identity === "IDREFS" && Arr.isArray(v))
+      Arr.forEach(Arr.filter(v, Predicate.isString), (id) =>
+        this.refs.push({ id, position, path: this.path() }),
+      );
+    return decoded;
   }
 
-  private capture(node: XmlNode): null {
-    this.frames.at(-1)?.dom?.push(node);
+  private capture(node: () => XmlNode): null {
+    const dom = this.frames.at(-1)?.dom;
+    if (dom !== undefined) dom.push(node());
     return null;
   }
 
@@ -339,21 +390,37 @@ export class Validator {
   // ---------------------------------------------------------------------------
 
   private start(ev: Event<"StartElement">): Failure | null {
-    const duplicate = Arr.findFirst(ev.attributes, (a, i) =>
-      ev.attributes.some((b, j) => j < i && b.name === a.name),
-    );
-    if (Option.isSome(duplicate))
+    const duplicate = duplicateOf(ev.attributes);
+    if (duplicate !== undefined)
       return new DuplicateAttribute({
         element: ev.name,
-        attribute: duplicate.value.name,
-        position: duplicate.value.span.start,
+        attribute: duplicate.name,
+        position: duplicate.span.start,
       });
     const parent = this.frames.at(-1);
     const bindings = declare(parent?.bindings ?? {}, ev.attributes);
-    const name = this.resolve(ev.name, false, bindings, ev.span.start);
+    // Names resolve as the parent's children's do unless the element declares namespaces.
+    const shared = parent !== undefined && bindings === parent.bindings;
+    if (shared && parent.names === undefined) {
+      parent.names = new Lookup();
+      parent.attributeNames = new Lookup();
+    }
+    const name = this.resolveIn(
+      shared ? parent.names : undefined,
+      ev.name,
+      false,
+      bindings,
+      ev.span.start,
+    );
     if (name instanceof UnboundNamespacePrefix) return name;
     const index = parent === undefined ? 1 : count(parent, ev.name);
-    const opening = { ev, name, bindings, index } as const;
+    const opening: Opening = {
+      ev,
+      name,
+      bindings,
+      index,
+      attributeNames: shared ? parent.attributeNames : undefined,
+    };
     const out =
       parent === undefined
         ? this.startRoot(opening)
@@ -447,43 +514,35 @@ export class Validator {
         `<${parent.raw}> is nil, so it can't contain <${ev.name}>`,
         ev.span.start,
       );
-    if (
-      Predicate.isTagged(type, "Simple") ||
-      Option.isNone(type.automaton) ||
-      Option.isNone(parent.state)
-    )
+    const state = parent.state;
+    if (Predicate.isTagged(type, "Simple") || Option.isNone(type.automaton) || state === undefined)
       return this.invalid(
         "UnexpectedElement",
         `<${parent.raw}> can't contain elements, but contains <${ev.name}>`,
         ev.span.start,
       );
     const automaton = type.automaton.value;
-    const state = parent.state.value;
-    return Option.match(automaton.step(state, name.clark, name.namespace ?? ""), {
-      onNone: () => {
-        const expected = Arr.map(automaton.expected(state), describe(name.namespace ?? ""));
-        return this.invalid(
-          "UnexpectedElement",
-          Arr.isReadonlyArrayEmpty(expected)
-            ? `<${ev.name}> is not allowed here: <${parent.raw}> is already complete`
-            : `<${ev.name}> is not allowed here; expected ${expected.join(" or ")}`,
-          ev.span.start,
-        );
-      },
-      onSome: (match) => {
-        parent.state = Option.some(match.next);
-        const capture = parent.dom !== undefined;
-        if (match.term.kind === "element")
-          return Option.match(
-            Option.flatMap(match.element, (k) => this.runtime.element(k)),
-            {
-              onNone: () => this.open(opening, "wildcard", undefined, true),
-              onSome: (decl) => this.open(opening, "particle", decl, capture),
-            },
-          );
-        return this.startWildcard(opening, match.term.wildcard.process);
-      },
-    });
+    const step = automaton.step(state, name.clark, name.namespace ?? "");
+    if (Option.isNone(step)) {
+      const expected = Arr.map(automaton.expected(state), describe(name.namespace ?? ""));
+      return this.invalid(
+        "UnexpectedElement",
+        Arr.isReadonlyArrayEmpty(expected)
+          ? `<${ev.name}> is not allowed here: <${parent.raw}> is already complete`
+          : `<${ev.name}> is not allowed here; expected ${expected.join(" or ")}`,
+        ev.span.start,
+      );
+    }
+    const match = step.value;
+    parent.state = match.next;
+    if (match.term.kind !== "element")
+      return this.startWildcard(opening, match.term.wildcard.process);
+    const decl = Option.isSome(match.element)
+      ? this.runtime.element(match.element.value)
+      : Option.none<ElementDeclaration>();
+    return Option.isSome(decl)
+      ? this.open(opening, "particle", decl.value, parent.dom !== undefined)
+      : this.open(opening, "wildcard", undefined, true);
   }
 
   private startWildcard(opening: Opening, process: "strict" | "lax" | "skip"): Failure | null {
@@ -499,33 +558,26 @@ export class Validator {
   }
 
   /** The type an element is validated against: its declared type, or the one `xsi:type` names. */
-  private typeFor(
-    opening: Opening,
-    decl: ElementDeclaration,
-  ): Result.Result<readonly [TypeRuntime, string | undefined], Failure> {
+  private typeFor(opening: Opening, decl: ElementDeclaration): Result.Result<TypeRuntime, Failure> {
     const { ev, bindings } = opening;
     const raw = xsiAttribute(ev.attributes, bindings, "type");
-    const named = Option.match(raw, {
-      onNone: () => Result.succeed(Option.none<string>()),
-      onSome: (a) =>
-        Result.mapBoth(decode(this.qnameChecker, a.value, this.contextOf(bindings)), {
-          onFailure: (reason) => this.invalid("InvalidType", `xsi:type: ${reason}`, a.span.start),
-          onSuccess: (v) => Option.some(String(v)),
-        }),
-    });
-    return Result.flatMap(named, (xsiType) => {
-      const key = Option.getOrElse(xsiType, () => decl.type);
+    let key = decl.type;
+    if (raw !== undefined) {
+      const named = decode(this.qnameChecker, raw.value, this.contextOf(bindings));
+      if (Result.isFailure(named))
+        return Result.fail(
+          this.invalid("InvalidType", `xsi:type: ${named.failure}`, raw.span.start),
+        );
+      key = String(named.success);
       const blocked = this.blockedFor(decl, key);
       if (Option.isSome(blocked))
         return Result.fail(this.invalid("InvalidType", blocked.value, ev.span.start));
-      return Result.flatMap(
-        this.runtime.type(key),
-        (type): Result.Result<readonly [TypeRuntime, string | undefined], Failure> =>
-          Predicate.isTagged(type, "Complex") && type.def.abstract === true
-            ? Result.fail(this.invalid("InvalidType", `the type ${key} is abstract`, ev.span.start))
-            : Result.succeed([type, key === decl.type ? undefined : key] as const),
-      );
-    });
+    }
+    const type = this.runtime.type(key);
+    if (Result.isFailure(type)) return type;
+    return Predicate.isTagged(type.success, "Complex") && type.success.def.abstract === true
+      ? Result.fail(this.invalid("InvalidType", `the type ${key} is abstract`, ev.span.start))
+      : type;
   }
 
   private readonly qnameChecker: SimpleChecker = {
@@ -571,27 +623,24 @@ export class Validator {
     return Result.isSuccess(this.runtime.checker(key));
   }
 
-  private nilOf(opening: Opening, decl: ElementDeclaration): Result.Result<boolean, Failure> {
+  /** Whether `xsi:nil` makes the element nil, or why it can't. */
+  private nilOf(opening: Opening, decl: ElementDeclaration): boolean | Failure {
     const { ev, bindings } = opening;
-    const raw = xsiAttribute(ev.attributes, bindings, "nil");
-    return Option.match(raw, {
-      onNone: () => Result.succeed(false),
-      onSome: (a) => {
-        const v = a.value.trim();
-        const nil = v === "true" || v === "1";
-        if (!nil && v !== "false" && v !== "0")
-          return Result.fail(
-            this.invalid("Nil", `xsi:nil="${a.value}" is not a boolean`, a.span.start),
-          );
-        if (nil && decl.nillable !== true)
-          return Result.fail(this.invalid("Nil", `<${ev.name}> is not nillable`, a.span.start));
-        if (nil && decl.fixed !== undefined)
-          return Result.fail(
-            this.invalid("Nil", `<${ev.name}> has a fixed value, so it can't be nil`, a.span.start),
-          );
-        return Result.succeed(nil);
-      },
-    });
+    const a = xsiAttribute(ev.attributes, bindings, "nil");
+    if (a === undefined) return false;
+    const v = a.value.trim();
+    const nil = v === "true" || v === "1";
+    if (!nil && v !== "false" && v !== "0")
+      return this.invalid("Nil", `xsi:nil="${a.value}" is not a boolean`, a.span.start);
+    if (nil && decl.nillable !== true)
+      return this.invalid("Nil", `<${ev.name}> is not nillable`, a.span.start);
+    if (nil && decl.fixed !== undefined)
+      return this.invalid(
+        "Nil",
+        `<${ev.name}> has a fixed value, so it can't be nil`,
+        a.span.start,
+      );
+    return nil;
   }
 
   /** Push an element: validated against `decl` if there is one, skipped (and kept as DOM) otherwise. */
@@ -601,73 +650,72 @@ export class Validator {
     decl: ElementDeclaration | undefined,
     dom: boolean,
   ): Failure | null {
-    const { ev, name, bindings, index } = opening;
+    const { ev, bindings, index } = opening;
     const parent = this.frames.at(-1);
-    const domAttributes = dom ? this.domAttributes(ev, bindings) : Result.succeed([]);
-    if (Result.isFailure(domAttributes)) return domAttributes.failure;
+    let domAttributes = noAttributes;
+    if (dom) {
+      const built = this.domAttributes(ev, bindings);
+      if (Result.isFailure(built)) return built.failure;
+      domAttributes = built.success;
+    }
     if (decl === undefined) {
       this.frames.push(
-        new Frame({
+        new Frame(
           via,
-          raw: ev.name,
-          name,
-          bindings,
-          index,
+          opening,
           decl,
-          type: undefined,
-          xsiType: undefined,
-          nil: false,
-          props: {},
-          dom: true,
-          domAttributes: domAttributes.success,
-          tables: parent?.tables !== undefined,
-        }),
+          undefined,
+          false,
+          {},
+          true,
+          domAttributes,
+          parent?.tables !== undefined,
+        ),
       );
       return null;
     }
     // The element isn't on the stack yet: its errors name it in their path.
-    this.opening = `${ev.name}${index > 1 ? `[${index}]` : ""}`;
-    const checked = this.checkStart(opening, decl);
+    this.opening = ev.name;
+    this.openingIndex = index;
+    const frame = this.checkStart(opening, via, decl, dom, domAttributes, parent);
     this.opening = undefined;
-    if (Result.isFailure(checked)) return checked.failure;
-    const [type, xsiType, nil, props] = checked.success;
-    const scoped = decl.constraints !== undefined || parent?.tables !== undefined;
-    this.frames.push(
-      new Frame({
-        via,
-        raw: ev.name,
-        name,
-        bindings,
-        index,
-        decl,
-        type,
-        xsiType,
-        nil,
-        props,
-        dom: dom || decl.constraints !== undefined,
-        domAttributes:
-          dom || decl.constraints === undefined
-            ? domAttributes.success
-            : Result.getOrElse(this.domAttributes(ev, bindings), () => []),
-        tables: scoped,
-      }),
-    );
+    if (!(frame instanceof Frame)) return frame;
+    this.frames.push(frame);
     return null;
   }
 
   private checkStart(
     opening: Opening,
+    via: Frame["via"],
     decl: ElementDeclaration,
-  ): Result.Result<readonly [TypeRuntime, string | undefined, boolean, Props], Failure> {
-    const { ev } = opening;
+    dom: boolean,
+    domAttributes: ReadonlyArray<XmlAttribute>,
+    parent: Frame | undefined,
+  ): Frame | Failure {
+    const { ev, bindings } = opening;
     if (decl.abstract === true)
-      return Result.fail(
-        this.invalid("InvalidType", `the element <${ev.name}> is abstract`, ev.span.start),
-      );
-    return Result.flatMap(this.typeFor(opening, decl), ([type, xsiType]) =>
-      Result.flatMap(this.nilOf(opening, decl), (nil) =>
-        Result.map(this.attributes(opening, type), (props) => [type, xsiType, nil, props] as const),
-      ),
+      return this.invalid("InvalidType", `the element <${ev.name}> is abstract`, ev.span.start);
+    const typed = this.typeFor(opening, decl);
+    if (Result.isFailure(typed)) return typed.failure;
+    const type = typed.success;
+    const nil = this.nilOf(opening, decl);
+    if (!Predicate.isBoolean(nil)) return nil;
+    const props: Props = {};
+    const failure = this.attributes(opening, type, props);
+    if (failure !== null) return failure;
+    const constrained = decl.constraints !== undefined;
+    return new Frame(
+      via,
+      opening,
+      decl,
+      type,
+      nil,
+      props,
+      dom || constrained,
+      dom || !constrained
+        ? domAttributes
+        : Result.getOrElse(this.domAttributes(ev, bindings), () => []),
+      constrained || parent?.tables !== undefined,
     );
   }
 
@@ -695,71 +743,61 @@ export class Validator {
   // Attributes
   // ---------------------------------------------------------------------------
 
-  private attributes(opening: Opening, type: TypeRuntime): Result.Result<Props, Failure> {
+  /** Check a start tag's attributes into `props`: `null`, or the first violation. */
+  private attributes(opening: Opening, type: TypeRuntime, props: Props): Failure | null {
     const { ev, bindings } = opening;
-    const props: Props = {};
     const seen: Array<string> = [];
-    const each = Arr.reduce(
-      Arr.filter(ev.attributes, (a) => !isNamespaceDeclaration(a)),
-      ok,
-      (acc, a) =>
-        Result.flatMap(acc, () => this.attribute(a, type, bindings, props, seen, ev.name)),
-    );
-    return Result.flatMap(each, () =>
-      Predicate.isTagged(type, "Complex")
-        ? Result.map(this.implied(type, props, seen, ev.span.start, bindings), withLists(type))
-        : Result.succeed(props),
-    );
+    for (const a of ev.attributes) {
+      if (isNamespaceDeclaration(a)) continue;
+      const failure = this.attribute(a, opening, type, props, seen);
+      if (failure !== null) return failure;
+    }
+    if (!Predicate.isTagged(type, "Complex")) return null;
+    const failure = this.implied(type, props, seen, ev.span.start, bindings);
+    if (failure !== null) return failure;
+    startLists(type, props);
+    return null;
   }
 
   private attribute(
     a: Attribute,
+    opening: Opening,
     type: TypeRuntime,
-    bindings: Readonly<Record<string, string>>,
     props: Props,
     seen: Array<string>,
-    element: string,
-  ): Result.Result<void, Failure> {
-    const qname = this.resolve(a.name, true, bindings, a.span.start);
-    if (qname instanceof UnboundNamespacePrefix) return Result.fail(qname);
+  ): Failure | null {
+    const { ev, bindings } = opening;
+    const qname = this.resolveIn(opening.attributeNames, a.name, true, bindings, a.span.start);
+    if (qname instanceof UnboundNamespacePrefix) return qname;
     const key = qname.clark;
     if (seen.includes(key))
-      return Result.fail(
-        new DuplicateAttribute({ element, attribute: a.name, position: a.span.start }),
-      );
+      return new DuplicateAttribute({
+        element: ev.name,
+        attribute: a.name,
+        position: a.span.start,
+      });
     seen.push(key);
-    if (qname.namespace === XSI && isIn(xsiAttributes, qname.local)) return Result.void;
+    if (qname.namespace === XSI && isIn(xsiAttributes, qname.local)) return null;
     if (Predicate.isTagged(type, "Simple"))
-      return Result.fail(
-        this.invalid(
-          "UnexpectedAttribute",
-          `<${element}> has a simple type, so it can't have the attribute ${a.name}`,
-          a.span.start,
-        ),
+      return this.invalid(
+        "UnexpectedAttribute",
+        `<${ev.name}> has a simple type, so it can't have the attribute ${a.name}`,
+        a.span.start,
       );
-    return Option.match(Record.get(type.attributes, key), {
-      onSome: (rule) =>
-        Result.flatMap(
-          Result.mapError(
-            this.value(rule.checker, a.value, bindings, a.span.start),
-            (reason): Failure =>
-              this.invalid("InvalidValue", `the attribute ${a.name}: ${reason}`, a.span.start),
-          ),
-          (v) => {
-            if (Option.isSome(rule.fixed) && !equalValues(rule.fixed.value, v))
-              return Result.fail(
-                this.invalid(
-                  "InvalidValue",
-                  `the attribute ${a.name} must be "${rule.use.fixed}"`,
-                  a.span.start,
-                ),
-              );
-            props[rule.slot.property] = v;
-            return ok;
-          },
-        ),
-      onNone: () => this.wildcardAttribute(a, qname, type, bindings, props),
-    });
+    const found = Record.get(type.attributes, key);
+    if (Option.isNone(found)) return this.wildcardAttribute(a, qname, type, bindings, props);
+    const rule = found.value;
+    const v = this.value(rule.checker, a.value, bindings, a.span.start);
+    if (Result.isFailure(v))
+      return this.invalid("InvalidValue", `the attribute ${a.name}: ${v.failure}`, a.span.start);
+    if (Option.isSome(rule.fixed) && !equalValues(rule.fixed.value, v.success))
+      return this.invalid(
+        "InvalidValue",
+        `the attribute ${a.name} must be "${rule.use.fixed}"`,
+        a.span.start,
+      );
+    props[rule.slot.property] = v.success;
+    return null;
   }
 
   private wildcardAttribute(
@@ -768,15 +806,13 @@ export class Validator {
     type: ComplexRuntime,
     bindings: Readonly<Record<string, string>>,
     props: Props,
-  ): Result.Result<void, Failure> {
+  ): Failure | null {
     const key = qname.clark;
     const unexpected = () =>
-      Result.fail(
-        this.invalid(
-          "UnexpectedAttribute",
-          `the attribute ${a.name} is not allowed here`,
-          a.span.start,
-        ),
+      this.invalid(
+        "UnexpectedAttribute",
+        `the attribute ${a.name} is not allowed here`,
+        a.span.start,
       );
     if (Option.isNone(type.wildcard) || !allowsName(type.wildcard.value, qname))
       return unexpected();
@@ -784,23 +820,18 @@ export class Validator {
     const declared =
       process === "skip" ? Option.none() : Record.get(this.runtime.model.attributes, key);
     if (process === "strict" && Option.isNone(declared)) return unexpected();
-    const checked = Option.match(declared, {
-      onNone: () => Result.void,
-      onSome: (decl) =>
-        Result.flatMap(this.runtime.checker(decl.type), (checker) =>
-          Result.mapBoth(this.value(checker, a.value, bindings, a.span.start), {
-            onFailure: (reason): Failure =>
-              this.invalid("InvalidValue", `the attribute ${a.name}: ${reason}`, a.span.start),
-            onSuccess: () => undefined,
-          }),
-        ),
-    });
-    return Result.map(checked, () => {
-      const bag = props["$attributes"];
-      const attributes: Record<string, string> = bag !== undefined && isBag(bag) ? bag : {};
-      attributes[key] = a.value;
-      props["$attributes"] = attributes;
-    });
+    if (Option.isSome(declared)) {
+      const checker = this.runtime.checker(declared.value.type);
+      if (Result.isFailure(checker)) return checker.failure;
+      const v = this.value(checker.success, a.value, bindings, a.span.start);
+      if (Result.isFailure(v))
+        return this.invalid("InvalidValue", `the attribute ${a.name}: ${v.failure}`, a.span.start);
+    }
+    const bag = props["$attributes"];
+    const attributes: Record<string, string> = bag !== undefined && isBag(bag) ? bag : {};
+    attributes[key] = a.value;
+    props["$attributes"] = attributes;
+    return null;
   }
 
   /** Required attributes that are missing, and defaults for those that are absent. */
@@ -810,37 +841,41 @@ export class Validator {
     seen: Array<string>,
     position: Position,
     bindings: Readonly<Record<string, string>>,
-  ): Result.Result<Props, Failure> {
-    return Result.map(
-      Result.all(
-        Arr.map(
-          Arr.filter(type.implied, (r) => !seen.includes(r.use.name)),
-          (rule): Result.Result<void, Failure> => {
-            if (rule.use.required === true)
-              return Result.fail(
-                this.invalid(
-                  "MissingAttribute",
-                  `the attribute ${localOf(rule.use.name)} is required`,
-                  position,
-                ),
-              );
-            const given = rule.use.fixed ?? rule.use.default ?? "";
-            return Result.mapBoth(this.value(rule.checker, given, bindings, position), {
-              onFailure: (reason): Failure =>
-                this.invalid(
-                  "InvalidValue",
-                  `the default of ${localOf(rule.use.name)}: ${reason}`,
-                  position,
-                ),
-              onSuccess: (v) => {
-                props[rule.slot.property] = v;
-              },
-            });
-          },
-        ),
-      ),
-      () => props,
-    );
+  ): Failure | null {
+    for (const rule of type.implied) {
+      if (seen.includes(rule.use.name)) continue;
+      if (rule.use.required === true)
+        return this.invalid(
+          "MissingAttribute",
+          `the attribute ${localOf(rule.use.name)} is required`,
+          position,
+        );
+      const known = this.defaults.get(rule);
+      if (known !== undefined) {
+        props[rule.slot.property] = known;
+        continue;
+      }
+      const given = rule.use.fixed ?? rule.use.default ?? "";
+      const v = this.value(rule.checker, given, bindings, position);
+      if (Result.isFailure(v))
+        return this.invalid(
+          "InvalidValue",
+          `the default of ${localOf(rule.use.name)}: ${v.failure}`,
+          position,
+        );
+      props[rule.slot.property] = v.success;
+      // A default decodes the same way every time, unless it is an ID or reference
+      // (recorded per use), a QName (resolved in each element's scope) or a list or union.
+      if (
+        rule.checker.identity === "none" &&
+        rule.checker.kind !== "qname" &&
+        rule.checker.kind !== "list" &&
+        rule.checker.kind !== "union" &&
+        !Predicate.isObject(v.success)
+      )
+        this.defaults.set(rule, v.success);
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------------------
@@ -890,16 +925,21 @@ export class Validator {
     if (frame === undefined) return new UnexpectedEndTag({ name: raw, position });
     if (frame.raw !== raw)
       return new MismatchedEndTag({ expected: frame.raw, actual: raw, position });
-    const value = frame.type === undefined ? Result.succeed(null) : this.complete(frame, position);
-    if (Result.isFailure(value)) return value.failure;
-    const element = Option.map(Option.fromNullishOr(frame.dom), (children) =>
-      Nodes.element(toQName(frame.name), frame.domAttributes, children),
-    );
-    Option.map(element, (el) => this.recordTypes(frame, el));
+    let value: XsdValue = null;
+    if (frame.type !== undefined) {
+      const completed = this.complete(frame, position);
+      if (Result.isFailure(completed)) return completed.failure;
+      value = completed.success;
+    }
+    const element =
+      frame.dom === undefined
+        ? undefined
+        : Nodes.element(toQName(frame.name), frame.domAttributes, frame.dom);
+    if (element !== undefined) this.recordTypes(frame, element);
     const violated = this.constraints(frame, element, position);
     if (violated !== null) return violated;
     this.frames.pop();
-    this.close(frame, element, value.success);
+    this.close(frame, element, value);
     return null;
   }
 
@@ -931,27 +971,27 @@ export class Validator {
   /** Evaluate the identity constraints an element declares, over its subtree. */
   private constraints(
     frame: Frame,
-    element: Option.Option<XmlElement>,
+    element: XmlElement | undefined,
     position: Position,
   ): Failure | null {
     const constraints = frame.decl?.constraints;
-    if (constraints === undefined || Option.isNone(element) || frame.tables === undefined)
+    if (constraints === undefined || element === undefined || frame.tables === undefined)
       return null;
-    return Result.match(evaluate(constraints, element.value, frame.tables, this.typeOf), {
+    return Result.match(evaluate(constraints, element, frame.tables, this.typeOf), {
       onFailure: (reason) => this.invalid("IdentityConstraint", reason, position),
       onSuccess: () => null,
     });
   }
 
   /** Hand a completed element to its parent (or make it the document's value). */
-  private close(frame: Frame, element: Option.Option<XmlElement>, value: XsdValue): void {
+  private close(frame: Frame, element: XmlElement | undefined, value: XsdValue): void {
     const parent = this.frames.at(-1);
     // Skipped content, and content a wildcard matched, is kept as DOM.
-    const kept = Option.getOrElse(
-      Option.filter(element, () => frame.type === undefined || frame.via === "wildcard"),
-      () => value,
-    );
-    Option.map(frame.held, (held) => this.emit(held));
+    const kept =
+      element !== undefined && (frame.type === undefined || frame.via === "wildcard")
+        ? element
+        : value;
+    if (Option.isSome(frame.held)) this.emit(frame.held.value);
     if (parent === undefined) {
       if (frame.selected) this.emit([kept]);
       this.done = Option.some({ name: frame.key, value: kept });
@@ -959,7 +999,7 @@ export class Validator {
     }
     if (parent.tables !== undefined && frame.tables !== undefined)
       merge(parent.tables, frame.tables);
-    Option.map(element, (el) => parent.dom?.push(el));
+    if (element !== undefined) parent.dom?.push(element);
     if (frame.selected) this.emit([kept]);
     else deliver(parent, frame, kept);
   }
@@ -970,16 +1010,12 @@ export class Validator {
     const decl = frame.decl;
     if (type === undefined || decl === undefined) return Result.succeed(null);
     if (Predicate.isTagged(type, "Complex")) {
-      const missing = Option.flatMap(
-        Option.all([type.automaton, frame.state]),
-        ([automaton, state]) =>
-          state.nullable ? Option.none() : Option.some(automaton.expected(state)),
-      );
-      if (Option.isSome(missing))
+      const state = frame.state;
+      if (Option.isSome(type.automaton) && state !== undefined && !state.nullable)
         return Result.fail(
           this.invalid(
             "MissingElement",
-            `<${frame.raw}> is incomplete; expected ${Arr.map(missing.value, describe(frame.name.namespace ?? "")).join(" or ")}`,
+            `<${frame.raw}> is incomplete; expected ${Arr.map(type.automaton.value.expected(state), describe(frame.name.namespace ?? "")).join(" or ")}`,
             position,
           ),
         );
@@ -990,14 +1026,11 @@ export class Validator {
     const props = frame.props;
     if (frame.xsiType !== undefined) props["$type"] = frame.xsiType;
     if (type.layout.text === "mixed") props["$text"] = frame.text;
-    return Option.match(type.simple, {
-      onNone: () => Result.succeed<XsdValue>(props),
-      onSome: (checker) =>
-        Result.map(this.simpleContent(frame, decl, checker, position), (v) => {
-          props["$value"] = v;
-          return props;
-        }),
-    });
+    if (Option.isNone(type.simple)) return Result.succeed(props);
+    const content = this.simpleContent(frame, decl, type.simple.value, position);
+    if (Result.isFailure(content)) return content;
+    props["$value"] = content.success;
+    return Result.succeed(props);
   }
 
   private simpleContent(
@@ -1007,31 +1040,19 @@ export class Validator {
     position: Position,
   ): Result.Result<XsdValue, Failure> {
     const text = frame.text === "" ? (decl.fixed ?? decl.default ?? "") : frame.text;
-    return Result.flatMap(
-      Result.mapError(this.value(checker, text, frame.bindings, position), (reason) =>
-        this.invalid("InvalidValue", reason, position),
-      ),
-      (v) =>
-        decl.fixed === undefined
-          ? Result.succeed(v)
-          : Result.flatMap(
-              Result.mapError(
-                decode(checker, decl.fixed, this.contextOf(frame.bindings)),
-                (reason) =>
-                  this.invalid("InvalidValue", `the fixed value is invalid: ${reason}`, position),
-              ),
-              (fixed) =>
-                equalValues(fixed, v)
-                  ? Result.succeed(v)
-                  : Result.fail(
-                      this.invalid(
-                        "InvalidValue",
-                        `<${frame.raw}> must be "${decl.fixed}"`,
-                        position,
-                      ),
-                    ),
-            ),
-    );
+    const v = this.value(checker, text, frame.bindings, position);
+    if (Result.isFailure(v)) return Result.fail(this.invalid("InvalidValue", v.failure, position));
+    if (decl.fixed === undefined) return Result.succeed(v.success);
+    const fixed = decode(checker, decl.fixed, this.contextOf(frame.bindings));
+    if (Result.isFailure(fixed))
+      return Result.fail(
+        this.invalid("InvalidValue", `the fixed value is invalid: ${fixed.failure}`, position),
+      );
+    return equalValues(fixed.success, v.success)
+      ? Result.succeed(v.success)
+      : Result.fail(
+          this.invalid("InvalidValue", `<${frame.raw}> must be "${decl.fixed}"`, position),
+        );
   }
 }
 
@@ -1058,25 +1079,36 @@ interface Opening {
   readonly name: Expanded;
   readonly bindings: Readonly<Record<string, string>>;
   readonly index: number;
+  /** Where its attributes' resolved names are remembered, when it declares no namespaces. */
+  readonly attributeNames: Lookup<string, Expanded> | undefined;
+}
+
+/** The prefixes in scope for a value, as a QName-valued type resolves them. */
+class BindingsContext implements ValueContext {
+  private readonly bindings: Readonly<Record<string, string>>;
+
+  constructor(bindings: Readonly<Record<string, string>>) {
+    this.bindings = bindings;
+  }
+
+  resolve(prefix: string): string | undefined {
+    return prefix === "xml" ? Namespaces.xml : this.bindings[prefix];
+  }
 }
 
 /** Start a record's repeated children (and wildcard matches) as empty arrays, after its attributes. */
-const withLists =
-  (type: ComplexRuntime) =>
-  (props: Props): Props => {
-    Arr.forEach(type.layout.elements, (slot) => {
-      if (slot.cardinality === "many") props[slot.property] = [];
-    });
-    if (type.layout.any) props["$any"] = [];
-    return props;
-  };
+const startLists = (type: ComplexRuntime, props: Props): void => {
+  for (const slot of type.layout.elements)
+    if (slot.cardinality === "many") props[slot.property] = [];
+  if (type.layout.any) props["$any"] = [];
+};
 
 /** Count a child element of `parent` named `raw`: its position among same-named siblings. */
 const count = (parent: Frame, raw: string): number => {
-  const counts = parent.counts ?? {};
+  const counts = parent.counts ?? new Lookup<string, number>();
   parent.counts = counts;
-  const n = (counts[raw] ?? 0) + 1;
-  counts[raw] = n;
+  const n = (counts.get(raw) ?? 0) + 1;
+  counts.set(raw, n);
   return n;
 };
 
