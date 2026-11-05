@@ -209,7 +209,9 @@ export default defineConfig({
       // a property lookup must intern each fresh string first, a `Map` only
       // hashes it (`flagsOf` as a record lookup was 7% of
       // `Html.parseDocument`'s profile, as a `Map` lookup under 2%). The
-      // tables are private to the parse and never compared.
+      // tables (and `TagCounts`, the tree constructor's per-name count of open
+      // elements, updated on every push and pop) are private to the parse and
+      // never compared.
       {
         files: ["src/internal/tagSet.ts"],
         rules: {
