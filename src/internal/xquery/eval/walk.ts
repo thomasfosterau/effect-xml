@@ -7,8 +7,9 @@
  * of the AST to keep in step. The tree is bounded by the query, so the
  * recursion is too.
  */
+import * as Arr from "effect/Array";
 import * as Predicate from "effect/Predicate";
-import type { Expr } from "../parser/ast.ts";
+import { Expr, ItemType, NodeTest } from "../parser/ast.ts";
 
 /** The functions whose value depends on the position or size of the focus, or may (`function-lookup`). */
 const focusFunctions: ReadonlyArray<string> = ["position", "last", "function-lookup"];
@@ -35,3 +36,11 @@ const someNode = (value: unknown, test: (x: unknown) => boolean): boolean => {
 
 /** Whether an expression calls `position()` or `last()` anywhere within it. */
 export const callsFocusFunction = (e: Expr): boolean => someNode(e, isFocusCall);
+
+/** Whether a step is `descendant-or-self::node()` without predicates: the step `//` stands for. */
+export const isDescendantOrSelfNode = (e: Expr): boolean =>
+  Expr.$is("AxisStep")(e) &&
+  e.axis === "descendant-or-self" &&
+  Arr.isReadonlyArrayEmpty(e.predicates) &&
+  NodeTest.$is("Kind")(e.test) &&
+  ItemType.$is("AnyKind")(e.test.test);

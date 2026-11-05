@@ -90,3 +90,12 @@ export * from "./Compile.ts";
  * @category evaluating
  */
 export * from "./Evaluate.ts";
+
+/**
+ * Streaming a query over SAX events: each match of its selection evaluated
+ * as soon as it ends, in memory bounded by the largest match.
+ *
+ * @since 0.3.0
+ * @category streaming
+ */
+export * from "./Stream.ts";
