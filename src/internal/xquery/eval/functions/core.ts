@@ -28,32 +28,10 @@ import { deepEqual } from "../compare.ts";
 import { orElse, raise, succeeds, unwrap } from "../raise.ts";
 import { arrayMember, contextItem, fetchResource } from "../runtime.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
-import {
-  arg,
-  arrayOf,
-  atomOf,
-  bool,
-  contextNode,
-  int,
-  isEmpty,
-  mapOf,
-  optionalNode,
-  str,
-  text,
-} from "./values.ts";
+import { arg, arrayOf, atomOf, bool, int, isEmpty, mapOf, ofNode, str, text } from "./values.ts";
 
 /** How many characters (code points, not UTF-16 units) a string has. */
 const codepoints = (s: string): number => Arr.fromIterable(s).length;
-
-/** A function of an optional node, also defined with no argument (the context node). */
-const ofNode = (
-  name: string,
-  result: string,
-  f: (node: XdmNode | undefined, call: Call) => Sequence,
-): ReadonlyArray<BuiltinSpec> => [
-  { name, params: [], result, focus: true, impl: (_, call) => f(contextNode(call), call) },
-  { name, params: ["node()?"], result, impl: (args, call) => f(optionalNode(arg(args, 0)), call) },
-];
 
 const nodeName = (node: XdmNode | undefined): Option.Option<QName> =>
   node === undefined ? Option.none() : node.name;

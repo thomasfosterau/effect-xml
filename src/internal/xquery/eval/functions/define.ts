@@ -9,6 +9,7 @@
  * context (the focus, for a function that reads it; the static context, for
  * one that resolves names or URIs). It raises, as all evaluation code does.
  */
+import type * as HashMap from "effect/HashMap";
 import type * as Option from "effect/Option";
 import type { QName } from "../../../../Name.ts";
 import type { FunctionItem, Sequence } from "../../item.ts";
@@ -21,6 +22,8 @@ export interface Statics {
   readonly baseUri: Option.Option<string>;
   /** The default collation's URI. */
   readonly defaultCollation: string;
+  /** The statically known decimal formats' properties, by Clark name (`""` for the unnamed one). */
+  readonly decimalFormats: HashMap.HashMap<string, Readonly<Record<string, string>>>;
   /**
    * The function a name and arity denote in the static context, as a
    * function item made in `ctx` (`fn:function-lookup`); `None` when there is

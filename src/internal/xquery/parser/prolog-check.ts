@@ -13,6 +13,7 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
+import * as Record from "effect/Record";
 import * as Result from "effect/Result";
 import type {
   Annotation,
@@ -341,13 +342,21 @@ const decimalFormatDecl = (
   d: Extract<DeclT, { readonly _tag: "DecimalFormat" }>,
 ): Fold => {
   const scope = scopeOf(fold.context);
-  const key = Option.match(d.name, {
-    onNone: () => "decimal-format:",
+  const name = Option.match(d.name, {
+    onNone: () => "",
     onSome: (n) =>
-      `decimal-format:${Option.match(Option.fromNullishOr(resolved(scope, n, "other")), { onNone: () => show(n), onSome: keyOf })}`,
+      Option.match(Option.fromNullishOr(resolved(scope, n, "other")), {
+        onNone: () => show(n),
+        onSome: keyOf,
+      }),
   });
+  const key = `decimal-format:${name}`;
+  const declared = withContext(fold, (c) => ({
+    ...c,
+    decimalFormats: HashMap.set(c.decimalFormats, name, Record.fromEntries(d.properties)),
+  }));
   return once(
-    withErrors(fold, [
+    withErrors(declared, [
       ...Option.match(d.name, { onNone: () => none, onSome: (n) => nameErrors(scope, n, "other") }),
       ...decimalFormatErrors(d.properties, d.offset),
     ]),

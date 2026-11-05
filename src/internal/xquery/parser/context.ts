@@ -60,6 +60,12 @@ export interface StaticOptions {
    * when not, imported namespaces are opaque (their names are not checked).
    */
   readonly modules?: Readonly<Record<string, ReadonlyArray<ModuleSource>>> | undefined;
+  /**
+   * Decimal formats for `fn:format-number`, by Clark name (`""` for the
+   * unnamed one): each a record of the properties it sets (`decimal-separator`,
+   * `grouping-separator`, …), the others keeping their defaults.
+   */
+  readonly decimalFormats?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined;
 }
 
 /** The static context a query is compiled in. */
@@ -89,6 +95,8 @@ export interface StaticContext {
   readonly contextItemType: Option.Option<ItemType>;
   /** `declare option` values, by Clark name. */
   readonly options: HashMap.HashMap<string, string>;
+  /** Decimal formats' properties, by Clark name; `""` is the unnamed decimal format. */
+  readonly decimalFormats: HashMap.HashMap<string, Readonly<Record<string, string>>>;
 }
 
 /** The Unicode codepoint collation, the default collation. */
@@ -136,4 +144,9 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
   copyNamespaces: { preserve: true, inherit: true },
   contextItemType: Option.none(),
   options: HashMap.empty(),
+  decimalFormats: HashMap.fromIterable(
+    Record.toEntries(options.decimalFormats ?? {}).map(
+      ([k, v]) => [k === "" || k.startsWith("{") ? k : `{}${k}`, v] as const,
+    ),
+  ),
 });

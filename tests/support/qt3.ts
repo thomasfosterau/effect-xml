@@ -60,6 +60,7 @@ const FEATURES: HashMap.HashMap<string, boolean> = /*#__PURE__*/ HashMap.make(
   ["moduleImport", true],
   ["arbitraryPrecisionDecimal", true],
   ["collection-stability", true],
+  ["olson-timezone", true],
   ["non_empty_sequence_collection", true],
   // Unsupported (#70): schema awareness, static typing, the namespace axis,
   // UCA collations, typed data.
@@ -78,7 +79,6 @@ const FEATURES: HashMap.HashMap<string, boolean> = /*#__PURE__*/ HashMap.make(
   ["xpath-1.0-compatibility", false],
   ["fn-load-xquery-module", false],
   ["fn-format-integer-CLDR", false],
-  ["olson-timezone", false],
   // Out of scope: needs an XSLT processor, the network or a file system.
   ["fn-transform-XSLT", false],
   ["fn-transform-XSLT30", false],
@@ -93,6 +93,9 @@ const SATISFIED: HashMap.HashMap<string, ReadonlyArray<string>> = /*#__PURE__*/ 
   ["language", ["en"]],
   ["default-language", ["en"]],
   ["unicode-normalization-form", ["NFC", "NFD", "NFKC", "NFKD"]],
+  ["calendar", ["AD", "ISO"]],
+  // The numbering sequences `fn:format-integer` supports beyond the ones every processor has.
+  ["format-integer-sequence", ["١", "①", "⑴", "⒈", "Α", "α"]],
 );
 
 /** The collation URIs an environment may declare. */
@@ -762,6 +765,9 @@ const compileCached = (spec: Spec, query: string, options: XQuery.CompileOptions
     Record.toEntries(options.namespaces ?? {}).join(" "),
     (options.variables ?? []).join(" "),
     options.baseUri ?? "",
+    Record.toEntries(options.decimalFormats ?? {})
+      .map(([name, properties]) => `${name}=${Record.toEntries(properties).join(",")}`)
+      .join(" "),
   ].join("\u0000");
   return Option.getOrElse(HashMap.get(compiledQueries, key), () => {
     const compiled =
@@ -778,6 +784,15 @@ export const xqueryEngine: Engine = {
       namespaces: Record.fromEntries(request.namespaces.map((b) => [b.prefix, b.uri] as const)),
       variables: request.variables.map((v) => clarkOf(request, v.name)),
       baseUri: Option.getOrUndefined(request.baseUri),
+      decimalFormats: Record.fromEntries(
+        request.decimalFormats.map((f) => [
+          Option.match(f.name, {
+            onNone: () => "",
+            onSome: (n) => `{${n.namespace ?? ""}}${n.local}`,
+          }),
+          f.properties,
+        ]),
+      ),
     };
     const compiled = compileCached(request.spec, request.query, options);
     const collation = Option.filter(
@@ -1227,7 +1242,7 @@ const resultNodes = (
 
 /** Parse expected XML content (a fragment: any number of nodes, an XML declaration dropped). */
 const expectedNodes = (xml: string) =>
-  Xml.parse(`<qt3-expected>${xml.replace(/^﻿?<\?xml[^?]*\?>/, "")}</qt3-expected>`).pipe(
+  Xml.parse(`<qt3-expected>${xml.replace(/^﻿?<\?xml[^?]*\?>/, "").trim()}</qt3-expected>`).pipe(
     Effect.map((doc) => doc.root.children),
   );
 

@@ -154,6 +154,20 @@ const foldRight = (
   call: Call,
 ): Sequence => Arr.reduceRight(items, zero, (acc, item) => call1(f, call, item, acc));
 
+/** `fn:fold-left` or `fn:fold-right`: a fold over a sequence's items, each a sequence of one. */
+const sequenceFold = (name: string, type: string, fold: typeof foldLeft): BuiltinSpec => ({
+  name,
+  params: ["item()*", "item()*", type],
+  result: "item()*",
+  impl: (args, call) =>
+    fold(
+      arg(args, 0).map((i) => [i]),
+      arg(args, 1),
+      functionOf(arg(args, 2)),
+      call,
+    ),
+});
+
 const fnHigherOrder: ReadonlyArray<BuiltinSpec> = [
   {
     name: "fn:function-lookup",
@@ -197,30 +211,8 @@ const fnHigherOrder: ReadonlyArray<BuiltinSpec> = [
       return arg(args, 0).filter((item) => truth(call1(f, call, [item]), call));
     },
   },
-  {
-    name: "fn:fold-left",
-    params: ["item()*", "item()*", "function(item()*, item()) as item()*"],
-    result: "item()*",
-    impl: (args, call) =>
-      foldLeft(
-        arg(args, 0).map((i) => [i]),
-        arg(args, 1),
-        functionOf(arg(args, 2)),
-        call,
-      ),
-  },
-  {
-    name: "fn:fold-right",
-    params: ["item()*", "item()*", "function(item(), item()*) as item()*"],
-    result: "item()*",
-    impl: (args, call) =>
-      foldRight(
-        arg(args, 0).map((i) => [i]),
-        arg(args, 1),
-        functionOf(arg(args, 2)),
-        call,
-      ),
-  },
+  sequenceFold("fn:fold-left", "function(item()*, item()) as item()*", foldLeft),
+  sequenceFold("fn:fold-right", "function(item(), item()*) as item()*", foldRight),
   {
     name: "fn:for-each-pair",
     params: ["item()*", "item()*", "function(item(), item()) as item()*"],

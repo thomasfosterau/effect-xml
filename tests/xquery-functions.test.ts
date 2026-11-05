@@ -494,3 +494,76 @@ describe("JSON", () => {
     expect(code(`xml-to-json(json-to-xml('[1]')/*/*/text())`)).toBe("FOJS0006");
   });
 });
+
+describe("formatting", () => {
+  test("format-integer: digit patterns, grouping, sequences and ordinals", () => {
+    expect(value("format-integer(1500000, '#,##0')")).toBe("1,500,000");
+    expect(value("format-integer(123456789, '000,00,00')")).toBe("12345,67,89");
+    expect(value("format-integer(-6, '000')")).toBe("-006");
+    expect(value("format-integer(1234, '#,&#x104a0;&#x104a0;&#x104a0;')")).toBe("𐒡,𐒢𐒣𐒤");
+    expect(
+      value("format-integer(28, 'A') || format-integer(1999, 'I') || format-integer(3, '①')"),
+    ).toBe("ABMCMXCIX③");
+    expect(value("format-integer(1991, 'Ww')")).toBe("One Thousand Nine Hundred and Ninety-One");
+    expect(value("format-integer(21, 'w;o') || ' ' || format-integer(112, '1;o')")).toBe(
+      "twenty-first 112th",
+    );
+    // Unsupported sequences fall back to `1`.
+    expect(value("format-integer(7, 'xyz')")).toBe("7");
+    expect(code("format-integer(1, '0#')")).toBe("FODF1310");
+    expect(code("format-integer(1, '1;q')")).toBe("FODF1310");
+  });
+
+  test("format-number: pictures, rounding, exponents and special values", () => {
+    expect(value("format-number(12345.6, '#,###.00')")).toBe("12,345.60");
+    expect(value("format-number(0.125, '0.00')")).toBe("0.12");
+    expect(value("format-number(0.14, '01%')")).toBe("14%");
+    expect(value("format-number(-6, '000;(000)')")).toBe("(006)");
+    expect(value("format-number(1234.5678, '00.000e0')")).toBe("12.346e2");
+    expect(value("format-number(0.1e0, '0.0')")).toBe("0.1");
+    expect(value("format-number(-1 div 0e0, '0')")).toBe("-Infinity");
+    expect(value("format-number((), '0')")).toBe("NaN");
+    expect(code("format-number(1, '0.0.0')")).toBe("FODF1310");
+    expect(code("format-number(1, '0', 'nope')")).toBe("FODF1280");
+  });
+
+  test("format-number: decimal formats from the prolog and the host", () => {
+    expect(
+      value(`declare decimal-format local:eu decimal-separator="," grouping-separator=".";
+        format-number(1234.5, '#.##0,00', 'local:eu')`),
+    ).toBe("1.234,50");
+    expect(
+      value(`declare default decimal-format NaN="none" minus-sign="~";
+        format-number(xs:double('NaN'), '0') || format-number(-3, '0')`),
+    ).toBe("none~3");
+    expect(
+      values("format-number(2.5, '0^0', 'Q{}caret')", {
+        compile: { decimalFormats: { caret: { "decimal-separator": "^" } } },
+      }),
+    ).toEqual(["2^5"]);
+  });
+
+  test("format-date, format-time and format-dateTime", () => {
+    const d = "xs:date('2002-12-31')";
+    expect(value(`format-date(${d}, '[Y0001]-[M01]-[D01]')`)).toBe("2002-12-31");
+    expect(value(`format-date(${d}, '[D1o] [MNn], [Y]')`)).toBe("31st December, 2002");
+    expect(value(`format-date(${d}, '[FNn,3-3] [D] [MN,*-3] [Y,2-2]')`)).toBe("Tue 31 DEC 02");
+    expect(value(`format-date(${d}, '[W] [d] [F1]', (), 'ISO', ())`)).toBe("1 365 2");
+    expect(value("format-time(xs:time('15:58:45.762+02:00'), '[h]:[m01] [PN] [f001] [z]')")).toBe(
+      "3:58 PM 762 GMT+02:00",
+    );
+    expect(value("format-time(xs:time('12:00:00-05:00'), '[Z0] [Z0000] [ZZ] [ZN]')")).toBe(
+      "-5 -0500 R EST",
+    );
+    expect(
+      value(
+        "format-dateTime(xs:dateTime('2015-08-15T12:00:00Z'), '[H01]:[m01] [ZN]', 'en', (), 'Europe/Paris')",
+      ),
+    ).toBe("14:00 CEST");
+    expect(value(`format-date(${d}, '[MNn]', 'de', (), ())`)).toBe("[Language: en]December");
+    expect(value(`format-date(${d}, '[Y]', (), 'AH', ())`)).toBe("[Calendar: AD]2002");
+    expect(code(`format-date(${d}, '[H]')`)).toBe("FOFD1350");
+    expect(code(`format-date(${d}, '[Y,0]')`)).toBe("FOFD1340");
+    expect(code(`format-date(${d}, '[Y]', (), 'ZODIAC', ())`)).toBe("FOFD1340");
+  });
+});
