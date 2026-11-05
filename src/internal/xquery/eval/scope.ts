@@ -196,4 +196,5 @@ export const staticsOf = (scope: Scope): Statics => ({
         : scope.statics.defaultElementNamespace
       : Option.getOrUndefined(HashMap.get(scope.statics.namespaces, prefix)),
   baseUri: scope.statics.context.baseUri,
+  defaultCollation: scope.statics.context.defaultCollation,
 });
