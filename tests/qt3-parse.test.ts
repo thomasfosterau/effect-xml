@@ -36,6 +36,7 @@ import {
   type Spec,
   type TestCase,
 } from "./support/qt3.ts";
+import { reportRequested } from "./support/report.ts";
 
 const Counts = Schema.Struct({
   runnable: Schema.Finite,
@@ -204,18 +205,24 @@ const runSpec = (spec: Spec, tests: ReadonlyArray<TestCase>) =>
   Effect.forEach(
     tests.filter((t) => Option.isNone(notApplicable(spec, t))),
     (t) =>
-      Effect.all([
-        t.query._tag === "Inline"
-          ? Effect.succeed(t.query.text)
-          : Fixtures.readText(t.query.file, ""),
-        // A module file the vendored selection lacks is left out (its import is XQST0059).
-        Effect.forEach(t.modules, (m) =>
-          Fixtures.readText(m.file, "").pipe(
-            Effect.map((text) => [{ uri: m.uri, source: { text, location: m.file.href } }]),
-            Effect.orElseSucceed(() => []),
-          ),
-        ).pipe(Effect.map(Arr.flatten)),
-      ]).pipe(
+      Effect.all(
+        [
+          t.query._tag === "Inline"
+            ? Effect.succeed(t.query.text)
+            : Fixtures.readText(t.query.file, ""),
+          // A module file the vendored selection lacks is left out (its import is XQST0059).
+          Effect.forEach(
+            t.modules,
+            (m) =>
+              Fixtures.readText(m.file, "").pipe(
+                Effect.map((text) => [{ uri: m.uri, source: { text, location: m.file.href } }]),
+                Effect.orElseSucceed(() => []),
+              ),
+            { concurrency: 1 },
+          ).pipe(Effect.map(Arr.flatten)),
+        ],
+        { concurrency: 1 },
+      ).pipe(
         Effect.map(([query, modules]) =>
           judge(
             spec,
@@ -223,6 +230,7 @@ const runSpec = (spec: Spec, tests: ReadonlyArray<TestCase>) =>
             query,
             Arr.reduce(
               modules,
+              // SAFETY: an empty record is a record of any value type.
               {} as Record<string, ReadonlyArray<XQuery.ModuleSource>>,
               (acc, m) => ({ ...acc, [m.uri]: [...(acc[m.uri] ?? []), m.source] }),
             ),
@@ -285,7 +293,7 @@ describe("W3C QT3 parse-only pass", () => {
     const counts = Record.fromEntries(
       results.map(([spec, verdicts]) => [spec, countsBySet(verdicts)] as const),
     );
-    const report = process.env.QT3_REPORT !== undefined && process.env.QT3_REPORT !== "";
+    const report = Effect.runSync(reportRequested("QT3_REPORT"));
     await Effect.runPromise(
       Effect.all(
         [

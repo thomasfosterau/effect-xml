@@ -68,6 +68,7 @@ export type Tok =
       readonly publicId: string | null;
       readonly systemId: string | null;
       readonly internalSubset: string | null;
+      readonly forceQuirks: boolean;
     } & Offsets)
   | ({
       readonly _tag: "XmlDeclaration";
@@ -521,6 +522,7 @@ const xmlDoctypeToken: P<Step> = spanned(
   (dt, start, end) => ({
     _tag: "Doctype",
     ...dt,
+    forceQuirks: false,
     start,
     end,
   }),
@@ -543,10 +545,22 @@ const piToken: P<Step> = spanned(
 /** End of a DOCTYPE: `>`, or EOF. Either way the DOCTYPE is emitted. */
 const doctypeEnd = Parser.alt(Parser.asVoid(Token.literal(">")), eof);
 
-/** Bogus DOCTYPE state: skip to `>`. */
+/**
+ * End of a DOCTYPE where the WHATWG states emit it: `>` as it stands, EOF
+ * with the force-quirks flag set. Returns the flag.
+ */
+const doctypeClose: Parser.Parser<boolean> = Parser.alt(
+  Parser.as(Token.literal(">"), false),
+  Parser.as(eof, true),
+);
+
+/** Bogus DOCTYPE state: skip to `>`. EOF there leaves force-quirks as it was. */
 const bogusDoctype = Parser.preceded(Token.takeTill(">"), doctypeEnd);
 
-/** An identifier in quotes. A `>` ends it (and the DOCTYPE) early; so does EOF. */
+/**
+ * An identifier in quotes, and whether its closing quote ended it. A `>`
+ * ends it (and the DOCTYPE) early; so does EOF.
+ */
 const doctypeId = (q: string): Parser.Parser<readonly [string, boolean]> =>
   Parser.preceded(
     anyChar,
@@ -557,74 +571,102 @@ const doctypeId = (q: string): Parser.Parser<readonly [string, boolean]> =>
   );
 const doctypeIds = { '"': doctypeId('"'), "'": doctypeId("'") };
 
-/** The next character, or `>` at EOF (both end a DOCTYPE). */
-const doctypeNext = Parser.alt(nextChar, Parser.as(eof, ">"));
-const noId = [null, false] as const;
+/** The next character, not consumed, or `""` at EOF. */
+const doctypePeek = Parser.alt(nextChar, Parser.as(eof, ""));
+
+/** An identifier step: the identifier, whether the DOCTYPE continues after it, and force-quirks. */
+type DoctypeIdStep = readonly [id: string | null, more: boolean, forceQuirks: boolean];
+
+const doctypeIdEnd = (forceQuirks: boolean): DoctypeIdStep => [null, false, forceQuirks];
 
 /**
- * After the keyword or the public identifier: `"…"`/`'…'`, `>`, EOF, or
- * anything else (bogus). Returns the identifier and whether the DOCTYPE
- * continues after it.
+ * After a keyword or the public identifier: `"…"`/`'…'`, `>`, EOF, or
+ * anything else (bogus). An identifier cut short by `>` or EOF, EOF itself
+ * and a bogus DOCTYPE set force-quirks; so does `>` where an identifier is
+ * required (`missing` — straight after `PUBLIC` or `SYSTEM`).
  */
-const doctypeNextId: Parser.Parser<readonly [string | null, boolean]> = Parser.preceded(
-  S0,
-  Parser.dispatch(doctypeNext, (c) =>
-    c === '"' || c === "'"
-      ? doctypeIds[c]
-      : c === ">"
-        ? Parser.as(gtOrEof, noId)
-        : Parser.as(bogusDoctype, noId),
-  ),
-);
+const doctypeNextId = (missing: boolean): Parser.Parser<DoctypeIdStep> => {
+  const atGt = doctypeIdEnd(missing);
+  const quirks = doctypeIdEnd(true);
+  return Parser.preceded(
+    S0,
+    Parser.dispatch(doctypePeek, (c) =>
+      c === '"' || c === "'"
+        ? Parser.map(doctypeIds[c], ([id, closed]): DoctypeIdStep => [id, closed, !closed])
+        : c === ">"
+          ? Parser.as(gt, atGt)
+          : c === ""
+            ? Parser.as(eof, quirks)
+            : Parser.as(bogusDoctype, quirks),
+    ),
+  );
+};
+const afterKeywordId = doctypeNextId(true);
+const betweenIds = doctypeNextId(false);
 
-/** After the last identifier: whitespace, then `>` (or EOF) or bogus. */
-const doctypeAfterIds = Parser.preceded(S0, Parser.alt(doctypeEnd, bogusDoctype));
+/**
+ * After the system identifier: whitespace, then `>`, EOF (force-quirks) or
+ * bogus (which here leaves force-quirks unset). Returns the flag.
+ */
+const doctypeAfterIds: Parser.Parser<boolean> = Parser.preceded(
+  S0,
+  Parser.alt(doctypeClose, Parser.as(bogusDoctype, false)),
+);
 const doctypeKeyword = Parser.alt(
   Ascii.caseless("PUBLIC"),
   Ascii.caseless("SYSTEM"),
   Parser.succeed(""),
 );
 
-type DoctypeFields = readonly [name: string, publicId: string | null, systemId: string | null];
+type DoctypeFields = readonly [
+  name: string,
+  publicId: string | null,
+  systemId: string | null,
+  forceQuirks: boolean,
+];
 
 /** WHATWG DOCTYPE states, from after the keyword to the end. */
 const doctypeFields: Parser.Parser<DoctypeFields> = Parser.gen(function* () {
   yield* S0;
-  if ((yield* doctypeNext) === ">") {
+  const first = yield* doctypePeek;
+  if (first === ">" || first === "") {
+    // A missing name sets force-quirks, whichever way the DOCTYPE ends.
     yield* doctypeEnd;
-    return ["", null, null] as const;
+    return ["", null, null, true] as const;
   }
   const name = yield* Token.takeTill(ws + ">", { min: 1 });
   yield* S0;
-  if ((yield* doctypeNext) === ">") {
-    yield* doctypeEnd;
-    return [name, null, null] as const;
+  const next = yield* doctypePeek;
+  if (next === ">" || next === "") {
+    return [name, null, null, yield* doctypeClose] as const;
   }
   const keyword = (yield* doctypeKeyword).toUpperCase();
   if (keyword === "PUBLIC") {
-    const [publicId, more] = yield* doctypeNextId;
-    if (!more) return [name, publicId, null] as const;
-    const [systemId, rest] = yield* doctypeNextId;
-    if (rest) yield* doctypeAfterIds;
-    return [name, publicId, systemId] as const;
+    const [publicId, more, quirks] = yield* afterKeywordId;
+    if (!more) return [name, publicId, null, quirks] as const;
+    const [systemId, rest, systemQuirks] = yield* betweenIds;
+    if (!rest) return [name, publicId, systemId, systemQuirks] as const;
+    return [name, publicId, systemId, yield* doctypeAfterIds] as const;
   }
   if (keyword === "SYSTEM") {
-    const [systemId, rest] = yield* doctypeNextId;
-    if (rest) yield* doctypeAfterIds;
-    return [name, null, systemId] as const;
+    const [systemId, rest, quirks] = yield* afterKeywordId;
+    if (!rest) return [name, null, systemId, quirks] as const;
+    return [name, null, systemId, yield* doctypeAfterIds] as const;
   }
+  // Anything else after the name is a bogus DOCTYPE, with force-quirks set.
   yield* bogusDoctype;
-  return [name, null, null] as const;
+  return [name, null, null, true] as const;
 });
 
 const htmlDoctype: Parser.Parser<Step> = spanned(
   Parser.preceded(Parser.seq(Token.literal("<!"), Ascii.caseless("DOCTYPE")), doctypeFields),
-  ([name, publicId, systemId], start, end) => ({
+  ([name, publicId, systemId, forceQuirks], start, end) => ({
     _tag: "Doctype",
     name,
     publicId,
     systemId,
     internalSubset: null,
+    forceQuirks,
     start,
     end,
   }),
@@ -674,6 +716,13 @@ const plainBody = (name: string) => {
   );
 };
 
+/** A run of script text, or one `<` or `-` that does not start `stop`. */
+const dashOrLt = (stop: Parser.Parser<unknown>) =>
+  Parser.alt(
+    Token.takeTill("<-", { min: 1 }),
+    Parser.preceded(Parser.not(stop), Token.oneOf("<-")),
+  );
+
 /**
  * Script data, with its escape states (WHATWG §13.2.5.15–31): inside
  * `<!-- … -->` a `<script>` starts a "double escaped" section, in which
@@ -681,11 +730,6 @@ const plainBody = (name: string) => {
  */
 const scriptBody: Parser.Parser<string> = (() => {
   const end = appropriateEndTag("script");
-  const dashOrLt = (stop: Parser.Parser<unknown>) =>
-    Parser.alt(
-      Token.takeTill("<-", { min: 1 }),
-      Parser.preceded(Parser.not(stop), Token.oneOf("<-")),
-    );
   const doubleStart = Parser.seq(Token.literal("<"), Ascii.caseless("script"), endTagDelimiter);
   const doubleEnd = Parser.seq(endTagOpen, Ascii.caseless("script"), endTagDelimiter);
   const escapedEnd = Token.literal("-->");
@@ -749,7 +793,7 @@ export interface Grammars {
  * is the last character of the input).
  */
 const dispatchMarkup = (
-  text: P<Step>,
+  textStep: P<Step>,
   markup: { readonly "/": P<Step>; readonly "!": P<Step>; readonly "?": P<Step> },
   tag: P<Step>,
   other: P<Step>,
@@ -766,7 +810,7 @@ const dispatchMarkup = (
         Parser.alt(Parser.preceded(nameStartsHere, tag), other),
       ),
     },
-    text,
+    textStep,
   );
 };
 
@@ -835,7 +879,7 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
   };
   const rcdataToEnd: P<Step> = Parser.map(
     Parser.withSpan(Parser.terminated(decoded(cfg, false)(Token.rest), eof)),
-    ([data, span]) => (data === "" ? none : [text(data, span.start, span.end)]),
+    ([rest, span]) => (rest === "" ? none : [text(rest, span.start, span.end)]),
   );
   return {
     data: Compiler.jit(data),

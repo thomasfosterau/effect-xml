@@ -50,7 +50,7 @@ import {
   svgTagName,
 } from "../internal/foreign.ts";
 import { HTML_NS, MATHML_NS, SVG_NS } from "./Namespaces.ts";
-import { flagsOf, tagFlags, tagSet, union } from "../internal/tagSet.ts";
+import { TagCounts, flagsOf, tagFlags, tagSet, union } from "../internal/tagSet.ts";
 
 // -----------------------------------------------------------------------------
 // Mutable working DOM
@@ -387,15 +387,14 @@ const HTML401_TRANSITIONAL = "-//w3c//dtd html 4.01 transitional//";
 
 /**
  * The document mode a DOCTYPE sets (WHATWG "the initial insertion mode").
- * The tokenizer's force-quirks flag is not modelled: a DOCTYPE without a
- * name is quirks through its name.
  */
 const documentModeOf = (
+  forceQuirks: boolean,
   name: string,
   publicId: string | null,
   systemId: string | null,
 ): HtmlDocumentMode => {
-  if (name.toLowerCase() !== "html") return "quirks";
+  if (forceQuirks || name.toLowerCase() !== "html") return "quirks";
   const p = publicId === null ? null : publicId.toLowerCase();
   const s = systemId === null ? null : systemId.toLowerCase();
   if (
@@ -632,13 +631,6 @@ const popThrough = <A>(stack: Array<A>, predicate: (entry: A) => boolean): void 
   stack.length = i < 0 ? 0 : i;
 };
 
-/** Pop a stack while its topmost entry satisfies `predicate`. */
-const popWhile = <A>(stack: Array<A>, predicate: (entry: A) => boolean): void => {
-  let n = stack.length;
-  for (let e = stack[n - 1]; e !== undefined && predicate(e); e = stack[n - 1]) n--;
-  stack.length = n;
-};
-
 // -----------------------------------------------------------------------------
 // The tree builder
 // -----------------------------------------------------------------------------
@@ -757,7 +749,20 @@ export const parseFragmentContext = (spec: string): FragmentContext => {
 
 class HtmlTreeBuilder {
   private mode: Mode = "initial";
-  private readonly open: Array<MElement> = [];
+  /**
+   * The stack of open elements. Read it through `open`; change it only with
+   * the stack methods below (`pushStack`, `popOpen`, `truncateOpen`, …), which
+   * keep {@link openNames} in step.
+   */
+  private readonly stack: Array<MElement> = [];
+  private readonly open: ReadonlyArray<MElement> = this.stack;
+  /**
+   * How many open elements bear each name. A scope check for a name with no
+   * open element is then O(1) instead of a walk of the whole stack, which
+   * keeps a deeply nested document linear (a block start tag asks whether a
+   * `p` is in button scope).
+   */
+  private readonly openNames = new TagCounts();
   private readonly afe: Array<FormattingEntry> = [];
   /** The stack of template insertion modes (one entry per open <template>). */
   private readonly templateModes: Array<Mode> = [];
@@ -815,7 +820,7 @@ class HtmlTreeBuilder {
   private startFragment(context: MElement): void {
     const root = mkElement("html", []);
     this.topLevel.push(root);
-    this.open.push(root);
+    this.pushStack(root);
     this.htmlEl = root;
     this.documentMode = "no-quirks";
     if (isHtmlTemplate(context)) this.templateModes.push("inTemplate");
@@ -906,7 +911,7 @@ class HtmlTreeBuilder {
     const open = this.open;
     let n = open.length;
     for (let el = open[n - 1]; el !== undefined && !isEl(context, el); el = open[n - 1]) n--;
-    open.length = n;
+    this.truncateOpen(n);
   }
 
   private resetInsertionMode(): void {
@@ -961,11 +966,75 @@ class HtmlTreeBuilder {
   private pushOpen(el: MElement): void {
     const over = depthExceeded(this.limits, this.open.length + 1, this.span);
     if (over !== null) throw over;
-    this.open.push(el);
+    this.pushStack(el);
+  }
+
+  private countName(name: string, by: number): void {
+    this.openNames.add(name, by);
+  }
+
+  /** Push onto the stack of open elements (no depth check; see {@link pushOpen}). */
+  private pushStack(el: MElement): void {
+    this.stack.push(el);
+    this.countName(el.name, 1);
+  }
+
+  /** Pop the current node, if any. */
+  private popOpen(): void {
+    const el = this.stack.pop();
+    if (el !== undefined) this.countName(el.name, -1);
+  }
+
+  /** Pop the stack down to its first `n` entries. */
+  private truncateOpen(n: number): void {
+    const stack = this.stack;
+    for (let i = stack.length - 1, el = stack[i]; i >= n && el !== undefined; el = stack[--i]) {
+      this.countName(el.name, -1);
+    }
+    if (n < stack.length) stack.length = n < 0 ? 0 : n;
+  }
+
+  /** Remove the entry at `index`. */
+  private removeOpen(index: number): void {
+    const el = this.stack[index];
+    if (el === undefined) return;
+    this.countName(el.name, -1);
+    this.stack.splice(index, 1);
+  }
+
+  /** Insert `el` at `index`, moving the entries from there up. */
+  private insertOpen(index: number, el: MElement): void {
+    this.stack.splice(index, 0, el);
+    this.countName(el.name, 1);
+  }
+
+  /** Replace the entry at `index` with `el`. */
+  private replaceOpen(index: number, el: MElement): void {
+    const old = this.stack[index];
+    if (old === undefined) return;
+    this.countName(old.name, -1);
+    this.stack[index] = el;
+    this.countName(el.name, 1);
+  }
+
+  /** Pop up to and including the topmost entry satisfying `predicate` (everything if none does). */
+  private popOpenThrough(predicate: (el: MElement) => boolean): void {
+    const stack = this.stack;
+    let i = stack.length - 1;
+    for (let e = stack[i]; e !== undefined && !predicate(e); e = stack[i]) i--;
+    this.truncateOpen(i);
+  }
+
+  /** Pop while the current node satisfies `predicate`. */
+  private popOpenWhile(predicate: (el: MElement) => boolean): void {
+    const stack = this.stack;
+    let n = stack.length;
+    for (let e = stack[n - 1]; e !== undefined && predicate(e); e = stack[n - 1]) n--;
+    this.truncateOpen(n);
   }
 
   private popUntilIncluding(name: string): void {
-    popThrough(this.open, (el) => el.name === name);
+    this.popOpenThrough((el) => el.name === name);
   }
 
   /** Whether an element in any of the categories `target` is in the given scope. */
@@ -979,6 +1048,7 @@ class HtmlTreeBuilder {
   }
 
   private hasInScope(name: string, scope: number): boolean {
+    if (!this.openNames.has(name)) return false;
     const open = this.open;
     for (let i = open.length - 1, el = open[i]; el !== undefined; el = open[--i]) {
       if (el.name === name) return true;
@@ -1003,7 +1073,7 @@ class HtmlTreeBuilder {
       if (el.name === except || !isEl(implied, el)) break;
       n--;
     }
-    open.length = n;
+    this.truncateOpen(n);
   }
 
   // --- active formatting elements -----------------------------------------
@@ -1094,7 +1164,7 @@ class HtmlTreeBuilder {
 
   private acceptDoctype(ev: Extract<TreeEvent, { _tag: "Doctype" }>): void {
     if (this.mode !== "initial") return;
-    this.documentMode = documentModeOf(ev.name, ev.publicId, ev.systemId);
+    this.documentMode = documentModeOf(ev.forceQuirks, ev.name, ev.publicId, ev.systemId);
     this.doctype = Nodes.htmlDoctype(
       // The HTML parser lowercases the DOCTYPE name.
       ev.name.toLowerCase(),
@@ -1226,7 +1296,7 @@ class HtmlTreeBuilder {
   private insertForeignElement(name: string, attrs: Array<HtmlAttribute>, ns: string): void {
     const tag = ns === SVG_NS ? svgTagName(name) : name;
     this.insertElement(tag, adjustForeignAttrs(attrs, ns), ns);
-    if (this.selfClosing) this.open.pop();
+    if (this.selfClosing) this.popOpen();
   }
 
   private foreignText(data: string): void {
@@ -1242,8 +1312,7 @@ class HtmlTreeBuilder {
     if (isTag(FOREIGN_BREAKOUT, name) || isFontBreakout) {
       // Pop foreign elements until we're back at an HTML element or an
       // integration point, then reprocess the token with HTML rules.
-      popWhile(
-        this.open,
+      this.popOpenWhile(
         (el) => el.ns !== HTML_NS && !this.isMathMLTextIP(el) && !this.isHTMLIntegrationPoint(el),
       );
       this.onStart(name, attrs);
@@ -1277,14 +1346,14 @@ class HtmlTreeBuilder {
     if (Option.isNone(stop)) return;
     const idx = stop.value;
     if (this.open[idx]?.name.toLowerCase() === name) {
-      this.open.splice(idx);
+      this.truncateOpen(idx);
       return;
     }
     // The next element up is HTML: process the end tag with HTML rules. An
     // HTML breakout tag (e.g. </p>) abandons the intervening foreign subtree
     // first, unless an integration point intervenes (then scope handles it).
     if (isTag(FOREIGN_BREAKOUT, name) && !this.hasIntegrationPointAbove(idx - 1)) {
-      this.open.splice(idx);
+      this.truncateOpen(idx);
     }
     this.onEnd(name);
   }
@@ -1313,7 +1382,7 @@ class HtmlTreeBuilder {
     if (this.headEl === null) this.ensureHead();
     if (this.bodyEl === null) {
       // Pop head if still open.
-      if (this.current?.name === "head") this.open.pop();
+      if (this.current?.name === "head") this.popOpen();
       this.bodyEl = this.insertElement("body", []);
       this.mode = "inBody";
     }
@@ -1375,7 +1444,7 @@ class HtmlTreeBuilder {
    */
   private keptInNoscript(data: string): boolean {
     if (/[^\t\n\f\r ]/.test(data)) {
-      this.open.pop(); // noscript
+      this.popOpen(); // noscript
       this.mode = "inHead";
       return false;
     }
@@ -1436,7 +1505,7 @@ class HtmlTreeBuilder {
       if (Str.isNonEmpty(ws)) this.insertText(ws);
       if (Str.isEmpty(rest)) return;
       if (this.current?.name === "colgroup") {
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTable";
         this.onText(rest);
       }
@@ -1602,12 +1671,12 @@ class HtmlTreeBuilder {
   private insertInHead(name: string, attrs: Array<HtmlAttribute>, popAfter: boolean): void {
     const head = this.headEl;
     const reopenHead = this.mode === "afterHead" && head !== null && !this.open.includes(head);
-    if (reopenHead) this.open.push(head);
+    if (reopenHead) this.pushStack(head);
     this.insertElement(name, attrs);
-    if (popAfter) this.open.pop();
+    if (popAfter) this.popOpen();
     if (reopenHead) {
       const hi = this.open.indexOf(head);
-      if (hi !== -1) this.open.splice(hi, 1);
+      if (hi !== -1) this.removeOpen(hi);
     }
   }
 
@@ -1671,7 +1740,7 @@ class HtmlTreeBuilder {
         name === "basefont" ||
         name === "bgsound"
       ) {
-        this.open.pop();
+        this.popOpen();
       }
       return;
     }
@@ -1681,7 +1750,7 @@ class HtmlTreeBuilder {
     }
     if (name === "head" || name === "noscript") return; // ignore
     // Pop the noscript element and reprocess the token in "in head".
-    this.open.pop();
+    this.popOpen();
     this.mode = "inHead";
     this.onStart(name, attrs);
   }
@@ -1699,7 +1768,7 @@ class HtmlTreeBuilder {
         this.mode === "afterHead")
     ) {
       this.ensureHead();
-      if (this.current?.name === "head") this.open.pop();
+      if (this.current?.name === "head") this.popOpen();
       this.insertElement("frameset", attrs);
       this.mode = "inFrameset";
       return;
@@ -1713,7 +1782,7 @@ class HtmlTreeBuilder {
     const body = this.open[1];
     if (this.framesetOk && body !== undefined && body.name === "body") {
       detach(body);
-      this.open.splice(1);
+      this.truncateOpen(1);
       this.bodyEl = null;
       this.insertElement("frameset", attrs);
       this.mode = "inFrameset";
@@ -1728,7 +1797,7 @@ class HtmlTreeBuilder {
       this.insertElement("frameset", attrs);
     } else if (name === "frame") {
       this.insertElement("frame", attrs);
-      this.open.pop();
+      this.popOpen();
     }
   }
 
@@ -1753,8 +1822,8 @@ class HtmlTreeBuilder {
 
   /** An `<optgroup>` start tag: closes an open option / optgroup first. */
   private insertOptgroup(attrs: Array<HtmlAttribute>): void {
-    if (this.current?.name === "option") this.open.pop();
-    if (this.current?.name === "optgroup") this.open.pop();
+    if (this.current?.name === "option") this.popOpen();
+    if (this.current?.name === "optgroup") this.popOpen();
     this.reconstructFormatting();
     this.insertElement("optgroup", attrs);
   }
@@ -1772,7 +1841,7 @@ class HtmlTreeBuilder {
 
   private inSelectStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (name === "option") {
-      if (this.current?.name === "option") this.open.pop();
+      if (this.current?.name === "option") this.popOpen();
       this.reconstructFormatting();
       this.insertElement("option", attrs);
       return;
@@ -1782,10 +1851,10 @@ class HtmlTreeBuilder {
       return;
     }
     if (name === "hr") {
-      if (this.current?.name === "option") this.open.pop();
-      if (this.current?.name === "optgroup") this.open.pop();
+      if (this.current?.name === "option") this.popOpen();
+      if (this.current?.name === "optgroup") this.popOpen();
       this.insertElement("hr", attrs);
-      this.open.pop();
+      this.popOpen();
       return;
     }
     if (name === "select" || name === "input" || name === "textarea") {
@@ -1870,7 +1939,7 @@ class HtmlTreeBuilder {
       // In table: insert the form, set the pointer, and pop it immediately.
       if (this.formEl !== null || this.templateOpen) return;
       this.formEl = this.insertElement("form", attrs);
-      this.open.pop();
+      this.popOpen();
       return;
     }
     // <input type=hidden> is inserted into the table; others foster out.
@@ -1879,7 +1948,7 @@ class HtmlTreeBuilder {
       attrs.some((a) => a.name === "type" && a.value.toLowerCase() === "hidden")
     ) {
       this.insertElement("input", attrs);
-      this.open.pop();
+      this.popOpen();
       return;
     }
     this.fosterInBody(name, attrs);
@@ -1909,7 +1978,7 @@ class HtmlTreeBuilder {
     ) {
       if (this.hasAnyTableSection()) {
         this.clearStackBackTo(TABLE_BODY_CONTEXT);
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTable";
         this.dispatchStart(name, attrs);
       }
@@ -1937,7 +2006,7 @@ class HtmlTreeBuilder {
     ) {
       if (this.hasInScope("tr", TABLE_SCOPE)) {
         this.clearStackBackTo(TABLE_ROW_CONTEXT);
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTableBody";
         this.dispatchStart(name, attrs);
       }
@@ -1974,11 +2043,11 @@ class HtmlTreeBuilder {
   private inColumnGroupStart(name: string, attrs: Array<HtmlAttribute>): void {
     if (name === "col") {
       this.insertElement("col", attrs);
-      this.open.pop();
+      this.popOpen();
       return;
     }
     if (this.current?.name === "colgroup") {
-      this.open.pop();
+      this.popOpen();
       this.mode = "inTable";
       this.dispatchStart(name, attrs);
     }
@@ -2076,7 +2145,7 @@ class HtmlTreeBuilder {
       this.reconstructFormatting();
       const ns = name === "svg" ? SVG_NS : MATHML_NS;
       this.insertElement(name, adjustForeignAttrs(attrs, ns), ns);
-      if (this.selfClosing) this.open.pop();
+      if (this.selfClosing) this.popOpen();
       return;
     }
 
@@ -2086,7 +2155,7 @@ class HtmlTreeBuilder {
     }
 
     if (name === "option") {
-      if (this.current?.name === "option") this.open.pop();
+      if (this.current?.name === "option") this.popOpen();
       this.reconstructFormatting();
       this.insertElement("option", attrs);
       return;
@@ -2099,7 +2168,7 @@ class HtmlTreeBuilder {
     }
 
     if (isTag(HEADINGS, name) && this.current && isEl(HEADINGS, this.current)) {
-      this.open.pop();
+      this.popOpen();
     }
 
     if (name === "a") {
@@ -2109,7 +2178,7 @@ class HtmlTreeBuilder {
         this.adoptionAgency("a");
         this.removeFromAfe(existing.value);
         const oi = this.open.indexOf(existing.value);
-        if (oi !== -1) this.open.splice(oi, 1);
+        if (oi !== -1) this.removeOpen(oi);
       }
     }
 
@@ -2146,7 +2215,7 @@ class HtmlTreeBuilder {
     if (isTag(VOID, name)) {
       this.reconstructFormatting();
       const el = this.insertElement(name, attrs);
-      this.open.pop();
+      this.popOpen();
       void el;
       return;
     }
@@ -2183,7 +2252,7 @@ class HtmlTreeBuilder {
     // A matching raw-text/rcdata element (e.g. </noframes>) is always popped,
     // even in frameset modes where other end tags are ignored.
     if (this.isRawTextName(name) && this.current?.name === name) {
-      this.open.pop();
+      this.popOpen();
       return;
     }
     if (name === "template") {
@@ -2191,7 +2260,7 @@ class HtmlTreeBuilder {
       // <svg template> is a different element).
       if (!Arr.some(this.open, isHtmlTemplate)) return;
       this.generateImpliedEndTagsThoroughly();
-      popThrough(this.open, isHtmlTemplate);
+      this.popOpenThrough(isHtmlTemplate);
       this.clearFormattingToMarker();
       this.templateModes.pop();
       this.resetInsertionMode();
@@ -2200,12 +2269,12 @@ class HtmlTreeBuilder {
     if (this.mode === "inHeadNoscript") {
       // </noscript> returns to "in head"; </br> reprocesses; others are ignored.
       if (name === "noscript") {
-        this.open.pop();
+        this.popOpen();
         this.mode = "inHead";
         return;
       }
       if (name === "br") {
-        this.open.pop();
+        this.popOpen();
         this.mode = "inHead";
         // fall through to the </br> handling below
       } else {
@@ -2236,7 +2305,7 @@ class HtmlTreeBuilder {
     }
     if (name === "frameset" && this.mode === "inFrameset") {
       if (this.current?.name === "html") return; // fragment edge: ignore
-      this.open.pop();
+      this.popOpen();
       if (this.current?.name !== "frameset") this.mode = "afterFrameset";
       return;
     }
@@ -2264,7 +2333,7 @@ class HtmlTreeBuilder {
       if (this.bodyEl !== null) return; // ignored once in the body
       // Cascade: ensure a head, pop it, and move to "after head".
       this.ensureHead();
-      if (this.current?.name === "head") this.open.pop();
+      if (this.current?.name === "head") this.popOpen();
       this.mode = "afterHead";
       return;
     }
@@ -2280,9 +2349,9 @@ class HtmlTreeBuilder {
       if (!this.hasInScope("p", BUTTON_SCOPE)) {
         // Act as if <p></p> — insert an empty paragraph (foster-parented out of
         // a table when in a table insertion mode).
-        const tableMode =
+        const inTableMode =
           this.mode === "inTable" || this.mode === "inTableBody" || this.mode === "inRow";
-        if (tableMode) this.foster = true;
+        if (inTableMode) this.foster = true;
         this.insertElement("p", []);
         this.foster = false;
       }
@@ -2302,7 +2371,7 @@ class HtmlTreeBuilder {
       const i = node ? this.open.indexOf(node) : -1;
       if (i === -1) return;
       this.generateImpliedEndTags();
-      this.open.splice(i, 1);
+      this.removeOpen(i);
       return;
     }
 
@@ -2344,7 +2413,7 @@ class HtmlTreeBuilder {
       // Close the nearest heading of any level if one is in scope.
       if (this.inScope(HEADINGS, DEFAULT_SCOPE)) {
         this.generateImpliedEndTags();
-        popThrough(this.open, isHeading);
+        this.popOpenThrough(isHeading);
       }
       return;
     }
@@ -2364,7 +2433,7 @@ class HtmlTreeBuilder {
     if (el === undefined || el.name !== name) return;
     this.generateImpliedEndTags(name);
     // pop up to and including the element
-    open.length = stop;
+    this.truncateOpen(stop);
   }
 
   // --- table-mode end tags (return true if handled) -----------------------
@@ -2418,7 +2487,7 @@ class HtmlTreeBuilder {
     if (name === "tbody" || name === "tfoot" || name === "thead") {
       if (this.hasInScope(name, TABLE_SCOPE)) {
         this.clearStackBackTo(TABLE_BODY_CONTEXT);
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTable";
       }
       return true;
@@ -2426,7 +2495,7 @@ class HtmlTreeBuilder {
     if (name === "table") {
       if (this.hasAnyTableSection()) {
         this.clearStackBackTo(TABLE_BODY_CONTEXT);
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTable";
         this.onEnd("table");
       }
@@ -2451,7 +2520,7 @@ class HtmlTreeBuilder {
     if (name === "tr") {
       if (this.hasInScope("tr", TABLE_SCOPE)) {
         this.clearStackBackTo(TABLE_ROW_CONTEXT);
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTableBody";
       }
       return true;
@@ -2459,7 +2528,7 @@ class HtmlTreeBuilder {
     if (name === "table") {
       if (this.hasInScope("tr", TABLE_SCOPE)) {
         this.clearStackBackTo(TABLE_ROW_CONTEXT);
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTableBody";
         this.onEnd("table");
       }
@@ -2469,7 +2538,7 @@ class HtmlTreeBuilder {
       if (this.hasInScope(name, TABLE_SCOPE)) {
         if (this.hasInScope("tr", TABLE_SCOPE)) {
           this.clearStackBackTo(TABLE_ROW_CONTEXT);
-          this.open.pop();
+          this.popOpen();
           this.mode = "inTableBody";
         }
         this.onEnd(name);
@@ -2551,13 +2620,13 @@ class HtmlTreeBuilder {
   private inSelectEnd(name: string): boolean {
     if (name === "optgroup") {
       if (this.current?.name === "option" && this.open.at(-2)?.name === "optgroup") {
-        this.open.pop();
+        this.popOpen();
       }
-      if (this.current?.name === "optgroup") this.open.pop();
+      if (this.current?.name === "optgroup") this.popOpen();
       return true;
     }
     if (name === "option") {
-      if (this.current?.name === "option") this.open.pop();
+      if (this.current?.name === "option") this.popOpen();
       return true;
     }
     if (name === "select") {
@@ -2585,14 +2654,14 @@ class HtmlTreeBuilder {
   private inColumnGroupEnd(name: string): boolean {
     if (name === "colgroup") {
       if (this.current?.name === "colgroup") {
-        this.open.pop();
+        this.popOpen();
         this.mode = "inTable";
       }
       return true;
     }
     if (name === "col") return true;
     if (this.current?.name === "colgroup") {
-      this.open.pop();
+      this.popOpen();
       this.mode = "inTable";
       this.onEnd(name);
       return true;
@@ -2639,7 +2708,7 @@ class HtmlTreeBuilder {
     // Step 1
     const cur = this.current;
     if (cur && cur.name === subject && !this.afe.includes(cur)) {
-      this.open.pop();
+      this.popOpen();
       return;
     }
 
@@ -2672,7 +2741,7 @@ class HtmlTreeBuilder {
       );
       // Step 4.8
       if (Option.isNone(furthest)) {
-        this.open.splice(feOpenIdx);
+        this.truncateOpen(feOpenIdx);
         this.removeFromAfe(formattingElement);
         return;
       }
@@ -2704,13 +2773,13 @@ class HtmlTreeBuilder {
         }
         if (afeIdx === -1) {
           // remove from open, keep nodeIdx pointing correctly
-          this.open.splice(nodeIdx, 1);
+          this.removeOpen(nodeIdx);
           continue;
         }
         // Create a clone, replace in afe and open
         const clone = mkElement(node.name, node.attrs.slice());
         this.afe[afeIdx] = clone;
-        this.open[nodeIdx] = clone;
+        this.replaceOpen(nodeIdx, clone);
         node = clone;
         if (lastNode === furthestBlock) {
           bookmark = afeIdx + 1;
@@ -2735,9 +2804,9 @@ class HtmlTreeBuilder {
       this.afe.splice(bookmark, 0, feClone);
       // Step 4.18/4.19: fix open elements stack
       const feStackIdx = this.open.indexOf(formattingElement);
-      if (feStackIdx !== -1) this.open.splice(feStackIdx, 1);
+      if (feStackIdx !== -1) this.removeOpen(feStackIdx);
       const fbStackIdx = this.open.indexOf(furthestBlock);
-      this.open.splice(fbStackIdx + 1, 0, feClone);
+      this.insertOpen(fbStackIdx + 1, feClone);
     }
   }
 
@@ -2798,14 +2867,14 @@ class HtmlTreeBuilder {
     // Each template insertion mode closes one open HTML <template> (a template
     // fragment context has a mode but no element, so it closes nothing).
     Arr.forEach(this.templateModes, () => {
-      if (Arr.some(this.open, isHtmlTemplate)) popThrough(this.open, isHtmlTemplate);
+      if (Arr.some(this.open, isHtmlTemplate)) this.popOpenThrough(isHtmlTemplate);
     });
     this.templateModes.splice(0);
 
     // An unclosed raw-text/rcdata element (e.g. <script> with no </script>) is
     // popped at EOF (the "text" insertion mode's EOF rule) so that nothing nests
     // inside it.
-    popWhile(this.open, (el) => this.isRawTextName(el.name));
+    this.popOpenWhile((el) => this.isRawTextName(el.name));
   }
 
   /** The fragment case's result: the root element's children (WHATWG step 15). */

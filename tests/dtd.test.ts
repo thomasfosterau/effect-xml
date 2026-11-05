@@ -44,6 +44,32 @@ const attributesOf = (element: Xml.XmlElement) =>
 const charByChar = (input: string) =>
   Stream.fromIterable(splitEvery(input, 1)).pipe(Sax.tokenize(options));
 
+/** Parse `chunks` as a stream and serialize the document element. */
+const serializeChunks = (chunks: ReadonlyArray<string>) =>
+  Effect.runPromise(
+    Stream.fromIterable(chunks).pipe(
+      Xml.parseStream(options),
+      Effect.map((d) => Xml.serialize(d.root)),
+    ),
+  );
+
+/** A billion-laughs document: ten levels of entities, each ten of the one below, over `body`. */
+const laughs = (body: string) =>
+  `<!DOCTYPE a [<!ENTITY l0 "${body}">${Array.from(
+    { length: 9 },
+    (_, i) => `<!ENTITY l${i + 1} "${`&l${i};`.repeat(10)}">`,
+  ).join("")}]><a>&l9;</a>`;
+
+/** The limit an error exceeded, or its tag if it is not a `LimitExceeded`. */
+const limit = (e: SaxError): string => (Predicate.isTagged(e, "LimitExceeded") ? e.limit : e._tag);
+
+/** A DOCTYPE of `n` entities, each wrapping the next in `open` … `close`. */
+const chain = (n: number, open: string, close: string) =>
+  `<!DOCTYPE a [${Array.from(
+    { length: n },
+    (_, i) => `<!ENTITY e${i} "${open}${i + 1 < n ? `&e${i + 1};` : ""}${close}">`,
+  ).join("")}]>`;
+
 describe("dtd: internal", () => {
   test("internal entities, including markup", () => {
     const doc = parseOk(`<!DOCTYPE r [
@@ -119,16 +145,11 @@ describe("dtd: internal", () => {
 
   test("streaming, at every chunk size", async () => {
     const input = `<!DOCTYPE a [<!ENTITY m "<m k='&v;'/>"><!ENTITY v "val">]><a>&m;-&v;</a>`;
-    const run = (chunks: ReadonlyArray<string>) =>
-      Effect.runPromise(
-        Stream.fromIterable(chunks).pipe(
-          Xml.parseStream(options),
-          Effect.map((d) => Xml.serialize(d.root)),
-        ),
-      );
-    const whole = await run([input]);
+    const whole = await serializeChunks([input]);
     expect(whole).toBe(`<a><m k="val"/>-val</a>`);
-    const chunked = await Promise.all(Arr.range(1, 12).map((size) => run(splitEvery(input, size))));
+    const chunked = await Promise.all(
+      Arr.range(1, 12).map((size) => serializeChunks(splitEvery(input, size))),
+    );
     expect(chunked).toEqual(Arr.replicate(whole, 12));
   });
 
@@ -286,26 +307,12 @@ describe("dtd: internal", () => {
   });
 
   describe("hostile documents", () => {
-    const laughs = (body: string) =>
-      `<!DOCTYPE a [<!ENTITY l0 "${body}">${Array.from(
-        { length: 9 },
-        (_, i) => `<!ENTITY l${i + 1} "${`&l${i};`.repeat(10)}">`,
-      ).join("")}]><a>&l9;</a>`;
-
-    const limit = (e: SaxError): string =>
-      Predicate.isTagged(e, "LimitExceeded") ? e.limit : e._tag;
-
     test("billion laughs, as text and as markup", () => {
       expect(limit(parseErr(laughs("ha")))).toBe("maxEntityExpansion");
       expect(limit(parseErr(laughs("<b/>")))).toBe("maxEntityExpansion");
     });
 
     test("deep entity nesting", () => {
-      const chain = (n: number, open: string, close: string) =>
-        `<!DOCTYPE a [${Array.from(
-          { length: n },
-          (_, i) => `<!ENTITY e${i} "${open}${i + 1 < n ? `&e${i + 1};` : ""}${close}">`,
-        ).join("")}]>`;
       expect(parseOk(`${chain(60, "<b>", "</b>")}<a>&e0;</a>`).root.children).toHaveLength(1);
       expect(limit(parseErr(`${chain(2000, "<b>", "</b>")}<a>&e0;</a>`))).toBe("maxEntityDepth");
       expect(limit(parseErr(`${chain(2000, "x", "")}<a b="&e0;"/>`))).toBe("maxEntityDepth");

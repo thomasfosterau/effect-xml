@@ -52,6 +52,10 @@ const read = Effect.fnUntraced(function* (path: string) {
 const exampleSchema = new URL("../../../examples/xsd/order.xsd", import.meta.url).pathname;
 const exampleModule = new URL("../../../examples/xsd/order.generated.ts", import.meta.url).pathname;
 
+/** How `--check` fails against the example schema with `out` as the module. */
+const checkFailure = (out: string) =>
+  Effect.flip(generate({ schema: exampleSchema, out, check: true }));
+
 describe("generate", () => {
   test("writes the module Xsd.generate makes, naming the schema relative to it", async () => {
     const [outcome, written, expected] = await inTemp((dir) =>
@@ -60,10 +64,10 @@ describe("generate", () => {
         const schema = `${dir}/order.xsd`;
         yield* fs.copyFile(exampleSchema, schema);
         yield* fs.makeDirectory(`${dir}/out`);
-        const outcome = yield* generate({ schema, out: `${dir}/out/order.ts` });
+        const result = yield* generate({ schema, out: `${dir}/out/order.ts` });
         const model = yield* Xsd.compile(yield* read(schema));
-        const expected = yield* Xsd.generate(model, { source: "../order.xsd" });
-        return [outcome, yield* read(`${dir}/out/order.ts`), expected] as const;
+        const generated = yield* Xsd.generate(model, { source: "../order.xsd" });
+        return [result, yield* read(`${dir}/out/order.ts`), generated] as const;
       }),
     );
     expect(outcome).toBe("written");
@@ -87,9 +91,11 @@ describe("generate", () => {
       Effect.gen(function* () {
         const stale = `${dir}/stale.ts`;
         yield* write(stale, "// old\n");
-        const run = (out: string) =>
-          Effect.flip(generate({ schema: exampleSchema, out, check: true }));
-        return [yield* run(stale), yield* run(`${dir}/missing.ts`), yield* read(stale)] as const;
+        return [
+          yield* checkFailure(stale),
+          yield* checkFailure(`${dir}/missing.ts`),
+          yield* read(stale),
+        ] as const;
       }),
     );
     const [stale, missing, unchanged] = failures;
@@ -134,9 +140,9 @@ describe("generate", () => {
     const [refused, fetched] = await inTemp((dir) =>
       Effect.gen(function* () {
         const main = yield* schema(dir);
-        const refused = yield* Effect.flip(generate({ schema: main, out: `${dir}/a.ts` }));
+        const failure = yield* Effect.flip(generate({ schema: main, out: `${dir}/a.ts` }));
         yield* generate({ schema: main, out: `${dir}/b.ts`, remote: true });
-        return [refused, yield* read(`${dir}/b.ts`)] as const;
+        return [failure, yield* read(`${dir}/b.ts`)] as const;
       }),
     );
     expect(refused).toBeInstanceOf(RemoteLocationRefused);

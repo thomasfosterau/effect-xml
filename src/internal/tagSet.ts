@@ -53,3 +53,21 @@ export const tagFlags = (
 
 /** The flags of `tag` in `table`: the bits of the categories it belongs to (none if unknown). */
 export const flagsOf = (table: TagFlags, tag: string): number => table.get(tag) ?? 0;
+
+/**
+ * A mutable count of tag names (the HTML tree constructor's open elements by
+ * name), as a `Map` for the reason {@link TagFlags} is one.
+ */
+export class TagCounts {
+  private readonly counts = new Map<string, number>();
+
+  /** Add `by` (negative to subtract) to `tag`'s count. */
+  add(tag: string, by: number): void {
+    this.counts.set(tag, (this.counts.get(tag) ?? 0) + by);
+  }
+
+  /** Is `tag`'s count above zero? */
+  has(tag: string): boolean {
+    return (this.counts.get(tag) ?? 0) > 0;
+  }
+}

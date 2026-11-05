@@ -47,6 +47,28 @@ const chunks = splitBytes;
 
 const text = "héllo wörld — 𝄞 ✓";
 
+/** The SAX events of a byte stream delivered as `parts`. */
+const tokenizeParts = (parts: ReadonlyArray<Uint8Array>) =>
+  Effect.runPromise(
+    Stream.fromIterable(parts).pipe(
+      Sax.tokenizeBytes(),
+      Stream.runCollect,
+      Effect.map((c) => Arr.fromIterable(c)),
+    ),
+  );
+
+/** An HTML page with `charset` in its head and `café` in its body, as source text. */
+const htmlPage = (charset: string) =>
+  `<!doctype html><html><head>${charset}</head><body><p>caf\xe9</p></body></html>`;
+
+/** Parse an HTML document from bytes and serialize its document element. */
+const para = (bytes: Uint8Array, options?: Html.HtmlBytesOptions) =>
+  Effect.runPromise(
+    Html.parseDocumentBytes(bytes, options).pipe(
+      Effect.map((d) => Html.serialize(d.documentElement)),
+    ),
+  );
+
 describe("XML encoding detection (Appendix F)", () => {
   test("UTF-8 without BOM or declaration", async () => {
     expect(await rootText(utf8(`<a>${text}</a>`))).toBe(text);
@@ -197,17 +219,11 @@ describe("streaming byte input", () => {
   ];
 
   test.each(cases)("%s: every chunk size gives the same events", async (_name, bytes) => {
-    const run = (parts: ReadonlyArray<Uint8Array>) =>
-      Effect.runPromise(
-        Stream.fromIterable(parts).pipe(
-          Sax.tokenizeBytes(),
-          Stream.runCollect,
-          Effect.map((c) => Arr.fromIterable(c)),
-        ),
-      );
-    const whole = await run([bytes]);
+    const whole = await tokenizeParts([bytes]);
     expect(whole).toContainEqual(expect.objectContaining({ _tag: "Text", data: text }));
-    const chunked = await Promise.all(Arr.range(1, 9).map((size) => run(chunks(bytes, size))));
+    const chunked = await Promise.all(
+      Arr.range(1, 9).map((size) => tokenizeParts(chunks(bytes, size))),
+    );
     expect(chunked).toStrictEqual(Arr.replicate(whole, 9));
   });
 
@@ -240,17 +256,8 @@ describe("streaming byte input", () => {
 });
 
 describe("HTML encoding sniffing (WHATWG)", () => {
-  const body = (charset: string) =>
-    `<!doctype html><html><head>${charset}</head><body><p>caf\xe9</p></body></html>`;
-  const para = (bytes: Uint8Array, options?: Html.HtmlBytesOptions) =>
-    Effect.runPromise(
-      Html.parseDocumentBytes(bytes, options).pipe(
-        Effect.map((d) => Html.serialize(d.documentElement)),
-      ),
-    );
-
   test("defaults to windows-1252", async () => {
-    expect(await para(latin1(body("")))).toContain("café");
+    expect(await para(latin1(htmlPage("")))).toContain("café");
   });
 
   test("<meta charset> in the first 1024 bytes", async () => {

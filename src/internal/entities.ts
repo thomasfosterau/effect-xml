@@ -198,14 +198,19 @@ const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part
     Parser.withTaken(Parser.terminated(value, lenient ? Parser.optional(semicolon) : semicolon)),
   );
   return Parser.alt(
-    Parser.map(reference, ([relativeOffset, [n, reference]]): Part => {
+    Parser.map(reference, ([relativeOffset, [n, taken]]): Part => {
       const cp = lenient ? (WIN1252[n] ?? n) : n;
       if (representable(cp)) return String.fromCodePoint(cp);
-      return strict ? { reference, reason: "code point out of range", relativeOffset } : "\uFFFD";
+      return strict
+        ? { reference: taken, reason: "code point out of range", relativeOffset }
+        : "\uFFFD";
     }),
     bad(strict, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const)),
   );
 };
+
+/** Whether `table` holds `name` as an own key. */
+const has = (table: EntityTable, name: string) => Object.prototype.hasOwnProperty.call(table, name);
 
 /**
  * `&name;`. With `legacy` (HTML), a name in that table may also appear
@@ -216,8 +221,6 @@ const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part
 const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
   const { entities, legacy, strict, dtd } = options;
   const inAttribute = options.inAttribute ?? false;
-  const has = (table: EntityTable, name: string) =>
-    Object.prototype.hasOwnProperty.call(table, name);
   /** The length of the reference at `&name` + `next`, or 0 if none decodes. */
   const lengthOf = ([name, next]: readonly [string, string]): number => {
     if (next === ";" && (has(entities, name) || dtd?.declares(name) === true))

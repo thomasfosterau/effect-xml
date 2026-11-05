@@ -26,8 +26,8 @@ describe("Html.parseDocument — structure", () => {
     const d = await doc(`hello`);
     expect(d.documentElement.name).toBe("html");
     expect(d.documentElement.namespace).toBe("html");
-    const names = d.documentElement.elements.map((e) => e.name);
-    expect(names).toEqual(["head", "body"]);
+    const elementNames = d.documentElement.elements.map((e) => e.name);
+    expect(elementNames).toEqual(["head", "body"]);
     const body = child(d.documentElement, "body");
     expect(body.textContent).toBe("hello");
   });
@@ -270,6 +270,16 @@ describe("Html.parseDocument — document mode", () => {
     );
   });
 
+  test("the tokenizer's force-quirks flag makes an html DOCTYPE quirks", async () => {
+    expect(await mode("<!DOCTYPE html bogus><p>x")).toBe("quirks");
+    expect(await mode("<!DOCTYPE html")).toBe("quirks");
+    expect(await mode(`<!DOCTYPE html PUBLIC>`)).toBe("quirks");
+    expect(await mode(`<!DOCTYPE html SYSTEM "about:legacy-compat`)).toBe("quirks");
+    expect(await mode(`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN>`)).toBe("quirks");
+    // A bogus tail after the system identifier leaves the flag unset.
+    expect(await mode(`<!DOCTYPE html SYSTEM "about:legacy-compat" x>`)).toBe("no-quirks");
+  });
+
   test("XHTML 1.0 and HTML 4.01 transitional with a system id are limited-quirks", async () => {
     expect(
       await mode(
@@ -314,8 +324,8 @@ describe("Html.parseDocument — document mode", () => {
 describe("Html.parseDocument — frameset", () => {
   test("a frameset document has no body", async () => {
     const d = await doc(`<frameset><frame><frame></frameset>`);
-    const names = d.documentElement.elements.map((e) => e.name);
-    expect(names).toEqual(["head", "frameset"]);
+    const elementNames = d.documentElement.elements.map((e) => e.name);
+    expect(elementNames).toEqual(["head", "frameset"]);
     const fs = child(d.documentElement, "frameset");
     expect(fs.elements.map((e) => e.name)).toEqual(["frame", "frame"]);
   });
@@ -333,8 +343,8 @@ describe("Html.parseDocument — frameset", () => {
 
   test("real content makes the document no longer frameset-ok", async () => {
     const d = await doc(`<body><p>x<frameset></frameset>`);
-    const names = d.documentElement.elements.map((e) => e.name);
-    expect(names).toEqual(["head", "body"]);
+    const elementNames = d.documentElement.elements.map((e) => e.name);
+    expect(elementNames).toEqual(["head", "body"]);
   });
 
   test("nested framesets and after-frameset comments", async () => {

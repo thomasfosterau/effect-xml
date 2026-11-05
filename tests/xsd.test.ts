@@ -67,6 +67,37 @@ const list = (r: Xsd.XsdRecord, property: string): ReadonlyArray<Xsd.XsdValue> =
 const element = (name: string, type: string) =>
   schema(`<xs:element name="${name}" type="${type}"/>`);
 
+/** A schema whose one element `v` has a simple type restricting `base` by `facets`. */
+const restricted = (facets: string, base = "xs:string") =>
+  compile(
+    schema(
+      `<xs:element name="v"><xs:simpleType><xs:restriction base="${base}">${facets}</xs:restriction></xs:simpleType></xs:element>`,
+    ),
+  );
+
+/** An `r` of `n` `i` children. */
+const repeatedItems = (n: number) => `<r>${"<i>1</i>".repeat(n)}</r>`;
+
+/** An attribute `p:x` in namespace `ns`, with its declaration. */
+const attr = (ns: string) => `xmlns:p="${ns}" p:x="1"`;
+
+/** A `db` document in `urn:d` around `body`. */
+const db = (body: string) => `<db xmlns="urn:d">${body}</db>`;
+
+/** A `shop` document around `body`. */
+const shop = (body: string) => `<shop>${body}</shop>`;
+
+/** `n` sheet rows, each with two cells. */
+const rows = (n: number) =>
+  Array.from({ length: n }, (_, i) => `<row r="${i + 1}"><c>${i}</c><c>0${i}</c></row>`).join("");
+
+/** A titled `sheet` document in `urn:s` around `body`. */
+const sheet = (body: string) => `<sheet xmlns="urn:s"><title>T</title>${body}</sheet>`;
+
+/** A `line` of the example order schema. */
+const orderLine = (id: string, quantity: number) =>
+  `<line id="${id}"><sku>ABC-000${quantity}</sku><quantity>${quantity}</quantity><price>1</price></line>`;
+
 describe("Xsd.compile", () => {
   test("keys global components by expanded name", () => {
     const model = compile(
@@ -234,13 +265,6 @@ describe("Xsd.parse — simple types", () => {
     expect(rule(compile(element("v", type)), `<v>${input}</v>`)).toBe("InvalidValue");
   });
 
-  const restricted = (facets: string, base = "xs:string") =>
-    compile(
-      schema(
-        `<xs:element name="v"><xs:simpleType><xs:restriction base="${base}">${facets}</xs:restriction></xs:simpleType></xs:element>`,
-      ),
-    );
-
   test.each([
     [`<xs:length value="3"/>`, "abc", "ab"],
     [`<xs:minLength value="2"/><xs:maxLength value="3"/>`, "ab", "abcd"],
@@ -370,9 +394,8 @@ describe("Xsd.parse — content models", () => {
         <xs:element name="i" type="xs:int" minOccurs="1000" maxOccurs="100000"/>
       </xs:sequence></xs:complexType></xs:element>`),
     );
-    const items = (n: number) => `<r>${"<i>1</i>".repeat(n)}</r>`;
-    expect(rule(big, items(999))).toBe("MissingElement");
-    expect(list(record(value(big, items(5000))), "i").length).toBe(5000);
+    expect(rule(big, repeatedItems(999))).toBe("MissingElement");
+    expect(list(record(value(big, repeatedItems(5000))), "i").length).toBe(5000);
   });
 });
 
@@ -585,7 +608,6 @@ describe("Xsd.parse — attribute wildcards across derivations", () => {
         <xs:anyAttribute namespace="##local" processContents="skip"/></xs:extension></xs:complexContent></xs:complexType>
       <xs:element name="base" type="Base"/><xs:element name="wider" type="Wider"/><xs:element name="local" type="Local"/>`),
   );
-  const attr = (ns: string) => `xmlns:p="${ns}" p:x="1"`;
 
   test("a type's wildcards intersect", () => {
     expect(value(model, `<base ${attr("urn:b")}/>`)).toEqual({ $attributes: { "{urn:b}x": "1" } });
@@ -617,7 +639,6 @@ describe("Xsd.parse — identity constraints", () => {
       `targetNamespace="urn:d" xmlns:d="urn:d" elementFormDefault="qualified"`,
     ),
   );
-  const db = (body: string) => `<db xmlns="urn:d">${body}</db>`;
 
   test("valid keys, uniques and references", () => {
     expect(
@@ -665,7 +686,6 @@ describe("Xsd.parse — identity constraints compare typed values", () => {
       </xs:element>`,
     ),
   );
-  const shop = (body: string) => `<shop>${body}</shop>`;
   const accepts = (body: string) =>
     Result.isSuccess(Effect.runSync(Effect.result(Xsd.parse(model, shop(body)))));
 
@@ -841,9 +861,17 @@ describe("Xsd.select", () => {
     ),
   );
   const ns = { namespaces: { s: "urn:s" } };
-  const rows = (n: number) =>
-    Array.from({ length: n }, (_, i) => `<row r="${i + 1}"><c>${i}</c><c>0${i}</c></row>`).join("");
-  const sheet = (body: string) => `<sheet xmlns="urn:s"><title>T</title>${body}</sheet>`;
+  /** How selecting `path` from a one-row sheet fails. */
+  const fail = (path: string) =>
+    Effect.runSync(
+      Effect.flip(
+        Stream.make(sheet(rows(1))).pipe(
+          Sax.tokenize(),
+          Xsd.select(model, path, ns),
+          Stream.runDrain,
+        ),
+      ),
+    );
   const selected = (doc: string, path: string, size = 64) =>
     Effect.runSync(
       Stream.fromIterable(splitEvery(doc, size)).pipe(
@@ -956,16 +984,6 @@ describe("Xsd.select", () => {
   });
 
   test("an invalid or unstreamable path fails the stream", () => {
-    const fail = (path: string) =>
-      Effect.runSync(
-        Effect.flip(
-          Stream.make(sheet(rows(1))).pipe(
-            Sax.tokenize(),
-            Xsd.select(model, path, ns),
-            Stream.runDrain,
-          ),
-        ),
-      );
     expect(fail("s:sheet/s:row[1]")._tag).toBe("XPathError");
     expect(fail("s:sheet/(")._tag).toBe("XPathError");
   });
@@ -1109,13 +1127,11 @@ describe("the generated example (examples/xsd)", () => {
   });
 
   test("its parser streams the repeated children of the root", () => {
-    const line = (id: string, quantity: number) =>
-      `<line id="${id}"><sku>ABC-000${quantity}</sku><quantity>${quantity}</quantity><price>1</price></line>`;
     const lines = Effect.runSync(
       Sax.tokenizeString(
         `<order xmlns="urn:example:order" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" number="1">
            <customer xsi:type="Person"><name>A</name></customer><placed>2026-01-01T00:00:00Z</placed>
-           ${line("a", 1)}${line("b", 2)}</order>`,
+           ${orderLine("a", 1)}${orderLine("b", 2)}</order>`,
       ).pipe(Example.order.streams.line, Stream.runCollect),
     );
     const typed: ReadonlyArray<Example.Line> = Array.from(lines);

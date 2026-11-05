@@ -52,18 +52,18 @@ describe("resource limits", () => {
   });
 
   test("deep HTML within the limit builds, serializes, converts and reads text", async () => {
-    // (Tree construction's scope checks walk the stack of open elements, so
-    // parsing time grows with the square of the depth: keep this one modest.)
-    const input = "<div>".repeat(10_000) + "x";
+    // Deeper than any call stack: tree construction's scope checks skip the
+    // walk when no open element bears the name, so this stays linear (#81).
+    const input = "<div>".repeat(100_000) + "x";
     const doc = await Effect.runPromise(
       Html.parseDocument(input, { limits: { maxDepth: Infinity } }),
     );
     expect(doc.documentElement.textContent).toBe("x");
-    expect(doc.documentElement.descendants("div").length).toBe(10_000);
+    expect(doc.documentElement.descendants("div").length).toBe(100_000);
     const serialized = Html.serialize(doc);
     expect(serialized.length).toBeGreaterThan(input.length);
     expect(Html.toXml(doc).root.textContent).toBe("x");
-    // The lenient builder has no such scans: go deeper than any call stack.
+    // The lenient builder, too.
     const deeper = "<div>".repeat(100_000) + "x";
     const nodes = await Effect.runPromise(
       Html.parseFragment(deeper, { limits: { maxDepth: Infinity } }),

@@ -9,6 +9,16 @@ const xmlError = async (input: string) => {
   assert(Result.isFailure(r), `expected a failure for ${input}`);
   return r.failure;
 };
+/** Assert that each input fails with an error message containing its expected text. */
+const rejects = (cases: ReadonlyArray<readonly [input: string, message: string]>) =>
+  Promise.all(
+    cases.map(async ([input, message]) => {
+      const e = await xmlError(input);
+      expect(e.message, input).toContain(message);
+    }),
+  );
+/** The events of a well-formed document (the promise rejects otherwise). */
+const accepts = (input: string) => Effect.runPromise(Sax.collect(input));
 /** Events without spans, for comparing structure. */
 const withoutSpans = (events: ReadonlyArray<Sax.SaxEvent>) =>
   events.map(({ span: _, ...rest }) => rest);
@@ -75,7 +85,14 @@ describe("HTML tokenization follows WHATWG", () => {
   test("DOCTYPE: a `>` inside an identifier ends the DOCTYPE", async () => {
     const events = await html(`<!DOCTYPE html PUBLIC "a>b">`);
     expect(withoutSpans(events)).toEqual([
-      { _tag: "Doctype", name: "html", publicId: "a", systemId: null, internalSubset: null },
+      {
+        _tag: "Doctype",
+        name: "html",
+        publicId: "a",
+        systemId: null,
+        internalSubset: null,
+        forceQuirks: true,
+      },
       { _tag: "Text", data: 'b">' },
     ]);
   });
@@ -112,15 +129,6 @@ describe("XML tokenization errors", () => {
 });
 
 describe("XML well-formedness", () => {
-  const rejects = (cases: ReadonlyArray<readonly [input: string, message: string]>) =>
-    Promise.all(
-      cases.map(async ([input, message]) => {
-        const e = await xmlError(input);
-        expect(e.message, input).toContain(message);
-      }),
-    );
-  const accepts = (input: string) => Effect.runPromise(Sax.collect(input));
-
   test("characters XML does not allow are rejected wherever they are", () =>
     rejects([
       ["<a>\f</a>", "at 1:4 while reading a character XML does not allow"],

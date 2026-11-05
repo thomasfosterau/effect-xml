@@ -23,6 +23,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { Xml } from "../src/index.ts";
 import * as Fixtures from "./support/fixtures.ts";
+import { reportRequested } from "./support/report.ts";
 import { canonical, readManifest, type XmlconfTest } from "./support/xmlconf.ts";
 
 const FIXTURES = new URL("./fixtures/xmlconf/", import.meta.url);
@@ -102,13 +103,13 @@ describe("W3C XML conformance", () => {
     const totals = tally(checks, false);
     const failures = checks.filter((c) => !c.passed).map((c) => c.failure);
     await Effect.runPromise(
-      Effect.all([
-        process.env.XMLCONF_REPORT ? Console.log(failures.join("\n")) : Effect.void,
-        Console.log(
+      Effect.gen(function* () {
+        if (yield* reportRequested("XMLCONF_REPORT")) yield* Console.log(failures.join("\n"));
+        yield* Console.log(
           `xmlconf: not-wf ${passed.notWf}/${totals.notWf}, valid ${passed.valid}/${totals.valid}, ` +
             `invalid ${passed.invalid}/${totals.invalid}, output ${passed.output}/${totals.output}`,
-        ),
-      ]),
+        );
+      }),
     );
     expect(passed.notWf).toBeGreaterThanOrEqual(BASELINE.notWf);
     expect(passed.valid).toBeGreaterThanOrEqual(BASELINE.valid);

@@ -13,6 +13,13 @@ const W14 = "http://schemas.microsoft.com/office/word/2010/wordml";
 
 const parse = (s: string, options?: Xml.ParseOptions) => Effect.runSync(Xml.parse(s, options));
 
+/** Compile an XPath with `p` bound to `urn:a`, failing the test on an error. */
+const compile = (e: string, options?: Xml.XPath.CompileOptions) =>
+  success(Xml.XPath.compile(e, { namespaces: { p: "urn:a" }, ...options }));
+
+/** The error compiling an XPath fails with, failing the test if it compiles. */
+const compileError = (e: string) => failure(Xml.XPath.compile(e), "expected an error");
+
 // The same document twice, with different prefixes: lookups must not care.
 const docx = (w: string, w14: string) =>
   parse(
@@ -120,8 +127,6 @@ describe("XPath subset", () => {
       `<y>3</y><y>4</y><!--c--><?pi d?>` +
       `</r>`,
   );
-  const compile = (e: string, options?: Xml.XPath.CompileOptions) =>
-    success(Xml.XPath.compile(e, { namespaces: { p: "urn:a" }, ...options }));
   const show = (e: string, context: Xml.XPath.Context = doc) =>
     Xml.XPath.select(compile(e), context).map((n) =>
       n instanceof Xml.XmlAttribute
@@ -186,11 +191,10 @@ describe("XPath subset", () => {
   });
 
   test("errors", () => {
-    const error = (e: string) => failure(Xml.XPath.compile(e), "expected an error");
-    expect(error("//q:x").reason).toContain(`"q" is not bound`);
-    expect(error("//x[").reason).toContain("expected an expression");
-    expect(error("//x[count()]").reason).toContain("count() takes 1 argument");
-    expect(error("count(//x)").offset).toBe(5);
+    expect(compileError("//q:x").reason).toContain(`"q" is not bound`);
+    expect(compileError("//x[").reason).toContain("expected an expression");
+    expect(compileError("//x[count()]").reason).toContain("count() takes 1 argument");
+    expect(compileError("count(//x)").offset).toBe(5);
   });
 });
 

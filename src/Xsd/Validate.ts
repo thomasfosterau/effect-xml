@@ -356,18 +356,20 @@ export interface Parser<A, S = Record<string, never>> {
   readonly streams: Streams<S>;
 }
 
+/** The path step for an expanded name under `prefix`, with the namespace it binds. */
+const childStep = (name: string, prefix: string): readonly [string, Record<string, string>] => {
+  const namespace = namespaceOf(name);
+  const local = localOf(name);
+  return namespace === "" ? [local, {}] : [`${prefix}:${local}`, { [prefix]: namespace }];
+};
+
 /** The child path `/root/child` of two expanded names, with the namespaces it uses. */
 const childPath = (
   root: string,
   child: string,
 ): readonly [string, Readonly<Record<string, string>>] => {
-  const step = (name: string, prefix: string): readonly [string, Record<string, string>] => {
-    const namespace = namespaceOf(name);
-    const local = localOf(name);
-    return namespace === "" ? [local, {}] : [`${prefix}:${local}`, { [prefix]: namespace }];
-  };
-  const [r, rootNs] = step(root, "r");
-  const [c, childNs] = step(child, "c");
+  const [r, rootNs] = childStep(root, "r");
+  const [c, childNs] = childStep(child, "c");
   return [`/${r}/${c}`, { ...rootNs, ...childNs }];
 };
 

@@ -144,12 +144,6 @@ export default defineConfig({
       // Adoption allowances (#61): sites that predate the `suspicious`
       // category. A new site is a defect; when a count reaches zero, delete
       // the line so the rule is back at `error`.
-      // 14 sites in src/, 3 in packages/cli/tests: a name reused in an inner
-      // scope (`value`, `text`, `attributes`), mostly inside parser closures.
-      "eslint/no-shadow": "warn",
-      // 13 sites in src/, 25 in tests: helpers declared inside the function
-      // or test that uses them.
-      "unicorn/consistent-function-scoping": "warn",
       // Type-aware (tsgolint) rules. oxlint applies `overrides` to none of
       // them, so each relaxation here is global and counted.
       // 14 sites (13 in src/, 1 in tests), each with a `SAFETY:` comment: the
@@ -209,7 +203,9 @@ export default defineConfig({
       // a property lookup must intern each fresh string first, a `Map` only
       // hashes it (`flagsOf` as a record lookup was 7% of
       // `Html.parseDocument`'s profile, as a `Map` lookup under 2%). The
-      // tables are private to the parse and never compared.
+      // tables (and `TagCounts`, the tree constructor's per-name count of open
+      // elements, updated on every push and pop) are private to the parse and
+      // never compared.
       {
         files: ["src/internal/tagSet.ts"],
         rules: {
@@ -402,10 +398,6 @@ export default defineConfig({
           // A test IS the boundary the rule sends execution to: each case
           // runs its program with `Effect.runPromise` / `runSync`.
           "effect/effect-run-in-body": "off",
-          "effect/require-safety-comment-for-type-assertion": "warn",
-          "effect/use-clock-service": "warn",
-          "effect/avoid-process-env": "warn",
-          "effect/require-effect-concurrency": "warn",
         },
       },
     ],

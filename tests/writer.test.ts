@@ -28,6 +28,18 @@ const el = (
 
 const parse = (s: string) => Effect.runSync(Xml.parse(s));
 
+/** OOXML's `_xHHHH_` escape for a code point. */
+const ooxml = (cp: number) => `_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`;
+
+/** The children of a document's root element. */
+const content = (input: string) => parse(input).root.children;
+
+/** The exclusive canonical form, with comments, of a document's root element's children. */
+const c14n = (input: string) => C14n.exclusive(content(input), { comments: true });
+
+/** Parse an HTML document and serialize it back. */
+const html = (s: string) => Html.serialize(Effect.runSync(Html.parseDocument(s)));
+
 describe("escaping and well-formedness", () => {
   test("text and attribute values", () => {
     expect(ok(el("a", [Xml.attr("v", `<"&'>\t\n\r`)], [Xml.text(`<&>\r]]>`)]))).toBe(
@@ -70,7 +82,6 @@ describe("escaping and well-formedness", () => {
     expect(err(node).reason).toContain("U+0001");
     expect(ok(node, { invalid: "strip" })).toBe(`<a v="x">abcd</a>`);
     expect(ok(node, { invalid: "replace" })).toBe(`<a v="x�">a�b�c�d</a>`);
-    const ooxml = (cp: number) => `_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`;
     expect(ok(node, { escape: ooxml })).toBe(`<a v="x_x0001_">a_x0000_b_xFFFE_c_xD800_d</a>`);
     // Astral characters are fine.
     expect(ok(Xml.text("𝄞"))).toBe("𝄞");
@@ -288,8 +299,6 @@ describe("streaming", () => {
 
 describe("Exclusive C14N", () => {
   // Ported from effect-rdfxml (Xml.canonicalize).
-  const content = (input: string) => parse(input).root.children;
-  const c14n = (input: string) => C14n.exclusive(content(input), { comments: true });
 
   test("renders visibly utilised namespaces only", () => {
     expect(
@@ -330,8 +339,6 @@ describe("Exclusive C14N", () => {
 });
 
 describe("Html.serialize", () => {
-  const html = (s: string) => Html.serialize(Effect.runSync(Html.parseDocument(s)));
-
   test("void elements, raw text, escaping", () => {
     expect(
       html(

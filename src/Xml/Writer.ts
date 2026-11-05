@@ -680,10 +680,10 @@ export class XmlWriter {
     return this.prolog() + this.flush() + t;
   }
 
-  private cdata(text: string): string | SerializationError {
+  private cdata(content: string): string | SerializationError {
     const parent = this.stack.at(-1);
     if (parent !== undefined) parent.inline = true;
-    const data = this.chars(text, "a CDATA section");
+    const data = this.chars(content, "a CDATA section");
     if (!Predicate.isString(data)) return data;
     // `]]>` can't occur inside a section: end it after `]]` and start another.
     return (
@@ -691,8 +691,8 @@ export class XmlWriter {
     );
   }
 
-  private comment(text: string): string | SerializationError {
-    const data = this.unescapable(text, "a comment", /--|-$/, (s) => {
+  private comment(content: string): string | SerializationError {
+    const data = this.unescapable(content, "a comment", /--|-$/, (s) => {
       // A space between every two dashes, and after a trailing one.
       const out = s.replace(/-(?=-)/g, "- ");
       return out.endsWith("-") ? out + " " : out;
@@ -701,13 +701,13 @@ export class XmlWriter {
     return this.beforeNode() + `<!--${data}-->`;
   }
 
-  private processingInstruction(target: string, text: string): string | SerializationError {
+  private processingInstruction(target: string, content: string): string | SerializationError {
     if (/^xml$/i.test(target) && this.invalid === "fail") {
       return new SerializationError({
         reason: `the processing instruction target "${target}" is reserved`,
       });
     }
-    const data = this.unescapable(text, "a processing instruction", /\?>/, (s) =>
+    const data = this.unescapable(content, "a processing instruction", /\?>/, (s) =>
       s.replaceAll("?>", "? >"),
     );
     if (!Predicate.isString(data)) return data;
@@ -801,15 +801,17 @@ export const writeBytes =
 // DOM
 // -----------------------------------------------------------------------------
 
+/** The `[prefix, namespace]` binding a name needs, if any (`xml:` and `xmlns:` need none). */
+const prefixed = (n: QName): ReadonlyArray<readonly [string, string]> =>
+  n.prefix !== null &&
+  n.namespace !== null &&
+  n.namespace !== Namespaces.xml &&
+  n.namespace !== Namespaces.xmlns
+    ? [[n.prefix, n.namespace]]
+    : [];
+
 /** The namespaces a tree uses with a prefix, keyed by prefix (the first URI seen wins). */
 const usedPrefixes = (node: XmlNode | XmlDocument): Bindings => {
-  const prefixed = (n: QName): ReadonlyArray<readonly [string, string]> =>
-    n.prefix !== null &&
-    n.namespace !== null &&
-    n.namespace !== Namespaces.xml &&
-    n.namespace !== Namespaces.xmlns
-      ? [[n.prefix, n.namespace]]
-      : [];
   const none: Bindings = {};
   return Iterable.reduce(events(node), none, (found, ev) =>
     !isStartEvent(ev)
