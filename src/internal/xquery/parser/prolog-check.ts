@@ -45,7 +45,12 @@ import {
 } from "./analyze.ts";
 import type { Arity } from "./builtins.ts";
 import { Namespaces } from "./builtins.ts";
-import type { StaticContext, StaticOptions } from "./context.ts";
+import {
+  normalizeUri,
+  type ModuleExports,
+  type StaticContext,
+  type StaticOptions,
+} from "./context.ts";
 import { initialContext } from "./context.ts";
 import type { StaticError } from "./errors.ts";
 import { staticError } from "./errors.ts";
@@ -92,6 +97,10 @@ const pictureCharacters: ReadonlyArray<readonly [string, string]> = [
 
 /** What folding the prolog's declarations builds. */
 interface Fold {
+  /** The library modules imports find, by target namespace. */
+  readonly imports: HashMap.HashMap<string, ModuleExports>;
+  /** Whether the host gave module sources: an import with none is then `XQST0059`. */
+  readonly strictImports: boolean;
   readonly errors: Errors;
   readonly context: StaticContext;
   /** Keys of what has been declared once already: setters, prefixes, names. */
@@ -381,9 +390,72 @@ const importDecl = (
   );
   const bound = Option.match(prefix, {
     onNone: () => imported,
-    onSome: (p) => declarePrefix(imported, p, uri, offset),
+    onSome: (p) => declarePrefix(imported, p, kind === "module" ? normalizeUri(uri) : uri, offset),
   });
-  return opaque(bound, uri);
+  if (
+    kind === "schema" ||
+    uri === "" ||
+    HashSet.has(fold.context.opaqueNamespaces, normalizeUri(uri))
+  )
+    return opaque(bound, uri);
+  return Option.match(HashMap.get(fold.imports, normalizeUri(uri)), {
+    onNone: () =>
+      fold.strictImports
+        ? withErrors(
+            bound,
+            fail("XQST0059", `no module with the namespace "${uri}" is available`, offset),
+          )
+        : opaque(bound, normalizeUri(uri)),
+    onSome: (exports) => importExports(bound, exports, offset),
+  });
+};
+
+/** Bring an imported module's public functions and variables into scope (`XQST0034` / `XQST0049` on a clash). */
+const importExports = (fold: Fold, exports: ModuleExports, offset: number): Fold => {
+  const withFunctions = Arr.reduce(exports.functions, fold, (acc, [key, arity]) =>
+    withContext(
+      once(acc, `function:${key}#${arity}`, "XQST0034", `the function ${key}#${arity}`, offset),
+      (c) => ({
+        ...c,
+        functions: HashMap.set(c.functions, key, [
+          ...Option.getOrElse(HashMap.get(c.functions, key), (): ReadonlyArray<Arity> => []),
+          { min: arity, max: arity },
+        ]),
+      }),
+    ),
+  );
+  return Arr.reduce(exports.variables, withFunctions, (acc, key) =>
+    withContext(once(acc, `variable:${key}`, "XQST0049", `the variable $${key}`, offset), (c) => ({
+      ...c,
+      variables: HashSet.add(c.variables, key),
+    })),
+  );
+};
+
+/** Whether a declaration's annotations make it `%private`. */
+const isPrivate = (scope: Scope, annotations: ReadonlyArray<Annotation>): boolean =>
+  annotations.some((a) =>
+    Option.exists(
+      Result.getSuccess(annotationName(scope, a)),
+      (n) => isVisibility(n) && n.local === "private",
+    ),
+  );
+
+/** What a library module exports: its declared functions and variables but the `%private` ones. */
+export const exportsOf = (module: ModuleT, context: StaticContext): ModuleExports => {
+  const scope = scopeOf(context);
+  const decls = Module.$match(module, { Main: (m) => m.prolog, Library: (l) => l.prolog });
+  const functions = decls.flatMap((d): ReadonlyArray<readonly [string, number]> => {
+    if (!Decl.$is("Function")(d) || isPrivate(scope, d.annotations)) return [];
+    const n = resolved(scope, d.name, "function");
+    return n === undefined ? [] : [[keyOf(n), d.params.length]];
+  });
+  const variables = decls.flatMap((d): ReadonlyArray<string> => {
+    if (!Decl.$is("Variable")(d) || isPrivate(scope, d.annotations)) return [];
+    const n = resolved(scope, d.name, "variable");
+    return n === undefined ? [] : [keyOf(n)];
+  });
+  return { functions, variables };
 };
 
 /** One setter: record it, or report it declared twice. */
@@ -526,9 +598,17 @@ const first = (errors: Errors): Option.Option<StaticError> => Arr.head(errors);
 export const analyzeModule = (
   module: ModuleT,
   options?: StaticOptions,
+  imports: HashMap.HashMap<string, ModuleExports> = HashMap.empty(),
 ): Result.Result<Analyzed, StaticError> => {
   const base = initialContext(true, options);
-  const start: Fold = { errors: none, context: base, seen: HashSet.empty(), variables: [] };
+  const start: Fold = {
+    imports,
+    strictImports: options?.modules !== undefined,
+    errors: none,
+    context: base,
+    seen: HashSet.empty(),
+    variables: [],
+  };
   const library = Module.$match(module, {
     Main: () => Option.none<string>(),
     Library: (l) => Option.some(l.uri),

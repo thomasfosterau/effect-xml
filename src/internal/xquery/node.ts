@@ -238,6 +238,44 @@ export class XdmNode {
     });
   }
 
+  /**
+   * A parentless attribute node: the root of a new tree, as a computed
+   * attribute constructor makes one.
+   */
+  static fromAttribute(attribute: XmlAttribute, options?: NodeOptions): XdmNode {
+    return XdmNode.parentless({ _tag: "attribute", node: attribute }, options);
+  }
+
+  /** A parentless text node: the root of a new tree, as a text constructor makes one. */
+  static fromText(data: string, options?: NodeOptions): XdmNode {
+    return XdmNode.parentless({ _tag: "text", data }, options);
+  }
+
+  /** A parentless comment node: the root of a new tree, as a comment constructor makes one. */
+  static fromComment(comment: XmlComment, options?: NodeOptions): XdmNode {
+    return XdmNode.parentless({ _tag: "comment", node: comment }, options);
+  }
+
+  /**
+   * A parentless processing-instruction node: the root of a new tree, as a
+   * processing-instruction constructor makes one.
+   */
+  static fromProcessingInstruction(
+    instruction: XmlProcessingInstruction,
+    options?: NodeOptions,
+  ): XdmNode {
+    return XdmNode.parentless({ _tag: "processing-instruction", node: instruction }, options);
+  }
+
+  /** A parentless namespace node: the root of a new tree, as a namespace constructor makes one. */
+  static fromNamespace(binding: NamespaceBinding, options?: NodeOptions): XdmNode {
+    return XdmNode.parentless({ _tag: "namespace", binding }, options);
+  }
+
+  private static parentless(content: Content, options: NodeOptions | undefined): XdmNode {
+    return new XdmNode(XdmNode.tree(options), Option.none(), CHILDREN, 0, content);
+  }
+
   /** Where `a` is in document order relative to `b` (see {@link compareDocumentOrder}). */
   static compare(a: XdmNode, b: XdmNode): -1 | 0 | 1 {
     if (a === b) return 0;

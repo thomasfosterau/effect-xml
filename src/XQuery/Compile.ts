@@ -4,8 +4,13 @@
  */
 import * as Result from "effect/Result";
 import type { Expr, Module } from "../internal/xquery/parser/ast.ts";
-import type { StaticContext, StaticOptions } from "../internal/xquery/parser/context.ts";
+import type {
+  ModuleSource as ModuleSourceT,
+  StaticContext,
+  StaticOptions,
+} from "../internal/xquery/parser/context.ts";
 import type { StaticError } from "../internal/xquery/parser/errors.ts";
+import type { LibraryModule, UnresolvedImport } from "../internal/xquery/parser/modules.ts";
 import { compileXPath, compileXQuery } from "../internal/xquery/parser/index.ts";
 import { type XQueryError, xqueryError } from "./Error.ts";
 
@@ -23,6 +28,15 @@ import { type XQueryError, xqueryError } from "./Error.ts";
 export interface CompileOptions extends StaticOptions {}
 
 /**
+ * A library module's source text and location, as `CompileOptions.modules`
+ * and `ResourceResolver.module` give it for an `import module`.
+ *
+ * @since 0.3.0
+ * @category compiling
+ */
+export interface ModuleSource extends ModuleSourceT {}
+
+/**
  * A compiled query: its text, its language, and what the compiler made of
  * it (the syntax tree and its static context), ready to be evaluated.
  *
@@ -37,6 +51,12 @@ export type Query =
       readonly module: Module;
       /** The static context the module's body is compiled in. */
       readonly context: StaticContext;
+      /** The library modules it imports (directly or not), from `options.modules`. */
+      readonly libraries: ReadonlyArray<LibraryModule>;
+      /** Its module imports that `options.modules` was not given for; `evaluate` loads them through the `Resolver`. */
+      readonly unresolvedImports: ReadonlyArray<UnresolvedImport>;
+      /** The options it was compiled with. */
+      readonly options: CompileOptions | undefined;
     }
   | {
       readonly language: "XPath";
@@ -77,11 +97,14 @@ export const compile = (
 ): Result.Result<Query, XQueryError> =>
   Result.mapBoth(compileXQuery(query, options), {
     onFailure: toXQueryError,
-    onSuccess: ({ module, context }): Query => ({
+    onSuccess: ({ module, context, libraries, unresolved }): Query => ({
       language: "XQuery",
       source: query,
       module,
       context,
+      libraries,
+      unresolvedImports: unresolved,
+      options,
     }),
   });
 
