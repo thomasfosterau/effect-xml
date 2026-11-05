@@ -7,7 +7,9 @@
  * stream (whole string and 64 KiB chunks), as bytes, as a DOM, with
  * streaming selection of rows, and validated against a schema for the
  * worksheet (as events, and as typed values), and queried with XPath
- * (`XQuery.evaluate` over the parsed DOM). HTML is measured with
+ * (`XQuery.evaluate` over the parsed DOM). A generated product catalog is
+ * validated against a schema that uses substitution groups, derivation,
+ * choices and facets, which the worksheet's schema does not. HTML is measured with
  * `Html.parseDocument` and `Html.parseFragment` on a generated page that
  * exercises formatting elements, implied end tags, tables, foreign content,
  * entities and CRLF line ends (the input of #13).
@@ -148,6 +150,70 @@ await time("effect-xml XPath (XQuery.evaluate)", () =>
   Effect.runPromise(
     Effect.asVoid(XQuery.evaluate(rowsQuery, { context: XQuery.XdmNode.fromDocument(sheetDom) })),
   ),
+);
+
+// The same megabytes of a product catalog, against a schema that exercises
+// more of XML Schema than the worksheet's: an abstract head element whose
+// substitution group members are types derived by extension, a choice,
+// optional elements, simple content with attributes, a list type with a
+// length facet, a pattern, decimal range and digit facets, an enumeration,
+// dates, durations, and integer and dateTime attributes with defaults.
+const CAT = "urn:example:catalog";
+const catalogSchema = `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="${CAT}" targetNamespace="${CAT}" elementFormDefault="qualified">
+  <xs:simpleType name="Sku"><xs:restriction base="xs:token"><xs:pattern value="[A-Z]{3}-\\d{4}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Price"><xs:restriction base="xs:decimal"><xs:minInclusive value="0"/><xs:fractionDigits value="2"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Tags"><xs:restriction><xs:simpleType><xs:list itemType="xs:NCName"/></xs:simpleType><xs:maxLength value="8"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Rating"><xs:restriction base="xs:string"><xs:enumeration value="G"/><xs:enumeration value="PG"/><xs:enumeration value="M"/><xs:enumeration value="R"/></xs:restriction></xs:simpleType>
+  <xs:complexType name="Product" abstract="true"><xs:sequence>
+    <xs:element name="title" type="xs:string"/>
+    <xs:element name="price" type="Price"/>
+    <xs:element name="released" type="xs:date" minOccurs="0"/>
+    <xs:element name="tags" type="Tags" minOccurs="0"/>
+  </xs:sequence>
+  <xs:attribute name="sku" type="Sku" use="required"/>
+  <xs:attribute name="stock" type="xs:nonNegativeInteger" default="0"/></xs:complexType>
+  <xs:complexType name="Book"><xs:complexContent><xs:extension base="Product"><xs:sequence>
+    <xs:choice><xs:element name="isbn" type="xs:string"/><xs:element name="issn" type="xs:string"/></xs:choice>
+    <xs:element name="author" type="xs:string" maxOccurs="unbounded"/>
+  </xs:sequence><xs:attribute name="pages" type="xs:positiveInteger"/></xs:extension></xs:complexContent></xs:complexType>
+  <xs:complexType name="Track"><xs:simpleContent><xs:extension base="xs:duration"><xs:attribute name="n" type="xs:int" use="required"/></xs:extension></xs:simpleContent></xs:complexType>
+  <xs:complexType name="Disc"><xs:complexContent><xs:extension base="Product"><xs:sequence>
+    <xs:element name="track" type="Track" maxOccurs="unbounded"/>
+  </xs:sequence><xs:attribute name="rating" type="Rating"/></xs:extension></xs:complexContent></xs:complexType>
+  <xs:element name="product" type="Product" abstract="true"/>
+  <xs:element name="book" type="Book" substitutionGroup="product"/>
+  <xs:element name="disc" type="Disc" substitutionGroup="product"/>
+  <xs:element name="catalog"><xs:complexType><xs:sequence>
+    <xs:element ref="product" maxOccurs="unbounded"/>
+  </xs:sequence><xs:attribute name="updated" type="xs:dateTime"/></xs:complexType></xs:element>
+</xs:schema>`;
+const catalog = ((): string => {
+  const items: Array<string> = [];
+  let size = 0;
+  for (let n = 0; size < megabytes * 1024 * 1024; n++) {
+    const sku = `${String.fromCharCode(65 + (n % 26), 65 + ((n >> 3) % 26), 65 + ((n >> 6) % 26))}-${String(n % 10000).padStart(4, "0")}`;
+    const released =
+      n % 2 === 0
+        ? ""
+        : `<released>20${String(n % 25).padStart(2, "0")}-0${(n % 9) + 1}-1${n % 10}</released>`;
+    const common = `<title>Item ${n} &amp; co</title><price>${(n % 997) + 0.25}</price>${released}<tags>t${n % 7} new sale</tags>`;
+    const item =
+      n % 3 === 0
+        ? `<disc sku="${sku}" rating="${["G", "PG", "M", "R"][n % 4]}">${common}` +
+          `<track n="1">PT3M${n % 60}S</track><track n="2">PT4M1S</track><track n="3">PT2M59.5S</track></disc>`
+        : `<book sku="${sku}" stock="${n % 50}" pages="${(n % 900) + 1}">${common}` +
+          `<isbn>978-0-${n}</isbn><author>A. Writer</author><author>B. Other</author></book>`;
+    items.push(item);
+    size += item.length;
+  }
+  return `<?xml version="1.0"?>\n<catalog xmlns="${CAT}" updated="2026-11-04T12:00:00Z">${items.join("")}</catalog>`;
+})();
+const catalogModel = await Effect.runPromise(Xsd.compile(catalogSchema));
+await time(
+  "effect-xml XSD catalog (Xsd.parse)",
+  () => Effect.runPromise(Effect.asVoid(Xsd.parse(catalogModel, catalog))),
+  5,
+  catalog.length,
 );
 
 // The same megabytes of HTML: a block that runs the adoption agency
