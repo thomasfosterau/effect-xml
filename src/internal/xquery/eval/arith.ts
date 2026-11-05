@@ -78,14 +78,10 @@ const integerArith = (op: ArithOp, x: bigint, y: bigint, offset?: number): Atomi
       decimalDivide(BigDecimal.fromBigInt(x), BigDecimal.fromBigInt(y), offset),
     );
   if ((op === "idiv" || op === "mod") && y === 0n) return divByZero(offset);
-  const results: Readonly<Record<Exclude<ArithOp, "div">, () => bigint>> = {
-    "+": () => x + y,
-    "-": () => x - y,
-    "*": () => x * y,
-    idiv: () => x / y,
-    mod: () => x % y,
-  };
-  return AtomicValue.integer(results[op]());
+  // Conditions, not a table of closures: this runs once per integer operation.
+  return AtomicValue.integer(
+    op === "+" ? x + y : op === "-" ? x - y : op === "*" ? x * y : op === "idiv" ? x / y : x % y,
+  );
 };
 
 const decimalArith = (

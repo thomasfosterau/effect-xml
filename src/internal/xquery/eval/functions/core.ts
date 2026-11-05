@@ -16,7 +16,6 @@ import {
   atomize,
   effectiveBooleanValue,
   FunctionItem,
-  isNode,
   MapItem,
   stringValue,
   type Item,
@@ -29,21 +28,22 @@ import { deepEqual } from "../compare.ts";
 import { orElse, raise, succeeds, unwrap } from "../raise.ts";
 import { arrayMember, contextItem, fetchResource } from "../runtime.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
-import { arg, arrayOf, atomOf, bool, int, isEmpty, mapOf, str, text } from "./values.ts";
+import {
+  arg,
+  arrayOf,
+  atomOf,
+  bool,
+  contextNode,
+  int,
+  isEmpty,
+  mapOf,
+  optionalNode,
+  str,
+  text,
+} from "./values.ts";
 
 /** How many characters (code points, not UTF-16 units) a string has. */
 const codepoints = (s: string): number => Arr.fromIterable(s).length;
-
-/** The context item, which must be a node: `err:XPTY0004` otherwise. */
-const contextNode = (call: Call): XdmNode => {
-  const item = contextItem(call.ctx, call.offset);
-  return isNode(item) ? item : raise("XPTY0004", "the context item is not a node", call.offset);
-};
-
-const optionalNode = (s: Sequence): XdmNode | undefined => {
-  const [n] = s;
-  return n !== undefined && isNode(n) ? n : undefined;
-};
 
 /** A function of an optional node, also defined with no argument (the context node). */
 const ofNode = (
