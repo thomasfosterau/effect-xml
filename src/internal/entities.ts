@@ -198,10 +198,12 @@ const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part
     Parser.withTaken(Parser.terminated(value, lenient ? Parser.optional(semicolon) : semicolon)),
   );
   return Parser.alt(
-    Parser.map(reference, ([relativeOffset, [n, reference]]): Part => {
+    Parser.map(reference, ([relativeOffset, [n, taken]]): Part => {
       const cp = lenient ? (WIN1252[n] ?? n) : n;
       if (representable(cp)) return String.fromCodePoint(cp);
-      return strict ? { reference, reason: "code point out of range", relativeOffset } : "\uFFFD";
+      return strict
+        ? { reference: taken, reason: "code point out of range", relativeOffset }
+        : "\uFFFD";
     }),
     bad(strict, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const)),
   );

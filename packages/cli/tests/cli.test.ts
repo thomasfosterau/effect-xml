@@ -60,10 +60,10 @@ describe("generate", () => {
         const schema = `${dir}/order.xsd`;
         yield* fs.copyFile(exampleSchema, schema);
         yield* fs.makeDirectory(`${dir}/out`);
-        const outcome = yield* generate({ schema, out: `${dir}/out/order.ts` });
+        const result = yield* generate({ schema, out: `${dir}/out/order.ts` });
         const model = yield* Xsd.compile(yield* read(schema));
-        const expected = yield* Xsd.generate(model, { source: "../order.xsd" });
-        return [outcome, yield* read(`${dir}/out/order.ts`), expected] as const;
+        const generated = yield* Xsd.generate(model, { source: "../order.xsd" });
+        return [result, yield* read(`${dir}/out/order.ts`), generated] as const;
       }),
     );
     expect(outcome).toBe("written");
@@ -134,9 +134,9 @@ describe("generate", () => {
     const [refused, fetched] = await inTemp((dir) =>
       Effect.gen(function* () {
         const main = yield* schema(dir);
-        const refused = yield* Effect.flip(generate({ schema: main, out: `${dir}/a.ts` }));
+        const failure = yield* Effect.flip(generate({ schema: main, out: `${dir}/a.ts` }));
         yield* generate({ schema: main, out: `${dir}/b.ts`, remote: true });
-        return [refused, yield* read(`${dir}/b.ts`)] as const;
+        return [failure, yield* read(`${dir}/b.ts`)] as const;
       }),
     );
     expect(refused).toBeInstanceOf(RemoteLocationRefused);

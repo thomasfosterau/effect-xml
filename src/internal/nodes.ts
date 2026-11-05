@@ -176,13 +176,13 @@ export const doctype = (
 
 /** An {@link XmlDocument}, keeping `children` (never mutated afterwards). */
 export const document = (
-  declaration: XmlDocument["declaration"],
-  doctype: XmlDocument["doctype"],
+  xmlDeclaration: XmlDocument["declaration"],
+  xmlDoctype: XmlDocument["doctype"],
   children: ReadonlyArray<XmlNode>,
 ): XmlDocument => {
   const node = blank(XmlDocument);
-  node.declaration = declaration;
-  node.doctype = doctype;
+  node.declaration = xmlDeclaration;
+  node.doctype = xmlDoctype;
   node.children = children;
   return node;
 };
@@ -275,13 +275,13 @@ export const htmlDoctype = (name: string, publicId: string, systemId: string): H
 /** An {@link HtmlDocument}, keeping `children` (never mutated afterwards). */
 export const htmlDocument = (
   mode: HtmlDocument["mode"],
-  doctype: HtmlDocument["doctype"],
+  documentType: HtmlDocument["doctype"],
   children: ReadonlyArray<HtmlNode>,
 ): HtmlDocument => {
   const node = blank(HtmlDocument);
   node._tag = "HtmlDocument";
   node.mode = mode;
-  node.doctype = doctype;
+  node.doctype = documentType;
   node.children = children;
   return node;
 };

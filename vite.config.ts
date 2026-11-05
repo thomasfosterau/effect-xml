@@ -144,9 +144,6 @@ export default defineConfig({
       // Adoption allowances (#61): sites that predate the `suspicious`
       // category. A new site is a defect; when a count reaches zero, delete
       // the line so the rule is back at `error`.
-      // 14 sites in src/, 3 in packages/cli/tests: a name reused in an inner
-      // scope (`value`, `text`, `attributes`), mostly inside parser closures.
-      "eslint/no-shadow": "warn",
       // 13 sites in src/, 25 in tests: helpers declared inside the function
       // or test that uses them.
       "unicorn/consistent-function-scoping": "warn",

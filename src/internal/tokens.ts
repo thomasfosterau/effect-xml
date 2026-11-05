@@ -791,7 +791,7 @@ export interface Grammars {
  * is the last character of the input).
  */
 const dispatchMarkup = (
-  text: P<Step>,
+  textStep: P<Step>,
   markup: { readonly "/": P<Step>; readonly "!": P<Step>; readonly "?": P<Step> },
   tag: P<Step>,
   other: P<Step>,
@@ -808,7 +808,7 @@ const dispatchMarkup = (
         Parser.alt(Parser.preceded(nameStartsHere, tag), other),
       ),
     },
-    text,
+    textStep,
   );
 };
 
@@ -877,7 +877,7 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
   };
   const rcdataToEnd: P<Step> = Parser.map(
     Parser.withSpan(Parser.terminated(decoded(cfg, false)(Token.rest), eof)),
-    ([data, span]) => (data === "" ? none : [text(data, span.start, span.end)]),
+    ([rest, span]) => (rest === "" ? none : [text(rest, span.start, span.end)]),
   );
   return {
     data: Compiler.jit(data),

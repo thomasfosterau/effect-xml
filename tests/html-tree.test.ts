@@ -26,8 +26,8 @@ describe("Html.parseDocument — structure", () => {
     const d = await doc(`hello`);
     expect(d.documentElement.name).toBe("html");
     expect(d.documentElement.namespace).toBe("html");
-    const names = d.documentElement.elements.map((e) => e.name);
-    expect(names).toEqual(["head", "body"]);
+    const elementNames = d.documentElement.elements.map((e) => e.name);
+    expect(elementNames).toEqual(["head", "body"]);
     const body = child(d.documentElement, "body");
     expect(body.textContent).toBe("hello");
   });
@@ -324,8 +324,8 @@ describe("Html.parseDocument — document mode", () => {
 describe("Html.parseDocument — frameset", () => {
   test("a frameset document has no body", async () => {
     const d = await doc(`<frameset><frame><frame></frameset>`);
-    const names = d.documentElement.elements.map((e) => e.name);
-    expect(names).toEqual(["head", "frameset"]);
+    const elementNames = d.documentElement.elements.map((e) => e.name);
+    expect(elementNames).toEqual(["head", "frameset"]);
     const fs = child(d.documentElement, "frameset");
     expect(fs.elements.map((e) => e.name)).toEqual(["frame", "frame"]);
   });
@@ -343,8 +343,8 @@ describe("Html.parseDocument — frameset", () => {
 
   test("real content makes the document no longer frameset-ok", async () => {
     const d = await doc(`<body><p>x<frameset></frameset>`);
-    const names = d.documentElement.elements.map((e) => e.name);
-    expect(names).toEqual(["head", "body"]);
+    const elementNames = d.documentElement.elements.map((e) => e.name);
+    expect(elementNames).toEqual(["head", "body"]);
   });
 
   test("nested framesets and after-frameset comments", async () => {

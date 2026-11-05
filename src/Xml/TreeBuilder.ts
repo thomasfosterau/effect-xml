@@ -304,11 +304,11 @@ class Builder {
     const bindings = this.collectBindings(ev.attributes);
     // In document order: the first duplicate or unbound prefix is the one reported.
     const resolveAttribute = (name: string, span: Span) => this.resolve(name, true, span, bindings);
-    const attributes = this.recover
+    const resolved = this.recover
       ? Result.succeed(recoverAttributes(ev.attributes, resolveAttribute))
       : resolveAttributes(ev.name, ev.attributes, resolveAttribute);
     const opened = Result.flatMap(this.resolve(ev.name, false, at, bindings), (name) =>
-      Result.map(attributes, (attributes) => ({ name, attributes })),
+      Result.map(resolved, (attributes) => ({ name, attributes })),
     );
     return Result.match(opened, {
       onFailure: Effect.fail,

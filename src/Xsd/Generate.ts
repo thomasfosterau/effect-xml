@@ -154,11 +154,11 @@ const kindTypes: Readonly<Record<string, string>> = {
 
 /** The TypeScript type of a simple type's values. */
 const simpleTs = (checker: SimpleChecker): string => {
-  const literals = Option.flatMap(Option.fromNullishOr(checker.enumeration), (values) =>
+  const enumerated = Option.flatMap(Option.fromNullishOr(checker.enumeration), (values) =>
     Option.all(Arr.map(values, (v) => literal(checker, v))),
   );
-  if (Option.isSome(literals) && Arr.isReadonlyArrayNonEmpty(literals.value))
-    return Arr.dedupe(literals.value).join(" | ");
+  if (Option.isSome(enumerated) && Arr.isReadonlyArrayNonEmpty(enumerated.value))
+    return Arr.dedupe(enumerated.value).join(" | ");
   if (checker.kind === "list")
     return `ReadonlyArray<${checker.item === undefined ? "string" : wrap(simpleTs(checker.item))}>`;
   if (checker.kind === "union")
@@ -255,12 +255,12 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
           own,
           (t) => Predicate.isTagged(t, "ComplexType") && t.abstract === true,
         );
-        const options = [
+        const alternatives = [
           ...(abstract && Arr.isReadonlyArrayNonEmpty(derived) ? [] : [typeRef(decl.type)]),
           ...Arr.map(derived, (k) => `(${typeRef(k)} & { readonly $type: ${quote(k)} })`),
           ...(decl.nillable === true ? ["null"] : []),
         ];
-        return options.join(" | ");
+        return alternatives.join(" | ");
       },
     });
 

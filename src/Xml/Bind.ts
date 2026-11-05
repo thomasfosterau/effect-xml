@@ -888,10 +888,10 @@ export const decodeElement = <S extends Schema.Top>(
 ) => Effect.Effect<S["Type"], XmlBindError | Schema.SchemaError, S["DecodingServices"]>) => {
   const codec = Schema.toCodecStringTree(schema);
   const decodeTree = Schema.decodeUnknownEffect(codec, options);
-  return (element) =>
+  return (root) =>
     Effect.suspend(() =>
       Result.match(
-        Result.flatMap(compileRoot(codec.ast), (plan) => readRoot(plan, element)),
+        Result.flatMap(compileRoot(codec.ast), (plan) => readRoot(plan, root)),
         {
           onFailure: (
             e,
