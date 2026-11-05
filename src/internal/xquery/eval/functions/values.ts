@@ -51,6 +51,12 @@ export const arrayOf = (s: Sequence): ArrayItem =>
 export const atomOf = (s: Sequence): AtomicValue =>
   only(s, (i): i is AtomicValue => i instanceof AtomicValue);
 
+/** The atomic value of an optional atomic argument. */
+export const optionalAtom = (s: Sequence): AtomicValue | undefined => {
+  const [a] = s;
+  return a instanceof AtomicValue ? a : undefined;
+};
+
 /** The atomic values of an atomic sequence argument. */
 export const atomsOf = (s: Sequence): ReadonlyArray<AtomicValue> =>
   s.filter((i): i is AtomicValue => i instanceof AtomicValue);

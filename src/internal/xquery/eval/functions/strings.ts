@@ -14,14 +14,10 @@ import { AtomicTypes } from "../../types.ts";
 import { toNumber } from "../cast.ts";
 import { raise, unwrap } from "../raise.ts";
 import { contextItem } from "../runtime.ts";
-import { collate, collationNamed, collationOf, type Collation } from "./collation.ts";
+import { collate, collationArg, collationNamed, collationOf, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { analyzeString, compileRegex, matches, replace, tokenize } from "./regex.ts";
 import { arg, atomOf, atomsOf, bool, chars, int, isEmpty, str, text } from "./values.ts";
-
-/** The collation of a call's optional collation argument at `i`. */
-const collationArg = (args: ReadonlyArray<Sequence>, i: number, call: Call): Collation =>
-  args.length > i ? collationNamed(text(arg(args, i)), call) : collationOf(undefined, call);
 
 /** Whether a code point is an XML 1.0 `Char`. */
 const isXmlChar = (c: bigint): boolean =>

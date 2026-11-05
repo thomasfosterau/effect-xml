@@ -137,3 +137,58 @@ describe("regular expressions", () => {
     expect(value(`count(analyze-string('', 'a')/*)`)).toBe("0");
   });
 });
+
+describe("numbers", () => {
+  test("rounding keeps the primitive numeric type and the sign of zero", () => {
+    expect(
+      values("round(2.5), round(-2.5), round(-0.4e0), round(xs:int(3)) instance of xs:integer"),
+    ).toEqual(["3", "-2", "-0", "true"]);
+    expect(values("round(12345, -2), round(1.005e0, 2), round(3.14159, 3)")).toEqual([
+      "12300",
+      "1.01",
+      "3.142",
+    ]);
+    expect(
+      values("round-half-to-even(2.5), round-half-to-even(3.5e0), round-half-to-even(-0.25, 1)"),
+    ).toEqual(["2", "4", "-0.2"]);
+    expect(
+      values("abs(-3), abs(xs:float(-1.5)) instance of xs:float, floor(-0.5e0), ceiling(-0.5e0)"),
+    ).toEqual(["3", "true", "-1", "-0"]);
+    expect(values("round(())")).toEqual([]);
+  });
+
+  test("aggregates: promotion, durations, NaN and errors", () => {
+    expect(values("sum((1, 2.5)), sum(()), sum((), ()), avg((1, 2))")).toEqual(["3.5", "0", "1.5"]);
+    expect(value("avg((xs:dayTimeDuration('P1D'), xs:dayTimeDuration('P2D')))")).toBe("P1DT12H");
+    expect(values("max((1, 2.5e0)) instance of xs:double, max((3, 2.5e0))")).toEqual(["true", "3"]);
+    expect(values("min(('b', 'a')), max((xs:anyURI('b'), 'a')) instance of xs:string")).toEqual([
+      "a",
+      "true",
+    ]);
+    expect(value("max((1, 0 div 0e0))")).toBe("NaN");
+    expect(value("max((xs:untypedAtomic('3'), 2)) instance of xs:double")).toBe("true");
+    expect(code("sum(('a'))")).toBe("FORG0006");
+    expect(code("max((1, 'a'))")).toBe("FORG0006");
+    expect(code("min(xs:QName('a'))")).toBe("FORG0006");
+  });
+
+  test("math:", () => {
+    expect(
+      values("math:pow(1, 0 div 0e0), math:pow(2, 10), math:sqrt(-0e0), math:exp10(2)"),
+    ).toEqual(["1", "1024", "-0", "100"]);
+    expect(values("math:log(()), math:atan2(1, 1) = math:pi() div 4")).toEqual(["true"]);
+  });
+
+  test("random-number-generator: a deterministic generator per seed", () => {
+    const g = "random-number-generator(42)";
+    expect(value(`${g}?number = ${g}?number`)).toBe("true");
+    expect(value(`${g}?number ne ${g}?next()?number`)).toBe("true");
+    expect(value(`${g}?number ge 0 and ${g}?number lt 1`)).toBe("true");
+    expect(
+      value(
+        `let $p := ${g}?permute(1 to 20) return count($p) = 20 and (every $i in 1 to 20 satisfies $i = $p)`,
+      ),
+    ).toBe("true");
+    expect(value(`deep-equal(${g}?permute(1 to 20), ${g}?permute(1 to 20))`)).toBe("true");
+  });
+});

@@ -149,10 +149,10 @@ const compareAtomic = (
   ordering: boolean,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): number => {
   if (isNumericType(a.type) && isNumericType(b.type)) return compareNumeric(a, b);
-  if (stringish(a.type) && stringish(b.type))
-    return compareCodepoints(String(a.value), String(b.value));
+  if (stringish(a.type) && stringish(b.type)) return strings(String(a.value), String(b.value));
   if (a.type.primitive === "duration" && b.type.primitive === "duration")
     return compareDurations(a, b, ordering, offset);
   if (isTemporal(a.type) && a.type.primitive === b.type.primitive) {
@@ -165,6 +165,22 @@ const compareAtomic = (
   }
   return compareOther(a, b, ordering, offset);
 };
+
+/** How strings compare under a collation: negative, zero or positive. */
+export type StringOrder = (a: string, b: string) => number;
+
+/**
+ * Compare two atomic values for ordering, as `fn:min`, `fn:max` and
+ * `fn:sort` do: negative, zero or positive, NaN when either is NaN; strings
+ * by `strings`; `err:XPTY0004` for values without an order between them.
+ */
+export const orderAtomic = (
+  a: AtomicValue,
+  b: AtomicValue,
+  implicitTimezone: number,
+  strings: StringOrder = compareCodepoints,
+  offset?: number,
+): number => compareAtomic(asString(a), asString(b), true, implicitTimezone, offset, strings);
 
 /** Whether a comparison result satisfies an operator. */
 const holds = (op: ValueOp, c: number): boolean => {
@@ -248,6 +264,7 @@ export const atomicDeepEqual = (
   a: AtomicValue,
   b: AtomicValue,
   implicitTimezone: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean => {
   if (isNaNValue(a) && isNaNValue(b)) return true;
   const x = asString(a);
@@ -257,7 +274,7 @@ export const atomicDeepEqual = (
     (stringish(x.type) && stringish(y.type)) ||
     x.type.primitive === y.type.primitive;
   if (!comparable) return false;
-  const c = compareAtomic(x, y, false, implicitTimezone);
+  const c = compareAtomic(x, y, false, implicitTimezone, undefined, strings);
   return c === 0;
 };
 
