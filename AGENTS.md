@@ -57,7 +57,7 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 - `vp run docgen` — compiles and runs every `@example` against `dist/`, writes the (git-ignored) API reference to `docs/`.
 - `vp run test:coverage` — the suite under an Istanbul map at `coverage/coverage-final.json`, which `fallow audit` reads.
 - `vp run example` — the tour in `examples/usage.ts`.
-- `vp run bench` — the parsing benchmarks (`bench/parse.ts`; `vp exec tsx bench/parse.ts 32` for a 32 MB input).
+- `vp run bench` — the parsing benchmarks (`bench/parse.ts`; `vpx bench/parse.ts 32` for a 32 MB input).
 - `pnpm changeset` — add a changeset.
 
 Invoke everything through `vp` (`vp exec` instead of `npx`). The sanctioned non-`vp` invocations: `pnpm install` (`--frozen-lockfile` in CI), `pnpm changeset`, and `pnpm publish` on the release path. Single-check variants are in [CONTRIBUTING.md](CONTRIBUTING.md#running-individual-checks).
@@ -73,7 +73,7 @@ Before you report work as done, run the gates below in order and quote each comm
 5. `vp run build`
 6. `vp run docgen`
 7. `pnpm audit --audit-level high` (network)
-8. `vp run test:coverage`, then `fallow audit --format json --quiet --explain --gate-marker agent --base origin/trunk` (the fallow gate below; not a CI step).
+8. `vp run test:coverage`, then `vp exec fallow audit --format json --quiet --explain --gate-marker agent --base origin/trunk` (the fallow gate below; not a CI step).
 
 Steps 2–7 are CI's required `ci` job, in its order ([ci.yml](.github/workflows/ci.yml)). CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA, never persists checkout credentials and never sets `node-version: latest` (it can resolve to a pre-release; the setup action uses `"*"` with `check-latest`, Release the engines major); the release job alone holds `id-token: write` and never runs for Dependabot. `uvx zizmor .github` audits the workflows (config in `.github/zizmor.yml`).
 
@@ -101,8 +101,8 @@ Never guess at an Effect API: read the installed package — `node_modules/effec
 
 ## Agent sessions
 
-- The SessionStart hook (`.claude/hooks/session-start.sh`) installs dependencies against the lockfile and puts `vp` (a re-exec shim that prefers the nearest worktree's `node_modules`), `fallow` and `tsx` on PATH for non-interactive shells. It hydrates no secrets; none are needed, and nothing here can publish.
-- A PreToolUse hook (`.claude/hooks/fallow-gate.sh`) blocks `git commit` / `git push` when `fallow audit --base origin/trunk` fails; it reads the coverage map on disk, so run `vp run test:coverage` first. A PostToolUse hook runs `vp fmt` on every source, JSON, CSS or Markdown file you write or edit.
+- The SessionStart hook (`.claude/hooks/session-start.sh`) installs the global Vite+ CLI at the catalog's `vite-plus` pin with the official installer (npm-provenance and SHA-512 checked; it needs `vite.plus` and `viteplus.dev` on the environment's network allowlist), links `vp` and `vpx` into `~/.local/bin`, and runs `vp install --frozen-lockfile`. Everything else goes through Vite+: `vp exec fallow …` for fallow, `vpx <file>.ts` for TypeScript scripts (`tsx` stays installed only because `@effect/docgen` spawns it). Nothing else is put on PATH. If the installer can't run, `vp` falls back to this checkout's `node_modules` copy. It hydrates no secrets; none are needed, and nothing here can publish.
+- A PreToolUse hook (`.claude/hooks/fallow-gate.sh`) blocks `git commit` / `git push` when `fallow audit --base origin/trunk` (run as `vp exec fallow`) fails; it audits only this checkout and its `.claude/worktrees/*`, skipping any other tree with a notice, and reads the coverage map on disk, so run `vp run test:coverage` first. A PostToolUse hook runs `vp fmt` on every source, JSON, CSS or Markdown file you write or edit.
 - Every gate in [Verification](#verification) runs in an agent session; `pnpm audit` needs the network.
 
 ## Documentation surfaces

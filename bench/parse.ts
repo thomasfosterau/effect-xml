@@ -1,5 +1,5 @@
 /**
- * Parsing benchmarks. Run with `vp run bench` (or `vp exec tsx bench/parse.ts
+ * Parsing benchmarks. Run with `vp run bench` (or `vpx bench/parse.ts
  * [megabytes]`).
  *
  * The input is a generated SpreadsheetML worksheet (the shape of a large
