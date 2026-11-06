@@ -1,23 +1,20 @@
-# Dependabot version updates, grouped so dependencies that must move together
-# never drift apart in separate PRs. Groups match first-to-last, so the
-# specific ones come before the catch-all.
+# Dependabot version updates. A group exists only for dependencies that MUST
+# move together (one release train, or a hard compatibility table), so
+# updating one alone breaks the install or the build; everything else
+# (`@effect/docgen`, `tsx`, `@effect/language-service`, `@enfect/oxlint`, the
+# changesets CLI, fallow, `@types/node`, …) arrives as its own PR.
 #
 # - `effect`: the Effect release line is a lockstep singleton set (two copies
-#   break Schema / Context identity). `@effect/tsgo` is excluded: it belongs
-#   to the toolchain set below.
+#   break Schema / Context identity; `@effect/platform-node` is released with
+#   the same version). `@effect/tsgo` belongs to the toolchain set below.
 # - `toolchain`: `@effect/tsgo` patches the native `tsc` (`@typescript/native`)
 #   and the `oxlint` / `oxlint-tsgolint` that `vite-plus` pins, matched by
 #   gitHead, and hard-errors (UnsupportedTargetPackageVersionError) at
-#   `pnpm install` on any pairing it has no artifact for; `vite`, `vitest`
-#   and `@vitest/*` must equal vite-plus's own pins; the TS6 alias
-#   (`typescript` → `@typescript/typescript6`), `@effect/language-service`
-#   and the Effect lint rules (`@enfect/oxlint`) ride along. One group, all
-#   update types, so the set lands as one PR — check the `components` table
+#   `pnpm install` on any pairing it has no artifact for; `vitest` and
+#   `@vitest/*` must equal vite-plus's own pins. Check the `components` table
 #   in node_modules/@effect/tsgo/dist/effect-tsgo.cjs before merging it.
-# - `docgen`: `@effect/docgen` runs the examples under `tsx`.
-# - `changesets`, `fallow`: their own small sets.
-# - `minor-and-patch`: everything else, minor and patch only (a major gets
-#   its own PR).
+#   `@enfect/oxlint` is not in it: it takes `@oxlint/plugins` as a range, so
+#   nothing ties it to vite-plus's oxlint.
 #
 # Moved by hand, because Dependabot cannot bump them (do it in the toolchain
 # PR that moves `vite-plus`):
@@ -52,6 +49,7 @@ updates:
         # Exempt from pnpm's release-age hold too (the owner's call).
         - "@enfect/*"
     groups:
+      # One release train: @effect/platform-node ships with the same version.
       effect:
         applies-to: version-updates
         patterns:
@@ -65,6 +63,8 @@ updates:
           - "major"
           - "minor"
           - "patch"
+      # vite-plus pins vitest / oxlint exactly; @effect/tsgo's patch supports
+      # only the oxlint / tsgolint / tsc versions its components table lists.
       toolchain:
         applies-to: version-updates
         patterns:
@@ -72,50 +72,11 @@ updates:
           - "vite"
           - "vitest"
           - "@vitest/*"
-          - "oxlint"
-          - "oxfmt"
-          - "oxlint-tsgolint"
           - "@effect/tsgo"
-          - "@effect/language-service"
           - "@typescript/native"
           - "typescript"
-          - "@typescript/typescript6"
-          - "@oxlint/*"
-          - "@enfect/oxlint"
         update-types:
           - "major"
-          - "minor"
-          - "patch"
-      docgen:
-        applies-to: version-updates
-        patterns:
-          - "@effect/docgen"
-          - "tsx"
-        update-types:
-          - "major"
-          - "minor"
-          - "patch"
-      changesets:
-        applies-to: version-updates
-        patterns:
-          - "@changesets/*"
-        update-types:
-          - "major"
-          - "minor"
-          - "patch"
-      fallow:
-        applies-to: version-updates
-        patterns:
-          - "fallow"
-        update-types:
-          - "major"
-          - "minor"
-          - "patch"
-      minor-and-patch:
-        applies-to: version-updates
-        patterns:
-          - "*"
-        update-types:
           - "minor"
           - "patch"
   - package-ecosystem: "github-actions"
@@ -130,7 +91,3 @@ updates:
       prefix: "ci"
     cooldown:
       default-days: 1
-    groups:
-      github-actions:
-        patterns:
-          - "*"

@@ -56,9 +56,9 @@ catalog:
   # depends on `effect` 4.1.0 (exact) and runs on the workspace singleton (the
   # `effect` override below), so no scoped override is needed. Its
   # `vite.config.ts` load calls Effect APIs, so an `effect` bump re-runs
-  # `vp check` against the plugin too. Part of the `toolchain` Dependabot
-  # group: a new release can add rules at `error`, so it lands with a
-  # `vp check` run.
+  # `vp check` against the plugin too. Ungrouped in Dependabot (it takes
+  # `@oxlint/plugins` as a range, so it is not tied to vite-plus's oxlint): a
+  # new release can add rules at `error`, so it lands with a `vp check` run.
   "@enfect/oxlint": ^0.9.0
   # Peer: the token, declaration and entity grammars are effect-parse parsers.
   "@thomasfosterau/effect-parse": ^0.4.1
