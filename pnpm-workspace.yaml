@@ -101,9 +101,11 @@ catalogs:
     # Caret, not `>=`: on 0.x a minor release may break the combinator API
     # the grammars are written against.
     "@thomasfosterau/effect-parse": ^0.4.1
-    # The floor the package declared before the tooling migration; raising it
-    # is a breaking change.
-    effect: ^4.0.5
+    # The owner's policy: `effect ^4.0.0`, raised only when a dependency of
+    # the library requires more (name it here). None does:
+    # `@thomasfosterau/effect-parse` peers on `effect ^4.0.0`. Raising it is a
+    # breaking change.
+    effect: ^4.0.0
 
 overrides:
   # `effect` MUST be a singleton (see the header): force every resolution to
