@@ -30,7 +30,7 @@ import type { SaxEvent } from "../Sax.ts";
  * console.log(nodes.length) // 1
  * ```
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseFragment = (
@@ -42,7 +42,7 @@ export const parseFragment = (
 /**
  * Parse a stream of HTML chunks into a lenient DOM fragment.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseFragmentStream =
@@ -69,7 +69,7 @@ export const parseFragmentStream =
  * // <html><head></head><body><b>1<i>2</i></b><i>3</i></body></html>
  * ```
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseDocument = (
@@ -81,7 +81,7 @@ export const parseDocument = (
  * Options for {@link parseDocumentFragment}: the HTML options plus the
  * context element.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface HtmlFragmentOptions extends HtmlOptions {
@@ -119,7 +119,7 @@ export interface HtmlFragmentOptions extends HtmlOptions {
  * console.log(text.length) // 1 (a single text node)
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseDocumentFragment = (
@@ -131,7 +131,7 @@ export const parseDocumentFragment = (
 /**
  * Parse a stream of HTML chunks into a full document.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseDocumentStream =
@@ -142,7 +142,7 @@ export const parseDocumentStream =
 /**
  * Options for HTML byte input: the HTML options plus a transport-layer encoding hint.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface HtmlBytesOptions extends HtmlOptions {
@@ -158,7 +158,7 @@ const htmlDecodeOptions = (options: HtmlBytesOptions | undefined) =>
  * sniffing algorithm (byte order mark, transport hint, `<meta charset>`
  * prescan, then windows-1252). Invalid bytes decode to U+FFFD, as in browsers.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseDocumentBytes = (
@@ -172,7 +172,7 @@ export const parseDocumentBytes = (
 /**
  * Parse a stream of HTML bytes into a full document, detecting the encoding.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseDocumentBytesStream =
@@ -186,7 +186,7 @@ export const parseDocumentBytesStream =
 /**
  * The streaming SAX event view of an HTML string.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const events = (input: string, options?: HtmlOptions): Stream.Stream<SaxEvent, SaxError> =>

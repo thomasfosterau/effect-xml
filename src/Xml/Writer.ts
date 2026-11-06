@@ -48,7 +48,7 @@ import { XmlDocument, type XmlAttribute, type XmlElement, type XmlNode } from ".
 /**
  * What the writer writes. Names are namespace-aware {@link QName}s.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type WriterEvent =
@@ -75,7 +75,7 @@ const toQName = (name: string | QName): QName =>
 /**
  * A start tag.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const start = (
@@ -92,7 +92,7 @@ export const start = (
 /**
  * An end tag (for the innermost open element).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const end: WriterEvent = { _tag: "EndElement" };
@@ -100,7 +100,7 @@ export const end: WriterEvent = { _tag: "EndElement" };
 /**
  * Character data.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const text = (data: string): WriterEvent => ({ _tag: "Text", data });
@@ -108,7 +108,7 @@ export const text = (data: string): WriterEvent => ({ _tag: "Text", data });
 /**
  * A CDATA section.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const cdata = (data: string): WriterEvent => ({ _tag: "CData", data });
@@ -116,7 +116,7 @@ export const cdata = (data: string): WriterEvent => ({ _tag: "CData", data });
 /**
  * A comment.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const comment = (data: string): WriterEvent => ({ _tag: "Comment", data });
@@ -124,7 +124,7 @@ export const comment = (data: string): WriterEvent => ({ _tag: "Comment", data }
 /**
  * A processing instruction.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const processingInstruction = (target: string, data = ""): WriterEvent => ({
@@ -167,7 +167,7 @@ const eventOf = (node: XmlNode): WriterEvent =>
  * The events of a node (without recursion, so any depth is fine).
  *
  * @yields The node's writer events, in document order.
- * @since 0.3.0
+ * @since 0.1.0
  * @category conversions
  */
 export function* events(node: XmlNode | XmlDocument): Generator<WriterEvent> {
@@ -186,7 +186,7 @@ export function* events(node: XmlNode | XmlDocument): Generator<WriterEvent> {
 /**
  * What can't be written as asked.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class SerializationError extends Schema.TaggedError<SerializationError>()(
@@ -201,7 +201,7 @@ export class SerializationError extends Schema.TaggedError<SerializationError>()
 /**
  * Options for the writer: declaration, encoding, indentation, handling of characters XML 1.0 forbids, and namespace management.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface WriterOptions {
@@ -739,7 +739,7 @@ const lift = (out: string | SerializationError) =>
 /**
  * Write a stream of events as a stream of XML text.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export const write =
@@ -757,7 +757,7 @@ export const write =
 /**
  * Encode text as UTF-8, or as UTF-16LE with a byte order mark.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export const encode =
@@ -787,7 +787,7 @@ export const encode =
 /**
  * Write a stream of events as bytes in `options.encoding` (default UTF-8).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export const writeBytes =
@@ -879,7 +879,7 @@ export const serializeSync = (
 /**
  * Serialize a node or a document, declaring the namespaces it uses on its root.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category serialization
  */
 export const serialize = (

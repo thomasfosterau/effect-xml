@@ -22,7 +22,7 @@
 /**
  * How often a particle may occur: a count, or `"unbounded"`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type MaxOccurs = number | "unbounded";
@@ -30,7 +30,7 @@ export type MaxOccurs = number | "unbounded";
 /**
  * Which namespaces a wildcard admits: any, all but some, or only some (`""` is no namespace).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type NamespaceConstraint =
@@ -45,7 +45,7 @@ export type NamespaceConstraint =
  * requires a global declaration and validates against it, `"lax"` validates
  * only when there is one, and `"skip"` accepts anything well-formed.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface Wildcard {
@@ -56,7 +56,7 @@ export interface Wildcard {
 /**
  * An element particle: a reference to an element declaration (by key) with its occurrence bounds.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface ElementParticle {
@@ -72,7 +72,7 @@ export interface ElementParticle {
 /**
  * An `xs:any` particle.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface AnyParticle {
@@ -85,7 +85,7 @@ export interface AnyParticle {
 /**
  * A model group (`xs:sequence`, `xs:choice` or `xs:all`) with its occurrence bounds.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface GroupParticle {
@@ -98,7 +98,7 @@ export interface GroupParticle {
 /**
  * A term of a content model, with its occurrence bounds.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type Particle = ElementParticle | AnyParticle | GroupParticle;
@@ -106,7 +106,7 @@ export type Particle = ElementParticle | AnyParticle | GroupParticle;
 /**
  * What a complex type's content may be: nothing, character data of a simple type, or elements.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type Content =
@@ -122,7 +122,7 @@ export type Content =
  * be satisfied in turn. For `QName` types, enumerated values are written in
  * Clark notation.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface Facets {
@@ -145,7 +145,7 @@ export interface Facets {
  *
  * A restriction of a list or union type keeps the variety of its base.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface SimpleType {
@@ -162,7 +162,7 @@ export interface SimpleType {
 /**
  * An attribute use: an attribute a complex type allows or requires.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface AttributeUse {
@@ -178,7 +178,7 @@ export interface AttributeUse {
 /**
  * The derivations a declaration or type blocks.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type Derivation = "extension" | "restriction" | "substitution";
@@ -186,7 +186,7 @@ export type Derivation = "extension" | "restriction" | "substitution";
 /**
  * A complex type definition with its effective attribute uses and content model.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface ComplexType {
@@ -207,7 +207,7 @@ export interface ComplexType {
 /**
  * A type definition.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type TypeDefinition = SimpleType | ComplexType;
@@ -218,7 +218,7 @@ export type TypeDefinition = SimpleType | ComplexType;
  * `selector` and `fields` are the constraint's XPath expressions; `namespaces`
  * binds the prefixes they use.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface IdentityConstraint {
@@ -234,7 +234,7 @@ export interface IdentityConstraint {
 /**
  * An element declaration.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface ElementDeclaration {
@@ -255,7 +255,7 @@ export interface ElementDeclaration {
 /**
  * A global attribute declaration, used by attribute wildcards that validate what they match.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface AttributeDeclaration {
@@ -266,7 +266,7 @@ export interface AttributeDeclaration {
 /**
  * A compiled schema: every element declaration, type definition and global attribute declaration.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface Model {
@@ -281,7 +281,7 @@ export interface Model {
 /**
  * The XML Schema namespace, which names the built-in datatypes.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constants
  */
 export const XS = "http://www.w3.org/2001/XMLSchema";
@@ -289,7 +289,7 @@ export const XS = "http://www.w3.org/2001/XMLSchema";
 /**
  * The XML Schema instance namespace (`xsi:type`, `xsi:nil`).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constants
  */
 export const XSI = "http://www.w3.org/2001/XMLSchema-instance";
@@ -297,7 +297,7 @@ export const XSI = "http://www.w3.org/2001/XMLSchema-instance";
 /**
  * The expanded name of `local` in `namespace`, in the Clark notation the model's keys use.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category names
  */
 export const clark = (namespace: string, local: string): string =>
@@ -306,7 +306,7 @@ export const clark = (namespace: string, local: string): string =>
 /**
  * The key of a built-in datatype (`builtin("string")` is `{http://www.w3.org/2001/XMLSchema}string`).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category names
  */
 export const builtin = (local: string): string => clark(XS, local);

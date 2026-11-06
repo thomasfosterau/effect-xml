@@ -25,7 +25,7 @@ import { AtomicTypes, derivesFrom, isNumericType } from "./types.ts";
  * function items too, but have their own classes ({@link MapItem},
  * {@link ArrayItem}).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class FunctionItem {
@@ -68,7 +68,7 @@ type Entry = readonly [key: AtomicValue, value: Sequence];
  * console.log(Option.isSome(map.get(XQuery.AtomicValue.double(1)))) // true
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class MapItem {
@@ -131,7 +131,7 @@ export class MapItem {
 /**
  * An array item: a list of members, each a sequence.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class ArrayItem {
@@ -158,7 +158,7 @@ export class ArrayItem {
 /**
  * An XDM item: a node, an atomic value, a map, an array or a function.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type Item = XdmNode | AtomicValue | MapItem | ArrayItem | FunctionItem;
@@ -166,7 +166,7 @@ export type Item = XdmNode | AtomicValue | MapItem | ArrayItem | FunctionItem;
 /**
  * An XDM sequence: an ordered list of items. A sequence never contains another sequence, and a single item is a sequence of one.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type Sequence = ReadonlyArray<Item>;
@@ -174,7 +174,7 @@ export type Sequence = ReadonlyArray<Item>;
 /**
  * Whether an item is a node.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category guards
  */
 export const isNode = (item: Item): item is XdmNode => Predicate.isTagged(item, "XdmNode");
@@ -182,7 +182,7 @@ export const isNode = (item: Item): item is XdmNode => Predicate.isTagged(item, 
 /**
  * Whether an item is an atomic value.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category guards
  */
 export const isAtomic = (item: Item): item is AtomicValue =>
@@ -191,7 +191,7 @@ export const isAtomic = (item: Item): item is AtomicValue =>
 /**
  * Whether an item is a function item, as `instance of function(*)` tests it: maps and arrays are functions too.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category guards
  */
 export const isFunction = (item: Item): item is FunctionItem | MapItem | ArrayItem =>
@@ -249,7 +249,7 @@ const numericKey = (atomic: AtomicValue): string => {
  * key); binary values by bytes; and the other types by their canonical form
  * within their primitive type.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category maps
  */
 export const sameKey = (atomic: AtomicValue): string => {
@@ -324,7 +324,7 @@ const atomizeItem = (item: Item, out: Array<AtomicValue>): Option.Option<XQueryE
  * if (Result.isSuccess(atoms)) console.log(atoms.success.map((a) => a.type.name)) // ["untypedAtomic", "integer"]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category operations
  */
 export const atomize = (
@@ -342,7 +342,7 @@ export const atomize = (
  * an atomic value cast to `xs:string`; function items (maps and arrays
  * included) fail with `err:FOTY0014`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category operations
  */
 export const stringValue = (item: Item): Result.Result<string, XQueryError> => {
@@ -369,7 +369,7 @@ const noEbv = (why: string): Result.Result<boolean, XQueryError> =>
  * console.log(XQuery.effectiveBooleanValue([XQuery.AtomicValue.string("")])) // a Success of false
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category operations
  */
 export const effectiveBooleanValue = (sequence: Sequence): Result.Result<boolean, XQueryError> => {

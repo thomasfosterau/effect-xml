@@ -15,7 +15,7 @@ import type { XmlElement } from "../Xml/Node.ts";
  * (strings, URIs, dates, times and durations) is its whitespace-normalized
  * lexical form, checked against the type and its facets.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type SimpleValue =
@@ -32,7 +32,7 @@ export type SimpleValue =
  * (`xsi:nil="true"`), a DOM element when a wildcard matched it, or a record
  * for a complex type.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type XsdValue = SimpleValue | null | XmlElement | XsdRecord;
@@ -50,7 +50,7 @@ export type XsdValue = SimpleValue | null | XmlElement | XsdRecord;
  * matched by `anyAttribute`, by expanded name) and `$type` (the type named by
  * `xsi:type`, when it is not the declared one).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface XsdRecord {
@@ -64,7 +64,7 @@ export interface XsdRecord {
 /**
  * A valid document's root: the document element's expanded name and its value.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface Validated<A = XsdValue> {

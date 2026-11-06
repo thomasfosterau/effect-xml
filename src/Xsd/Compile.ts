@@ -21,7 +21,7 @@ import { XS, type Model } from "./Model.ts";
  * without a `schemaLocation` loads nothing: its namespace's components must
  * come from another document.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface CompileOptions<E = never, R = never> {
@@ -107,7 +107,7 @@ const referencesOf = (doc: SchemaDocument): ReadonlyArray<Pending> => {
  * console.log(Object.keys(model.elements)) // ["greeting"]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export const compile = <E = never, R = never>(

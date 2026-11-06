@@ -24,7 +24,7 @@ import type { Validated, XsdValue } from "./Value.ts";
  * Everything schema-aware parsing can fail with: a parse error, a schema the
  * model can't be validated with, or the first way the document is invalid.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export type XsdError = SaxError | XsdSchemaError | XsdValidationError;
@@ -32,7 +32,7 @@ export type XsdError = SaxError | XsdSchemaError | XsdValidationError;
 /**
  * Options for validating: which global element the document must have as its root.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface ValidateOptions {
@@ -43,7 +43,7 @@ export interface ValidateOptions {
 /**
  * Options for the parsing functions: the validation options plus the SAX options that apply to XML.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface ParseOptions extends ValidateOptions {
@@ -86,7 +86,7 @@ const acceptAll = (validator: Validator, events: ReadonlyArray<Sax.SaxEvent>): F
  * Validate a stream of SAX events against a schema as they pass through,
  * failing the stream at the first violation.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category validating
  */
 export const validate =
@@ -108,7 +108,7 @@ export const validate =
 /**
  * Validate a stream of SAX events against a schema and build the document's typed value.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category validating
  */
 export const decode =
@@ -135,7 +135,7 @@ export const decode =
  * Options for {@link select}: the validation options, plus the namespace
  * prefixes a string path is compiled with.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface SelectOptions extends ValidateOptions, CompileOptions {}
@@ -194,7 +194,7 @@ export interface SelectOptions extends ValidateOptions, CompileOptions {}
  * console.log(Effect.runSync(entries)) // [{ n: 1 }, { n: 2 }]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category validating
  */
 export const select =
@@ -256,7 +256,7 @@ export const select =
  * console.log(invalid.message) // Invalid document at 1:1 (/order): the attribute id is required
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parse = (
@@ -269,7 +269,7 @@ export const parse = (
 /**
  * Parse and validate a stream of XML text against a schema. Chunks may split markup anywhere.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseStream =
@@ -280,7 +280,7 @@ export const parseStream =
 /**
  * Parse and validate XML bytes against a schema, detecting the encoding.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseBytes = (
@@ -293,7 +293,7 @@ export const parseBytes = (
 /**
  * Parse and validate a stream of XML bytes against a schema, detecting the encoding.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseBytesStream =
@@ -306,7 +306,7 @@ export const parseBytesStream =
  * the typed values of one child element of the document element (see
  * {@link select}), typed by `S`'s property of the same name.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export type Streams<S> = {
@@ -319,7 +319,7 @@ export type Streams<S> = {
  * A parser for documents whose root is one global element, producing values
  * of type `A`, with a typed stream per child element named in `S`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export interface Parser<A, S = Record<string, never>> {
@@ -385,7 +385,7 @@ const childPath = (
  * `Xsd.generate` writes these types from the same model, so a generated
  * module's parsers are typed correctly by construction.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parser = <A = XsdValue, S = Record<string, never>>(

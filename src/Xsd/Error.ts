@@ -20,7 +20,7 @@ const ErrorPosition = Schema.Struct({
  * support. `location` is the schema document (as it was named to the
  * compiler or in an `include` / `import`), when there is one.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class XsdSchemaError extends Schema.TaggedError<XsdSchemaError>()("XsdSchemaError", {
@@ -37,7 +37,7 @@ export class XsdSchemaError extends Schema.TaggedError<XsdSchemaError>()("XsdSch
 /**
  * What kind of rule a document broke, for callers that branch on it.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export type ValidationRule =
@@ -57,7 +57,7 @@ export type ValidationRule =
  * positions counted among same-named siblings), `position` is where in the
  * input the offending construct starts.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class XsdValidationError extends Schema.TaggedError<XsdValidationError>()(

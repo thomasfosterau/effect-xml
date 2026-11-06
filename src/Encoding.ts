@@ -53,7 +53,7 @@ const makeTextDecoder: (
 /**
  * How the encoding was determined.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type EncodingSource = "bom" | "hint" | "declaration" | "meta" | "default";
@@ -61,7 +61,7 @@ export type EncodingSource = "bom" | "hint" | "declaration" | "meta" | "default"
 /**
  * The result of sniffing: the encoding, and how many leading bytes are a byte order mark.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface Detected {
@@ -74,14 +74,14 @@ export interface Detected {
 /**
  * Sniffing needs more bytes than are available yet.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export const NeedMore = { _tag: "NeedMore" } as const;
 /**
  * The {@link NeedMore} value's type.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type NeedMore = typeof NeedMore;
@@ -89,7 +89,7 @@ export type NeedMore = typeof NeedMore;
 /**
  * Options for {@link sniffXml} and {@link sniffHtml}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface SniffOptions {
@@ -166,7 +166,7 @@ const declarationEncoding =
 /**
  * Canonical name of an encoding label, or null when it is not one we can decode.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category sniffing
  */
 export const canonicalEncoding = (label: string): string | null => {
@@ -266,7 +266,7 @@ const declarationText = (head: Uint8Array, family: Family, from: number): string
  * Appendix F). Returns {@link NeedMore} until enough bytes are available;
  * pass `final` once `head` is the whole input.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category sniffing
  */
 export const sniffXml = (
@@ -317,7 +317,7 @@ const PRESCAN_WINDOW = 1024;
  * algorithm): byte order mark, transport hint, `<meta charset>` prescan of the
  * first 1024 bytes, then windows-1252.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category sniffing
  */
 export const sniffHtml = (
@@ -505,7 +505,7 @@ const concat = (a: Uint8Array, b: Uint8Array): Uint8Array => {
 /**
  * Options for {@link decode} and {@link decodeBytes}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface DecodeOptions extends SniffOptions {
@@ -586,7 +586,7 @@ const lift = (out: string | DecodeError | LimitExceeded) =>
  * the input (see {@link sniffXml} and {@link sniffHtml}). Chunks may split
  * multi-byte sequences anywhere.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category decoding
  */
 export const decode =
@@ -604,7 +604,7 @@ export const decode =
 /**
  * Decode a complete byte array into text, detecting the encoding.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category decoding
  */
 export const decodeBytes = (

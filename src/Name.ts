@@ -26,7 +26,7 @@ const matches =
 /**
  * Is `s` a valid XML `Name` (may contain a single colon for a prefix)?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category validation
  */
 export const isValidName: (s: string) => boolean = matches(QNameGrammar);
@@ -34,7 +34,7 @@ export const isValidName: (s: string) => boolean = matches(QNameGrammar);
 /**
  * Is `s` a valid XML `NCName` (no colon)?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category validation
  */
 export const isValidNCName: (s: string) => boolean = matches(NCNameGrammar);
@@ -46,7 +46,7 @@ export const isValidNCName: (s: string) => boolean = matches(NCNameGrammar);
 /**
  * A validated element tag name.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category names
  */
 export type TagName = string & Brand.Brand<"TagName">;
@@ -54,7 +54,7 @@ export type TagName = string & Brand.Brand<"TagName">;
 /**
  * A validated attribute name.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category names
  */
 export type AttrName = string & Brand.Brand<"AttrName">;
@@ -63,7 +63,7 @@ export type AttrName = string & Brand.Brand<"AttrName">;
  * Validating constructor for {@link TagName}. Throws `Brand.BrandError` on an
  * invalid name; use `.option` / `.result` for non-throwing variants.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category names
  */
 export const TagName = Brand.make<TagName>(
@@ -73,7 +73,7 @@ export const TagName = Brand.make<TagName>(
 /**
  * Validating constructor for {@link AttrName}.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category names
  */
 export const AttrName = Brand.make<AttrName>(
@@ -84,7 +84,7 @@ export const AttrName = Brand.make<AttrName>(
  * Cast a string the lexer has already validated to a {@link TagName} without
  * re-running the regex. Internal use only.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category names
  */
 export const unsafeTagName = (s: string): TagName =>
@@ -94,7 +94,7 @@ export const unsafeTagName = (s: string): TagName =>
 /**
  * Cast a lexer-validated string to an {@link AttrName}. Internal use only.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category names
  */
 export const unsafeAttrName = (s: string): AttrName =>
@@ -108,7 +108,7 @@ export const unsafeAttrName = (s: string): AttrName =>
 /**
  * The namespace URIs the `xml:` and `xmlns:` prefixes are implicitly bound to in every document.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category namespaces
  */
 export const Namespaces = {
@@ -127,7 +127,7 @@ export const Namespaces = {
  * which extends `Data.Class`) so they can be used as map keys, compared with
  * `Equal.equals`, and round-tripped through `Schema`.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category names
  */
 export class QName extends Schema.Class<QName>("QName")({

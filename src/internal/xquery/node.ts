@@ -35,7 +35,7 @@ import type {
 /**
  * The seven kinds of XDM node.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type NodeKind =
@@ -50,7 +50,7 @@ export type NodeKind =
 /**
  * A namespace binding: what a namespace node stands for.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface NamespaceBinding {
@@ -71,7 +71,7 @@ interface Tree {
 /**
  * Options for {@link XdmNode.fromDocument} and {@link XdmNode.fromElement}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface NodeOptions {
@@ -185,7 +185,7 @@ const textUnder = (nodes: ReadonlyArray<XmlNode>): string =>
  * }
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class XdmNode {
@@ -583,7 +583,7 @@ const inScopeNamespaces = (node: XdmNode): ReadonlyArray<NamespaceBinding> => {
  * Nodes in different trees are ordered by when their trees were made, which
  * is stable but otherwise arbitrary, as XDM allows.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category ordering
  */
 export const compareDocumentOrder = (a: XdmNode, b: XdmNode): -1 | 0 | 1 => XdmNode.compare(a, b);
@@ -591,7 +591,7 @@ export const compareDocumentOrder = (a: XdmNode, b: XdmNode): -1 | 0 | 1 => XdmN
 /**
  * Nodes in document order with duplicates removed, as a path expression's result is.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category ordering
  */
 export const sortDocumentOrder = (nodes: ReadonlyArray<XdmNode>): ReadonlyArray<XdmNode> =>

@@ -43,7 +43,7 @@ import { fixed } from "./internal/position.ts";
  * resolved on read (see the module docs); any object with these three
  * numbers is a `Position`.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category positions
  */
 export interface Position {
@@ -61,7 +61,7 @@ export interface Position {
  * The parsers produce `Span`s whose `start` and `end` are getters, made on
  * read (see the module docs); any object with these two positions is a `Span`.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category positions
  */
 export interface Span {
@@ -81,7 +81,7 @@ export interface Span {
  * console.log(Equal.equals(makePosition({ offset: 0, line: 1, column: 1 }), origin)) // true
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category positions
  */
 export const makePosition = (position: Position): Position =>
@@ -90,7 +90,7 @@ export const makePosition = (position: Position): Position =>
 /**
  * The position at the very start of an input.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category positions
  */
 export const origin: Position = /*#__PURE__*/ makePosition({ offset: 0, line: 1, column: 1 });
@@ -102,7 +102,7 @@ export const origin: Position = /*#__PURE__*/ makePosition({ offset: 0, line: 1,
  * treated as a column advance; CRLF handling (collapsing `\r\n` to one line) is
  * the lexer's responsibility since it owns lookahead state.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category positions
  */
 export const advance = (pos: Position, char: string): Position =>
@@ -113,7 +113,7 @@ export const advance = (pos: Position, char: string): Position =>
 /**
  * Build a span from two positions.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category positions
  */
 export const span = (start: Position, end: Position): Span => ({ start, end });
@@ -121,7 +121,7 @@ export const span = (start: Position, end: Position): Span => ({ start, end });
 /**
  * Format a position as `line:column` for human-readable diagnostics.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category positions
  */
 export const showPosition = (pos: Position): string => `${pos.line}:${pos.column}`;

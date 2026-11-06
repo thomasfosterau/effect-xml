@@ -56,7 +56,7 @@ import type { XPathError, CompileOptions, Path } from "./XPath.ts";
  * console.log(Effect.runSync(visible)) // ["1", "3"]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category selectors
  */
 export const select =
