@@ -20,7 +20,7 @@ Everything fails through typed errors (`Schema.TaggedError`, unioned as `SaxErro
 pnpm add @thomasfosterau/effect-xml effect @thomasfosterau/effect-parse
 ```
 
-`effect` (4.x, `^4.0.5`) and `@thomasfosterau/effect-parse` (`^0.1.0`) are peer dependencies, so your application owns the single copy of each. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node ≥ 22, browsers, workers).
+`effect` (`^4.0.0`) and `@thomasfosterau/effect-parse` (`^0.4.1`) are peer dependencies, so your application owns the single copy of each. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node ≥ 22, browsers, workers).
 
 ## Quick start
 
