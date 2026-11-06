@@ -498,12 +498,12 @@ export default defineConfig({
       },
       // Parsing throughput on a generated SpreadsheetML worksheet (not a gate).
       bench: {
-        command: "tsx bench/parse.ts",
+        command: "vpx bench/parse.ts",
         cache: false,
       },
       // The tour in examples/usage.ts.
       example: {
-        command: "tsx examples/usage.ts",
+        command: "vpx examples/usage.ts",
         cache: false,
       },
     },
