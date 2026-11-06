@@ -91,3 +91,16 @@ updates:
       prefix: "ci"
     cooldown:
       default-days: 1
+  # The .devcontainer/ features (the image tag moves with vite-plus by hand).
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+    cooldown:
+      default-days: 1

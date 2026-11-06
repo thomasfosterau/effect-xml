@@ -12,6 +12,8 @@ pnpm install
 
 This installs the dependencies, the Vite+ git hooks, and patches the native `tsc` / `oxlint` with `@effect/tsgo` (the `prepare` script). Use `vp` (Vite+, installed as a dev dependency; `pnpm exec vp` if it is not on your PATH) for everything else.
 
+Open in a Codespace or Dev Container: `.devcontainer/` provisions it with the same hook as agent sessions.
+
 ## Branches
 
 Branch off `trunk`, rebase rather than merge, squash-merge with a conventional prefix: see [AGENTS.md](AGENTS.md#branches-and-pull-requests).
