@@ -37,7 +37,7 @@ catalog:
   # Tests only: the conformance gates read their fixtures' bytes through the
   # `FileSystem` service (`NodeFileSystem.layer`). Released in lockstep with
   # `effect`, so it is pinned to the same version.
-  "@effect/platform-node": 4.1.0
+  "@effect/platform-node": 4.1.2
   # Effect Language Service as a native (TypeScript-Go) binary — the TS7 side
   # of the 6/7 split. `effect-tsgo patch` overwrites the native `tsc` binary
   # with an Effect-patched build matched by gitHead, so this pins in lockstep
@@ -66,7 +66,7 @@ catalog:
   # Must equal the vitest that vite-plus bundles (see `vitest` below); vite-plus
   # refuses to run coverage on a mismatch.
   "@vitest/coverage-istanbul": 5.0.5
-  effect: 4.1.0
+  effect: 4.1.2
   fallow: 3.39.0
   # Exists only for docgen, which requires `tsx` as a peer and spawns it to
   # run the compiled examples. Scripts and tasks run TypeScript with `vpx`.
