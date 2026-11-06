@@ -34,7 +34,7 @@ import * as Encoding from "./Encoding.ts";
 /**
  * A resolved attribute on a start tag.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export interface Attribute {
@@ -47,7 +47,7 @@ export interface Attribute {
  * The typed SAX event stream alphabet. Defined as a `Data.TaggedEnum`, so it
  * comes with value equality, exhaustive `$match`, and `$is` guards for free.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export type SaxEvent = Data.TaggedEnum<{
@@ -90,7 +90,7 @@ export type SaxEvent = Data.TaggedEnum<{
 /**
  * Constructors and matchers for {@link SaxEvent}.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export const SaxEvent = Data.taggedEnum<SaxEvent>();
@@ -100,7 +100,7 @@ export const SaxEvent = Data.taggedEnum<SaxEvent>();
 /**
  * Is this event a `StartElement`?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isStartElement = SaxEvent.$is("StartElement");
@@ -108,7 +108,7 @@ export const isStartElement = SaxEvent.$is("StartElement");
 /**
  * Is this event an `EndElement`?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isEndElement = SaxEvent.$is("EndElement");
@@ -116,7 +116,7 @@ export const isEndElement = SaxEvent.$is("EndElement");
 /**
  * Is this event a `Text` run?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isText = SaxEvent.$is("Text");
@@ -124,7 +124,7 @@ export const isText = SaxEvent.$is("Text");
 /**
  * Is this event a `Comment`?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isComment = SaxEvent.$is("Comment");
@@ -132,7 +132,7 @@ export const isComment = SaxEvent.$is("Comment");
 /**
  * Is this event a `CData` section?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isCData = SaxEvent.$is("CData");
@@ -140,7 +140,7 @@ export const isCData = SaxEvent.$is("CData");
 /**
  * Is this event a `ProcessingInstruction`?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isProcessingInstruction = SaxEvent.$is("ProcessingInstruction");
@@ -148,7 +148,7 @@ export const isProcessingInstruction = SaxEvent.$is("ProcessingInstruction");
 /**
  * Is this event a `Doctype`?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isDoctype = SaxEvent.$is("Doctype");
@@ -156,7 +156,7 @@ export const isDoctype = SaxEvent.$is("Doctype");
 /**
  * Is this event an `XmlDeclaration`?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isXmlDeclaration = SaxEvent.$is("XmlDeclaration");
@@ -168,7 +168,7 @@ export const isXmlDeclaration = SaxEvent.$is("XmlDeclaration");
 /**
  * Options for {@link tokenize} and the parsers built on it.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category options
  */
 export interface SaxOptions {
@@ -208,7 +208,7 @@ export interface SaxOptions {
    * resource limit the start of the token that broke it. For consumers that
    * never read spans.
    *
-   * @since 0.3.0
+   * @since 0.1.0
    */
   readonly positions?: boolean | undefined;
 }
@@ -260,7 +260,7 @@ const BATCH = 1024;
  * Stream.fromIterable(["<roo", "t>hi</root>"]).pipe(Sax.tokenize())
  * ```
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category tokenizing
  */
 export const tokenize =
@@ -320,7 +320,7 @@ export const tokenize =
 /**
  * Options for byte input: the SAX options plus an external encoding hint.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface SaxBytesOptions extends SaxOptions {
@@ -344,7 +344,7 @@ export const decodeOptions = (options: SaxBytesOptions | undefined): Encoding.De
  * from the input (see {@link Encoding.sniffXml} and {@link Encoding.sniffHtml}),
  * and chunks may split multi-byte sequences anywhere.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category tokenizing
  */
 export const tokenizeBytes =
@@ -378,7 +378,7 @@ export const tokenizeByteArray = (
 /**
  * Tokenize a complete in-memory string into a stream of SAX events.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category tokenizing
  */
 export const tokenizeString = (
@@ -415,7 +415,7 @@ export const tokenizeString = (
  * console.log(elements) // 3
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category tokenizing
  */
 export const forEach = (
@@ -442,7 +442,7 @@ export const forEach = (
  * Options for {@link forEach}: the SAX options for bytes, and whether to read
  * strictly.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface ForEachOptions extends SaxBytesOptions {
@@ -472,7 +472,7 @@ export interface ForEachOptions extends SaxBytesOptions {
  * console.log(events.map((e) => e._tag)) // ["StartElement", "Text", "EndElement"]
  * ```
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category tokenizing
  */
 export const collect = (
@@ -491,7 +491,7 @@ export const collect = (
 /**
  * Keep only `StartElement` events.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category selectors
  */
 export const startElements = <E, R>(self: Stream.Stream<SaxEvent, E, R>) =>
@@ -500,7 +500,7 @@ export const startElements = <E, R>(self: Stream.Stream<SaxEvent, E, R>) =>
 /**
  * Keep only `EndElement` events.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category selectors
  */
 export const endElements = <E, R>(self: Stream.Stream<SaxEvent, E, R>) =>
@@ -509,7 +509,7 @@ export const endElements = <E, R>(self: Stream.Stream<SaxEvent, E, R>) =>
 /**
  * Keep only `Text` events.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category selectors
  */
 export const texts = <E, R>(self: Stream.Stream<SaxEvent, E, R>) => Stream.filter(self, isText);
@@ -517,7 +517,7 @@ export const texts = <E, R>(self: Stream.Stream<SaxEvent, E, R>) => Stream.filte
 /**
  * Keep only start/end events whose name matches `name`.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category selectors
  */
 export const named =
@@ -533,7 +533,7 @@ export const named =
  * Select the subtrees matching a path, each built into an element while the
  * rest of the document streams past (see `Xml/Select.ts`).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category selectors
  */
 export * from "./Xml/Select.ts";
@@ -545,7 +545,7 @@ export * from "./Xml/Select.ts";
 /**
  * Look up an attribute value by name on a start element.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category attributes
  */
 export const getAttribute = (

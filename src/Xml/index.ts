@@ -1,13 +1,13 @@
 /**
  * The `Xml` module: typed DOM, tree builder, and high-level parsing.
  *
- * @since 0.2.0
+ * @since 0.1.0
  */
 
 /**
  * The DOM node classes, constructors and serializers.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export * from "./Node.ts";
@@ -15,7 +15,7 @@ export * from "./Node.ts";
 /**
  * Cursors: zipper-style navigation over the DOM.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category navigation
  */
 export * from "./Cursor.ts";
@@ -23,7 +23,7 @@ export * from "./Cursor.ts";
 /**
  * The SAX-to-DOM tree builder.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export * from "./TreeBuilder.ts";
@@ -31,7 +31,7 @@ export * from "./TreeBuilder.ts";
 /**
  * One-call parsing of strings and streams.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export * from "./Xml.ts";
@@ -40,42 +40,42 @@ export * from "./Xml.ts";
  * Plain trees: elements as plain objects and text as strings, built faster
  * than the DOM.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export * from "./Plain.ts";
 /**
  * Writing XML: namespace management, indentation and streaming output.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category modules
  */
 export * as Writer from "./Writer.ts";
 /**
  * Exclusive XML Canonicalization 1.0.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category modules
  */
 export * as C14n from "./C14n.ts";
 /**
  * Namespace-qualified name builders for lookups by namespace URI and local name.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category modules
  */
 export * as Ns from "./Ns.ts";
 /**
  * XPath 1.0 (in XPath 3.1's compatibility mode), compiled and evaluated over the DOM.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category modules
  */
 export * as XPath from "./XPath.ts";
 /**
  * Schema-driven binding: decode XML into a `Schema`'s type and encode it back, with annotations for attributes, elements and text.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category modules
  */
 export * as Bind from "./Bind.ts";

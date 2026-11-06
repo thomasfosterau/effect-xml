@@ -28,7 +28,7 @@ import type { ComplexType, Model } from "./Model.ts";
 /**
  * Options for {@link generate}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface GenerateOptions {
@@ -195,7 +195,7 @@ const wrap = (ts: string): string => (ts.includes(" | ") ? `(${ts})` : ts);
  * console.log(source.includes(`export const greeting = Xsd.parser<string>(model, "greeting");`)) // true
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category generating
  */
 export const generate = (

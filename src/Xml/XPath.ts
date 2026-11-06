@@ -117,7 +117,7 @@ import {
 /**
  * The axes a step can move along: XPath's thirteen.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category syntax
  */
 export type Axis =
@@ -141,7 +141,7 @@ export type Axis =
  * `element(…)`, …) shows as `node()` with a `position()` predicate first
  * (see {@link Expr}).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category syntax
  */
 export type NodeTest =
@@ -154,7 +154,7 @@ export type NodeTest =
 /**
  * One step of a location path: an axis, a node test and predicates.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category syntax
  */
 export interface Step {
@@ -166,7 +166,7 @@ export interface Step {
 /**
  * A parsed location path: its steps, and whether it starts at the root.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category syntax
  */
 export interface LocationPath {
@@ -178,7 +178,7 @@ export interface LocationPath {
  * The functions of the syntax view ({@link Expr}): those of the subset this
  * module started as. Calls of the other functions appear as `position()`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category syntax
  */
 export type Fn =
@@ -195,7 +195,7 @@ export type Fn =
 /**
  * The binary operators of the syntax view ({@link Expr}).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category syntax
  */
 export type Op = "or" | "and" | "=" | "!=" | "<" | "<=" | ">" | ">=";
@@ -209,7 +209,7 @@ export type Op = "or" | "and" | "=" | "!=" | "<" | "<=" | ">" | ">=";
  * function) appears as a call of `position()`, which streaming selection
  * (`Sax.select`) rejects, as it rejects positions.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category syntax
  */
 export type Expr =
@@ -224,7 +224,7 @@ export type Expr =
  * {@link evaluate}) raised an error. `reason` ends with the XPath error
  * code, as in `(err:XPST0003)`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class XPathError extends Schema.TaggedError<XPathError>()("XPathError", {
@@ -240,7 +240,7 @@ export class XPathError extends Schema.TaggedError<XPathError>()("XPathError", {
 /**
  * Options for {@link compile}: namespace bindings for prefixes, the namespace of unprefixed element names, and the variables in scope.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface CompileOptions {
@@ -258,7 +258,7 @@ export interface CompileOptions {
 /**
  * A compiled expression: its text, and its syntax view.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface Path {
@@ -355,7 +355,7 @@ const build = (
  * mode. It fails with an {@link XPathError} at the offset of the problem: a
  * syntax error, or a prefix, function or variable that is not in scope.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export const compile = (
@@ -587,7 +587,7 @@ const printExpr = (e: Expr): string =>
  * What a path selects: elements, attributes, and text, comment and PI nodes.
  * Attributes have no `_tag`; tell them apart with `instanceof XmlAttribute`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type XPathNode =
@@ -601,7 +601,7 @@ export type XPathNode =
 /**
  * Where a path is evaluated from.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type Context = XmlDocument | XmlElement | Cursor;
@@ -611,7 +611,7 @@ export type Context = XmlDocument | XmlElement | Cursor;
  * document, an element or a cursor stands for the node it is). A value of a
  * variable, and an item of what {@link evaluate} returns.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type Value = string | number | boolean | Context | XPathNode;
@@ -619,7 +619,7 @@ export type Value = string | number | boolean | Context | XPathNode;
 /**
  * Options for evaluating a compiled expression: the values of its variables.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface EvaluateOptions {
@@ -781,7 +781,7 @@ const stringOf = (item: Item): Option.Option<string> => Result.getSuccess(string
  * not nodes are left out). From a document, `/` and relative paths start at
  * the document node; the document node itself is never returned.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const select = (
@@ -815,7 +815,7 @@ const cursorAt = (node: XdmNode, element: XmlElement, context: Context): Cursor 
 /**
  * The elements `path` selects, as cursors (with inherited `xml:lang`, `xml:base` and `xml:space`).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const cursors = (
@@ -832,7 +832,7 @@ export const cursors = (
 /**
  * The elements `path` selects.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const elements = (
@@ -847,7 +847,7 @@ export const elements = (
 /**
  * The first node `path` selects.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const first = (
@@ -861,7 +861,7 @@ export const first = (
  * content, an attribute's value, a string, a number as `fn:string` writes
  * it); `None` when it gives none.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const string = (
@@ -874,7 +874,7 @@ export const string = (
  * The value `path` gives as a number, as XPath 1.0's `number()` takes it:
  * the first item's (NaN when there is none, or it is not a number).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const number = (path: Path, context: Context, options?: EvaluateOptions): number => {
@@ -889,7 +889,7 @@ export const number = (path: Path, context: Context, options?: EvaluateOptions):
  * (its effective boolean value): nodes are true, an empty node-set, `""`, 0
  * and NaN false.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const boolean = (path: Path, context: Context, options?: EvaluateOptions): boolean =>
@@ -910,7 +910,7 @@ const valuesOf = (item: Item): Result.Result<ReadonlyArray<Value>, string> => {
  * with the error evaluation raises, an {@link XPathError} with its code (or
  * one for a function item in the result).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluation
  */
 export const evaluate = (

@@ -722,7 +722,7 @@ interface BuilderOptions {
  * The context element of an HTML fragment parse: a local name and its
  * namespace (HTML unless written `svg <name>` or `math <name>`).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface FragmentContext {
@@ -735,7 +735,7 @@ export interface FragmentContext {
  * `context` option spell it: `td`, `svg path`, `math mi`. HTML names are
  * case-insensitive.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseFragmentContext = (spec: string): FragmentContext => {
@@ -2999,7 +2999,7 @@ const freeze = (root: MNode): HtmlNode => {
  * HTML-mode SAX events. Never fails on malformed markup; the error channel
  * carries only the input stream's own failures.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const buildDocument = <E, R>(
@@ -3089,7 +3089,7 @@ const runCoupled = <A>(
  * foreign content, so raw-text/rcdata elements (title/style/script/textarea/
  * plaintext) inside SVG/MathML are parsed as ordinary elements.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const buildDocumentString = (
@@ -3103,7 +3103,7 @@ export const buildDocumentString = (
  * algorithm, in the given context element: the nodes a browser's
  * `innerHTML` setter would put in that element.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const buildFragmentString = (

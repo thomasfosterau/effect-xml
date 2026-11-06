@@ -92,7 +92,7 @@ const contentOf = (node: HtmlNode): ReadonlyArray<HtmlNode> | undefined => {
  * console.log(Html.serializeFragment(nodes)) // <p title="a&amp;b">1 &lt; 2<br></p>
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category serialization
  */
 export const serializeFragment = (nodes: ReadonlyArray<HtmlNode>): string => {
@@ -132,7 +132,7 @@ const open = (node: HtmlNode, raw: Array<boolean>): string =>
  * // <!DOCTYPE html><html><head></head><body><p>Hi</p></body></html>
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category serialization
  */
 export const serialize = (node: HtmlNode | HtmlDocument): string => {

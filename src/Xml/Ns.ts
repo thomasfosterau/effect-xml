@@ -25,7 +25,7 @@ import { Namespaces, QName } from "../Name.ts";
 /**
  * A namespace: call it with a local name to get a name in the namespace.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface Namespace {
@@ -37,7 +37,7 @@ export interface Namespace {
 /**
  * A handle for the namespace `uri` (`null` for names in no namespace).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const make = (uri: string | null): Namespace =>
@@ -46,7 +46,7 @@ export const make = (uri: string | null): Namespace =>
 /**
  * Names in no namespace (unprefixed attributes, and elements outside any default namespace).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category namespaces
  */
 export const none: Namespace = make(null);
@@ -54,7 +54,7 @@ export const none: Namespace = make(null);
 /**
  * The `xml:` namespace (`xml:lang`, `xml:space`, `xml:base`, `xml:id`).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category namespaces
  */
 export const xml: Namespace = make(Namespaces.xml);

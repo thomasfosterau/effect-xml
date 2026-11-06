@@ -23,7 +23,7 @@ import { AtomicTypes, derivesFrom, type AtomicType } from "./types.ts";
 /**
  * The JavaScript representation of an atomic value; which one depends on the value's primitive type.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type AtomicData =
@@ -52,7 +52,7 @@ export type AtomicData =
  * console.log(XQuery.atomicString(XQuery.AtomicValue.double(1e7))) // "1.0E7"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class AtomicValue {
@@ -117,7 +117,7 @@ export class AtomicValue {
 /**
  * Options for {@link fromLexical}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface LexicalOptions {
@@ -213,7 +213,7 @@ const fromChecked = (type: AtomicType, value: SimpleValue): AtomicData => {
  * if (Result.isSuccess(value)) console.log(XQuery.atomicString(value.success)) // "1.5"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const fromLexical = (
@@ -345,7 +345,7 @@ const formatDuration = (type: AtomicType, lexical: string): string => {
 /**
  * An atomic value's canonical string form: what casting it to `xs:string` gives.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category conversions
  */
 export const atomicString = (atomic: AtomicValue): string => {

@@ -25,7 +25,7 @@
  *     its parent's, and the `Writer` declares the namespaces used.
  *   - Elements, attributes and text the schema doesn't mention are ignored.
  *
- * @since 0.3.0
+ * @since 0.1.0
  */
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
@@ -50,7 +50,7 @@ import { parse, type ParseOptions } from "./Xml.ts";
 /**
  * The annotation key under which a field's {@link FieldBinding} is stored.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export const FieldBindingId = "@thomasfosterau/effect-xml/Xml/Bind/field";
@@ -58,7 +58,7 @@ export const FieldBindingId = "@thomasfosterau/effect-xml/Xml/Bind/field";
 /**
  * The annotation key under which a type's {@link ElementName} is stored.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export const ElementNameId = "@thomasfosterau/effect-xml/Xml/Bind/name";
@@ -66,7 +66,7 @@ export const ElementNameId = "@thomasfosterau/effect-xml/Xml/Bind/name";
 /**
  * Where a field lives in its element: an attribute, a child element, or the element's own text.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export interface FieldBinding {
@@ -84,7 +84,7 @@ export interface FieldBinding {
 /**
  * The element name of a struct type: used when it is the document's root and to pick it out of a union.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export interface ElementName {
@@ -98,7 +98,7 @@ export interface ElementName {
 /**
  * Options naming an attribute or element: a name, a namespace and a prefix.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export interface NameOptions {
@@ -110,7 +110,7 @@ export interface NameOptions {
 /**
  * Options for {@link element}: a name, a namespace, a prefix and a wrapper element.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export interface ElementOptions extends NameOptions {
@@ -147,7 +147,7 @@ const fieldBinding = (node: FieldBinding["node"], options: ElementOptions): Fiel
  * console.log(book.title) // "Dune"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export const annotations = {
@@ -194,7 +194,7 @@ export const annotations = {
  * console.log(item) // { sku: "A-1", quantity: 3, name: "Widget" }
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export const attribute =
@@ -221,7 +221,7 @@ export const attribute =
  * console.log(post.tags) // ["xml", "effect"]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export const element =
@@ -247,7 +247,7 @@ export const element =
  * console.log(price) // { currency: "EUR", amount: 9.5 }
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export const text =
@@ -283,7 +283,7 @@ export const text =
  * console.log(drawing.shapes) // [{ _tag: "Circle", r: 1 }, { _tag: "Square", side: 2 }]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category annotations
  */
 export const named =
@@ -298,7 +298,7 @@ export const named =
 /**
  * XML that doesn't fit the schema's shape (a root element with the wrong name, an element no union member is named for), or a schema the binding can't map to XML.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class XmlBindError extends Schema.TaggedError<XmlBindError>()("XmlBindError", {
@@ -877,7 +877,7 @@ const writeRoot = (plan: Plan, value: Tree): Result.Result<XmlElement, XmlBindEr
  * console.log(Effect.runSync(rows)) // [{ r: 1, v: "a" }, { r: 2, v: "b" }]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category decoding
  */
 export const decodeElement = <S extends Schema.Top>(
@@ -906,7 +906,7 @@ export const decodeElement = <S extends Schema.Top>(
 /**
  * Options for {@link decode}: the XML parse options, plus the schema's parse options.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface DecodeOptions extends ParseOptions {
@@ -951,7 +951,7 @@ export interface DecodeOptions extends ParseOptions {
  * console.log(book.year, book.authors[0]?.name) // 1965 "Frank Herbert"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category decoding
  */
 export const decode = <S extends Schema.Top>(
@@ -971,7 +971,7 @@ export const decode = <S extends Schema.Top>(
 /**
  * Encode a value of the schema's type into an element.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category encoding
  */
 export const encodeElement = <S extends Schema.Top>(
@@ -991,7 +991,7 @@ export const encodeElement = <S extends Schema.Top>(
 /**
  * Options for {@link encode}: the writer's options, plus the schema's parse options.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface EncodeOptions extends WriterOptions {
@@ -1018,7 +1018,7 @@ export interface EncodeOptions extends WriterOptions {
  * console.log(xml) // <note xmlns="urn:notes" id="1"><to>Tove</to><body>Hi</body></note>
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category encoding
  */
 export const encode = <S extends Schema.Top>(

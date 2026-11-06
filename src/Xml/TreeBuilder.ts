@@ -23,7 +23,7 @@ import type { XmlDocument } from "./Node.ts";
 /**
  * Options for {@link build}.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category options
  */
 export interface BuildOptions {
@@ -55,7 +55,7 @@ export interface BuildOptions {
  * Build a document from a stream of SAX events. The accumulated open-element
  * stack means this works on streams of any length without holding the input.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const build =

@@ -15,7 +15,7 @@ import { builtinBase } from "../xsd/datatypes.ts";
 /**
  * The local name of a built-in atomic type in the `xs:` namespace.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category types
  */
 export type AtomicTypeName =
@@ -72,7 +72,7 @@ export type AtomicTypeName =
  * Types are compared by identity: there is one object per type, in
  * {@link AtomicTypes}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category types
  */
 export interface AtomicType {
@@ -194,7 +194,7 @@ const buildTypes = (): { readonly [K in AtomicTypeName]: AtomicType } =>
  * console.log(XQuery.AtomicTypes.token.primitive) // "string"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category types
  */
 export const AtomicTypes: { readonly [K in AtomicTypeName]: AtomicType } =
@@ -203,7 +203,7 @@ export const AtomicTypes: { readonly [K in AtomicTypeName]: AtomicType } =
 /**
  * The built-in atomic type with this expanded name, if there is one.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category types
  */
 export const atomicType = (namespace: string | null, local: string): Option.Option<AtomicType> =>
@@ -212,7 +212,7 @@ export const atomicType = (namespace: string | null, local: string): Option.Opti
 /**
  * Whether `type` is `ancestor` or derived from it (XPath 3.1 §2.5.6.1 `derives-from` for atomic types).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category types
  */
 export const derivesFrom = (type: AtomicType, ancestor: AtomicType): boolean =>
@@ -222,7 +222,7 @@ export const derivesFrom = (type: AtomicType, ancestor: AtomicType): boolean =>
 /**
  * Whether values of `type` are numeric: `xs:decimal` (and so every integer type), `xs:float` or `xs:double`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category types
  */
 export const isNumericType = (type: AtomicType): boolean =>

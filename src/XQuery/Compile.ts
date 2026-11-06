@@ -22,7 +22,7 @@ import { type XQueryError, xqueryError } from "./Error.ts";
  * to them or rebinds them (except `xml`). Names are Clark names: `{uri}local`,
  * or a bare `local` for a name in no namespace.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export interface CompileOptions extends StaticOptions {}
@@ -31,7 +31,7 @@ export interface CompileOptions extends StaticOptions {}
  * A library module's source text and location, as `CompileOptions.modules`
  * and `ResourceResolver.module` give it for an `import module`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export interface ModuleSource extends ModuleSourceT {}
@@ -40,7 +40,7 @@ export interface ModuleSource extends ModuleSourceT {}
  * A compiled query: its text, its language, and what the compiler made of
  * it (the syntax tree and its static context), ready to be evaluated.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export type Query =
@@ -88,7 +88,7 @@ const toXQueryError = (e: StaticError): XQueryError => xqueryError(e.code, e.des
  * if (Result.isFailure(bad)) console.log(bad.failure.code.local, bad.failure.offset) // "XPST0003" 17
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export const compile = (
@@ -111,7 +111,7 @@ export const compile = (
 /**
  * What {@link XPath} offers: compiling XPath 3.1 expressions.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export interface XPathCompiler {
@@ -142,7 +142,7 @@ export interface XPathCompiler {
  * if (Result.isFailure(bad)) console.log(bad.failure.code.local) // "XPST0003"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export const XPath: XPathCompiler = {

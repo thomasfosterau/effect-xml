@@ -37,7 +37,7 @@ import { type XQueryError, xqueryError } from "./Error.ts";
  * function raises. Without a `Resolver` in the context, those functions find
  * nothing (`err:FODC0002` for documents and collections, `err:FOUT1170` for texts).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category resolving
  */
 export interface ResourceResolver {
@@ -75,7 +75,7 @@ export interface ResourceResolver {
  * console.log(XQuery.atomicString(Effect.runSync(program)[0] as XQuery.AtomicValue)) // "8"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category resolving
  */
 export class Resolver extends Context.Service<Resolver, ResourceResolver>()(
@@ -85,7 +85,7 @@ export class Resolver extends Context.Service<Resolver, ResourceResolver>()(
 /**
  * The resources a {@link staticResolver} serves, by absolute URI.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category resolving
  */
 export interface StaticResources {
@@ -105,7 +105,7 @@ const find = <A>(table: Readonly<Record<string, A>> | undefined, uri: string, co
 /**
  * A {@link ResourceResolver} that serves resources from memory, failing for any URI it doesn't have.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category resolving
  */
 export const staticResolver = (resources: StaticResources): ResourceResolver => ({
@@ -117,7 +117,7 @@ export const staticResolver = (resources: StaticResources): ResourceResolver => 
 /**
  * Options for {@link evaluate}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluating
  */
 export interface EvaluateOptions {
@@ -204,7 +204,7 @@ const run = (
  * console.log(sum.length) // 4
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluating
  */
 export const evaluate = (

@@ -97,7 +97,7 @@ const leaf = (node: Exclude<HtmlNode, HtmlElement>): XmlNode =>
  * // <html><head/><body><ul><li>a</li><li>b</li></ul></body></html>
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category conversion
  */
 export function toXml(document: HtmlDocument): XmlDocument;

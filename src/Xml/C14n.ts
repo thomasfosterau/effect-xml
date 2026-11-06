@@ -26,7 +26,7 @@ import { XmlDocument, type XmlElement, type XmlNode } from "./Node.ts";
 /**
  * Options for {@link exclusive}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface C14nOptions {
@@ -37,7 +37,7 @@ export interface C14nOptions {
 /**
  * Escape character data as Canonical XML does.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category canonicalization
  */
 export const escapeText = (value: string): string =>
@@ -48,7 +48,7 @@ export const escapeText = (value: string): string =>
 /**
  * Escape an attribute value as Canonical XML does.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category canonicalization
  */
 export const escapeAttribute = (value: string): string =>
@@ -128,7 +128,7 @@ const render = (node: XmlNode, scopes: Array<Bindings>, comments: boolean): stri
 /**
  * Exclusive XML Canonicalization 1.0 of nodes, an element or a document: namespace declarations only where visibly used, attributes in canonical order, comments dropped unless `comments` is set.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category canonicalization
  */
 export const exclusive = (

@@ -13,7 +13,7 @@
  * Nodes are `Schema` classes, like the XML DOM's: they compare and hash by
  * value, validate and encode through their schemas, and narrow by `_tag`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  */
 import * as Arr from "effect/Array";
 import * as Iterable from "effect/Iterable";
@@ -28,7 +28,7 @@ import { MissingRootElement } from "../Xml/Node.ts";
  * The namespace an element is in: HTML, SVG or MathML. `Html.NAMESPACE_URIS`
  * maps each to its URI.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export const HtmlNamespace = Schema.Literals(["html", "svg", "mathml"]);
@@ -36,7 +36,7 @@ export const HtmlNamespace = Schema.Literals(["html", "svg", "mathml"]);
 /**
  * The namespace an element is in: HTML, SVG or MathML.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type HtmlNamespace = typeof HtmlNamespace.Type;
@@ -45,7 +45,7 @@ export type HtmlNamespace = typeof HtmlNamespace.Type;
  * The namespace an adjusted foreign attribute is in (`xlink:href`,
  * `xml:lang`, `xmlns:xlink`). `Html.ATTRIBUTE_NAMESPACE_URIS` maps each to its URI.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export const HtmlAttributeNamespace = Schema.Literals(["xlink", "xml", "xmlns"]);
@@ -53,7 +53,7 @@ export const HtmlAttributeNamespace = Schema.Literals(["xlink", "xml", "xmlns"])
 /**
  * The namespace an adjusted foreign attribute is in.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type HtmlAttributeNamespace = typeof HtmlAttributeNamespace.Type;
@@ -63,7 +63,7 @@ export type HtmlAttributeNamespace = typeof HtmlAttributeNamespace.Type;
  * or a legacy one, `"limited-quirks"` for the XHTML 1.0 and HTML 4.01
  * transitional and frameset ones, `"no-quirks"` otherwise.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export const HtmlDocumentMode = Schema.Literals(["no-quirks", "quirks", "limited-quirks"]);
@@ -71,7 +71,7 @@ export const HtmlDocumentMode = Schema.Literals(["no-quirks", "quirks", "limited
 /**
  * The document's mode, which the DOCTYPE decides.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type HtmlDocumentMode = typeof HtmlDocumentMode.Type;
@@ -82,7 +82,7 @@ export type HtmlDocumentMode = typeof HtmlDocumentMode.Type;
  * MathML elements) have a `namespace`; their `name` is then the local name
  * and `prefix` the prefix (`null` for `xmlns` itself).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class HtmlAttribute extends Schema.Class<HtmlAttribute>("HtmlAttribute")({
@@ -100,7 +100,7 @@ export class HtmlAttribute extends Schema.Class<HtmlAttribute>("HtmlAttribute")(
 /**
  * A run of text.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class HtmlText extends Schema.TaggedClass<HtmlText>()("HtmlText", {
@@ -111,7 +111,7 @@ export class HtmlText extends Schema.TaggedClass<HtmlText>()("HtmlText", {
  * A comment. The HTML parser also makes one of a processing instruction
  * (`<?php …?>`) and of a CDATA section outside SVG and MathML.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class HtmlComment extends Schema.TaggedClass<HtmlComment>()("HtmlComment", {
@@ -149,7 +149,7 @@ const suspendedNode = Schema.suspend((): Schema.Codec<HtmlNode, HtmlNodeEncoded>
  * The contents of a `<template>`: a separate list of nodes, as in the WHATWG
  * DOM (a `DocumentFragment`), not the template element's children.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class HtmlTemplateContent extends Schema.TaggedClass<HtmlTemplateContent>()(
@@ -178,7 +178,7 @@ export class HtmlTemplateContent extends Schema.TaggedClass<HtmlTemplateContent>
  * }
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class HtmlElement extends Schema.TaggedClass<HtmlElement>()("HtmlElement", {
@@ -246,7 +246,7 @@ export class HtmlElement extends Schema.TaggedClass<HtmlElement>()("HtmlElement"
 /**
  * Is this node an element?
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category guards
  */
 export const isHtmlElement = (node: HtmlNode): node is HtmlElement =>
@@ -255,7 +255,7 @@ export const isHtmlElement = (node: HtmlNode): node is HtmlElement =>
 /**
  * Is this node text?
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category guards
  */
 export const isHtmlText = (node: HtmlNode): node is HtmlText =>
@@ -264,7 +264,7 @@ export const isHtmlText = (node: HtmlNode): node is HtmlText =>
 /**
  * Is this a document (rather than a node)?
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category guards
  */
 export const isHtmlDocument = (input: HtmlDocument | HtmlNode): input is HtmlDocument =>
@@ -289,7 +289,7 @@ const walk = (nodes: ReadonlyArray<HtmlNode>) =>
 /**
  * A node that can be a child: an element, text or a comment.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type HtmlNode = HtmlElement | HtmlText | HtmlComment;
@@ -297,7 +297,7 @@ export type HtmlNode = HtmlElement | HtmlText | HtmlComment;
 /**
  * Schema for the {@link HtmlNode} union.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export const HtmlNode = Schema.Union([HtmlElement, HtmlText, HtmlComment]);
@@ -306,7 +306,7 @@ export const HtmlNode = Schema.Union([HtmlElement, HtmlText, HtmlComment]);
  * A `<!DOCTYPE>`: its name (lowercased) and identifiers, `""` when absent, as
  * in the DOM.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class HtmlDoctype extends Schema.Class<HtmlDoctype>("HtmlDoctype")({
@@ -329,7 +329,7 @@ export class HtmlDoctype extends Schema.Class<HtmlDoctype>("HtmlDoctype")({
  * console.log(doc.documentElement.elements.map((e) => e.name)) // ["head", "body"]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class HtmlDocument extends Schema.TaggedClass<HtmlDocument>()("HtmlDocument", {

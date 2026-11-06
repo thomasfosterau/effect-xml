@@ -11,7 +11,7 @@
  * about twice as fast as `Xml.parse`: for reading data out of documents
  * rather than editing, querying or writing them back.
  *
- * @since 0.3.0
+ * @since 0.1.0
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -47,7 +47,7 @@ import {
  * An element of a plain tree: its name as written (`prefix:local`), its
  * attributes by name as written, and its children.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export interface PlainElement {
@@ -59,7 +59,7 @@ export interface PlainElement {
 /**
  * A node of a plain tree: an element, or a run of character data.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export type PlainNode = PlainElement | string;
@@ -68,7 +68,7 @@ export type PlainNode = PlainElement | string;
  * Options for {@link parsePlain}: the SAX options that apply to XML, and an
  * external encoding hint for bytes.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface PlainOptions {
@@ -342,7 +342,7 @@ const plainPass = (
  * console.log(root.children) // [{ name: "item", attributes: {}, children: ["Widget"] }]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parsePlain = (

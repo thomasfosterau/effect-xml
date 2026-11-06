@@ -71,7 +71,7 @@ const inherit = (element: XmlElement, from: Inherited): Inherited => {
 /**
  * Options for {@link cursor}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface CursorOptions {
@@ -82,7 +82,7 @@ export interface CursorOptions {
 /**
  * An element with the path that led to it, which resolves the `xml:lang`, `xml:space` and `xml:base` it inherits.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export class Cursor {
@@ -177,7 +177,7 @@ export class Cursor {
 /**
  * A cursor at `element`, as the top of the tree.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category constructors
  */
 export const cursor = (element: XmlElement, options?: CursorOptions): Cursor =>

@@ -135,7 +135,7 @@ class FragmentBuilder {
  * Build a lenient HTML fragment (a forest of top-level nodes) from a SAX stream.
  * Never fails on malformed markup; fails only when a resource limit is exceeded.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const buildFragment = <E, R>(

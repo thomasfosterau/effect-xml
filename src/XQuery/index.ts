@@ -29,13 +29,13 @@
  * console.log(Result.isSuccess(ebv) && ebv.success) // false
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  */
 
 /**
  * The atomic type hierarchy.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category types
  */
 export * from "../internal/xquery/types.ts";
@@ -43,7 +43,7 @@ export * from "../internal/xquery/types.ts";
 /**
  * Atomic values, their constructors and their canonical string forms.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export * from "../internal/xquery/atomic.ts";
@@ -51,7 +51,7 @@ export * from "../internal/xquery/atomic.ts";
 /**
  * Nodes over the XML DOM, and document order.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export * from "../internal/xquery/node.ts";
@@ -59,7 +59,7 @@ export * from "../internal/xquery/node.ts";
 /**
  * Items, sequences, maps, arrays and function items; atomization, the string value and the effective boolean value.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category models
  */
 export * from "../internal/xquery/item.ts";
@@ -67,7 +67,7 @@ export * from "../internal/xquery/item.ts";
 /**
  * The XQuery and XPath error, and the `err:` codes.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export * from "./Error.ts";
@@ -76,7 +76,7 @@ export * from "./Error.ts";
  * Compiling an XQuery 3.1 module (or, with `XPath.compile`, an XPath 3.1
  * expression) to a {@link Query}, or the first static error.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category compiling
  */
 export * from "./Compile.ts";
@@ -86,7 +86,7 @@ export * from "./Compile.ts";
  * external variables, with the {@link Resolver} service for documents,
  * collections and texts.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category evaluating
  */
 export * from "./Evaluate.ts";
@@ -95,7 +95,7 @@ export * from "./Evaluate.ts";
  * Streaming a query over SAX events: each match of its selection evaluated
  * as soon as it ends, in memory bounded by the largest match.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export * from "./Stream.ts";

@@ -22,7 +22,7 @@ const ErrorPosition = Schema.Struct({
 /**
  * A character appeared where the grammar did not allow it.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class UnexpectedCharacter extends Schema.TaggedError<UnexpectedCharacter>()(
@@ -43,7 +43,7 @@ export class UnexpectedCharacter extends Schema.TaggedError<UnexpectedCharacter>
 /**
  * The input ended in the middle of a construct that was still open.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class UnexpectedEndOfInput extends Schema.TaggedError<UnexpectedEndOfInput>()(
@@ -61,7 +61,7 @@ export class UnexpectedEndOfInput extends Schema.TaggedError<UnexpectedEndOfInpu
 /**
  * A closing tag did not match the element currently open on the stack.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class MismatchedEndTag extends Schema.TaggedError<MismatchedEndTag>()("MismatchedEndTag", {
@@ -79,7 +79,7 @@ export class MismatchedEndTag extends Schema.TaggedError<MismatchedEndTag>()("Mi
 /**
  * A closing tag was found with no corresponding open element.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class UnexpectedEndTag extends Schema.TaggedError<UnexpectedEndTag>()("UnexpectedEndTag", {
@@ -94,7 +94,7 @@ export class UnexpectedEndTag extends Schema.TaggedError<UnexpectedEndTag>()("Un
 /**
  * An entity reference (`&...;`) could not be resolved or was malformed.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class InvalidEntity extends Schema.TaggedError<InvalidEntity>()("InvalidEntity", {
@@ -113,7 +113,7 @@ export class InvalidEntity extends Schema.TaggedError<InvalidEntity>()("InvalidE
  * An XML declaration, processing instruction or DOCTYPE did not match its
  * grammar. `expected` describes what the grammar wanted at `position`.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class MalformedDeclaration extends Schema.TaggedError<MalformedDeclaration>()(
@@ -135,7 +135,7 @@ export class MalformedDeclaration extends Schema.TaggedError<MalformedDeclaratio
 /**
  * A duplicate attribute name was found on a single element (not well-formed).
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class DuplicateAttribute extends Schema.TaggedError<DuplicateAttribute>()(
@@ -156,7 +156,7 @@ export class DuplicateAttribute extends Schema.TaggedError<DuplicateAttribute>()
 /**
  * A document had more than one root element, or a stray node where only the root is allowed.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class InvalidDocumentStructure extends Schema.TaggedError<InvalidDocumentStructure>()(
@@ -174,7 +174,7 @@ export class InvalidDocumentStructure extends Schema.TaggedError<InvalidDocument
 /**
  * A namespace prefix was used without a corresponding declaration.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class UnboundNamespacePrefix extends Schema.TaggedError<UnboundNamespacePrefix>()(
@@ -199,7 +199,7 @@ export class UnboundNamespacePrefix extends Schema.TaggedError<UnboundNamespaceP
  * declaration (`xmlns:p=""`, XML 1.1 only), or a misuse of the reserved
  * `xml` / `xmlns` prefixes and namespaces. `name` is the offending name.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class InvalidNamespace extends Schema.TaggedError<InvalidNamespace>()("InvalidNamespace", {
@@ -215,7 +215,7 @@ export class InvalidNamespace extends Schema.TaggedError<InvalidNamespace>()("In
 /**
  * The resource limits a document can exceed (see {@link Limits}).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export type LimitName =
@@ -232,7 +232,7 @@ export type LimitName =
  * the offending construct starts, or `null` when the limit was hit while
  * decoding bytes (before there are any positions).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class LimitExceeded extends Schema.TaggedError<LimitExceeded>()("LimitExceeded", {
@@ -257,7 +257,7 @@ export class LimitExceeded extends Schema.TaggedError<LimitExceeded>()("LimitExc
 /**
  * The document's encoding could not be determined, is unknown, or contradicts its byte order mark.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class UnsupportedEncoding extends Schema.TaggedError<UnsupportedEncoding>()(
@@ -274,7 +274,7 @@ export class UnsupportedEncoding extends Schema.TaggedError<UnsupportedEncoding>
  * bytes from the start of the input; for multi-byte encodings decoded in
  * chunks it is where the chunk containing the invalid sequence starts.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class InvalidByteSequence extends Schema.TaggedError<InvalidByteSequence>()(
@@ -289,7 +289,7 @@ export class InvalidByteSequence extends Schema.TaggedError<InvalidByteSequence>
 /**
  * Errors produced while turning bytes into text.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export type DecodeError = UnsupportedEncoding | InvalidByteSequence;
@@ -297,7 +297,7 @@ export type DecodeError = UnsupportedEncoding | InvalidByteSequence;
 /**
  * Errors that can be produced by the lexer / SAX layer.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export type LexError =
@@ -309,7 +309,7 @@ export type LexError =
 /**
  * The full union of errors any part of the library can raise.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export type SaxError =
@@ -326,7 +326,7 @@ export type SaxError =
 /**
  * Type guard: is this value one of the library's tagged errors?
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category guards
  */
 export const isSaxError = (u: unknown): u is SaxError =>

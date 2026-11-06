@@ -22,7 +22,7 @@ import { Namespaces, QName } from "../Name.ts";
  * none) and a local name. A {@link QName} is one; so is what an `Ns` handle
  * returns. Matching ignores prefixes, which producers are free to choose.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category names
  */
 export interface NameLike {
@@ -33,7 +33,7 @@ export interface NameLike {
 /**
  * The arguments of the lookup methods: a {@link NameLike}, or a namespace and a local name.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category names
  */
 export type NameArgs =
@@ -51,7 +51,7 @@ export const isNamed = (qname: QName, name: NameLike): boolean =>
 /**
  * An attribute on an element.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
@@ -62,7 +62,7 @@ export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
 /**
  * A run of character data.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlText extends Schema.TaggedClass<XmlText>()("XmlText", {
@@ -72,7 +72,7 @@ export class XmlText extends Schema.TaggedClass<XmlText>()("XmlText", {
 /**
  * A CDATA section. Distinct from {@link XmlText} so round-tripping is faithful.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlCData extends Schema.TaggedClass<XmlCData>()("XmlCData", {
@@ -82,7 +82,7 @@ export class XmlCData extends Schema.TaggedClass<XmlCData>()("XmlCData", {
 /**
  * A comment node.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlComment extends Schema.TaggedClass<XmlComment>()("XmlComment", {
@@ -92,7 +92,7 @@ export class XmlComment extends Schema.TaggedClass<XmlComment>()("XmlComment", {
 /**
  * A processing instruction.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlProcessingInstruction extends Schema.TaggedClass<XmlProcessingInstruction>()(
@@ -128,7 +128,7 @@ type XmlNodeEncoded =
 /**
  * An element with attributes and children. Recursive via `Schema.suspend`.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
@@ -214,7 +214,7 @@ const walk = (nodes: ReadonlyArray<XmlNode>) =>
 /**
  * Any node that can appear as a child.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export type XmlNode = XmlElement | XmlText | XmlCData | XmlComment | XmlProcessingInstruction;
@@ -222,7 +222,7 @@ export type XmlNode = XmlElement | XmlText | XmlCData | XmlComment | XmlProcessi
 /**
  * Schema for the {@link XmlNode} union.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export const XmlNode = Schema.Union([
@@ -236,7 +236,7 @@ export const XmlNode = Schema.Union([
 /**
  * The XML declaration (`<?xml ... ?>`).
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration")({
@@ -248,7 +248,7 @@ export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration
 /**
  * A `<!DOCTYPE ...>` declaration.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
@@ -261,7 +261,7 @@ export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
 /**
  * A whole parsed document.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export class XmlDocument extends Schema.Class<XmlDocument>("XmlDocument")({
@@ -282,7 +282,7 @@ export class XmlDocument extends Schema.Class<XmlDocument>("XmlDocument")({
  * Thrown by {@link XmlDocument.root} for a document with no element child. The
  * parsers never produce one; only a hand-built `XmlDocument` can lack a root.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category errors
  */
 export class MissingRootElement extends Schema.TaggedError<MissingRootElement>()(
@@ -301,7 +301,7 @@ export class MissingRootElement extends Schema.TaggedError<MissingRootElement>()
 /**
  * Build an element from a plain name and children.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category constructors
  */
 export const element = (
@@ -318,7 +318,7 @@ export const element = (
 /**
  * Build a text node.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category constructors
  */
 export const text = (data: string): XmlText => new XmlText({ data });
@@ -326,7 +326,7 @@ export const text = (data: string): XmlText => new XmlText({ data });
 /**
  * Build an attribute.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category constructors
  */
 export const attr = (name: string | QName, value: string): XmlAttribute =>

@@ -20,7 +20,7 @@ import type { Limits } from "../Limits.ts";
 /**
  * Options for {@link parse}, {@link parseStream} and {@link events}: the tree-building options plus the SAX options that apply to XML.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category options
  */
 export interface ParseOptions extends BuildOptions {
@@ -41,7 +41,7 @@ export interface ParseOptions extends BuildOptions {
    * tree, about twice as fast. If lenient reading fails, the document is read
    * strictly, so a failure is always the strict one. Default `true`.
    *
-   * @since 0.3.0
+   * @since 0.1.0
    */
   readonly strict?: boolean | undefined;
 }
@@ -68,7 +68,7 @@ const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
  * console.log(doc.root.textContent) // "Widget"
  * ```
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parse = (
@@ -81,7 +81,7 @@ export const parse = (
  * Parse a stream of XML chunks into a typed document. Chunks may split markup
  * at any byte boundary.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseStream =
@@ -92,7 +92,7 @@ export const parseStream =
 /**
  * Options for byte input: the parse options plus an external encoding hint.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category options
  */
 export interface ParseBytesOptions extends ParseOptions {
@@ -113,7 +113,7 @@ const bytesOptions = (options: ParseBytesOptions | undefined): Sax.SaxBytesOptio
  * then the XML declaration, then UTF-8; XML 1.0 Appendix F). Bytes that are
  * invalid in that encoding fail with `InvalidByteSequence`.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseBytes = (
@@ -130,7 +130,7 @@ export const parseBytes = (
 /**
  * Parse a stream of XML bytes into a typed document, detecting the encoding.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category parsing
  */
 export const parseBytesStream =
@@ -142,7 +142,7 @@ export const parseBytesStream =
  * The streaming SAX event view of an XML string — useful when you want events,
  * not a tree.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category parsing
  */
 export const events = (
@@ -158,7 +158,7 @@ export const events = (
  * become U+FFFD. For namespace management, a choice of policy, pretty-printing
  * or streaming, use the `Writer` module.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category serialization
  */
 export const serialize = (node: XmlNode): string =>
@@ -167,7 +167,7 @@ export const serialize = (node: XmlNode): string =>
 /**
  * Serialize a whole document, including its declaration and DOCTYPE (see {@link serialize}).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category serialization
  */
 export const serializeDocument = (doc: XmlDocument): string =>

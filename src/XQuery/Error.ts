@@ -16,7 +16,7 @@ import type { Item, Sequence } from "../internal/xquery/item.ts";
 /**
  * The namespace of the error codes the XQuery and XPath specifications define, bound to the `err:` prefix.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export const ErrorNamespace = "http://www.w3.org/2005/xqt-errors";
@@ -31,7 +31,7 @@ export const ErrorNamespace = "http://www.w3.org/2005/xqt-errors";
  * console.log(XQuery.errorCode("XPTY0004").qualified) // "err:XPTY0004"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export const errorCode = (local: string): QName =>
@@ -43,7 +43,7 @@ export const errorCode = (local: string): QName =>
  * function it does not evaluate yet, and `NotStreamable` for a query
  * `stream` can't evaluate over SAX events (see `compileStream`).
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export const ImplementationNamespace = "https://github.com/thomasfosterau/effect-xml#xquery-errors";
@@ -87,7 +87,7 @@ const ErrorValue = /*#__PURE__*/ Schema.declare(
  * console.log(error.message) // "err:XPST0003 at offset 4: unexpected end of the query"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export class XQueryError extends Schema.TaggedError<XQueryError>()("XQueryError", {
@@ -113,7 +113,7 @@ export class XQueryError extends Schema.TaggedError<XQueryError>()("XQueryError"
  * console.log(error.code.clark) // "{http://www.w3.org/2005/xqt-errors}FORG0006"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export const xqueryError = (local: string, description: string, offset?: number): XQueryError =>
@@ -122,7 +122,7 @@ export const xqueryError = (local: string, description: string, offset?: number)
 /**
  * Whether an error has the code the specifications define with this local name.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category errors
  */
 export const hasErrorCode = (error: XQueryError, local: string): boolean =>

@@ -16,7 +16,7 @@ import * as Sax from "../Sax.ts";
 /**
  * HTML void elements: they never have children and are implicitly self-closed.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category element categories
  */
 export const voidElements = HashSet.make(
@@ -40,7 +40,7 @@ export const voidElements = HashSet.make(
 /**
  * Elements whose content is raw text (no entity decoding, no nested markup).
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category element categories
  */
 export const rawTextElements = HashSet.make(
@@ -55,7 +55,7 @@ export const rawTextElements = HashSet.make(
 /**
  * Elements whose content is rcdata (entity decoding, but no nested markup).
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category element categories
  */
 export const rcdataElements = HashSet.make("title", "textarea");
@@ -63,7 +63,7 @@ export const rcdataElements = HashSet.make("title", "textarea");
 /**
  * Formatting elements subject to the "adoption agency" algorithm in full HTML parsing.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category element categories
  */
 export const formattingElements = HashSet.make(
@@ -87,7 +87,7 @@ export const formattingElements = HashSet.make(
  * The WHATWG "insertion modes" that drive HTML tree construction, by their
  * spec names.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category models
  */
 export type InsertionMode =
@@ -119,7 +119,7 @@ export type InsertionMode =
  * Options for the HTML entry points: the SAX options minus `mode`, which is
  * always `"html"`, and `dtd`, which HTML never reads.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category options
  */
 export type HtmlOptions = Omit<Sax.SaxOptions, "mode" | "dtd">;
@@ -127,7 +127,7 @@ export type HtmlOptions = Omit<Sax.SaxOptions, "mode" | "dtd">;
 /**
  * Turn a stream of HTML chunks into a lenient SAX event stream.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category tokenizing
  */
 export const tokenize =
@@ -138,7 +138,7 @@ export const tokenize =
 /**
  * Tokenize a complete HTML string into a lenient SAX event stream.
  *
- * @since 0.2.0
+ * @since 0.1.0
  * @category tokenizing
  */
 export const tokenizeString = (

@@ -51,7 +51,7 @@ import { Resolver, type EvaluateOptions, type ResourceResolver } from "./Evaluat
  * The code of the error a query that can't be streamed fails with:
  * `NotStreamable`, in {@link ImplementationNamespace}.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export const NotStreamableCode: QName = /*#__PURE__*/ new QName({
@@ -80,7 +80,7 @@ interface CompiledOperation {
  * A query compiled for streaming by {@link compileStream}: the query, ready
  * to be evaluated over any number of streams of SAX events.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export interface StreamQuery {
@@ -220,7 +220,7 @@ const planOf = (query: Query): Result.Result<StreamQuery, XQueryError> => {
  * if (Result.isFailure(bad)) console.log(bad.failure.code.local) // "NotStreamable"
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export const compileStream = (
@@ -236,7 +236,7 @@ export const compileStream = (
  * Options for {@link stream}: those of `evaluate` but the context item, which
  * is each match in turn.
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export interface StreamOptions extends Omit<EvaluateOptions, "context"> {}
@@ -307,7 +307,7 @@ const apply = (op: CompiledOperation, items: Sequence, ctx: Ctx): Sequence => {
  * console.log(Effect.runSync(rows)) // ["1:a:b", "2:c"]
  * ```
  *
- * @since 0.3.0
+ * @since 0.1.0
  * @category streaming
  */
 export const stream =
