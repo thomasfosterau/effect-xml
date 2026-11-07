@@ -18,7 +18,7 @@
  * `?target data?`). A DOCTYPE is dropped.
  */
 import * as Effect from "effect/Effect";
-import * as Stream from "effect/Stream";
+import type * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { resolveLimits, type Limits } from "../Limits.ts";
 import { depthExceeded } from "../internal/guard.ts";

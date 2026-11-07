@@ -22,6 +22,10 @@ pnpm add @thomasfosterau/effect-xml effect @thomasfosterau/effect-parse
 
 `effect` (`^4.0.0`) and `@thomasfosterau/effect-parse` (`^0.4.1`) are peer dependencies, so your application owns the single copy of each. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node ≥ 22, browsers, workers).
 
+### Bundle size
+
+Import a layer from its own entry point (`import * as Sax from "@thomasfosterau/effect-xml/Sax"`) when bundle size matters. Each module is published as its own file, so a bundler keeps only the modules a program reaches: a program that calls only `Sax.forEach` bundles about 105 KB of this package (minified, `effect` and effect-parse not counted) and `Xml.parse` about 110 KB, with no XQuery or XML Schema code. The root entry's namespaces (`import { Sax } from "@thomasfosterau/effect-xml"`) are objects holding every member of every layer, which bundlers can't take apart, so a bundle that imports from the root carries the whole library (about 360–590 KB, depending on the bundler). `vp run size` checks these budgets in CI.
+
 ## Quick start
 
 ```ts

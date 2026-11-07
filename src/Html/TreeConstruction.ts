@@ -21,7 +21,7 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Stream from "effect/Stream";
+import type * as Stream from "effect/Stream";
 import * as Str from "effect/String";
 import type { SaxError } from "../Error.ts";
 import { defaultLimits, resolveLimits, type Limits } from "../Limits.ts";

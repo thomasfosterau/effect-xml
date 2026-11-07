@@ -3,7 +3,7 @@
  * (`./Node.ts`).
  */
 import * as Effect from "effect/Effect";
-import * as Stream from "effect/Stream";
+import type * as Stream from "effect/Stream";
 import * as Encoding from "../Encoding.ts";
 import { decodeOptions } from "../Sax.ts";
 import type { SaxError } from "../Error.ts";

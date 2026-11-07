@@ -85,6 +85,7 @@
     "@typescript/native": "catalog:",
     "@vitest/coverage-istanbul": "catalog:",
     "effect": "catalog:",
+    "esbuild": "catalog:",
     "fallow": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",

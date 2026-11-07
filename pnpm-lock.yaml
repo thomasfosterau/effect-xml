@@ -39,6 +39,9 @@ catalogs:
     '@vitest/coverage-istanbul':
       specifier: 5.0.5
       version: 5.0.5
+    esbuild:
+      specifier: ^0.28.2
+      version: 0.28.2
     fallow:
       specifier: 3.39.0
       version: 3.39.0
@@ -103,6 +106,9 @@ importers:
       effect:
         specifier: 4.1.2
         version: 4.1.2
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.28.2
       fallow:
         specifier: 'catalog:'
         version: 3.39.0

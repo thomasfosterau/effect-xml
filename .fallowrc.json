@@ -13,6 +13,7 @@
     "packages/cli/tests/**/*.test.ts",
     "packages/cli/vite.config.ts",
     "bench/parse.ts",
+    "bench/size.ts",
     "vite.config.ts"
   ],
   "ignoreExports": [{ "file": "src/Xsd/Validate.ts", "exports": ["select"] }],
