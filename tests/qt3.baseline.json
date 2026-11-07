@@ -494,15 +494,15 @@
     },
     "fn-parse-json": {
       "runnable": 154,
-      "passing": 148
+      "passing": 153
     },
     "fn-parse-xml": {
       "runnable": 17,
-      "passing": 15
+      "passing": 16
     },
     "fn-parse-xml-fragment": {
       "runnable": 25,
-      "passing": 24
+      "passing": 25
     },
     "fn-path": {
       "runnable": 17,
@@ -818,7 +818,7 @@
     },
     "misc-JsonTestSuite": {
       "runnable": 318,
-      "passing": 0
+      "passing": 306
     },
     "misc-StaticContext": {
       "runnable": 1,
@@ -2104,15 +2104,15 @@
     },
     "fn-parse-json": {
       "runnable": 147,
-      "passing": 142
+      "passing": 147
     },
     "fn-parse-xml": {
       "runnable": 17,
-      "passing": 15
+      "passing": 16
     },
     "fn-parse-xml-fragment": {
       "runnable": 25,
-      "passing": 24
+      "passing": 25
     },
     "fn-path": {
       "runnable": 12,
