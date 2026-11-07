@@ -2,6 +2,7 @@ import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
+import * as Stream from "effect/Stream";
 import { Sax, Xml } from "../src/index.ts";
 
 const parseError = async (input: string, options?: Xml.ParseOptions) => {
@@ -34,6 +35,27 @@ describe("typed errors", () => {
     const e = await parseError(`<a><b`);
     expect(e._tag).toBe("UnexpectedEndOfInput");
   });
+
+  test.each([
+    [`<a x="1>`, 8],
+    [`<a x='1>`, 8],
+    [`<a x="1" y="2>text`, 18],
+  ] as const)(
+    "an unclosed attribute quote in %s is reported where the input ends (#157)",
+    async (input, offset) => {
+      const fromParse = await parseError(input);
+      assert(Predicate.isTagged(fromParse, "UnexpectedEndOfInput"));
+      expect(fromParse.position.offset).toBe(offset);
+      const fromDtd = await parseError(input, { dtd: "internal" });
+      assert(Predicate.isTagged(fromDtd, "UnexpectedEndOfInput"));
+      expect(fromDtd.position.offset).toBe(offset);
+      const chunked = await Effect.runPromise(
+        Stream.fromIterable(input).pipe(Sax.tokenize(), Stream.runDrain, Effect.flip),
+      );
+      assert(Predicate.isTagged(chunked, "UnexpectedEndOfInput"));
+      expect(chunked.position.offset).toBe(offset);
+    },
+  );
 
   test("multiple root elements", async () => {
     const e = await parseError(`<a/><b/>`);

@@ -323,7 +323,9 @@ const xmlStartTag = (cfg: EntityConfig): P<Step> => {
       Parser.peek(Token.noneOf(ws + "/>")),
       Token.takeTill(ws + "=/>", { min: 1 }),
     ),
-    value: Parser.preceded(eq, attrValue),
+    // Committed once the value has started: an unclosed quote is reported where
+    // the input ends, not backtracked to the separator before the attribute.
+    value: Parser.preceded(eq, Parser.cut(attrValue)),
     end: Parser.location,
   });
   const close = Parser.preceded(
