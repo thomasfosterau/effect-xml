@@ -9,7 +9,7 @@
  * the full WHATWG tree-construction algorithm (the next phase) will consume.
  */
 import * as HashSet from "effect/HashSet";
-import * as Stream from "effect/Stream";
+import type * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import * as Sax from "../Sax.ts";
 

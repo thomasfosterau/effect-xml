@@ -11,7 +11,7 @@
 import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
-import * as Option from "effect/Option";
+import type * as Option from "effect/Option";
 
 /** The namespaces of the built-in functions and types. */
 export const Namespaces = {

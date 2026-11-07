@@ -54,6 +54,9 @@ jobs:
         run: pnpm exec vp run test:unit
       - name: Build
         run: pnpm exec vp run build
+      # Bundles Sax.forEach and Xml.parse from dist/ against their size budgets.
+      - name: Bundle size
+        run: pnpm exec vp run size
       # Type-checks AND runs every JSDoc @example against the built dist/.
       - name: Verify documentation examples (docgen)
         run: pnpm exec vp run docgen

@@ -6,7 +6,7 @@
  * while still exposing the streaming primitives for large inputs.
  */
 import type * as Effect from "effect/Effect";
-import * as Stream from "effect/Stream";
+import type * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import * as Sax from "../Sax.ts";
 import { decodeChunks } from "../internal/tokenizer.ts";

@@ -12,7 +12,7 @@
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
-import * as Result from "effect/Result";
+import type * as Result from "effect/Result";
 import type { QName } from "../../../Name.ts";
 import type { XQueryError } from "../../../XQuery/Error.ts";
 import { AtomicValue } from "../atomic.ts";

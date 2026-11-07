@@ -464,9 +464,10 @@ export default defineConfig({
         dependsOn: [cli("check")],
         cache: { input: cacheInputs, output: [] },
       },
-      // The published artifact: one ESM bundle + declaration file per entry
-      // point (`vp pack` → tsdown, `platform: neutral`). `sideEffects:
-      // false` is a claim about this output: no top-level statements.
+      // The published artifact: one ESM module + declaration file per source
+      // module (`vp pack` → tsdown, `platform: neutral`, `unbundle`).
+      // `sideEffects: false` is a claim about this output: no top-level
+      // statements.
       build: {
         command: "vp pack",
         dependsOn: [cli("build")],
@@ -496,6 +497,13 @@ export default defineConfig({
         dependsOn: ["build"],
         cache: { input: cacheInputs, output: ["docs/**"] },
       },
+      // The bundle-size budgets (#156): a consumer's `Sax.forEach` and
+      // `Xml.parse` bundled from `dist/` with esbuild (bench/size.ts). A CI gate.
+      size: {
+        command: "vpx bench/size.ts",
+        dependsOn: ["build"],
+        cache: false,
+      },
       // Parsing throughput on a generated SpreadsheetML worksheet (not a gate).
       bench: {
         command: "vpx bench/parse.ts",
@@ -521,6 +529,14 @@ export default defineConfig({
     platform: "neutral",
     dts: true,
     outDir: "dist",
+    // One output module per source module, so a consumer's bundler drops the
+    // modules a program never reaches (`sideEffects: false`): bundled into a
+    // chunk per entry, `Sax.forEach` alone carried XQuery and XSD along (#156).
+    unbundle: true,
+    // Unbundled, an imported constant that rolldown inlines leaves a bare
+    // `import "./x.js"` behind, which esbuild warns about in every consumer's
+    // build (`ignored-bare-import`); the modules keep their named imports.
+    inputOptions: { optimization: { inlineConst: false } },
     clean: true,
   },
   test: {
