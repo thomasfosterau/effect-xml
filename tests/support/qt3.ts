@@ -22,9 +22,11 @@
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as HashMap from "effect/HashMap";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Order from "effect/Order";
 import * as Predicate from "effect/Predicate";
 import * as Record from "effect/Record";
@@ -673,6 +675,13 @@ export interface Request {
   /** Collections by absolute URI; `""` is the default collection. */
   readonly collections: HashMap.HashMap<string, XQuery.Sequence>;
   readonly resources: HashMap.HashMap<string, LoadedResource>;
+  /**
+   * A file of the vendored suite by absolute `file:` URI, for the texts a
+   * query reads by a URI no environment declares as a resource (the
+   * JSONTestSuite tests' `json-doc('JSONTestSuite/…')`, relative to their
+   * test set). Fails for anything outside the suite.
+   */
+  readonly suiteFile: (uri: string) => Effect.Effect<Uint8Array, XQuery.XQueryError>;
   /** Library modules by target namespace, with their source text. */
   readonly modules: ReadonlyArray<{
     readonly uri: string;
@@ -757,7 +766,17 @@ const resolverOf = (request: Request): XQuery.ResourceResolver => {
       }),
     text: (uri, encoding) =>
       Option.match(HashMap.get(request.resources, uri), {
-        onNone: () => missing("FOUT1170", uri),
+        onNone: () =>
+          request
+            .suiteFile(uri)
+            .pipe(
+              Effect.flatMap((bytes) =>
+                decodeResource(
+                  { bytes, mediaType: Option.none(), encoding: Option.none() },
+                  encoding,
+                ),
+              ),
+            ),
         onSome: (r) => decodeResource(r, encoding),
       }),
     module: (uri) =>
@@ -999,10 +1018,20 @@ const buildRequest = Effect.fnUntraced(function* (
       ),
     { concurrency: 1 },
   );
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const suiteFile = (uri: string): Effect.Effect<Uint8Array, XQuery.XQueryError> =>
+    uri.startsWith(QT3.href)
+      ? path.fromFileUrl(new URL(uri)).pipe(
+          Effect.flatMap((file) => fs.readFile(file)),
+          Effect.mapError(() => XQuery.xqueryError("FOUT1170", `${uri} is not available`)),
+        )
+      : missing("FOUT1170", uri);
   const base: Request = {
     spec,
     query,
     baseUri,
+    suiteFile,
     namespaces: environment.namespaces,
     contextItem: Option.flatMap(contextDocument, ([, , node]) => Result.getSuccess(node)),
     variables: roleVariables,

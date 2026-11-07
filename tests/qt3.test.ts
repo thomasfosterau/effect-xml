@@ -211,6 +211,7 @@ const requestFor = (query: string): Request => ({
   documents: HashMap.empty(),
   collections: HashMap.empty(),
   resources: HashMap.empty(),
+  suiteFile: (uri) => Effect.fail(XQuery.xqueryError("FOUT1170", `${uri} is not available`)),
   modules: [],
   decimalFormats: [],
   defaultCollation: Option.none(),
