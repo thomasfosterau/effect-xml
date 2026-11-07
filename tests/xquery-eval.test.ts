@@ -244,6 +244,29 @@ describe("expressions", () => {
       "XPTY0004",
     );
   });
+
+  test("a declared variable's value matches its type, without conversion (§4.16)", () => {
+    expect(code("declare variable $i as xs:double := 1; $i")).toBe("XPTY0004");
+    expect(code('declare variable $i as xs:integer := xs:untypedAtomic("1"); $i')).toBe("XPTY0004");
+    expect(values("declare variable $i as xs:decimal := 1; $i")).toEqual(["1"]);
+    // A value the host supplies is still converted to the declared type.
+    expect(
+      values("declare variable $x as xs:double external; $x", {
+        variables: { x: XQuery.AtomicValue.integer(4n) },
+      }),
+    ).toEqual(["4"]);
+  });
+
+  test("the context item matches its declared type (§4.17)", () => {
+    expect(values("declare context item as xs:integer := 23; . + 1", {})).toEqual(["24"]);
+    expect(error("declare context item := (1 to 17)[20]; .", {}).code.local).toBe("XPTY0004");
+    expect(
+      error("declare context item as xs:integer external; .", {
+        context: XQuery.AtomicValue.string("London"),
+      }).code.local,
+    ).toBe("XPTY0004");
+    expect(code("declare context item as element() external; .")).toBe("XPTY0004");
+  });
 });
 
 describe("types", () => {

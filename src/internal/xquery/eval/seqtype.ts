@@ -428,6 +428,30 @@ const coerceFunction = (
 };
 
 /**
+ * `s` if it matches `t`, else `err:XPTY0004`: SequenceType matching with no
+ * conversion, as a declared variable's or context item's value is checked
+ * in XQuery 3.1 (§4.16, §4.17).
+ */
+export const matchType = (t: SeqType, s: Sequence, what: string, offset?: number): Sequence =>
+  sequenceMatches(t, s) ? s : mismatch(t, s, what, offset);
+
+/** The sequence type of exactly one item of `t`, as `declare context item as t` declares. */
+export const singleItemType = (t: ItemTypeT, resolve: Resolve): SeqType => ({
+  item: itemTest(t, resolve),
+  min: 1,
+  max: 1,
+  text: "the declared context item type",
+});
+
+/** Exactly one item of any kind: the context item's type when none is declared. */
+export const anySingleItem: SeqType = {
+  item: { kind: "item" },
+  min: 1,
+  max: 1,
+  text: "exactly one item",
+};
+
+/**
  * Apply the function conversion rules to a value for a parameter or result
  * of type `t`: atomize and convert for atomic types, coerce function items
  * to function types, then check the type, failing with `err:XPTY0004`.

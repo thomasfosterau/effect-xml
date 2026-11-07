@@ -806,7 +806,7 @@
     },
     "misc-CombinedErrorCodes": {
       "runnable": 230,
-      "passing": 211
+      "passing": 212
     },
     "misc-ErrorsAndOptimization": {
       "runnable": 7,
@@ -1282,7 +1282,7 @@
     },
     "prod-ContextItemDecl": {
       "runnable": 42,
-      "passing": 25
+      "passing": 40
     },
     "prod-ContextItemExpr": {
       "runnable": 45,
@@ -1430,7 +1430,7 @@
     },
     "prod-ModuleImport": {
       "runnable": 105,
-      "passing": 100
+      "passing": 103
     },
     "prod-NameTest": {
       "runnable": 127,
@@ -1550,7 +1550,7 @@
     },
     "prod-VarDecl.external": {
       "runnable": 97,
-      "passing": 87
+      "passing": 97
     },
     "prod-VarDefaultValue": {
       "runnable": 32,

@@ -157,6 +157,16 @@ const declarePrefix = (fold: Fold, prefix: string, uri: string, offset: number):
   );
 };
 
+/** The key a library module's own prefix binding is seen under. */
+const ownPrefix = (prefix: string, uri: string): string =>
+  `own-prefix:${prefix}=${normalizeUri(uri)}`;
+
+/** Record a library module's `module namespace prefix = uri`, which an import of `uri` as `prefix` repeats. */
+const markOwnPrefix = (fold: Fold, prefix: string, uri: string): Fold => ({
+  ...fold,
+  seen: HashSet.add(fold.seen, ownPrefix(prefix, uri)),
+});
+
 const opaque = (fold: Fold, uri: string): Fold =>
   withContext(fold, (c) => ({ ...c, opaqueNamespaces: HashSet.add(c.opaqueNamespaces, uri) }));
 
@@ -399,7 +409,12 @@ const importDecl = (
   );
   const bound = Option.match(prefix, {
     onNone: () => imported,
-    onSome: (p) => declarePrefix(imported, p, kind === "module" ? normalizeUri(uri) : uri, offset),
+    onSome: (p) =>
+      // A library module importing its own namespace under its own prefix
+      // binds nothing new (modules may import themselves since XQuery 3.0).
+      kind === "module" && HashSet.has(fold.seen, ownPrefix(p, uri))
+        ? imported
+        : declarePrefix(imported, p, kind === "module" ? normalizeUri(uri) : uri, offset),
   });
   if (
     kind === "schema" ||
@@ -626,7 +641,11 @@ export const analyzeModule = (
     Main: (m) => ({ ...start, errors: versionErrors(m.version) }),
     Library: (l) =>
       withErrors(
-        declarePrefix({ ...start, errors: versionErrors(l.version) }, l.prefix, l.uri, l.offset),
+        markOwnPrefix(
+          declarePrefix({ ...start, errors: versionErrors(l.version) }, l.prefix, l.uri, l.offset),
+          l.prefix,
+          l.uri,
+        ),
         l.uri === ""
           ? fail("XQST0088", "a library module needs a target namespace", l.offset)
           : none,
