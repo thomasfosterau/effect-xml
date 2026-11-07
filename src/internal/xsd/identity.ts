@@ -13,6 +13,7 @@
  */
 import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
+import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
@@ -37,7 +38,11 @@ interface FieldValue {
 }
 
 /** The key sequences found so far, by constraint name. */
-export type Tables = MutableHashMap.MutableHashMap<string, ReadonlyArray<string>>;
+/**
+ * Key tables by constraint name. Each array belongs to its table alone: a
+ * closing element's arrays are appended to (or moved into) its parent's.
+ */
+export type Tables = MutableHashMap.MutableHashMap<string, Array<string>>;
 
 interface Compiled {
   readonly constraint: IdentityConstraint;
@@ -110,7 +115,6 @@ const keyOf = (
   );
 
 const ok: Result.Result<void, string> = Result.void;
-const noRows: Result.Result<ReadonlyArray<string>, string> = Result.succeed([]);
 
 const encode = (values: ReadonlyArray<FieldValue>): string =>
   Arr.map(values, (v) => v.key).join("\u0000");
@@ -123,28 +127,57 @@ const selected = (c: Compiled, scope: XmlElement): ReadonlyArray<XmlElement> =>
     Arr.filter(select(s, scope), (n): n is XmlElement => n instanceof XmlElement),
   );
 
-/** The table of a key or unique constraint over `scope`, or why it is violated. */
+/**
+ * Each element `c` selects in `scope`, in order: `complete` with its field
+ * values, or `missing` when a field selects nothing. Stops at the first failure.
+ */
+const eachKey = (
+  c: Compiled,
+  scope: XmlElement,
+  typeOf: TypeOf,
+  missing: () => Result.Result<void, string>,
+  complete: (values: ReadonlyArray<FieldValue>) => Result.Result<void, string>,
+): Result.Result<void, string> =>
+  Arr.reduce(selected(c, scope), ok, (acc, element) =>
+    Result.flatMap(acc, () =>
+      Result.flatMap(keyOf(c, element, typeOf), (key) => {
+        const values = Arr.getSomes(key);
+        return values.length < key.length ? missing() : complete(values);
+      }),
+    ),
+  );
+
+/**
+ * The table of a key or unique constraint over `scope`, or why it is violated.
+ * Built in place, with a set for the uniqueness check: one step per selected
+ * element, not a copy of the table so far (#130).
+ */
 const table = (
   c: Compiled,
   scope: XmlElement,
   typeOf: TypeOf,
-): Result.Result<ReadonlyArray<string>, string> =>
-  Arr.reduce(selected(c, scope), noRows, (acc, element) =>
-    Result.flatMap(acc, (rows) =>
-      Result.flatMap(keyOf(c, element, typeOf), (key) => {
-        const values = Arr.getSomes(key);
-        if (values.length < key.length) {
-          return Predicate.isTagged(c.constraint, "Key")
-            ? Result.fail(`a field of the key ${c.constraint.name} is missing`)
-            : Result.succeed(rows);
-        }
-        const encoded = encode(values);
-        return rows.includes(encoded)
-          ? Result.fail(`the value ${show(values)} is not unique for ${c.constraint.name}`)
-          : Result.succeed([...rows, encoded]);
-      }),
-    ),
+): Result.Result<Array<string>, string> => {
+  const rows: Array<string> = [];
+  const seen = MutableHashSet.empty<string>();
+  const filled = eachKey(
+    c,
+    scope,
+    typeOf,
+    () =>
+      Predicate.isTagged(c.constraint, "Key")
+        ? Result.fail(`a field of the key ${c.constraint.name} is missing`)
+        : ok,
+    (values) => {
+      const encoded = encode(values);
+      if (MutableHashSet.has(seen, encoded))
+        return Result.fail(`the value ${show(values)} is not unique for ${c.constraint.name}`);
+      MutableHashSet.add(seen, encoded);
+      rows.push(encoded);
+      return ok;
+    },
   );
+  return Result.map(filled, () => rows);
+};
 
 const checkReferences = (
   c: Compiled,
@@ -153,20 +186,18 @@ const checkReferences = (
   typeOf: TypeOf,
 ): Result.Result<void, string> => {
   const refer = c.constraint.refer ?? "";
-  const known = Option.getOrElse(
-    MutableHashMap.get(tables, refer),
-    (): ReadonlyArray<string> => [],
+  const known = MutableHashSet.fromIterable(
+    Option.getOrElse(MutableHashMap.get(tables, refer), (): ReadonlyArray<string> => []),
   );
-  return Arr.reduce(selected(c, scope), ok, (acc, element) =>
-    Result.flatMap(acc, () =>
-      Result.flatMap(keyOf(c, element, typeOf), (key) => {
-        const values = Arr.getSomes(key);
-        if (values.length < key.length) return ok;
-        return known.includes(encode(values))
-          ? ok
-          : Result.fail(`the value ${show(values)} of ${c.constraint.name} refers to no ${refer}`);
-      }),
-    ),
+  return eachKey(
+    c,
+    scope,
+    typeOf,
+    () => ok,
+    (values) =>
+      MutableHashSet.has(known, encode(values))
+        ? ok
+        : Result.fail(`the value ${show(values)} of ${c.constraint.name} refers to no ${refer}`),
   );
 };
 
