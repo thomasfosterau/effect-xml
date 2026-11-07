@@ -1128,12 +1128,17 @@ const allowsName = (wildcard: Wildcard, name: Expanded): boolean =>
     : Predicate.isTagged(wildcard.namespaces, "Not") &&
       !wildcard.namespaces.namespaces.includes(name.namespace ?? ""));
 
+/**
+ * Add a closing element's key tables to its parent's: appended in place, or
+ * moved when the parent has none by that name (the child's frame is done
+ * with them). Copying the parent's table for every child that closed made a
+ * repeated constrained element quadratic (#130).
+ */
 const merge = (into: Tables, from: Tables): void =>
   MutableHashMap.forEach(from, (rows, name) => {
-    MutableHashMap.set(into, name, [
-      ...Option.getOrElse(MutableHashMap.get(into, name), () => []),
-      ...rows,
-    ]);
+    const existing = MutableHashMap.get(into, name);
+    if (Option.isSome(existing)) existing.value.push(...rows);
+    else MutableHashMap.set(into, name, rows);
   });
 
 /** Put a child's value where its parent's layout says it goes. */
