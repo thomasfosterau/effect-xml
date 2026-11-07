@@ -482,8 +482,9 @@ export default defineConfig({
       // per-function CRAP scores (`health.coverage` in .fallowrc.json).
       // Without it fallow estimates every function as uncovered, and any
       // function with cyclomatic complexity ≥ 5 fails the gate on its own.
-      // Run this before `fallow audit` (the Claude Code PreToolUse fallow gate
-      // runs the audit on `git commit` / `git push` but never refreshes this map).
+      // Run this before `fallow audit`. The Claude Code PreToolUse fallow gate
+      // (`.claude/hooks/fallow-gate.sh`) runs it itself when the map is missing
+      // or older than the sources.
       "test:coverage": {
         command: "vp test run --coverage",
         cache: false,
