@@ -1191,17 +1191,17 @@ const compileBodies = (decls: ReadonlyArray<DeclT>, scope: Scope): Code | undefi
     return contextDefault;
   }, undefined);
 
-/** The type a prolog's `declare context item` gives the context item, if it declares one. */
-const contextTypeOf = (decls: ReadonlyArray<DeclT>, scope: Scope): SeqType | undefined =>
-  decls.reduce<SeqType | undefined>(
-    (found, d) =>
-      Decl.$is("ContextItem")(d)
-        ? Option.match(d.type, {
+/** The type a prolog's `declare context item` gives the context item: none, or one. */
+const contextTypesOf = (decls: ReadonlyArray<DeclT>, scope: Scope): ReadonlyArray<SeqType> =>
+  decls.flatMap((d) =>
+    Decl.$is("ContextItem")(d)
+      ? [
+          Option.match(d.type, {
             onNone: () => anySingleItem,
             onSome: (t) => singleItemType(t, (n, k) => resolve(scope, n, k)),
-          })
-        : found,
-    undefined,
+          }),
+        ]
+      : [],
   );
 
 /** The scope of a declared function's body: its parameters bound to its own slots. */
@@ -1252,10 +1252,8 @@ export const compileQuery = (query: Query, externals: ReadonlyArray<string>): Co
       libraries.forEach(([decls, s]) => compileBodies(decls, s));
       const contextDefault = compileBodies(m.prolog, scope);
       const contextTypes = [
-        ...Option.toArray(Option.fromUndefinedOr(contextTypeOf(m.prolog, scope))),
-        ...libraries.flatMap(([decls, s]) =>
-          Option.toArray(Option.fromUndefinedOr(contextTypeOf(decls, s))),
-        ),
+        ...contextTypesOf(m.prolog, scope),
+        ...libraries.flatMap(([decls, s]) => contextTypesOf(decls, s)),
       ];
       return { body: compileExpr(m.body, scope), layout, program, contextDefault, contextTypes };
     },
