@@ -1,5 +1,23 @@
 # @thomasfosterau/effect-xml
 
+## 0.1.1
+
+### Patch Changes
+
+- [#161](https://github.com/thomasfosterau/effect-xml/pull/161) [`4192a61`](https://github.com/thomasfosterau/effect-xml/commit/4192a6189a75a7b818f1beb3b6bd89c7610580e8) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - The published package now includes `CHANGELOG.md`, so the release notes can be read from `node_modules`.
+
+- [#164](https://github.com/thomasfosterau/effect-xml/pull/164) [`bdd4115`](https://github.com/thomasfosterau/effect-xml/commit/bdd41157f6b37334dd06df9338850b5bc3f58d2d) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - The `@thomasfosterau/effect-parse` peer range now accepts 0.5 as well as 0.4 (`^0.4.1 || ^0.5.0`), so an application on effect-parse 0.5 gets no peer conflict and no second copy.
+
+- [#159](https://github.com/thomasfosterau/effect-xml/pull/159) [`c97c198`](https://github.com/thomasfosterau/effect-xml/commit/c97c1980341b348f780b5bc17617d36618d22a90) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - `Sax.forEach`, `Xml.parse` and the other direct reads of complete input no longer spend most of a small document's time on setup: the name table each read allocates was built with `Array.from({ length: 256 })`, about 10 µs a call. Reading `<a/>` is now about 10× faster; events, spans and errors are unchanged.
+
+- [#163](https://github.com/thomasfosterau/effect-xml/pull/163) [`9177a3f`](https://github.com/thomasfosterau/effect-xml/commit/9177a3fbfa2c0d38f33fca98e2b3ae23ca01d9db) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - The package is now published one module per source file instead of one bundle per entry point, so bundlers can drop what a program never uses. A program that imports `@thomasfosterau/effect-xml/Sax` and calls only `Sax.forEach` now bundles about 105 KB of this package (minified, peers not counted) instead of 255 KB, and no longer carries the XQuery and XML Schema engines; `Xml.parse` from `@thomasfosterau/effect-xml/Xml` is about 110 KB. Importing from the root entry still brings in every layer: import from the layer's own entry point when bundle size matters.
+
+- [#160](https://github.com/thomasfosterau/effect-xml/pull/160) [`3b64969`](https://github.com/thomasfosterau/effect-xml/commit/3b6496912b1da2402ee971120994353aecc76386) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - An attribute value whose quote is never closed (`<a x="1>`) now fails with `UnexpectedEndOfInput` where the input ends, instead of `UnexpectedCharacter` at the attribute's name saying attributes must be separated by whitespace.
+
+- [#168](https://github.com/thomasfosterau/effect-xml/pull/168) [`6633afd`](https://github.com/thomasfosterau/effect-xml/commit/6633afd316ee3b20699811926f8c68b638c2b288) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - XQuery: a declared variable's initializer must now match its declared type as it is, with no conversion (`declare variable $i as xs:double := 1` raises `XPTY0004`, as XQuery 3.1 §4.16 says); a value the host supplies for an external variable is still converted. The context item is checked against `declare context item as …` (in the main module and in every imported library module) and must be exactly one item, so a declared default that is empty, or a host context item of the wrong type, raises `XPTY0004`. A library module may import its own namespace under its own prefix.
+
+- [#166](https://github.com/thomasfosterau/effect-xml/pull/166) [`f636527`](https://github.com/thomasfosterau/effect-xml/commit/f636527d44349b84434a8da1c9a76d064ad167e5) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - XML Schema identity constraints (`xs:key`, `xs:unique`, `xs:keyref`) are checked in linear time: a key table was copied for every row added and every child that closed, and each uniqueness and reference check scanned it. Validating a 4 MB worksheet with a key on its rows drops from about 9.9 s to 1.5 s. Results and errors are unchanged.
+
 ## 0.1.0
 
 ### Minor Changes
