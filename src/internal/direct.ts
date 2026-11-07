@@ -16,6 +16,7 @@
  * So the events, and every failure, are the lexer's. `tests/scan.test.ts`
  * holds it to that (`Sax.forEach` against `Sax.tokenize`, which always lexes).
  */
+import * as Arr from "effect/Array";
 import { Input, Parser } from "@thomasfosterau/effect-parse";
 import type { SaxError } from "../Error.ts";
 import type { Position, Span } from "../Position.ts";
@@ -119,7 +120,7 @@ class Pass {
       end: 0,
       count: 0,
       inside: false,
-      names: Array.from<string | undefined>({ length: NAME_SLOTS }),
+      names: Arr.allocate<string>(NAME_SLOTS),
       reused: new Reused(),
       marks: freshMarks(),
     };
