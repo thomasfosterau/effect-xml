@@ -32,7 +32,7 @@ import * as Predicate from "effect/Predicate";
 import * as Record from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { Encoding, Xml, XQuery } from "../../src/index.ts";
+import { Encoding, Namespaces, Xml, XQuery } from "../../src/index.ts";
 import * as Fixtures from "./fixtures.ts";
 
 /** The vendored suite. */
@@ -243,6 +243,25 @@ const children = (element: Xml.XmlElement, local: string): ReadonlyArray<Xml.Xml
 const required = (element: Xml.XmlElement, name: string): string =>
   Option.getOrElse(attribute(element, name), () => "");
 
+/**
+ * A `<param>`'s name: in Clark notation (`{uri}local`) when its prefix is
+ * declared on the element itself (`<param xmlns:test="…" name="test:x">`),
+ * else as written, its prefix left to the environment's namespaces.
+ */
+const paramName = (element: Xml.XmlElement): string => {
+  const name = required(element, "name");
+  const colon = name.indexOf(":");
+  if (colon < 0) return name;
+  const prefix = name.slice(0, colon);
+  return Option.match(
+    Arr.findFirst(
+      element.attributes,
+      (a) => a.name.namespace === Namespaces.xmlns && a.name.local === prefix,
+    ),
+    { onNone: () => name, onSome: (a) => `{${a.value}}${name.slice(colon + 1)}` },
+  );
+};
+
 const readSource = (element: Xml.XmlElement, base: URL): Source => ({
   role: attribute(element, "role"),
   file: new URL(required(element, "file"), base),
@@ -285,7 +304,7 @@ const readEnvironment = (element: Xml.XmlElement, base: URL): Environment => ({
     encoding: attribute(r, "encoding"),
   })),
   params: children(element, "param").map((p) => ({
-    name: required(p, "name"),
+    name: paramName(p),
     select: attribute(p, "select"),
     as: attribute(p, "as"),
     declared: Option.contains(attribute(p, "declared"), "true"),
@@ -645,7 +664,7 @@ export const notApplicable = (spec: Spec, test: TestCase): Option.Option<string>
 
 /** An external variable as the engine receives it. */
 export interface Variable {
-  /** The name as written (`x`, or `p:x` with `p` in {@link Request.namespaces}). */
+  /** The name as written (`x`, or `p:x` with `p` in {@link Request.namespaces}), or `{uri}x`. */
   readonly name: string;
   readonly value: XQuery.Sequence;
   /** Whether the query declares it (`declare variable $x external`); XPath queries never do. */
@@ -717,6 +736,7 @@ const isXQueryError = /*#__PURE__*/ Schema.is(XQuery.XQueryError);
 
 /** A name as the catalog writes it (`x`, `p:x`), as a Clark name with the request's namespaces. */
 const clarkOf = (request: Request, name: string): string => {
+  if (name.startsWith("{")) return name;
   const colon = name.indexOf(":");
   if (colon < 0) return `{}${name}`;
   const prefix = name.slice(0, colon);
@@ -1185,7 +1205,11 @@ const keepCarriageReturns = (xpath: string): string =>
       })
     : xpath;
 
-/** Evaluate an assertion's XPath with the result bound to `$result`. */
+/**
+ * Evaluate an assertion's XPath with the result bound to `$result`; a result
+ * of one item is the context item too, as the suite's assertions on paths
+ * (`/result/impl = "hello"`) expect.
+ */
 const evaluateWith = (
   context: CheckContext,
   query: string,
@@ -1195,7 +1219,10 @@ const evaluateWith = (
     ...context.request,
     spec: "XP31",
     query: keepCarriageReturns(query),
-    contextItem: Option.none(),
+    contextItem: Option.flatMap(
+      Arr.findFirst(bindings, ([name]) => name === "result"),
+      ([, value]) => (value.length === 1 ? Arr.head(value) : Option.none()),
+    ),
     variables: [
       ...context.request.variables,
       ...bindings.map(([name, value]): Variable => ({

@@ -97,7 +97,15 @@ import {
   type Scope,
   type UserFunction,
 } from "./scope.ts";
-import { coerce, sequenceMatches, sequenceType, signatureOf } from "./seqtype.ts";
+import {
+  anySingleItem,
+  coerce,
+  matchType,
+  sequenceMatches,
+  sequenceType,
+  signatureOf,
+  singleItemType,
+} from "./seqtype.ts";
 
 const empty: Sequence = [];
 const bool = (b: boolean): Sequence => [AtomicValue.boolean(b)];
@@ -143,7 +151,12 @@ const computeGlobal = (g: GlobalVar, dyn: Dynamic, offset: number): Sequence => 
     (g.init === undefined
       ? raise("XPDY0002", `no value was given for the external variable $${g.clark}`, offset)
       : g.init(new Ctx(dyn.initialContext, 1, 1, [], dyn)));
-  return g.type === undefined ? value : coerce(g.type, value, `the variable $${g.clark}`, offset);
+  if (g.type === undefined) return value;
+  // A value the host supplies is converted to the declared type; an
+  // initializer's value must match it as it is (XQuery 3.1 §4.16).
+  return supplied === undefined
+    ? matchType(g.type, value, `the variable $${g.clark}`, offset)
+    : coerce(g.type, value, `the variable $${g.clark}`, offset);
 };
 
 const varRef = (e: Extract<ExprT, { readonly _tag: "VarRef" }>, scope: Scope): Code => {
@@ -1093,8 +1106,14 @@ export interface Compiled {
   readonly body: Code;
   readonly layout: Layout;
   readonly program: Program;
-  /** The context item's declared default and type, from `declare context item`. */
+  /** The context item's declared default, from `declare context item`. */
   readonly contextDefault: Code | undefined;
+  /**
+   * The context item's declared types (each exactly one item), from the
+   * `declare context item` of the main module and of every library module
+   * it imports: the context item must match them all.
+   */
+  readonly contextTypes: ReadonlyArray<SeqType>;
 }
 
 const declaredFunction = (
@@ -1172,6 +1191,19 @@ const compileBodies = (decls: ReadonlyArray<DeclT>, scope: Scope): Code | undefi
     return contextDefault;
   }, undefined);
 
+/** The type a prolog's `declare context item` gives the context item, if it declares one. */
+const contextTypeOf = (decls: ReadonlyArray<DeclT>, scope: Scope): SeqType | undefined =>
+  decls.reduce<SeqType | undefined>(
+    (found, d) =>
+      Decl.$is("ContextItem")(d)
+        ? Option.match(d.type, {
+            onNone: () => anySingleItem,
+            onSome: (t) => singleItemType(t, (n, k) => resolve(scope, n, k)),
+          })
+        : found,
+    undefined,
+  );
+
 /** The scope of a declared function's body: its parameters bound to its own slots. */
 const withParams = (
   d: Extract<DeclT, { readonly _tag: "Function" }>,
@@ -1196,7 +1228,13 @@ export const compileQuery = (query: Query, externals: ReadonlyArray<string>): Co
   const scope: Scope = { statics: scopeOf(query.context), vars: HashMap.empty(), layout, program };
   if (query.language === "XPath") {
     declareGlobals([], scope, externals);
-    return { body: compileExpr(query.expr, scope), layout, program, contextDefault: undefined };
+    return {
+      body: compileExpr(query.expr, scope),
+      layout,
+      program,
+      contextDefault: undefined,
+      contextTypes: [],
+    };
   }
   // Every library module's globals and functions go in the one program, so
   // modules (even ones that import each other) reach each other's by name.
@@ -1213,7 +1251,13 @@ export const compileQuery = (query: Query, externals: ReadonlyArray<string>): Co
       declareGlobals(m.prolog, scope, []);
       libraries.forEach(([decls, s]) => compileBodies(decls, s));
       const contextDefault = compileBodies(m.prolog, scope);
-      return { body: compileExpr(m.body, scope), layout, program, contextDefault };
+      const contextTypes = [
+        ...Option.toArray(Option.fromUndefinedOr(contextTypeOf(m.prolog, scope))),
+        ...libraries.flatMap(([decls, s]) =>
+          Option.toArray(Option.fromUndefinedOr(contextTypeOf(decls, s))),
+        ),
+      ];
+      return { body: compileExpr(m.body, scope), layout, program, contextDefault, contextTypes };
     },
   });
 };
@@ -1246,11 +1290,23 @@ export const compileParts = (
 
 /** Run a compiled query; a query that declares a default context item uses it when the host gives none. */
 export const runCompiled = (compiled: Compiled, dyn: Dynamic): Sequence => {
+  const { contextDefault, contextTypes } = compiled;
+  // The context item, the host's or the declared default, must be exactly
+  // one item of every declared type (XQuery 3.1 §4.17).
+  const given =
+    dyn.initialContext === undefined
+      ? contextDefault === undefined
+        ? undefined
+        : matchType(
+            anySingleItem,
+            contextDefault(new Ctx(undefined, 0, 0, [], dyn)),
+            "the context item",
+          )
+      : [dyn.initialContext];
   const initial =
-    dyn.initialContext ??
-    (compiled.contextDefault === undefined
+    given === undefined
       ? undefined
-      : compiled.contextDefault(new Ctx(undefined, 0, 0, [], dyn))[0]);
+      : contextTypes.reduce((v, t) => matchType(t, v, "the context item"), given)[0];
   const run = initial === dyn.initialContext ? dyn : { ...dyn, initialContext: initial };
   return compiled.body(new Ctx(initial, 1, 1, [], run));
 };
