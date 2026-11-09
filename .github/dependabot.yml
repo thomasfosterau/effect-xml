@@ -79,6 +79,8 @@ updates:
           - "major"
           - "minor"
           - "patch"
+    assignees:
+      - thomasfosterau
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -91,6 +93,8 @@ updates:
       prefix: "ci"
     cooldown:
       default-days: 1
+    assignees:
+      - thomasfosterau
   # The .devcontainer/ features (the image tag moves with vite-plus by hand).
   - package-ecosystem: "devcontainers"
     directory: "/"
@@ -104,3 +108,5 @@ updates:
       prefix: "chore"
     cooldown:
       default-days: 1
+    assignees:
+      - thomasfosterau
