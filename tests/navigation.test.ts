@@ -4,9 +4,12 @@ import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { Sax, Xml } from "../src/index.ts";
 import { splitEvery } from "./support/chunks.ts";
 import { at, failure, some, success } from "./support/narrow.ts";
+
+const isXmlAttribute = Schema.is(Xml.XmlAttribute);
 
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const W14 = "http://schemas.microsoft.com/office/word/2010/wordml";
@@ -129,7 +132,7 @@ describe("XPath subset", () => {
   );
   const show = (e: string, context: Xml.XPath.Context = doc) =>
     Xml.XPath.select(compile(e), context).map((n) =>
-      n instanceof Xml.XmlAttribute
+      isXmlAttribute(n)
         ? n.value
         : Match.valueTags(n, {
             XmlElement: (element) => Xml.serialize(element),

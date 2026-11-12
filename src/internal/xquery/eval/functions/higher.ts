@@ -12,6 +12,7 @@ import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as R from "effect/Record";
+import * as Schema from "effect/Schema";
 import { QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import {
@@ -29,6 +30,8 @@ import { callFunction, isCallable } from "../runtime.ts";
 import { collate, collationArg, collationNamed, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, arrayOf, atomOf, isEmpty, mapOf, text } from "./values.ts";
+
+const isQName = Schema.is(QName);
 
 /** The function of a `function(…)` argument. */
 const functionOf = (s: Sequence): FunctionItem | MapItem | ArrayItem => {
@@ -176,7 +179,7 @@ const fnHigherOrder: ReadonlyArray<BuiltinSpec> = [
       const name = atomOf(arg(args, 0)).value;
       const arity = Number(atomOf(arg(args, 1)).value);
       const lookup = call.statics.lookup;
-      return lookup === undefined || !(name instanceof QName)
+      return lookup === undefined || !isQName(name)
         ? []
         : Arr.fromOption(lookup(name, arity, call.ctx, call.offset));
     },

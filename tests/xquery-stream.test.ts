@@ -3,9 +3,12 @@ import * as Effect from "effect/Effect";
 import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { Sax, Xml, XQuery } from "../src/index.ts";
 import { splitEvery } from "./support/chunks.ts";
 import { failure, success } from "./support/narrow.ts";
+
+const isXQueryError = Schema.is(XQuery.XQueryError);
 
 const X = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const namespaces = { x: X };
@@ -37,7 +40,7 @@ const canonical = (item: XQuery.Item): string => {
 
 /** The `err:` local name of an error from a stream, which must be an `XQueryError`. */
 const codeOf = (error: { readonly _tag: string }): string =>
-  P.isTagged(error, "XQueryError") && error instanceof XQuery.XQueryError
+  P.isTagged(error, "XQueryError") && isXQueryError(error)
     ? error.code.local
     : "not an XQueryError";
 

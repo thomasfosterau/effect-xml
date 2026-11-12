@@ -26,12 +26,15 @@ import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import * as Str from "effect/String";
+import * as Schema from "effect/Schema";
 import {
   InvalidByteSequence,
   LimitExceeded,
   UnsupportedEncoding,
   type DecodeError,
 } from "./Error.ts";
+
+const isUnsupportedEncoding = Schema.is(UnsupportedEncoding);
 
 /** `f(0) … f(n - 1)`; unlike `Arr.makeBy`, which clamps `n` to at least 1, empty for `n = 0`. */
 const times = <A>(n: number, f: (i: number) => A): Array<A> =>
@@ -551,7 +554,7 @@ export class ByteDecoder {
   private sniff(head: Uint8Array, final: boolean): string | DecodeError {
     const sniffer = this.options.mode === "html" ? sniffHtml : sniffXml;
     const found = sniffer(head, final, this.options);
-    if (found instanceof UnsupportedEncoding) return found;
+    if (isUnsupportedEncoding(found)) return found;
     if ("_tag" in found) {
       this.head = head;
       return "";

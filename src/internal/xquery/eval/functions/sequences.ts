@@ -12,6 +12,7 @@ import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { isNode, type Sequence } from "../../item.ts";
@@ -37,6 +38,8 @@ import {
   str,
   text,
 } from "./values.ts";
+
+const isQName = Schema.is(QName);
 
 /** How strings compare under a collation, as the comparison helpers take it. */
 const order =
@@ -319,7 +322,7 @@ const generateIdEmpty: BuiltinSpec = {
 
 const qnameArg = (s: Sequence): QName | undefined => {
   const a = optionalAtom(s);
-  return a !== undefined && a.value instanceof QName ? a.value : undefined;
+  return a !== undefined && isQName(a.value) ? a.value : undefined;
 };
 
 /** The namespace bindings in scope on an element, by prefix (`""` for the default namespace). */
