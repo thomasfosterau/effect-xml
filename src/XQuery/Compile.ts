@@ -25,7 +25,7 @@ import { type XQueryError, xqueryError } from "./Error.ts";
  * @since 0.1.0
  * @category compiling
  */
-export interface CompileOptions extends StaticOptions {}
+export type CompileOptions = StaticOptions;
 
 /**
  * A library module's source text and location, as `CompileOptions.modules`
@@ -34,7 +34,7 @@ export interface CompileOptions extends StaticOptions {}
  * @since 0.1.0
  * @category compiling
  */
-export interface ModuleSource extends ModuleSourceT {}
+export type ModuleSource = ModuleSourceT;
 
 /**
  * A compiled query: its text, its language, and what the compiler made of

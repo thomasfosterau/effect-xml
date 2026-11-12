@@ -398,7 +398,9 @@ const anyNode: Step = { axis: "descendant-or-self", test: { _tag: "Node" }, pred
 const outside: Expr = { _tag: "Call", fn: "position", args: [] };
 
 /** The arity range of each function the view supports, by name. */
-interface ViewFunctions extends R.ReadonlyRecord<string, readonly [min: number, max: number]> {}
+interface ViewFunctions {
+  readonly [key: string]: readonly [min: number, max: number];
+}
 
 const viewFunctions: ViewFunctions = {
   not: [1, 1],
@@ -416,7 +418,9 @@ const isViewFunction = (local: string): local is Fn =>
   R.has<string, readonly [min: number, max: number]>(viewFunctions, local);
 
 /** The operators the view supports. */
-interface ViewOps extends R.ReadonlyRecord<string, true> {}
+interface ViewOps {
+  readonly [key: string]: true;
+}
 
 const viewOps: ViewOps = {
   or: true,
