@@ -29,6 +29,7 @@ import {
   annotationErrors,
   annotationName,
   bind,
+  absoluteCollation,
   collationErrors,
   isVisibility,
   expr,
@@ -528,7 +529,11 @@ const declaration =
           offset,
           (c) => ({
             ...c,
-            defaultCollation: uri,
+            // A relative URI resolves against the base URI declared so far.
+            defaultCollation: Option.getOrElse(
+              absoluteCollation(scopeOf(fold.context), uri),
+              () => uri,
+            ),
           }),
         ),
       BaseURI: ({ uri, offset }) => {

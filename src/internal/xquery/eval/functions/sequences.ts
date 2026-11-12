@@ -22,7 +22,7 @@ import { AtomicTypes } from "../../types.ts";
 import { axisNodes, documentOrder } from "../axes.ts";
 import { atomicDeepEqual, deepEqual, equalityBucket } from "../compare.ts";
 import { raise } from "../raise.ts";
-import { collate, collationArg, type Collation } from "./collation.ts";
+import { collationArg, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import {
   arg,
@@ -41,12 +41,6 @@ import {
 
 const isQName = Schema.is(QName);
 
-/** How strings compare under a collation, as the comparison helpers take it. */
-const order =
-  (c: Collation) =>
-  (a: string, b: string): number =>
-    collate(c, a, b);
-
 // -----------------------------------------------------------------------------
 // Sequences
 // -----------------------------------------------------------------------------
@@ -55,7 +49,7 @@ const isNaNValue = (a: AtomicValue): boolean => P.isNumber(a.value) && Number.is
 
 /** Whether two values are equal as `index-of` takes it: `eq`, with incomparable values unequal. */
 const equalForIndex = (a: AtomicValue, b: AtomicValue, tz: number, c: Collation): boolean =>
-  !isNaNValue(a) && !isNaNValue(b) && atomicDeepEqual(a, b, tz, order(c));
+  !isNaNValue(a) && !isNaNValue(b) && atomicDeepEqual(a, b, tz, c.compare);
 
 const indexOf = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const c = collationArg(args, 2, call);
@@ -69,12 +63,12 @@ const indexOf = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
 const distinctValues = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const c = collationArg(args, 1, call);
   const tz = call.ctx.dyn.implicitTimezone;
-  const strings = order(c);
+  const strings = c.compare;
   const [, kept] = Arr.mapAccum(
     atomsOf(arg(args, 0)),
     HashMap.empty<string, ReadonlyArray<AtomicValue>>(),
     (seen, a) => {
-      const key = equalityBucket(a, c.fold);
+      const key = equalityBucket(a, c.bucket);
       const bucket = Option.getOrElse(HashMap.get(seen, key), () => []);
       return bucket.some((b) => atomicDeepEqual(a, b, tz, strings))
         ? [seen, []]
@@ -146,7 +140,7 @@ const sequenceFunctions: ReadonlyArray<BuiltinSpec> = [
           arg(args, 0),
           arg(args, 1),
           call.ctx.dyn.implicitTimezone,
-          order(collationArg(args, 2, call)),
+          collationArg(args, 2, call).compare,
         ),
       ),
   },

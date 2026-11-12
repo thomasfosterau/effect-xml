@@ -30,6 +30,7 @@ import { castAtomic, toNumber } from "../cast.ts";
 import { deepEqual } from "../compare.ts";
 import { orElse, raise, succeeds, unwrap } from "../raise.ts";
 import { arrayMember, contextItem, fetchResource } from "../runtime.ts";
+import { collationOf } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, arrayOf, atomOf, bool, int, isEmpty, mapOf, ofNode, str, text } from "./values.ts";
 
@@ -165,7 +166,14 @@ const sequences: ReadonlyArray<BuiltinSpec> = [
     params: ["item()*", "item()*"],
     result: "xs:boolean",
     impl: (args, call) =>
-      bool(deepEqual(arg(args, 0), arg(args, 1), call.ctx.dyn.implicitTimezone)),
+      bool(
+        deepEqual(
+          arg(args, 0),
+          arg(args, 1),
+          call.ctx.dyn.implicitTimezone,
+          collationOf(undefined, call).compare,
+        ),
+      ),
   },
 ];
 

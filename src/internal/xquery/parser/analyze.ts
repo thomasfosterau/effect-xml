@@ -61,6 +61,7 @@ import type { StaticContext } from "./context.ts";
 import { codepointCollation } from "./context.ts";
 import type { StaticError } from "./errors.ts";
 import { staticError } from "./errors.ts";
+import { isUcaUri, ucaCollation } from "../uca.ts";
 
 /** Static errors, in the order they were found. */
 export type Errors = ReadonlyArray<StaticError>;
@@ -761,15 +762,15 @@ const flwor = (scope: Scope, clauses: ReadonlyArray<ClauseT>, ret: Expr): Errors
 
 // Collations ------------------------------------------------------------------
 
-/** The collations every query has: the codepoint collation, HTML ASCII case-insensitive, and UCA with parameters. */
+/** The collations every query has: the codepoint collation, HTML ASCII case-insensitive, and the UCA collations the runtime supports. */
 const isKnownCollation = (scope: Scope, uri: string): boolean =>
   uri === codepointCollation ||
   uri === "http://www.w3.org/2005/xpath-functions/collation/html-ascii-case-insensitive" ||
-  uri.startsWith("http://www.w3.org/2013/collation/UCA") ||
+  (isUcaUri(uri) && Result.isSuccess(ucaCollation(uri))) ||
   HashSet.has(scope.context.collations, uri);
 
 /** Resolve a collation URI against the base URI; `undefined` if it can't be. */
-const absoluteCollation = (scope: Scope, uri: string): Option.Option<string> =>
+export const absoluteCollation = (scope: Scope, uri: string): Option.Option<string> =>
   URL.canParse(uri)
     ? Option.some(uri)
     : Option.flatMap(scope.context.baseUri, (base) =>
