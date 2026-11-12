@@ -1,34 +1,42 @@
 name: CI
 
-# ONE required job, ONE required check: the pipeline's task graph lives in
-# vite.config.ts (the `check`, `test:unit`, `build` and `docgen` tasks), not
-# in GitHub Actions `needs:`. Copied in shape from the effect-web library.
-# Nothing here needs a database, a stage or a credential, so every PR runs
-# the whole gate — Dependabot's included: the job holds a read-only token, no
-# secrets and no OIDC, checks out without persisting credentials, and every
-# third-party action is pinned to a commit SHA (Dependabot's
-# `github-actions` updates keep the pins current).
+# ONE workflow, ONE command: `vp run ci`, the `ci` task in vite.config.ts,
+# which runs every gate in order (format and lint, types, unit tests and the
+# conformance gates, build, bundle size, docs examples, dependency audit), so
+# CI and a local `vp run ci` are the same thing. It runs on the latest LTS and
+# the latest Current release of Node.js; the `ci` job gathers the matrix into
+# the single check rulesets require.
+#
+# Nothing here needs a credential, so every PR runs the whole gate,
+# Dependabot's included: the jobs hold a read-only token, no secrets and no
+# OIDC, check out without persisting credentials, and every third-party action
+# is pinned to a commit SHA (Dependabot's `github-actions` updates keep the
+# pins current).
 
 on:
   pull_request:
-    branches: [trunk]
-    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [trunk]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# No permissions by default; the single job grants only read access.
+# No permissions by default; each job grants only read access.
 permissions: {}
 
 jobs:
-  ci:
+  test:
+    name: ci (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [lts, latest]
     env:
       # A modest ceiling for every Node process in the pipeline. NODE_OPTIONS
       # is inherited by every child, including each vitest fork.
@@ -38,35 +46,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Installs the catalog's vite-plus pin (`version-file`), the Node.js it
-      # resolves (the latest LTS release: never a pre-release) and the pnpm
-      # from `packageManager`, restores the dependency cache, and runs
-      # `vp install --frozen-lockfile` with install scripts.
+      # Installs the catalog's vite-plus pin (`version-file`), the matrix's
+      # Node.js line (`vp env use lts` / `latest`: released lines only, never a
+      # nightly or release candidate) and the pnpm from `packageManager`,
+      # restores the dependency cache, and runs `vp install --frozen-lockfile`.
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
           version-file: pnpm-workspace.yaml
+          node-version: ${{ matrix.node }}
           cache: true
       - name: Restore the Vite+ task cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules/.vite/task-cache
-          key: vp-task-v1-${{ runner.os }}-${{ github.sha }}
+          key: vp-task-v1-${{ runner.os }}-node-${{ matrix.node }}-${{ github.sha }}
           restore-keys: |
-            vp-task-v1-${{ runner.os }}-
-      - name: Format and lint
-        run: vp check
-      - name: Type gate (src + tests + example)
-        run: vp run check
-      - name: Unit tests (incl. the html5lib conformance gate)
-        run: vp run test:unit
-      - name: Build
-        run: vp run build
-      # Bundles Sax.forEach and Xml.parse from dist/ against their size budgets.
-      - name: Bundle size
-        run: vp run size
-      # Type-checks AND runs every JSDoc @example against the built dist/.
-      - name: Verify documentation examples (docgen)
-        run: vp run docgen
-      - name: Audit
-        run: pnpm audit --audit-level high
+            vp-task-v1-${{ runner.os }}-node-${{ matrix.node }}-
+      - name: Every gate (vp run ci)
+        run: vp run ci
+
+  # The one check rulesets require: green only when every Node.js line is.
+  ci:
+    name: ci
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every matrix job passed
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: test "$RESULT" = success
