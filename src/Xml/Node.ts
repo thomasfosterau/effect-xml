@@ -54,7 +54,9 @@ export const isNamed = (qname: QName, name: NameLike): boolean =>
  * @since 0.1.0
  * @category models
  */
-export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
+export class XmlAttribute extends Schema.Class<XmlAttribute, { readonly brand: unique symbol }>(
+  "XmlAttribute",
+)({
   name: QName,
   value: Schema.String,
 }) {}
@@ -65,9 +67,12 @@ export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
  * @since 0.1.0
  * @category models
  */
-export class XmlText extends Schema.TaggedClass<XmlText>()("XmlText", {
-  data: Schema.String,
-}) {}
+export class XmlText extends Schema.TaggedClass<XmlText, { readonly brand: unique symbol }>()(
+  "XmlText",
+  {
+    data: Schema.String,
+  },
+) {}
 
 /**
  * A CDATA section. Distinct from {@link XmlText} so round-tripping is faithful.
@@ -75,9 +80,12 @@ export class XmlText extends Schema.TaggedClass<XmlText>()("XmlText", {
  * @since 0.1.0
  * @category models
  */
-export class XmlCData extends Schema.TaggedClass<XmlCData>()("XmlCData", {
-  data: Schema.String,
-}) {}
+export class XmlCData extends Schema.TaggedClass<XmlCData, { readonly brand: unique symbol }>()(
+  "XmlCData",
+  {
+    data: Schema.String,
+  },
+) {}
 
 /**
  * A comment node.
@@ -85,9 +93,12 @@ export class XmlCData extends Schema.TaggedClass<XmlCData>()("XmlCData", {
  * @since 0.1.0
  * @category models
  */
-export class XmlComment extends Schema.TaggedClass<XmlComment>()("XmlComment", {
-  data: Schema.String,
-}) {}
+export class XmlComment extends Schema.TaggedClass<XmlComment, { readonly brand: unique symbol }>()(
+  "XmlComment",
+  {
+    data: Schema.String,
+  },
+) {}
 
 /**
  * A processing instruction.
@@ -95,10 +106,10 @@ export class XmlComment extends Schema.TaggedClass<XmlComment>()("XmlComment", {
  * @since 0.1.0
  * @category models
  */
-export class XmlProcessingInstruction extends Schema.TaggedClass<XmlProcessingInstruction>()(
-  "XmlProcessingInstruction",
-  { target: Schema.String, data: Schema.String },
-) {}
+export class XmlProcessingInstruction extends Schema.TaggedClass<
+  XmlProcessingInstruction,
+  { readonly brand: unique symbol }
+>()("XmlProcessingInstruction", { target: Schema.String, data: Schema.String }) {}
 
 // The "Encoded" (plain data) shape of the recursive node tree. `Schema.suspend`
 // for self-referential classes needs both the decoded and encoded types spelled
@@ -131,11 +142,14 @@ type XmlNodeEncoded =
  * @since 0.1.0
  * @category models
  */
-export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
-  name: QName,
-  attributes: Schema.Array(XmlAttribute),
-  children: Schema.Array(Schema.suspend((): Schema.Codec<XmlNode, XmlNodeEncoded> => XmlNode)),
-}) {
+export class XmlElement extends Schema.TaggedClass<XmlElement, { readonly brand: unique symbol }>()(
+  "XmlElement",
+  {
+    name: QName,
+    attributes: Schema.Array(XmlAttribute),
+    children: Schema.Array(Schema.suspend((): Schema.Codec<XmlNode, XmlNodeEncoded> => XmlNode)),
+  },
+) {
   /** First attribute value matching `name` (by qualified name). */
   attribute(name: string): string | undefined {
     return this.attributes.find((a) => a.name.qualified === name)?.value;
@@ -239,7 +253,9 @@ export const XmlNode = Schema.Union([
  * @since 0.1.0
  * @category models
  */
-export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration")({
+export class XmlDeclaration extends Schema.Class<XmlDeclaration, { readonly brand: unique symbol }>(
+  "XmlDeclaration",
+)({
   version: Schema.String,
   encoding: Schema.NullOr(Schema.String),
   standalone: Schema.NullOr(Schema.Boolean),
@@ -251,7 +267,9 @@ export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration
  * @since 0.1.0
  * @category models
  */
-export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
+export class XmlDoctype extends Schema.Class<XmlDoctype, { readonly brand: unique symbol }>(
+  "XmlDoctype",
+)({
   name: Schema.String,
   publicId: Schema.NullOr(Schema.String),
   systemId: Schema.NullOr(Schema.String),
@@ -264,7 +282,9 @@ export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
  * @since 0.1.0
  * @category models
  */
-export class XmlDocument extends Schema.Class<XmlDocument>("XmlDocument")({
+export class XmlDocument extends Schema.Class<XmlDocument, { readonly brand: unique symbol }>(
+  "XmlDocument",
+)({
   declaration: Schema.NullOr(XmlDeclaration),
   doctype: Schema.NullOr(XmlDoctype),
   /** Top-level nodes in order (comments / PIs around the root element). */
@@ -285,10 +305,10 @@ export class XmlDocument extends Schema.Class<XmlDocument>("XmlDocument")({
  * @since 0.1.0
  * @category errors
  */
-export class MissingRootElement extends Schema.TaggedError<MissingRootElement>()(
-  "MissingRootElement",
-  {},
-) {
+export class MissingRootElement extends Schema.TaggedError<
+  MissingRootElement,
+  { readonly brand: unique symbol }
+>()("MissingRootElement", {}) {
   override get message(): string {
     return "document has no root element";
   }

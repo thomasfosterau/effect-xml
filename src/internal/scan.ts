@@ -17,6 +17,8 @@
  */
 import { origin, type Span } from "../Position.ts";
 import { isXmlChar } from "./entities.ts";
+import * as Brand from "effect/Brand";
+import type { AttrName, TagName } from "../Name.ts";
 import { invalidNameAt } from "./names.ts";
 import type { LexEvent } from "./lexer.ts";
 
@@ -53,7 +55,7 @@ export interface Context {
    */
   inside: boolean;
   /** Names read recently (see {@link nameAt}). */
-  readonly names: Array<string | undefined>;
+  readonly names: Array<ScannedName | undefined>;
   /**
    * For each of {@link NEEDLES}, where it next occurs in the buffer from
    * where it was last looked for (the buffer's length when it does not):
@@ -98,12 +100,19 @@ type Attribute = Writable<Event<"StartElement">["attributes"][number]>;
 const spanOf = (ctx: Context, from: number, to: number): Span =>
   ctx.positions ? ctx.span(from, to) : NO_SPAN;
 
+/**
+ * A name the scanner read: one the tag grammars accept, so it is both a
+ * {@link TagName} and an {@link AttrName} (the same name productions).
+ */
+type ScannedName = TagName & AttrName;
+const scannedName = Brand.nominal<ScannedName>();
+
 /** The events of a {@link Context.reuse} scanner, rewritten for each token. */
 export class Reused {
   readonly text: Event<"Text"> = { data: "", span: NO_SPAN, _tag: "Text" };
-  readonly end: Event<"EndElement"> = { name: "", span: NO_SPAN, _tag: "EndElement" };
+  readonly end: Event<"EndElement"> = { name: scannedName(""), span: NO_SPAN, _tag: "EndElement" };
   readonly start: Event<"StartElement"> = {
-    name: "",
+    name: scannedName(""),
     attributes: [],
     selfClosing: false,
     span: NO_SPAN,
@@ -126,13 +135,13 @@ export const NAME_SLOTS = 256;
  * a repeated one costs no slice, and hashes (in a `Map` of names) as fast as
  * a string can.
  */
-const nameAt = (buf: string, from: number, to: number, ctx: Context): string => {
+const nameAt = (buf: string, from: number, to: number, ctx: Context): ScannedName => {
   const slot =
     ((to - from) * 31 + buf.charCodeAt(from) + buf.charCodeAt(to - 1) * 7) & (NAME_SLOTS - 1);
   const known = ctx.names[slot];
   if (known !== undefined && known.length === to - from && buf.startsWith(known, from))
     return known;
-  const name = buf.slice(from, to);
+  const name = scannedName(buf.slice(from, to));
   ctx.names[slot] = name;
   return name;
 };
@@ -429,7 +438,7 @@ const closeStart = (
   buf: string,
   i: number,
   ctx: Context,
-  name: string,
+  name: ScannedName,
   pos: number,
   partial: boolean,
 ): ScanResult => {

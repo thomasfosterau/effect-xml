@@ -210,7 +210,7 @@ class PlainBuilder implements Visitor {
     const attributes = this.attributes.pop();
     const from = this.froms.pop();
     if (open === undefined || attributes === undefined || from === undefined) {
-      return new UnexpectedEndTag({ name, position: this.where(at) });
+      return new UnexpectedEndTag({ tagName: name, position: this.where(at) });
     }
     if (open !== name) {
       return new MismatchedEndTag({ expected: open, actual: name, position: this.where(at) });
