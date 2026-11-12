@@ -36,6 +36,7 @@ import { AtomicTypes, derivesFrom } from "../types.ts";
 import { raise, unwrap } from "./raise.ts";
 import type { Code, Ctx } from "./runtime.ts";
 import { resolve, type Scope } from "./scope.ts";
+import { maybe } from "../../optional.ts";
 
 /** The evaluator's expression compiler, passed in to avoid an import cycle. */
 type CompileExpr = (e: ExprT, scope: Scope) => Code;
@@ -63,7 +64,7 @@ const modesOf = (scope: Scope): Modes => {
     strip: c.boundarySpace === "strip",
     preserve: c.copyNamespaces.preserve,
     inherit: c.copyNamespaces.inherit,
-    options: { baseUri: Option.getOrUndefined(c.baseUri) },
+    options: maybe("baseUri", Option.getOrUndefined(c.baseUri)),
   };
 };
 

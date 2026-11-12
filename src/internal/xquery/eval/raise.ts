@@ -33,7 +33,7 @@ export interface ResourceRequest {
   /** The encoding asked for, for a text. */
   readonly encoding: string | undefined;
   /** The base URI a parsed document gets. */
-  readonly base?: string | undefined;
+  readonly base?: string;
 }
 
 /** Thrown to stop evaluation until the host has fetched a resource. */

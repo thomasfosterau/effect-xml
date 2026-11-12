@@ -31,7 +31,7 @@ import { XmlDocument, type XmlElement, type XmlNode } from "./Node.ts";
  */
 export interface C14nOptions {
   /** Keep comments ("with comments"); default `false`. */
-  readonly comments?: boolean | undefined;
+  readonly comments?: boolean;
 }
 
 /**

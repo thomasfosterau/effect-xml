@@ -34,6 +34,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { Encoding, Namespaces, Xml, XQuery } from "../../src/index.ts";
 import * as Fixtures from "./fixtures.ts";
+import { maybe } from "./maybe.ts";
 
 /** The vendored suite. */
 const QT3 = new URL("../fixtures/qt3/", import.meta.url);
@@ -762,10 +763,12 @@ const charsetOf = (mediaType: string): Option.Option<string> =>
  */
 const decodeResource = (resource: LoadedResource, asked: string | undefined) =>
   Encoding.decodeBytes(resource.bytes, {
-    encoding:
+    ...maybe(
+      "encoding",
       Option.getOrUndefined(
         Option.orElse(resource.encoding, () => Option.flatMap(resource.mediaType, charsetOf)),
       ) ?? asked,
+    ),
   }).pipe(Effect.mapError((e) => XQuery.xqueryError("FOUT1190", e.message)));
 
 const resolverOf = (request: Request): XQuery.ResourceResolver => {
@@ -844,7 +847,7 @@ export const xqueryEngine: Engine = {
     const options: XQuery.CompileOptions = {
       namespaces: Record.fromEntries(request.namespaces.map((b) => [b.prefix, b.uri] as const)),
       variables: request.variables.map((v) => clarkOf(request, v.name)),
-      baseUri: Option.getOrUndefined(request.baseUri),
+      ...maybe("baseUri", Option.getOrUndefined(request.baseUri)),
       xpath1Compatibility: request.xpath1Compatibility,
       decimalFormats: Record.fromEntries(
         request.decimalFormats.map((f) => [
@@ -865,7 +868,7 @@ export const xqueryEngine: Engine = {
     return Effect.fromResult(compiled).pipe(
       Effect.flatMap((query) =>
         XQuery.evaluate(query, {
-          context: Option.getOrUndefined(request.contextItem),
+          ...maybe("context", Option.getOrUndefined(request.contextItem)),
           variables: Record.fromEntries(
             request.variables.map((v) => [clarkOf(request, v.name), v.value] as const),
           ),

@@ -40,6 +40,7 @@ import { quote } from "../internal/quote.ts";
 import { byKey, byNamespaceThenLocal } from "../internal/order.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
 import { XmlDocument, type XmlAttribute, type XmlElement, type XmlNode } from "./Node.ts";
+import { maybe } from "../internal/optional.ts";
 
 // -----------------------------------------------------------------------------
 // Events
@@ -61,7 +62,7 @@ export type WriterEvent =
        * whitespace inside it. (Set by {@link events}; when streaming, text in
        * an element turns indentation off from there on anyway.)
        */
-      readonly inline?: boolean | undefined;
+      readonly inline?: boolean;
     }
   | { readonly _tag: "EndElement" }
   | { readonly _tag: "Text"; readonly data: string }
@@ -86,7 +87,7 @@ export const start = (
   _tag: "StartElement",
   name: toQName(name),
   attributes,
-  inline,
+  ...maybe("inline", inline),
 });
 
 /**
@@ -206,35 +207,35 @@ export class SerializationError extends Schema.TaggedError<SerializationError>()
  */
 export interface WriterOptions {
   /** Emit an XML declaration (default `false`), optionally with `standalone`. */
-  readonly declaration?: boolean | { readonly standalone?: boolean } | undefined;
+  readonly declaration?: boolean | { readonly standalone?: boolean };
   /** The encoding named in the declaration and used by {@link writeBytes} (default `"utf-8"`). */
-  readonly encoding?: "utf-8" | "utf-16" | undefined;
+  readonly encoding?: "utf-8" | "utf-16";
   /**
    * Pretty-print with this indentation (spaces, or the string itself).
    * Whitespace is never added inside elements with text content, or under
    * `xml:space="preserve"`; whitespace-only text is dropped elsewhere.
    */
-  readonly indent?: number | string | undefined;
+  readonly indent?: number | string;
   /** Write empty elements as `<a/>` (default `true`), or `<a></a>`; or decide per element. */
-  readonly selfClose?: boolean | ((name: QName) => boolean) | undefined;
+  readonly selfClose?: boolean | ((name: QName) => boolean);
   /** What to do with content XML can't represent (see the module docs). Default `"fail"`. */
-  readonly invalid?: "fail" | "strip" | "replace" | undefined;
+  readonly invalid?: "fail" | "strip" | "replace";
   /**
    * Encode a character XML 1.0 forbids, before `invalid` applies: return its
    * replacement (written as text, so escaped as usual), or `undefined` to
    * leave it to `invalid`. OOXML: `(cp) => "_x" + cp.toString(16).toUpperCase().padStart(4, "0") + "_"`.
    */
-  readonly escape?: ((codePoint: number) => string | undefined) | undefined;
+  readonly escape?: (codePoint: number) => string | undefined;
   /** Preferred prefixes (prefix → namespace URI), declared on the root element. */
-  readonly prefixes?: Readonly<Record<string, string>> | undefined;
+  readonly prefixes?: Readonly<Record<string, string>>;
   /** Sort attributes by namespace URI and local name (default: as given). */
-  readonly sortAttributes?: boolean | undefined;
+  readonly sortAttributes?: boolean;
   /**
    * `"manage"` (default) declares namespaces as described above. `"asIs"`
    * writes names as their prefixes say and adds no declarations, for trees
    * that already carry their `xmlns` attributes.
    */
-  readonly namespaces?: "manage" | "asIs" | undefined;
+  readonly namespaces?: "manage" | "asIs";
 }
 
 // -----------------------------------------------------------------------------

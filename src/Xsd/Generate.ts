@@ -33,11 +33,11 @@ import type { ComplexType, Model } from "./Model.ts";
  */
 export interface GenerateOptions {
   /** The module the generated code imports the library from (default `"@thomasfosterau/effect-xml"`). */
-  readonly importFrom?: string | undefined;
+  readonly importFrom?: string;
   /** The global elements (expanded names) to write parsers for; all of them by default. */
-  readonly roots?: ReadonlyArray<string> | undefined;
+  readonly roots?: ReadonlyArray<string>;
   /** A line saying where the schema came from, for the generated file's header. */
-  readonly source?: string | undefined;
+  readonly source?: string;
 }
 
 const reserved: ReadonlyArray<string> =

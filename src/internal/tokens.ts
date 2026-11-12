@@ -29,6 +29,7 @@ import { DtdSlot } from "./dtd.ts";
 import { invalidNameAt } from "./names.ts";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
+import { maybe } from "./optional.ts";
 
 // -----------------------------------------------------------------------------
 // Tokens
@@ -87,7 +88,7 @@ export type Issue =
       readonly reference: string;
       readonly reason: string;
       readonly offset: number;
-      readonly limit?: EntityLimit | undefined;
+      readonly limit?: EntityLimit;
     };
 
 /** Guards for {@link Issue}. */
@@ -154,7 +155,7 @@ interface EntityConfig {
   readonly entities: EntityTable;
   readonly legacy: EntityTable | undefined;
   /** Declared entities (XML with `dtd: "internal"`). */
-  readonly dtd?: DtdSlot | undefined;
+  readonly dtd?: DtdSlot;
 }
 
 /**
@@ -165,8 +166,8 @@ interface EntityConfig {
 const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
   const options = {
     entities: cfg.entities,
-    legacy: cfg.legacy,
-    dtd: cfg.dtd,
+    ...maybe("legacy", cfg.legacy),
+    ...maybe("dtd", cfg.dtd),
     strict: cfg.strict,
     inAttribute,
   };
@@ -185,7 +186,14 @@ const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
       decode(normalizeWhitespace ? raw.replace(/[\t\n\r]/g, " ") : raw, options),
       ({ reference, reason, relativeOffset, limit }) =>
         cfg.strict
-          ? Result.fail(Issue.Entity({ reference, reason, offset: start + relativeOffset, limit }))
+          ? Result.fail(
+              Issue.Entity({
+                reference,
+                reason,
+                offset: start + relativeOffset,
+                ...maybe("limit", limit),
+              }),
+            )
           : Result.succeed(raw),
     );
   };

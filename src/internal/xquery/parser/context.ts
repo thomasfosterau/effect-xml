@@ -23,7 +23,7 @@ export const normalizeUri = (uri: string): string => uri.replace(/[ \t\r\n]+/g, 
 export interface ModuleSource {
   readonly text: string;
   /** The module's location, the base URI its relative URIs resolve against. */
-  readonly location?: string | undefined;
+  readonly location?: string;
 }
 
 /** What an imported library module makes visible: its public functions (Clark name and arity) and variables (Clark names). */
@@ -35,44 +35,44 @@ export interface ModuleExports {
 /** The host's part of the static context: what a caller may set before compiling. */
 export interface StaticOptions {
   /** Prefix → namespace URI bindings, added to (and overriding) the predeclared ones. */
-  readonly namespaces?: Readonly<Record<string, string>> | undefined;
+  readonly namespaces?: Readonly<Record<string, string>>;
   /** The default namespace of element and type names (default: none). */
-  readonly defaultElementNamespace?: string | undefined;
+  readonly defaultElementNamespace?: string;
   /** The default namespace of function names (default: `fn`). */
-  readonly defaultFunctionNamespace?: string | undefined;
+  readonly defaultFunctionNamespace?: string;
   /** External variables in scope, as Clark names (`{uri}local`, or `local` for no namespace). */
-  readonly variables?: ReadonlyArray<string> | undefined;
+  readonly variables?: ReadonlyArray<string>;
   /** Functions the host provides, beyond the built-in library: Clark name → arities. */
-  readonly functions?: Readonly<Record<string, ReadonlyArray<number>>> | undefined;
+  readonly functions?: Readonly<Record<string, ReadonlyArray<number>>>;
   /** Collation URIs the host supports, beyond the codepoint, HTML case-insensitive and UCA collations. */
-  readonly collations?: ReadonlyArray<string> | undefined;
+  readonly collations?: ReadonlyArray<string>;
   /** The static base URI. */
-  readonly baseUri?: string | undefined;
+  readonly baseUri?: string;
   /**
    * Namespaces whose functions, variables and types the analysis cannot see
    * and so does not check: schemas and modules the host imports on the
    * query's behalf.
    */
-  readonly opaqueNamespaces?: ReadonlyArray<string> | undefined;
+  readonly opaqueNamespaces?: ReadonlyArray<string>;
   /**
    * Library modules' sources, by target namespace URI, for `import module`.
    * When given, importing a namespace with no source here is `XQST0059`;
    * when not, imported namespaces are opaque (their names are not checked).
    */
-  readonly modules?: Readonly<Record<string, ReadonlyArray<ModuleSource>>> | undefined;
+  readonly modules?: Readonly<Record<string, ReadonlyArray<ModuleSource>>>;
   /**
    * Decimal formats for `fn:format-number`, by Clark name (`""` for the
    * unnamed one): each a record of the properties it sets (`decimal-separator`,
    * `grouping-separator`, …), the others keeping their defaults.
    */
-  readonly decimalFormats?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined;
+  readonly decimalFormats?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /**
    * XPath 1.0 compatibility mode (XPath 3.1 §2.1.1), for XPath only (XQuery
    * has no such mode, and `XQuery.compile` ignores it): general comparisons,
    * arithmetic and function arguments convert their operands as XPath 1.0
    * did, so an XPath 1.0 expression gives XPath 1.0's result.
    */
-  readonly xpath1Compatibility?: boolean | undefined;
+  readonly xpath1Compatibility?: boolean;
 }
 
 /** The static context a query is compiled in. */

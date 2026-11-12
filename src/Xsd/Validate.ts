@@ -19,6 +19,7 @@ import type { CompileOptions, Path, XPathError } from "../Xml/XPath.ts";
 import type { XsdSchemaError, XsdValidationError } from "./Error.ts";
 import type { Model } from "./Model.ts";
 import type { Validated, XsdValue } from "./Value.ts";
+import { maybe } from "../internal/optional.ts";
 
 /**
  * Everything schema-aware parsing can fail with: a parse error, a schema the
@@ -37,7 +38,7 @@ export type XsdError = SaxError | XsdSchemaError | XsdValidationError;
  */
 export interface ValidateOptions {
   /** The expanded name (`{namespace}local`) the document element must have; any global element otherwise. */
-  readonly root?: string | undefined;
+  readonly root?: string;
 }
 
 /**
@@ -48,21 +49,18 @@ export interface ValidateOptions {
  */
 export interface ParseOptions extends ValidateOptions {
   /** Named entity table override. */
-  readonly entities?: Record<string, string> | undefined;
+  readonly entities?: Record<string, string>;
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
-  readonly limits?: Partial<Limits> | undefined;
+  readonly limits?: Partial<Limits>;
   /** Interpret the DOCTYPE internal subset (see {@link Sax.SaxOptions.dtd}); default `"ignore"`. */
-  readonly dtd?: "ignore" | "internal" | undefined;
+  readonly dtd?: "ignore" | "internal";
   /** An external encoding hint for byte input, such as the `charset` of a `Content-Type`. */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
 }
 
 const saxOptions = (options: ParseOptions | undefined): Sax.SaxBytesOptions => ({
+  ...options,
   mode: "xml",
-  entities: options?.entities,
-  limits: options?.limits,
-  dtd: options?.dtd,
-  encoding: options?.encoding,
 });
 
 /** Each model is compiled for validation once, however often it is used. */
@@ -206,7 +204,7 @@ export const select =
       const steps = compileStreamable(path, options);
       if (Result.isFailure(steps)) return Stream.fail(steps.failure);
       const validator = new Validator(runtimeOf(model), {
-        root: options?.root,
+        ...maybe("root", options?.root),
         select: steps.success,
       });
       // Each chunk of events becomes the values it completed, then its failure if it has one.

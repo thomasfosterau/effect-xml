@@ -711,11 +711,9 @@ type TreeEvent = SaxEvent | LexEvent;
 
 /** What a tree builder is set up with besides the input. */
 interface BuilderOptions {
-  readonly limits?: Limits | undefined;
+  readonly limits?: Limits;
   /** The scripting flag: `<noscript>` content is raw text when set. */
-  readonly scripting?: boolean | undefined;
-  /** The fragment parsing context element; absent for a whole document. */
-  readonly context?: FragmentContext | undefined;
+  readonly scripting?: boolean;
 }
 
 /**
@@ -799,13 +797,11 @@ class HtmlTreeBuilder {
   /** The fragment case's context element (never inserted); `null` for a document. */
   private readonly context: MElement | null;
 
-  constructor(options: BuilderOptions = {}) {
+  /** `context` is the fragment parsing context element; absent for a whole document. */
+  constructor(options: BuilderOptions = {}, context?: FragmentContext) {
     this.limits = options.limits ?? defaultLimits;
     this.scripting = options.scripting ?? false;
-    this.context =
-      options.context === undefined
-        ? null
-        : mkElement(options.context.name, [], options.context.ns);
+    this.context = context === undefined ? null : mkElement(context.name, [], context.ns);
     if (this.context !== null) this.startFragment(this.context);
   }
 
@@ -3005,14 +3001,14 @@ const freeze = (root: MNode): HtmlNode => {
 export const buildDocument = <E, R>(
   events: Stream.Stream<SaxEvent, E, R>,
   options?: {
-    readonly limits?: Partial<Limits> | undefined;
-    readonly scripting?: boolean | undefined;
+    readonly limits?: Partial<Limits>;
+    readonly scripting?: boolean;
   },
 ): Effect.Effect<HtmlDocument, SaxError | E, R> =>
   Effect.gen(function* () {
     const builder = new HtmlTreeBuilder({
       limits: resolveLimits(options?.limits),
-      scripting: options?.scripting,
+      scripting: options?.scripting ?? false,
     });
     yield* acceptAll(events, (ev) => builder.accept(ev));
     return builder.finish();
@@ -3020,9 +3016,9 @@ export const buildDocument = <E, R>(
 
 /** Options for the coupled string drivers. */
 interface StringBuildOptions {
-  readonly entities?: Record<string, string> | undefined;
-  readonly limits?: Partial<Limits> | undefined;
-  readonly scripting?: boolean | undefined;
+  readonly entities?: Record<string, string>;
+  readonly limits?: Partial<Limits>;
+  readonly scripting?: boolean;
 }
 
 /**
@@ -3038,12 +3034,7 @@ const runCoupled = <A>(
   result: (builder: HtmlTreeBuilder) => A,
 ): Effect.Effect<A, SaxError> =>
   Effect.suspend(() => {
-    const opts = resolveSaxOptions({
-      mode: "html",
-      entities: options?.entities,
-      limits: options?.limits,
-      scripting: options?.scripting,
-    });
+    const opts = resolveSaxOptions({ ...options, mode: "html" });
     const lexer = new Lexer({
       mode: "html",
       entities: opts.entities,
@@ -3051,11 +3042,10 @@ const runCoupled = <A>(
       scripting: opts.scripting,
     });
     const guard = new Guard(opts.limits, false);
-    const builder = new HtmlTreeBuilder({
-      limits: opts.limits,
-      scripting: opts.scripting,
+    const builder = new HtmlTreeBuilder(
+      { limits: opts.limits, scripting: opts.scripting },
       context,
-    });
+    );
     const over = guard.input(input.length, lexer);
     if (over !== null) return Effect.fail(over);
     if (context !== undefined && context.ns === HTML_NS) lexer.startInContext(context.name);

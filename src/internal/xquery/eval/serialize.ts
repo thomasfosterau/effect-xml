@@ -44,6 +44,7 @@ import type { XdmNode } from "../node.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../types.ts";
 import { castAtomic } from "./cast.ts";
 import { raise, unwrap } from "./raise.ts";
+import { maybe } from "../../optional.ts";
 
 /** The serialization namespace, of the parameter elements. */
 const OUTPUT_NAMESPACE = "http://www.w3.org/2010/xslt-xquery-serialization";
@@ -456,7 +457,7 @@ const writeNode = (node: XdmNode, params: Params, offset: number): string => {
     return notSerializable(`an ${node.kind} node`, offset);
   const written = serializeSync(domOf(node, offset), {
     declaration: false,
-    indent: params.indent ? 2 : undefined,
+    ...maybe("indent", params.indent ? 2 : undefined),
     invalid: "replace",
   });
   return mapMarkup(

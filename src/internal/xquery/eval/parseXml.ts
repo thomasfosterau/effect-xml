@@ -16,6 +16,7 @@ import { document } from "../../nodes.ts";
 import type { Sequence } from "../item.ts";
 import { XdmNode } from "../node.ts";
 import type { ResourceRequest } from "./raise.ts";
+import { maybe } from "../../optional.ts";
 
 /** The element a fragment is parsed inside, so that it may have any number of top-level nodes. */
 const WRAPPER = "fragment";
@@ -41,7 +42,7 @@ const fragmentContent = (text: string): Effect.Effect<string, XQueryError> => {
 
 /** The document node a `fn:parse-xml` or `fn:parse-xml-fragment` request asks for. */
 export const parseXmlRequest = (request: ResourceRequest): Effect.Effect<Sequence, XQueryError> => {
-  const options = { baseUri: request.base };
+  const options = maybe("baseUri", request.base);
   if (request.kind === "xml")
     return parse(request.uri, { dtd: "internal" }).pipe(
       Effect.mapError((e) => notWellFormed(e.message)),

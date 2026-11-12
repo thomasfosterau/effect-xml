@@ -140,7 +140,7 @@ class FragmentBuilder {
  */
 export const buildFragment = <E, R>(
   events: Stream.Stream<SaxEvent, E, R>,
-  options?: { readonly limits?: Partial<Limits> | undefined },
+  options?: { readonly limits?: Partial<Limits> },
 ): Effect.Effect<ReadonlyArray<HtmlNode>, SaxError | E, R> =>
   Effect.gen(function* () {
     const builder = new FragmentBuilder(resolveLimits(options?.limits));

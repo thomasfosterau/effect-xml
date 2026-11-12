@@ -49,6 +49,7 @@ import { anyTypeDefinition } from "./components.ts";
 import { builtinBase, isBuiltinSimple } from "./datatypes.ts";
 import { translate } from "./regex.ts";
 import { isIn, tagSet } from "../tagSet.ts";
+import { maybe } from "../optional.ts";
 
 /** A schema document, as the reader sees it. */
 export interface SchemaDocument {
@@ -56,7 +57,7 @@ export interface SchemaDocument {
   readonly location: string | null;
   readonly root: XmlElement;
   /** The namespace a chameleon include puts it in, when it has none of its own. */
-  readonly chameleon?: string | undefined;
+  readonly chameleon?: string;
 }
 
 type R<A> = Result.Result<A, XsdSchemaError>;
@@ -165,8 +166,8 @@ const occurs = (node: Node): R<{ readonly min: number; readonly max: MaxOccurs }
 
 /** `min` / `max` as the model writes them: left out when they are the default 1. */
 const bounds = (b: { readonly min: number; readonly max: MaxOccurs }) => ({
-  min: b.min === 1 ? undefined : b.min,
-  max: b.max === 1 ? undefined : b.max,
+  ...maybe("min", b.min === 1 ? undefined : b.min),
+  ...maybe("max", b.max === 1 ? undefined : b.max),
 });
 
 const unsupported = tagSet(
@@ -427,7 +428,7 @@ const identityConstraint = (node: Node): R<IdentityConstraint> =>
     const constraint: IdentityConstraint = {
       _tag: tag,
       name: clark(node.doc.tns, local.value),
-      refer: Option.getOrUndefined(refer),
+      ...maybe("refer", Option.getOrUndefined(refer)),
       selector: selector.value,
       fields,
       namespaces: Record.filter(node.ns, (_, prefix) => prefix !== ""),
@@ -618,13 +619,16 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       const facets: Facets = {
         ...numeric,
         ...ranges,
-        patterns: Arr.isReadonlyArrayEmpty(patterns) ? undefined : patterns,
-        enumeration: Arr.isReadonlyArrayEmpty(enumerated) ? undefined : enumerated,
-        whiteSpace: Option.getOrUndefined(
-          Option.filter(
-            whiteSpace,
-            (ws): ws is "preserve" | "replace" | "collapse" =>
-              ws === "preserve" || ws === "replace" || ws === "collapse",
+        ...maybe("patterns", Arr.isReadonlyArrayEmpty(patterns) ? undefined : patterns),
+        ...maybe("enumeration", Arr.isReadonlyArrayEmpty(enumerated) ? undefined : enumerated),
+        ...maybe(
+          "whiteSpace",
+          Option.getOrUndefined(
+            Option.filter(
+              whiteSpace,
+              (ws): ws is "preserve" | "replace" | "collapse" =>
+                ws === "preserve" || ws === "replace" || ws === "collapse",
+            ),
           ),
         ),
       };
@@ -777,9 +781,9 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       );
       const out: AttributeUse = {
         ...base,
-        required: use === "required" ? true : undefined,
-        fixed: Option.getOrUndefined(fixedValue),
-        default: Option.getOrUndefined(defaultValue),
+        ...maybe("required", use === "required" ? true : undefined),
+        ...maybe("fixed", Option.getOrUndefined(fixedValue)),
+        ...maybe("default", Option.getOrUndefined(defaultValue)),
       };
       return Option.some(out);
     });
@@ -899,8 +903,8 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       const header = {
         _tag: "ComplexType" as const,
         name: key,
-        abstract: flag(node, "abstract") ? true : undefined,
-        block: block(node),
+        ...maybe("abstract", flag(node, "abstract") ? true : undefined),
+        ...maybe("block", block(node)),
       };
       const simple = kid(node, "simpleContent");
       if (Option.isSome(simple)) return yield* simpleContent(simple.value, header);
@@ -912,11 +916,11 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       const particle = yield* ownParticle(node);
       const def: ComplexType = {
         ...header,
-        mixed: mixed ? true : undefined,
+        ...maybe("mixed", mixed ? true : undefined),
         base: anyType,
         derivation: "restriction",
         attributes: own.uses,
-        anyAttribute: own.wildcard,
+        ...maybe("anyAttribute", own.wildcard),
         content: contentOf(particle, mixed),
       };
       return def;
@@ -959,8 +963,10 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       how === "extension"
         ? [...base.attributes, ...own.uses]
         : deriveAttributes(base.attributes, own),
-    anyAttribute:
+    ...maybe(
+      "anyAttribute",
       how === "extension" ? combineWildcards(base.anyAttribute, own.wildcard, unite) : own.wildcard,
+    ),
   });
 
   /** The content type of a simple content restriction: the base's, restricted by the facets given. */
@@ -1003,7 +1009,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
         );
       const def: ComplexType = {
         ...header,
-        mixed: mixed ? true : undefined,
+        ...maybe("mixed", mixed ? true : undefined),
         ...inherit(baseKey, how, base, own),
         content,
       };
@@ -1120,14 +1126,14 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       const decl: ElementDeclaration = {
         name,
         type,
-        nillable: flag(node, "nillable") ? true : undefined,
-        abstract: optionalFlag(node, "abstract"),
+        ...maybe("nillable", flag(node, "nillable") ? true : undefined),
+        ...maybe("abstract", optionalFlag(node, "abstract")),
         // Values are kept as written: the element's type decides their whitespace.
-        fixed: Option.getOrUndefined(node.el.attributeNS(null, "fixed")),
-        default: Option.getOrUndefined(node.el.attributeNS(null, "default")),
-        substitutionGroup: Option.getOrUndefined(head),
-        block: blocked,
-        constraints: Arr.isReadonlyArrayEmpty(constraints) ? undefined : constraints,
+        ...maybe("fixed", Option.getOrUndefined(node.el.attributeNS(null, "fixed"))),
+        ...maybe("default", Option.getOrUndefined(node.el.attributeNS(null, "default"))),
+        ...maybe("substitutionGroup", Option.getOrUndefined(head)),
+        ...maybe("block", blocked),
+        ...maybe("constraints", Arr.isReadonlyArrayEmpty(constraints) ? undefined : constraints),
       };
       return decl;
     });

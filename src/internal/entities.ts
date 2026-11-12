@@ -52,13 +52,13 @@ export interface EntityOptions {
    * When present, decoding switches to lenient WHATWG behaviour: maximal-munch,
    * the ambiguous-ampersand rule, and semicolon-less numeric references.
    */
-  readonly legacy?: EntityTable | undefined;
+  readonly legacy?: EntityTable;
   /** When true, an unknown/unterminated reference is a hard error; when false it is left verbatim. */
   readonly strict: boolean;
   /** Apply the ambiguous-ampersand rule (the value is an attribute value). */
-  readonly inAttribute?: boolean | undefined;
+  readonly inAttribute?: boolean;
   /** Entities declared in a DTD, resolved when referenced (XML only; see `dtd.ts`). */
-  readonly dtd?: EntityResolver | undefined;
+  readonly dtd?: EntityResolver;
 }
 
 /** A failure encountered while decoding, with the offset *within the raw value*. */
@@ -67,7 +67,7 @@ export interface EntityError {
   readonly reason: string;
   readonly relativeOffset: number;
   /** Set when the failure is a resource limit rather than a malformed reference. */
-  readonly limit?: EntityLimit | undefined;
+  readonly limit?: EntityLimit;
 }
 
 /** A resource limit an entity expansion ran into. */
@@ -79,7 +79,7 @@ export interface EntityLimit {
 /** Why a declared entity could not be expanded. */
 export interface ExpansionFailure {
   readonly reason: string;
-  readonly limit?: EntityLimit | undefined;
+  readonly limit?: EntityLimit;
 }
 
 /** Entities declared in a DTD, which a reference resolves through. */

@@ -31,6 +31,7 @@ import type {
   XmlNode,
   XmlProcessingInstruction,
 } from "../../Xml/Node.ts";
+import { maybe } from "../optional.ts";
 
 /**
  * The seven kinds of XDM node.
@@ -76,9 +77,9 @@ interface Tree {
  */
 export interface NodeOptions {
   /** The document URI (`fn:document-uri`); also the base URI unless `baseUri` is given. */
-  readonly documentUri?: string | undefined;
+  readonly documentUri?: string;
   /** The base URI that `xml:base` attributes resolve against (`fn:base-uri`). */
-  readonly baseUri?: string | undefined;
+  readonly baseUri?: string;
 }
 
 /** Which of its parent's lists a node is in; also their order in document order. */
@@ -516,7 +517,8 @@ export class XdmNode {
       const parentCursor = Option.flatMap(this.up, (parent) => parent.cursor);
       this.cursorCache = Option.some(
         Option.match(parentCursor, {
-          onNone: () => Cursor.root(c.node, { base: Option.getOrUndefined(this.tree.baseUri) }),
+          onNone: () =>
+            Cursor.root(c.node, maybe("base", Option.getOrUndefined(this.tree.baseUri))),
           onSome: (cursor) => cursor.at(c.dom),
         }),
       );
