@@ -23,7 +23,7 @@
  * Positions in tokens are offsets into the lexer's buffer; the lexer turns
  * them into line/column {@link Position}s.
  */
-import { Ascii, Compiler, Parser, Token } from "@thomasfosterau/effect-parse";
+import { Ascii, Compiler, Input, Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Data from "effect/Data";
 import { identity } from "effect/Function";
 import * as Result from "effect/Result";
@@ -240,6 +240,34 @@ const textRun = (cfg: EntityConfig): P<Step> => {
   return dtdText(cfg, dtd, []);
 };
 
+const textStopExpected = ['anything but one of "<&"'];
+// (Only to give `textUpToStop` a string input.)
+const stopToken = Token.oneOf("<&");
+const textStopFrom = /[^<&]*/y;
+
+/**
+ * One or more units of text up to the next `<` or `&`: what
+ * `Token.takeTill("<&", { min: 1 })` reads, without its search. That one
+ * finds each stop character with `indexOf`, and keeps where it found them in
+ * the parse state, which the lexer resets for every token; so with an entity
+ * declared (#191), each run of text searched for an `&` as far as the end of
+ * the buffer, which is all of a document read whole. This reads the run once,
+ * and no further than its end.
+ */
+const textUpToStop = Parser.combinator([stopToken], () => (state: Input.State<string>) => {
+  const start = state.pos;
+  const end = state.end;
+  const input = state.input;
+  textStopFrom.lastIndex = start;
+  // (The pattern matches the empty string, so there is always a match at `start`.)
+  const found = Math.min(textStopFrom.exec(input)?.[0].length ?? 0, end - start);
+  const stop = start + found;
+  if (stop === end && state.partial) return state.incomplete(1, textStopExpected);
+  if (found === 0) return state.backtrack("TakeWhile", textStopExpected, stop);
+  state.pos = stop;
+  return state.slice(start, stop);
+});
+
 /**
  * Text with a DTD, which also stops at a reference to an entity with markup
  * in it, a token of its own; `more` is what else text takes in (recovering,
@@ -253,11 +281,7 @@ const dtdText = (
   const markupRef = markupReference(dtd);
   const body = Parser.taken(
     Parser.repeat(
-      Parser.alt(
-        Token.takeTill("<&", { min: 1 }),
-        Parser.preceded(Parser.not(markupRef), Token.literal("&")),
-        ...more,
-      ),
+      Parser.alt(textUpToStop, Parser.preceded(Parser.not(markupRef), Token.literal("&")), ...more),
       { min: 1 },
     ),
   );

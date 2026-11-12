@@ -84,12 +84,16 @@ const input = sheet(megabytes * 1024 * 1024);
 const bytes = new TextEncoder().encode(input);
 const chunks = input.match(/[\s\S]{1,65536}/g) ?? [];
 
+// `vpx bench/parse.ts 8 entity` times only the rows whose name contains the second argument.
+const only = process.argv[3];
+
 const time = async (
   name: string,
   run: () => void | Promise<void>,
   runs = 5,
   size = input.length,
 ) => {
+  if (only !== undefined && !name.includes(only)) return;
   await run(); // warm up
   const samples: Array<number> = [];
   for (let i = 0; i < runs; i++) {
@@ -184,6 +188,27 @@ const declared = input
 await time("effect-xml DOM (DOCTYPE + entities)", () =>
   Effect.runPromise(Effect.asVoid(Xml.parse(declared, { dtd: "internal" }))),
 );
+// A DOCTYPE that declares an entity the body never references, read whole:
+// the DTD-aware text grammar over one large string (#191). The sizes show it
+// is linear.
+const withEntity = (body: string) =>
+  body.replace("<worksheet", '<!DOCTYPE worksheet [<!ENTITY e "x">]>\n<worksheet');
+const entityDoc = withEntity(input);
+await time("effect-xml Sax.forEach (entity)", () =>
+  Effect.runPromise(Sax.forEach(entityDoc, () => {}, { dtd: "internal" })),
+);
+await time("effect-xml DOM (entity, whole)", () =>
+  Effect.runPromise(Effect.asVoid(Xml.parse(entityDoc, { dtd: "internal" }))),
+);
+for (const mb of [1, 2, 4, 8]) {
+  const doc = withEntity(sheet(mb * 1024 * 1024));
+  await time(
+    `effect-xml Sax.forEach (entity, ${mb} MB)`,
+    () => Effect.runPromise(Sax.forEach(doc, () => {}, { dtd: "internal" })),
+    5,
+    doc.length,
+  );
+}
 await time("effect-xml DOM (Xml.parse, recover)", () =>
   Effect.runPromise(Effect.asVoid(Xml.parse(input, { recover: true }))),
 );
