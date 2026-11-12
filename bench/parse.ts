@@ -87,9 +87,17 @@ const input = sheet(megabytes * 1024 * 1024);
 const bytes = new TextEncoder().encode(input);
 const chunks = input.match(/[\s\S]{1,65536}/g) ?? [];
 
+/** `body` under a DOCTYPE that declares an entity the body never references (#191). */
+const withEntity = (body: string) =>
+  body.replace("<worksheet", '<!DOCTYPE worksheet [<!ENTITY e "x">]>\n<worksheet');
+
+// `vpx bench/parse.ts 8 entity` times only the rows whose name contains the second argument.
+const only = Option.fromNullishOr(process.argv[3]);
+
 /** Runs `run` once to warm up, then `runs` times, and prints the median. */
 const time = <E>(name: string, run: Effect.Effect<unknown, E>, runs = 5, size = input.length) =>
   Effect.gen(function* () {
+    if (Option.isSome(only) && !name.includes(only.value)) return;
     yield* run; // warm up
     const samples = yield* Effect.forEach(
       Arr.range(1, runs),
@@ -295,6 +303,28 @@ const main = Effect.fn("bench")(function* () {
       '<!DOCTYPE worksheet [<!ENTITY s "1"><!ENTITY sd "<v>0</v>">]>\n<worksheet',
     );
   yield* time("effect-xml DOM (DOCTYPE + entities)", Xml.parse(declared, { dtd: "internal" }));
+  // A DOCTYPE that declares an entity the body never references, read whole:
+  // the DTD-aware text grammar over one large string (#191). The sizes show it
+  // is linear.
+  const entityDoc = withEntity(input);
+  yield* time(
+    "effect-xml Sax.forEach (entity)",
+    Sax.forEach(entityDoc, () => {}, { dtd: "internal" }),
+  );
+  yield* time("effect-xml DOM (entity, whole)", Xml.parse(entityDoc, { dtd: "internal" }));
+  yield* Effect.forEach(
+    [1, 2, 4, 8],
+    (mb) => {
+      const doc = withEntity(sheet(mb * 1024 * 1024));
+      return time(
+        `effect-xml Sax.forEach (entity, ${mb} MB)`,
+        Sax.forEach(doc, () => {}, { dtd: "internal" }),
+        5,
+        doc.length,
+      );
+    },
+    { concurrency: 1 },
+  );
   yield* time("effect-xml DOM (Xml.parse, recover)", Xml.parse(input, { recover: true }));
   yield* time(
     "effect-xml rows (Sax.select)",
