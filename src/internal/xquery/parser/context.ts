@@ -48,7 +48,10 @@ export interface StaticOptions {
   readonly variables?: ReadonlyArray<string> | undefined;
   /** Functions the host provides, beyond the built-in library: Clark name → arities. */
   readonly functions?: Readonly<Record<string, ReadonlyArray<number>>> | undefined;
-  /** Collation URIs the host supports, beyond the codepoint, HTML case-insensitive and UCA collations. */
+  /**
+   * Collation URIs the host supports, beyond the codepoint, HTML
+   * case-insensitive and UCA collations (the ones `XQuery.evaluate` lists).
+   */
   readonly collations?: ReadonlyArray<string> | undefined;
   /** The static base URI. */
   readonly baseUri?: string | undefined;

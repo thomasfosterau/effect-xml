@@ -27,9 +27,10 @@ import type {
 } from "../parser/ast.ts";
 import { Clause } from "../parser/ast.ts";
 import { codepointCollation, type StaticContext } from "../parser/context.ts";
+import { collationFor, type Collation } from "./functions/collation.ts";
 import { AtomicTypes } from "../types.ts";
 import { atomicDeepEqual, equalityBucket, orderCompare } from "./compare.ts";
-import { notImplemented, raise, unwrap } from "./raise.ts";
+import { raise, unwrap } from "./raise.ts";
 import type { Code, Ctx, SeqType } from "./runtime.ts";
 import { bindLocal, clark, resolve, slotIn, type Scope } from "./scope.ts";
 import { sequenceMatches, sequenceType } from "./seqtype.ts";
@@ -327,27 +328,17 @@ const windowStage = (
 
 // ---- order by -------------------------------------------------------------------
 
-const htmlCaseInsensitive =
-  "http://www.w3.org/2005/xpath-functions/collation/html-ascii-case-insensitive";
-
-/** Fold a string for a collation (HTML ASCII case-insensitive folds A–Z), `undefined` for one this engine can't use. */
-const collationFold = (
+/** The collation of an `order by` / `group by` spec: the one it names, else the default collation. */
+const collationOfSpec = (
   written: Option.Option<string>,
   context: StaticContext,
   offset: number,
-): ((s: string) => string) => {
-  const uri = Option.match(written, {
-    onNone: () => context.defaultCollation,
-    onSome: (u) =>
-      Option.match(context.baseUri, {
-        onNone: () => u,
-        onSome: (base) => (URL.canParse(u, base) ? new URL(u, base).href : u),
-      }),
-  });
-  if (uri === codepointCollation) return (x) => x;
-  if (uri === htmlCaseInsensitive) return (x) => x.replace(/[A-Z]/g, (ch) => ch.toLowerCase());
-  return notImplemented(`the collation ${uri}`, offset);
-};
+): Collation =>
+  collationFor(
+    Option.getOrElse(written, () => context.defaultCollation),
+    context.baseUri,
+    offset,
+  );
 
 /** A key of `order by` or `group by`: at most one atomic value, `xs:untypedAtomic` as `xs:string`. */
 const keyOf = (value: Sequence, what: string, offset: number): AtomicValue | undefined => {
@@ -359,22 +350,13 @@ const keyOf = (value: Sequence, what: string, offset: number): AtomicValue | und
   return a.type === AtomicTypes.untypedAtomic ? AtomicValue.string(atomicString(a)) : a;
 };
 
-/** A key as a collation compares it: strings folded. */
-const folded = (
-  a: AtomicValue | undefined,
-  fold: (s: string) => string,
-): AtomicValue | undefined =>
-  a !== undefined && a.type.primitive === "string"
-    ? new AtomicValue(a.type, fold(atomicString(a)))
-    : a;
-
 const isNaNKey = (a: AtomicValue): boolean => P.isNumber(a.value) && Number.isNaN(a.value);
 
 interface OrderKey {
   readonly code: Code;
   readonly descending: boolean;
   readonly emptyGreatest: boolean;
-  readonly fold: (s: string) => string;
+  readonly collation: Collation;
 }
 
 /** Where a key sorts by kind: the empty sequence first or last, NaN next to it. */
@@ -400,7 +382,7 @@ const compareKeys = (
     const d =
       ra !== rb || a === undefined || b === undefined || isNaNKey(a) || isNaNKey(b)
         ? ra - rb
-        : orderCompare(a, b, tz, offset);
+        : orderCompare(a, b, tz, offset, key.collation.compare);
     return key.descending ? -d : d;
   }, 0);
 
@@ -416,7 +398,7 @@ const orderStage = (
     code: c.compileExpr(s.expr, scope),
     descending: s.descending,
     emptyGreatest: Option.getOrElse(s.emptyGreatest, () => context.emptyOrder === "greatest"),
-    fold: collationFold(s.collation, context, o.offset),
+    collation: collationOfSpec(s.collation, context, o.offset),
   }));
   const index = c.indices.collected;
   c.indices.collected += 1;
@@ -426,7 +408,7 @@ const orderStage = (
       const collected = (run.collected[index] ??= []);
       collected.push({
         values: slots.map((s) => ctx.frame[s] ?? empty),
-        keys: keys.map((k) => folded(keyOf(k.code(ctx), "an order by key", o.offset), k.fold)),
+        keys: keys.map((k) => keyOf(k.code(ctx), "an order by key", o.offset)),
       });
     },
     end: (ctx, run) => {
@@ -454,16 +436,19 @@ const orderStage = (
  * §3.12.4: `eq`, NaN equal to NaN, the implicit timezone for values without
  * one) always share one, so only keys in the same bucket are compared.
  */
-const groupingBucket = (a: AtomicValue | undefined): string =>
-  a === undefined ? "()" : equalityBucket(a, (s) => s);
+const groupingBucket = (a: AtomicValue | undefined, collation: Collation): string =>
+  a === undefined ? "()" : equalityBucket(a, collation.bucket);
 
 /** Whether two grouping keys, each at most one atomic value, are equal for grouping. */
 const sameGroupingKey = (
   a: AtomicValue | undefined,
   b: AtomicValue | undefined,
   implicitTimezone: number,
+  collation: Collation,
 ): boolean =>
-  a === undefined || b === undefined ? a === b : atomicDeepEqual(a, b, implicitTimezone);
+  a === undefined || b === undefined
+    ? a === b
+    : atomicDeepEqual(a, b, implicitTimezone, collation.compare);
 
 /** A group: the tuples whose grouping keys are equal, and the first one's keys. */
 interface Group {
@@ -480,7 +465,7 @@ interface GroupingLet {
 interface GroupingVar {
   readonly slot: number;
   readonly type: SeqType | undefined;
-  readonly fold: (s: string) => string;
+  readonly collation: Collation;
 }
 
 const groupStage = (
@@ -513,7 +498,7 @@ const groupStage = (
     return {
       slot,
       type: optionalType(spec.type, inner),
-      fold: collationFold(spec.collation, context, g.offset),
+      collation: collationOfSpec(spec.collation, context, g.offset),
     };
   });
   const all = Arr.dedupe([...slots, ...lets.map((l) => l.slot), ...vars.map((v) => v.slot)]);
@@ -537,14 +522,15 @@ const groupStage = (
       const collected = run.collected[index] ?? [];
       run.collected[index] = [];
       const timezone = ctx.dyn.implicitTimezone;
+      const plain = collationFor(codepointCollation, Option.none(), g.offset);
+      const collationAt = (i: number): Collation => vars[i]?.collation ?? plain;
       const groups = collected.reduce(
         (acc, t) => {
-          // Strings compare as the key's collation folds them.
-          const keys = t.keys.map((k, i) => folded(k, vars[i]?.fold ?? ((x) => x)));
-          const id = keys.map(groupingBucket).join("\u0000");
+          const keys = t.keys;
+          const id = keys.map((k, i) => groupingBucket(k, collationAt(i))).join("\u0000");
           const candidates = Option.getOrElse(HashMap.get(acc.byBucket, id), () => []);
           const known = candidates.find((group) =>
-            keys.every((k, i) => sameGroupingKey(k, group.keys[i], timezone)),
+            keys.every((k, i) => sameGroupingKey(k, group.keys[i], timezone, collationAt(i))),
           );
           if (known !== undefined) known.members.push(t);
           else {

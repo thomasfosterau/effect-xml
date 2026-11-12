@@ -22,7 +22,7 @@ import { castAtomic, isStringLike, toNumber } from "../cast.ts";
 import { orderAtomic } from "../compare.ts";
 import { raise } from "../raise.ts";
 import { anySequence, Closure, type SeqType } from "../runtime.ts";
-import { collate, collationArg } from "./collation.ts";
+import { collationArg } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, atomOf, atomsOf, optionalAtom } from "./values.ts";
 
@@ -218,15 +218,7 @@ const extreme = (
   if (nan !== undefined) return [nan];
   const collation = collationArg(args, 1, call);
   const best = Arr.reduce(values.slice(1), values[0] ?? first, (acc, v) =>
-    better(
-      orderAtomic(
-        v,
-        acc,
-        call.ctx.dyn.implicitTimezone,
-        (a, b) => collate(collation, a, b),
-        call.offset,
-      ),
-    )
+    better(orderAtomic(v, acc, call.ctx.dyn.implicitTimezone, collation.compare, call.offset))
       ? v
       : acc,
   );
