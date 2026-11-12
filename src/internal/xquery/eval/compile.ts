@@ -55,7 +55,7 @@ import {
   dirElement,
   dirPI,
 } from "./construct.ts";
-import { castAtomic } from "./cast.ts";
+import { castAtomic, toNumber } from "./cast.ts";
 import { compatibleArgument, numericOperand } from "./compat.ts";
 import { collationFor } from "./functions/collation.ts";
 import {
@@ -71,6 +71,24 @@ import {
 import { codepointCollation } from "../parser/context.ts";
 import type { Statics } from "./functions/define.ts";
 import { lookupBuiltin, paramType, type Builtin } from "./functions/registry.ts";
+import { atomOf } from "./functions/values.ts";
+import {
+  asLazy,
+  boundIndex,
+  compareLazy,
+  itemAt,
+  iterate,
+  Lazy,
+  lazyCode,
+  lazyOf,
+  rangeArray,
+  rangeSum,
+  reversedOf,
+  sliceOf,
+  toArray,
+  withLazy,
+  type LazyCode,
+} from "./lazy.ts";
 import { axisStepCode, filterCode, pathCode } from "./path.ts";
 import { catching, notImplemented, orElse, raise, raiseError, unwrap } from "./raise.ts";
 import {
@@ -182,7 +200,11 @@ const sequence = (codes: ReadonlyArray<Code>): Code => {
   const [only] = codes;
   if (Arr.isReadonlyArrayEmpty(codes)) return constant(empty);
   if (codes.length === 1 && only !== undefined) return only;
-  return (ctx) => codes.flatMap((c) => c(ctx));
+  const code: Code = (ctx) => codes.flatMap((c) => c(ctx));
+  if (!codes.some((c) => Option.isSome(lazyOf(c)))) return code;
+  // A range among the items: the sequence is held lazily too.
+  const parts = codes.map(asLazy);
+  return withLazy(code, (ctx) => Lazy.concat(parts.map((p) => p(ctx))));
 };
 
 // -----------------------------------------------------------------------------
@@ -233,9 +255,6 @@ const nodeComparison =
     return toBool(op === "is" ? c === 0 : op === "<<" ? c < 0 : c > 0);
   };
 
-/** The longest range `to` builds: a longer one is an implementation limit (`err:XPDY0130`). */
-const MAX_RANGE = 2_000_000n;
-
 const rangeBound = (s: Sequence, offset: number): bigint | undefined => {
   const a = optionalAtomic(s, "an operand of `to`", offset);
   if (a === undefined) return undefined;
@@ -250,16 +269,23 @@ const rangeBound = (s: Sequence, offset: number): bigint | undefined => {
       );
 };
 
-const range =
-  (l: Code, r: Code, offset: number): Code =>
-  (ctx) => {
-    const from = rangeBound(l(ctx), offset);
-    const to = rangeBound(r(ctx), offset);
-    if (from === undefined || to === undefined || from > to) return empty;
-    if (to - from >= MAX_RANGE)
-      return raise("XPDY0130", `the range ${from} to ${to} is too large`, offset);
-    return Arr.makeBy(Number(to - from) + 1, (i) => AtomicValue.integer(from + BigInt(i)));
-  };
+/**
+ * `a to b`, with a lazy form held as its bounds, so that a consumer that
+ * doesn't need the items doesn't build them (`lazy.ts`).
+ */
+const range = (l: Code, r: Code, offset: number): Code =>
+  withLazy(
+    (ctx) => {
+      const from = rangeBound(l(ctx), offset);
+      const to = rangeBound(r(ctx), offset);
+      return from === undefined || to === undefined ? empty : rangeArray(from, to, offset);
+    },
+    (ctx) => {
+      const from = rangeBound(l(ctx), offset);
+      const to = rangeBound(r(ctx), offset);
+      return from === undefined || to === undefined ? Lazy.of([]) : Lazy.range(from, to);
+    },
+  );
 
 /** An operand of `||` as a string: `""` for the empty sequence. */
 const concatPart = (s: Sequence, offset: number): string => {
@@ -307,7 +333,25 @@ const isValueOp = (op: BinaryOp): op is ValueOp =>
 /** A general comparison, in XPath 1.0 compatibility mode when the static context says so. */
 const generalComparison = (op: ValueOp, l: Code, r: Code, scope: Scope, offset: number): Code => {
   const strings = defaultStrings(scope, offset);
-  return scope.statics.context.xpath1Compatibility
+  const compatible = scope.statics.context.xpath1Compatibility;
+  if (!compatible && (Option.isSome(lazyOf(l)) || Option.isSome(lazyOf(r)))) {
+    // A range compared by its ends, never built.
+    const left = asLazy(l);
+    const right = asLazy(r);
+    return (ctx) => {
+      const tz = ctx.dyn.implicitTimezone;
+      return toBool(
+        compareLazy(
+          op,
+          left(ctx),
+          right(ctx),
+          (o, a, b) => generalCompare(o, a, b, tz, offset, strings),
+          offset,
+        ),
+      );
+    };
+  }
+  return compatible
     ? (ctx) =>
         toBool(
           generalCompareCompatible(op, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset, strings),
@@ -507,6 +551,157 @@ const callBuiltin = (
     { ctx, offset, statics },
   );
 
+/** A built-in called on arguments' values, converted as XPath 1.0 compatibility mode does when it is on. */
+const builtinCall =
+  (b: Builtin, compatible: boolean, statics: Statics, offset: number) =>
+  (values: ReadonlyArray<Sequence>, ctx: Ctx): Sequence =>
+    callBuiltin(
+      b,
+      compatible ? values.map((v, i) => compatibleArgument(paramType(b, i), v, offset)) : values,
+      ctx,
+      statics,
+      offset,
+    );
+
+/** A number argument of a built-in (`fn:subsequence`'s positions), converted to its parameter type. */
+const numberArgument = (
+  b: Builtin,
+  i: number,
+  value: Sequence,
+  compatible: boolean,
+  offset: number,
+): number => {
+  const t = paramType(b, i);
+  const v = compatible ? compatibleArgument(t, value, offset) : value;
+  return toNumber(atomOf(coerce(t, v, `argument ${i + 1} of ${b.spec.name}`, offset)));
+};
+
+/** A call of a built-in on a sequence held lazily, as {@link lazyCall} specialises it. */
+interface LazyCall {
+  readonly b: Builtin;
+  /** The first argument's lazy form. */
+  readonly seq: LazyCode;
+  /** The other arguments' codes. */
+  readonly rest: ReadonlyArray<Code>;
+  readonly compatible: boolean;
+  /** Run the built-in itself on the arguments' values. */
+  readonly call: (values: ReadonlyArray<Sequence>, ctx: Ctx) => Sequence;
+  readonly offset: number;
+}
+
+const sumCall =
+  ({ seq, rest, call, offset }: LazyCall): Code =>
+  (ctx) => {
+    const s = seq(ctx);
+    return Option.match(rangeSum(s), {
+      onNone: () => call([toArray(s, offset), ...rest.map((c) => c(ctx))], ctx),
+      onSome: (total) => [AtomicValue.integer(total)],
+    });
+  };
+
+const avgCall =
+  ({ seq, call, offset }: LazyCall): Code =>
+  (ctx) => {
+    const s = seq(ctx);
+    return Option.match(rangeSum(s), {
+      onNone: () => call([toArray(s, offset)], ctx),
+      onSome: (total) =>
+        arithmetic(
+          "div",
+          [AtomicValue.integer(total)],
+          [AtomicValue.integer(s.size)],
+          ctx.dyn.implicitTimezone,
+          offset,
+        ),
+    });
+  };
+
+const subsequenceCall = ({ b, seq, rest, compatible, offset }: LazyCall): Code =>
+  lazyCode((ctx) => subsequence(b, seq(ctx), rest, ctx, compatible, offset), offset);
+
+/** The built-ins (`fn:` local name and arity) that work on a lazily held sequence without building it. */
+const lazyBuiltins = {
+  "count#1":
+    ({ seq }) =>
+    (ctx) => [AtomicValue.integer(seq(ctx).size)],
+  "empty#1":
+    ({ seq }) =>
+    (ctx) =>
+      toBool(seq(ctx).size === 0n),
+  "exists#1":
+    ({ seq }) =>
+    (ctx) =>
+      toBool(seq(ctx).size > 0n),
+  "head#1":
+    ({ seq }) =>
+    (ctx) =>
+      Arr.fromOption(itemAt(seq(ctx), 0n)),
+  "tail#1": ({ seq, offset }) =>
+    lazyCode((ctx) => {
+      const s = seq(ctx);
+      return sliceOf(s, 1n, s.size);
+    }, offset),
+  "reverse#1": ({ seq, offset }) => lazyCode((ctx) => reversedOf(seq(ctx)), offset),
+  "subsequence#2": subsequenceCall,
+  "subsequence#3": subsequenceCall,
+  "sum#1": sumCall,
+  "sum#2": sumCall,
+  "avg#1": avgCall,
+} satisfies Readonly<Record<string, (c: LazyCall) => Code>>;
+
+const isLazyBuiltin = (key: string): key is keyof typeof lazyBuiltins =>
+  Object.hasOwn(lazyBuiltins, key);
+
+/**
+ * A call of `fn:count`, `fn:empty`, `fn:exists`, `fn:head`, `fn:tail`,
+ * `fn:reverse`, `fn:subsequence`, `fn:sum` or `fn:avg` on a sequence held
+ * lazily (a range, say: `lazy.ts`), evaluated without building its items;
+ * `None` for any other call. `fn:sum` and `fn:avg` of items that are not
+ * all ranges build them and call the built-in itself.
+ */
+const lazyCall = (
+  b: Builtin,
+  codes: ReadonlyArray<Code>,
+  compatible: boolean,
+  statics: Statics,
+  offset: number,
+): Option.Option<Code> => {
+  const [first, ...rest] = codes;
+  if (first === undefined || b.uri !== Namespaces.fn) return Option.none();
+  const key = `${b.local}#${codes.length}`;
+  if (!isLazyBuiltin(key)) return Option.none();
+  const special: (c: LazyCall) => Code = lazyBuiltins[key];
+  return Option.map(lazyOf(first), (seq) =>
+    special({
+      b,
+      seq,
+      rest,
+      compatible,
+      call: builtinCall(b, compatible, statics, offset),
+      offset,
+    }),
+  );
+};
+
+/** `fn:subsequence` of a lazily held sequence (F&O 3.1 §14.1.10), as `positions` in `core.ts` takes it. */
+const subsequence = (
+  b: Builtin,
+  s: Lazy,
+  positionArgs: ReadonlyArray<Code>,
+  ctx: Ctx,
+  compatible: boolean,
+  offset: number,
+): Lazy => {
+  const [start, length] = positionArgs.map((c, i) =>
+    numberArgument(b, i + 1, c(ctx), compatible, offset),
+  );
+  const from = Math.round(start ?? Number.NaN);
+  const to = length === undefined ? undefined : from + Math.round(length);
+  if (Number.isNaN(from) || (to !== undefined && Number.isNaN(to))) return Lazy.of([]);
+  const lo = boundIndex(from, s.size);
+  return sliceOf(s, lo, to === undefined ? s.size : boundIndex(to, s.size));
+};
+
 /** What a function name and arity denote: a declared function, a built-in, or a constructor function. */
 type Target =
   | { readonly kind: "user"; readonly f: UserFunction }
@@ -616,6 +811,16 @@ const functionCall = (
     return (ctx) => [
       partial(sig, all, ctx, (full) => invokeTarget(target, full, ctx, statics, offset)),
     ];
+  }
+  if (target.kind === "builtin") {
+    const special = lazyCall(
+      target.b,
+      codes,
+      scope.statics.context.xpath1Compatibility,
+      statics,
+      offset,
+    );
+    if (Option.isSome(special)) return special.value;
   }
   if (target.kind === "user")
     return (ctx) =>
@@ -887,15 +1092,26 @@ const quantified = (e: Extract<ExprT, { readonly _tag: "Quantified" }>, scope: S
     [scope, []],
   );
   const test = compileExpr(e.satisfies, inner);
+  // Whether `each` holds for every item (`every`) or some item (`some`) of a
+  // binding's sequence; a range is iterated, never built.
+  const loops = bound.map((b) =>
+    Option.match(b.lazy, {
+      onNone: () => (ctx: Ctx, each: (item: Item) => boolean) => {
+        const items = b.code(ctx);
+        return e.every ? items.every(each) : items.some(each);
+      },
+      onSome: (lazy) => (ctx: Ctx, each: (item: Item) => boolean) =>
+        e.every ? iterate(lazy(ctx), each) : !iterate(lazy(ctx), (item) => !each(item)),
+    }),
+  );
   const run = (ctx: Ctx, i: number): boolean => {
     const b = bound[i];
-    if (b === undefined) return ebv(test(ctx), e.offset);
-    const items = b.code(ctx);
-    const each = (item: Item) => {
+    const loop = loops[i];
+    if (b === undefined || loop === undefined) return ebv(test(ctx), e.offset);
+    return loop(ctx, (item) => {
       ctx.frame[b.slot] = checkType(b.type, [item], e.offset);
       return run(ctx, i + 1);
-    };
-    return e.every ? items.every(each) : items.some(each);
+    });
   };
   return (ctx) => toBool(run(ctx, 0));
 };

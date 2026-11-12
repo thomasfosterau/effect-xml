@@ -175,6 +175,75 @@ describe("operators and comparisons", () => {
     expect(values("(1, 2) ! (. + 1)")).toEqual(["2", "3"]);
     expect(code("1 to 100000000000")).toBe("XPDY0130");
   });
+
+  test("ranges are held by their bounds where their items aren't needed (#96)", () => {
+    expect(values("count(1 to 100000000), count((1, 1 to 10000000, 2))")).toEqual([
+      "100000000",
+      "10000002",
+    ]);
+    expect(values("(1 to 10000000000)[5], (1 to 10000000000)[last()]")).toEqual([
+      "5",
+      "10000000000",
+    ]);
+    expect(values("let $n := 3 return (1 to 10000000000)[$n]")).toEqual(["3"]);
+    expect(values("let $n := 2.5 return (1 to 10000000000)[$n]")).toEqual([]);
+    expect(values("empty(1 to 10000000000), exists(1 to 10000000000), exists(3 to 1)")).toEqual([
+      "false",
+      "true",
+      "false",
+    ]);
+    expect(values("head(1 to 10000000000), head(tail(1 to 10000000000))")).toEqual(["1", "2"]);
+    expect(
+      values("subsequence(1 to 10000000000, 9999999999), subsequence(1 to 9, 2.5, 2)"),
+    ).toEqual(["9999999999", "10000000000", "3", "4"]);
+    expect(values("subsequence(1 to 9, -1, 3), subsequence(1 to 9, 0 div 0e0)")).toEqual(["1"]);
+    expect(values("reverse((1 to 3, 'x', 8 to 9)), reverse(1 to 10000000000)[1]")).toEqual([
+      "9",
+      "8",
+      "x",
+      "3",
+      "2",
+      "1",
+      "10000000000",
+    ]);
+    expect(values("sum(1 to 100000000), avg(1 to 100000000), sum(2 to 1, 'z')")).toEqual([
+      "5000000050000000",
+      "50000000.5",
+      "z",
+    ]);
+    expect(types("sum(1 to 10), avg(1 to 4), sum((1 to 3, 0.5))")).toEqual([
+      "integer",
+      "decimal",
+      "decimal",
+    ]);
+    // General comparisons against a range compare with its ends.
+    expect(
+      values(
+        "5 = (1 to 10000000000), 2.5 = (1 to 9), 3.0 = (1 to 9), xs:untypedAtomic('4') = (1 to 9)",
+      ),
+    ).toEqual(["true", "false", "true", "true"]);
+    expect(
+      values("(1 to 10000000000) > 9999999999, (7 to 7) != 7, (1 to 5) = (6 to 9), 0 < (1 to 5)"),
+    ).toEqual(["true", "false", "false", "true"]);
+    expect(values("(0 div 0e0) = (1 to 9), (0 div 0e0) != (1 to 9)")).toEqual(["false", "true"]);
+    expect(code("'a' = (1 to 10000000000)")).toBe("XPTY0004");
+    // `for` and the quantifiers iterate a range one item at a time.
+    expect(values("some $i in 1 to 10000000000 satisfies $i = 5")).toEqual(["true"]);
+    expect(values("every $i in 1 to 10000000000 satisfies $i < 5")).toEqual(["false"]);
+    expect(values("count(for $i in 1 to 3000000 where $i mod 1000000 = 0 return $i)")).toEqual([
+      "3",
+    ]);
+    expect(values("for $i at $p in reverse(1 to 3) return $p * 10 + $i")).toEqual([
+      "13",
+      "22",
+      "31",
+    ]);
+    expect(values("for $i allowing empty in 3 to 1 return count($i)")).toEqual(["0"]);
+    // Anything else builds the items, up to a limit.
+    expect(values("count((1 to 5)[. > 2]), string-join(1 to 3)")).toEqual(["3", "123"]);
+    expect(code("string-join(1 to 10000000000)")).toBe("XPDY0130");
+    expect(code("(1 to 10000000000)[. = 5]")).toBe("XPDY0130");
+  });
 });
 
 describe("expressions", () => {
