@@ -112,10 +112,10 @@ export default defineConfig({
       // caller forward an optional of its own into. A bare `null` in an
       // internal return type is still a finding to read.
       "effect/prefer-option-over-null": "warn",
-      "typescript/ban-ts-comment": "off",
       "unicorn/no-empty-file": "off",
       "vite-plus/prefer-vite-plus-imports": "error",
       // On explicitly: no preset this config extends turns them on.
+      "typescript/ban-ts-comment": "error",
       "typescript/no-empty-object-type": "error",
       "typescript/no-explicit-any": "error",
 
