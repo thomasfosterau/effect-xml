@@ -17,7 +17,7 @@ import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import { AtomicValue, atomicString } from "../atomic.ts";
-import { atomize, effectiveBooleanValue, sameKey, type Item, type Sequence } from "../item.ts";
+import { atomize, effectiveBooleanValue, type Item, type Sequence } from "../item.ts";
 import type {
   Clause as ClauseT,
   Expr as ExprT,
@@ -28,7 +28,7 @@ import type {
 import { Clause } from "../parser/ast.ts";
 import { codepointCollation, type StaticContext } from "../parser/context.ts";
 import { AtomicTypes } from "../types.ts";
-import { orderCompare } from "./compare.ts";
+import { atomicDeepEqual, equalityBucket, orderCompare } from "./compare.ts";
 import { notImplemented, raise, unwrap } from "./raise.ts";
 import type { Code, Ctx, SeqType } from "./runtime.ts";
 import { bindLocal, clark, resolve, slotIn, type Scope } from "./scope.ts";
@@ -449,11 +449,27 @@ const orderStage = (
 
 // ---- group by -------------------------------------------------------------------
 
-/** A grouping key's identity: equal keys (`fn:deep-equal`, NaN equal to NaN) have the same string. */
-const groupingKey = (a: AtomicValue | undefined, fold: (s: string) => string): string => {
-  const f = folded(a, fold);
-  return f === undefined ? "()" : sameKey(f);
-};
+/**
+ * A grouping key's bucket: keys equal under `fn:deep-equal` (XQuery 3.1
+ * §3.12.4: `eq`, NaN equal to NaN, the implicit timezone for values without
+ * one) always share one, so only keys in the same bucket are compared.
+ */
+const groupingBucket = (a: AtomicValue | undefined): string =>
+  a === undefined ? "()" : equalityBucket(a, (s) => s);
+
+/** Whether two grouping keys, each at most one atomic value, are equal for grouping. */
+const sameGroupingKey = (
+  a: AtomicValue | undefined,
+  b: AtomicValue | undefined,
+  implicitTimezone: number,
+): boolean =>
+  a === undefined || b === undefined ? a === b : atomicDeepEqual(a, b, implicitTimezone);
+
+/** A group: the tuples whose grouping keys are equal, and the first one's keys. */
+interface Group {
+  readonly keys: ReadonlyArray<AtomicValue | undefined>;
+  readonly members: Array<Collected>;
+}
 
 /** A `$k := expr` grouping spec's binding, computed before the grouping. */
 interface GroupingLet {
@@ -520,23 +536,30 @@ const groupStage = (
     end: (ctx, run) => {
       const collected = run.collected[index] ?? [];
       run.collected[index] = [];
+      const timezone = ctx.dyn.implicitTimezone;
       const groups = collected.reduce(
         (acc, t) => {
-          const id = t.keys
-            .map((k, i) => groupingKey(k, vars[i]?.fold ?? ((x) => x)))
-            .join("\u0000");
-          const known = HashMap.get(acc.byKey, id);
-          if (Option.isSome(known)) known.value.push(t);
+          // Strings compare as the key's collation folds them.
+          const keys = t.keys.map((k, i) => folded(k, vars[i]?.fold ?? ((x) => x)));
+          const id = keys.map(groupingBucket).join("\u0000");
+          const candidates = Option.getOrElse(HashMap.get(acc.byBucket, id), () => []);
+          const known = candidates.find((group) =>
+            keys.every((k, i) => sameGroupingKey(k, group.keys[i], timezone)),
+          );
+          if (known !== undefined) known.members.push(t);
           else {
-            const members = [t];
-            acc.order.push(members);
-            acc.byKey = HashMap.set(acc.byKey, id, members);
+            const group: Group = { keys, members: [t] };
+            acc.order.push(group);
+            acc.byBucket = HashMap.set(acc.byBucket, id, [...candidates, group]);
           }
           return acc;
         },
-        { order: Arr.empty<Array<Collected>>(), byKey: HashMap.empty<string, Array<Collected>>() },
+        {
+          order: Arr.empty<Group>(),
+          byBucket: HashMap.empty<string, ReadonlyArray<Group>>(),
+        },
       ).order;
-      groups.forEach((members) => {
+      groups.forEach(({ members }) => {
         const [first] = members;
         all.forEach((s, i) => {
           const k = grouping.indexOf(s);

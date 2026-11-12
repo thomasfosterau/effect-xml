@@ -370,11 +370,11 @@
     },
     "fn-json-doc": {
       "runnable": 68,
-      "passing": 67
+      "passing": 68
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 32
+      "passing": 35
     },
     "fn-lang": {
       "runnable": 46,
@@ -494,7 +494,7 @@
     },
     "fn-parse-json": {
       "runnable": 154,
-      "passing": 153
+      "passing": 154
     },
     "fn-parse-xml": {
       "runnable": 17,
@@ -678,7 +678,7 @@
     },
     "fn-xml-to-json": {
       "runnable": 137,
-      "passing": 125
+      "passing": 137
     },
     "fn-year-from-date": {
       "runnable": 27,
@@ -818,7 +818,7 @@
     },
     "misc-JsonTestSuite": {
       "runnable": 318,
-      "passing": 306
+      "passing": 318
     },
     "misc-StaticContext": {
       "runnable": 1,
@@ -1078,7 +1078,7 @@
     },
     "op-same-key": {
       "runnable": 28,
-      "passing": 17
+      "passing": 28
     },
     "op-string-equal": {
       "runnable": 15,
@@ -1394,7 +1394,7 @@
     },
     "prod-GroupByClause": {
       "runnable": 35,
-      "passing": 34
+      "passing": 35
     },
     "prod-IfExpr": {
       "runnable": 42,
@@ -1980,11 +1980,11 @@
     },
     "fn-json-doc": {
       "runnable": 68,
-      "passing": 67
+      "passing": 68
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 32
+      "passing": 35
     },
     "fn-lang": {
       "runnable": 38,
@@ -2288,7 +2288,7 @@
     },
     "fn-xml-to-json": {
       "runnable": 82,
-      "passing": 77
+      "passing": 82
     },
     "fn-year-from-date": {
       "runnable": 27,
@@ -2688,7 +2688,7 @@
     },
     "op-same-key": {
       "runnable": 11,
-      "passing": 10
+      "passing": 11
     },
     "op-string-equal": {
       "runnable": 9,
