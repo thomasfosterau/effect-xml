@@ -8,6 +8,7 @@
  * tagged error class carries all of them, so callers branch on `code`.
  */
 import * as Arr from "effect/Array";
+import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { QName } from "../Name.ts";
@@ -35,7 +36,7 @@ export const ErrorNamespace = "http://www.w3.org/2005/xqt-errors";
  * @category errors
  */
 export const errorCode = (local: string): QName =>
-  new QName({ prefix: "err", local, namespace: ErrorNamespace });
+  new QName({ prefix: Option.some("err"), local, namespace: Option.some(ErrorNamespace) });
 
 /**
  * The namespace of the error codes this implementation adds to the
@@ -126,4 +127,4 @@ export const xqueryError = (local: string, description: string, offset?: number)
  * @category errors
  */
 export const hasErrorCode = (error: XQueryError, local: string): boolean =>
-  error.code.namespace === ErrorNamespace && error.code.local === local;
+  Option.contains(error.code.namespace, ErrorNamespace) && error.code.local === local;

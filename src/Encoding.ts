@@ -100,16 +100,15 @@ export interface SniffOptions {
   readonly encoding?: string;
 }
 
-const bomOf = (b: Uint8Array): Detected | null => {
-  if (b[0] === 0x00 && b[1] === 0x00 && b[2] === 0xfe && b[3] === 0xff)
-    return { encoding: "utf-32be", bomLength: 4, source: "bom" };
-  if (b[0] === 0xff && b[1] === 0xfe && b[2] === 0x00 && b[3] === 0x00)
-    return { encoding: "utf-32le", bomLength: 4, source: "bom" };
-  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf)
-    return { encoding: "utf-8", bomLength: 3, source: "bom" };
-  if (b[0] === 0xfe && b[1] === 0xff) return { encoding: "utf-16be", bomLength: 2, source: "bom" };
-  if (b[0] === 0xff && b[1] === 0xfe) return { encoding: "utf-16le", bomLength: 2, source: "bom" };
-  return null;
+const bomOf = (b: Uint8Array): Option.Option<Detected> => {
+  const found = (encoding: string, bomLength: number) =>
+    Option.some<Detected>({ encoding, bomLength, source: "bom" });
+  if (b[0] === 0x00 && b[1] === 0x00 && b[2] === 0xfe && b[3] === 0xff) return found("utf-32be", 4);
+  if (b[0] === 0xff && b[1] === 0xfe && b[2] === 0x00 && b[3] === 0x00) return found("utf-32le", 4);
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return found("utf-8", 3);
+  if (b[0] === 0xfe && b[1] === 0xff) return found("utf-16be", 2);
+  if (b[0] === 0xff && b[1] === 0xfe) return found("utf-16le", 2);
+  return Option.none();
 };
 
 const startsWith = (b: Uint8Array, prefix: ReadonlyArray<number>): boolean =>
@@ -164,20 +163,20 @@ const declarationEncoding =
   /^<\?xml[ \t\r\n][^?>]*?\bencoding[ \t\r\n]*=[ \t\r\n]*(["'])([A-Za-z][A-Za-z0-9._-]*)\1/;
 
 /**
- * Canonical name of an encoding label, or null when it is not one we can decode.
+ * Canonical name of an encoding label, or `Option.none()` when it is not one we can decode.
  *
  * @since 0.1.0
  * @category sniffing
  */
-export const canonicalEncoding = (label: string): string | null => {
+export const canonicalEncoding = (label: string): Option.Option<string> => {
   const l = label.trim().toLowerCase();
-  if (l === "utf-32" || l === "ucs-4" || l === "iso-10646-ucs-4") return "utf-32";
+  if (l === "utf-32" || l === "ucs-4" || l === "iso-10646-ucs-4") return Option.some("utf-32");
   if (l === "utf-16" || l === "iso-10646-ucs-2" || l === "ucs-2" || l === "csunicode")
-    return "utf-16";
-  if (l === "utf-32le" || l === "utf-32be") return l;
-  if (HashSet.has(LATIN1_LABELS, l)) return "iso-8859-1";
-  if (HashSet.has(ASCII_LABELS, l)) return "us-ascii";
-  return Option.getOrNull(Option.map(makeTextDecoder(l), (d) => d.encoding));
+    return Option.some("utf-16");
+  if (l === "utf-32le" || l === "utf-32be") return Option.some(l);
+  if (HashSet.has(LATIN1_LABELS, l)) return Option.some("iso-8859-1");
+  if (HashSet.has(ASCII_LABELS, l)) return Option.some("us-ascii");
+  return Option.map(makeTextDecoder(l), (d) => d.encoding);
 };
 
 // WHATWG folds these into windows-1252, which differs from them in 0x80-0x9F.
@@ -222,8 +221,9 @@ const unsupported = (encoding: string, reason: string) =>
   new UnsupportedEncoding({ encoding, reason });
 
 const resolveHint = (hint: string, family: Family): Detected | UnsupportedEncoding => {
-  const encoding = canonicalEncoding(hint);
-  if (encoding === null) return unsupported(hint, "unknown encoding label");
+  const canonical = canonicalEncoding(hint);
+  if (Option.isNone(canonical)) return unsupported(hint, "unknown encoding label");
+  const encoding = canonical.value;
   if (encoding === "utf-16" || encoding === "utf-32") {
     // The byte order comes from the first bytes, as for a declaration.
     if (!family.startsWith(encoding))
@@ -277,34 +277,41 @@ export const sniffXml = (
   if (head.length < 4 && !final) return NeedMore;
   const bom = bomOf(head);
   // SAFETY: `bomOf` only ever reports one of the five `Family` encodings.
-  const family: Family | "ebcdic" = bom !== null ? (bom.encoding as Family) : familyOf(head);
+  const family: Family | "ebcdic" = Option.isSome(bom)
+    ? (bom.value.encoding as Family)
+    : familyOf(head);
   if (family === "ebcdic") return unsupported("EBCDIC", "EBCDIC encodings are not supported");
-  if (bom === null && options?.encoding !== undefined) return resolveHint(options.encoding, family);
+  if (Option.isNone(bom) && options?.encoding !== undefined)
+    return resolveHint(options.encoding, family);
+  const bomOrDefault = (): Detected =>
+    Option.getOrElse(bom, () => ({ encoding: family, bomLength: 0, source: "default" }));
 
   // Read the declaration in the detected family, once it is complete.
-  const text = declarationText(head, family, bom?.bomLength ?? 0);
+  const text = declarationText(
+    head,
+    family,
+    Option.match(bom, { onNone: () => 0, onSome: (b) => b.bomLength }),
+  );
   if (!final && text.length < 6 && text === "<?xml".slice(0, text.length)) return NeedMore;
-  if (!/^<\?xml[ \t\r\n]/.test(text))
-    return bom ?? { encoding: family, bomLength: 0, source: "default" };
+  if (!/^<\?xml[ \t\r\n]/.test(text)) return bomOrDefault();
   const end = text.indexOf("?>");
   if (end === -1 && !final && head.length < DECLARATION_WINDOW) return NeedMore;
   const match = declarationEncoding.exec(end === -1 ? text : text.slice(0, end));
-  if (match === null) {
-    // No encoding declared: UTF-8, or UTF-16/32 recognised from the bytes.
-    return bom ?? { encoding: family, bomLength: 0, source: "default" };
-  }
+  // No encoding declared: UTF-8, or UTF-16/32 recognised from the bytes.
+  if (match === null) return bomOrDefault();
   // The pattern's second group is the label; it is always present on a match.
   const [, , label = ""] = match;
-  const declared = canonicalEncoding(label);
-  if (declared === null) return unsupported(label, "unknown encoding label");
-  if (!agrees(declared, family, bom !== null)) {
-    const what = bom !== null ? "the byte order mark" : "the document's first bytes";
+  const canonical = canonicalEncoding(label);
+  if (Option.isNone(canonical)) return unsupported(label, "unknown encoding label");
+  const declared = canonical.value;
+  if (!agrees(declared, family, Option.isSome(bom))) {
+    const what = Option.isSome(bom) ? "the byte order mark" : "the document's first bytes";
     return unsupported(
       label,
       `the declared encoding contradicts ${what}, which indicate ${family}`,
     );
   }
-  if (bom !== null) return bom;
+  if (Option.isSome(bom)) return bom.value;
   if (family !== "utf-8") return { encoding: family, bomLength: 0, source: "declaration" };
   return { encoding: declared, bomLength: 0, source: "declaration" };
 };
@@ -331,39 +338,39 @@ export const sniffHtml = (
     return { encoding: "utf-8", bomLength: 3, source: "bom" };
   if (startsWith(head, [0xfe, 0xff])) return { encoding: "utf-16be", bomLength: 2, source: "bom" };
   if (startsWith(head, [0xff, 0xfe])) return { encoding: "utf-16le", bomLength: 2, source: "bom" };
-  if (options?.encoding !== undefined) {
-    const hint = htmlEncoding(options.encoding);
-    if (hint === null) return unsupported(options.encoding, "unknown encoding label");
-    return { encoding: hint, bomLength: 0, source: "hint" };
-  }
+  const label = options?.encoding;
+  if (label !== undefined)
+    return Option.match(htmlEncoding(label), {
+      onNone: () => unsupported(label, "unknown encoding label"),
+      onSome: (encoding): Detected => ({ encoding, bomLength: 0, source: "hint" }),
+    });
   if (head.length < PRESCAN_WINDOW && !final) return NeedMore;
-  const meta = prescan(head.subarray(0, PRESCAN_WINDOW));
-  if (meta !== null) return { encoding: meta, bomLength: 0, source: "meta" };
-  return { encoding: "windows-1252", bomLength: 0, source: "default" };
+  return Option.match(prescan(head.subarray(0, PRESCAN_WINDOW)), {
+    onNone: (): Detected => ({ encoding: "windows-1252", bomLength: 0, source: "default" }),
+    onSome: (encoding): Detected => ({ encoding, bomLength: 0, source: "meta" }),
+  });
 };
 
 /** An encoding label as HTML resolves it (WHATWG "get an encoding"). */
-const htmlEncoding = (label: string): string | null =>
-  Option.getOrNull(Option.map(makeTextDecoder(label.trim()), (d) => d.encoding));
+const htmlEncoding = (label: string): Option.Option<string> =>
+  Option.map(makeTextDecoder(label.trim()), (d) => d.encoding);
 
 /**
  * The WHATWG `<meta>` prescan, simplified to a scan over the bytes as Latin-1:
  * comments are skipped, and the first `<meta>` with a usable `charset`, or an
  * `http-equiv="content-type"` with a `content` naming one, decides.
  */
-const prescan = (bytes: Uint8Array): string | null => {
+const prescan = (bytes: Uint8Array): Option.Option<string> => {
   // At most PRESCAN_WINDOW bytes, so one `fromCharCode` call takes them all.
   const text = String.fromCharCode(...bytes);
   const tag = /<!--[\s\S]*?-->|<meta(?=[\s/])([^>]*)>?/gi;
-  return Option.getOrNull(
-    Arr.findFirst(Arr.fromIterable(text.matchAll(tag)), (m) =>
-      m[1] === undefined ? Option.none() : Option.fromNullishOr(metaEncoding(m[1])),
-    ),
+  return Arr.findFirst(Arr.fromIterable(text.matchAll(tag)), (m) =>
+    m[1] === undefined ? Option.none() : metaEncoding(m[1]),
   );
 };
 
 /** The encoding one `<meta>` tag's attributes declare, if it declares a usable one. */
-const metaEncoding = (attributes: string): string | null => {
+const metaEncoding = (attributes: string): Option.Option<string> => {
   const attr = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"?|'([^']*)'?|([^\s>]*)))?/g;
   // The first occurrence of an attribute wins.
   const attrs = Arr.reduce(
@@ -378,23 +385,24 @@ const metaEncoding = (attributes: string): string | null => {
   const content = HashMap.get(attrs, "content");
   const label = Option.isSome(charset)
     ? charset.value
-    : Option.getOrUndefined(HashMap.get(attrs, "http-equiv"))?.toLowerCase() === "content-type" &&
-        Option.isSome(content)
-      ? charsetFromContent(content.value)
-      : null;
-  if (label === null) return null;
-  const encoding = htmlEncoding(label);
-  if (encoding === null) return null;
-  // A document that got this far in ASCII can't be UTF-16 (WHATWG prescan).
-  if (encoding === "utf-16le" || encoding === "utf-16be") return "utf-8";
-  if (encoding === "x-user-defined") return "windows-1252";
-  return encoding;
+    : Option.getOrUndefined(HashMap.get(attrs, "http-equiv"))?.toLowerCase() === "content-type"
+      ? Option.getOrUndefined(Option.flatMap(content, charsetFromContent))
+      : undefined;
+  if (label === undefined) return Option.none();
+  return Option.map(htmlEncoding(label), (encoding) =>
+    // A document that got this far in ASCII can't be UTF-16 (WHATWG prescan).
+    encoding === "utf-16le" || encoding === "utf-16be"
+      ? "utf-8"
+      : encoding === "x-user-defined"
+        ? "windows-1252"
+        : encoding,
+  );
 };
 
 /** WHATWG "extracting a character encoding from a meta element". */
-const charsetFromContent = (content: string): string | null => {
+const charsetFromContent = (content: string): Option.Option<string> => {
   const m = /charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;"']+))/i.exec(content);
-  return m === null ? null : (m[1] ?? m[2] ?? m[3] ?? null);
+  return m === null ? Option.none() : Option.fromUndefinedOr(m[1] ?? m[2] ?? m[3]);
 };
 
 // -----------------------------------------------------------------------------
@@ -518,7 +526,7 @@ export interface DecodeOptions extends SniffOptions {
 /** @internal The decoding state machine behind {@link decode}. */
 export class ByteDecoder {
   private head: Uint8Array = new Uint8Array(0);
-  private decoder: Decoder | null = null;
+  private decoder: Option.Option<Decoder> = Option.none();
   private encoding = "";
   private total = 0;
   /** Bytes dropped as a byte order mark, so error offsets count from the start of the input. */
@@ -531,21 +539,26 @@ export class ByteDecoder {
   }
 
   /** The detected encoding, once known. */
-  get detected(): string | null {
-    return this.decoder === null ? null : this.encoding;
+  get detected(): Option.Option<string> {
+    return Option.map(this.decoder, () => this.encoding);
   }
 
   write(bytes: Uint8Array): string | DecodeError | LimitExceeded {
     this.total += bytes.length;
     const max = this.options.maxTotalBytes ?? Infinity;
-    if (this.total > max) return new LimitExceeded({ limit: "maxTotalBytes", max, position: null });
-    return this.decoder === null
-      ? this.sniff(concat(this.head, bytes), false)
-      : this.run(bytes, false);
+    if (this.total > max)
+      return new LimitExceeded({ limit: "maxTotalBytes", max, position: Option.none() });
+    return Option.match(this.decoder, {
+      onNone: () => this.sniff(concat(this.head, bytes), false),
+      onSome: (decoder) => this.runWith(decoder, bytes, false),
+    });
   }
 
   end(): string | DecodeError {
-    return this.decoder === null ? this.sniff(this.head, true) : this.run(new Uint8Array(0), true);
+    return Option.match(this.decoder, {
+      onNone: () => this.sniff(this.head, true),
+      onSome: (decoder) => this.runWith(decoder, new Uint8Array(0), true),
+    });
   }
 
   private sniff(head: Uint8Array, final: boolean): string | DecodeError {
@@ -560,13 +573,8 @@ export class ByteDecoder {
     this.encoding = found.encoding;
     this.skipped = found.bomLength;
     const decoder = decoderFor(found.encoding, this.options.mode !== "html");
-    this.decoder = decoder;
+    this.decoder = Option.some(decoder);
     return this.runWith(decoder, head.subarray(found.bomLength), final);
-  }
-
-  private run(bytes: Uint8Array, final: boolean): string | DecodeError {
-    // Only called once sniffing has chosen a decoder.
-    return this.decoder === null ? "" : this.runWith(this.decoder, bytes, final);
   }
 
   private runWith(decoder: Decoder, bytes: Uint8Array, final: boolean): string | DecodeError {

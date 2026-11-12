@@ -279,7 +279,10 @@ const names: ReadonlyArray<BuiltinSpec> = [
   ...ofNode("fn:namespace-uri", "xs:anyURI", (n) => [
     AtomicValue.anyURI(
       n?.kind === "element" || n?.kind === "attribute"
-        ? Option.match(nodeName(n), { onNone: () => "", onSome: (q) => q.namespace ?? "" })
+        ? Option.match(nodeName(n), {
+            onNone: () => "",
+            onSome: (q) => Option.getOrElse(q.namespace, () => ""),
+          })
         : "",
     ),
   ]),
@@ -429,7 +432,7 @@ const NON_XML = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
 const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   if (isEmpty(arg(args, 0))) return [];
   const encoding = args.length > 1 ? text(arg(args, 1)) : undefined;
-  if (encoding !== undefined && canonicalEncoding(encoding) === null)
+  if (encoding !== undefined && Option.isNone(canonicalEncoding(encoding)))
     return raise("FOUT1190", `the encoding "${encoding}" is not supported`, call.offset);
   const got = fetchResource(
     call.ctx.dyn,
@@ -468,7 +471,15 @@ const makeQName = (uri: string, lexical: string, call: Call): Sequence => {
   if (!valid) return raise("FOCA0002", `${lexical} is not a lexical QName`, call.offset);
   if (prefix !== null && uri === "")
     return raise("FOCA0002", `${lexical} has a prefix but no namespace`, call.offset);
-  return [AtomicValue.qname(new QName({ prefix, local, namespace: uri === "" ? null : uri }))];
+  return [
+    AtomicValue.qname(
+      new QName({
+        prefix: Option.fromNullOr(prefix),
+        local,
+        namespace: uri === "" ? Option.none() : Option.some(uri),
+      }),
+    ),
+  ];
 };
 
 /** `fn:error` with a code, and optionally a description and an error value. */
