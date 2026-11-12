@@ -17,7 +17,8 @@
  */
 
 import { defineConfig } from "vite-plus";
-import * as Option from "effect/Option";
+import * as Config from "effect/Config";
+import * as Effect from "effect/Effect";
 import * as R from "effect/Record";
 import { recommended } from "@effect/tsgo/oxlint-presets";
 import effect from "@enfect/oxlint";
@@ -33,7 +34,7 @@ const cacheInputs = [{ auto: true }, "!node_modules/**", "!docs/**", "pnpm-lock.
 // The worker count CI pins (`VITEST_MAX_WORKERS`), as a `test` member only
 // when it is set: vitest's own default applies otherwise.
 const workers = R.getSomes({
-  maxWorkers: Option.map(Option.fromNullishOr(process.env.VITEST_MAX_WORKERS), Number),
+  maxWorkers: Effect.runSync(Config.option(Config.Number("VITEST_MAX_WORKERS"))),
 });
 
 /**
@@ -171,16 +172,19 @@ export default defineConfig({
     },
     overrides: [
       // Build/test configs are evaluated by Vite and Vitest in bare Node,
-      // before any Effect runtime exists — there is no `Config` provider to
-      // read from and no `FileSystem` service to call, so `process.env` and
-      // `node:*` are the only things that work there. The Effect preset's
-      // service rules have no satisfiable fix in these files.
+      // before any Effect runtime exists: nothing here runs inside one, so
+      // the one value read from the environment (the worker count) is read
+      // through `Config` and run once, at the top level, which is the entry
+      // point `effect-run-in-body` sends execution to. There is no
+      // `FileSystem` service to call, so `node:*` is the only thing that
+      // works for the rest. The Effect preset's service rules have no
+      // satisfiable fix in these files.
       {
-        files: ["vite.config.ts"],
+        files: ["vite.config.ts", "packages/*/vite.config.ts"],
         rules: {
+          "effect/effect-run-in-body": "off",
           "effect/avoid-node-imports": "off",
           "effect/avoid-sync-fs": "off",
-          "effect/avoid-process-env": "off",
           "effect/use-console-service": "off",
           "effect/use-filesystem-service": "off",
           "effect/use-path-service": "off",
