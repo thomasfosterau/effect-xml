@@ -18,4 +18,8 @@ Agent work uses git worktrees under `.claude/worktrees/` (git-ignored), one per 
 
 Every gate in [CONTRIBUTING.md](../CONTRIBUTING.md#verification) runs in an agent session, with one dependency: `pnpm audit` needs the network. The fallow gate may run `vp run test:coverage` first, which is slow; let it finish.
 
-@../AGENTS.md @../CONTRIBUTING.md @../README.md
+@../AGENTS.md
+
+@../CONTRIBUTING.md
+
+@../README.md
