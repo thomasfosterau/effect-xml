@@ -8,7 +8,7 @@
  * and `xs:dateTimeStamp`.
  */
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import { builtin, XS } from "../../Xsd/Model.ts";
 import { builtinBase } from "../xsd/datatypes.ts";
 
@@ -184,7 +184,7 @@ const buildTypes = (): { readonly [K in AtomicTypeName]: AtomicType } => {
     built[name] = type;
     return type;
   };
-  return Record.map(declared, (_, name) => typeOf(name));
+  return R.map(declared, (_, name) => typeOf(name));
 };
 
 /**

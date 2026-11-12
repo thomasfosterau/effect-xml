@@ -12,7 +12,7 @@ import * as Hash from "effect/Hash";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Html, Sax, Xml } from "../src/index.ts";
@@ -61,7 +61,7 @@ type Instance =
 /** A class the parsers build, constructed (and validated) from its own fields. */
 type InstanceClass = new (fields: Instance) => Instance;
 
-const isInstanceClass = (c: unknown): c is InstanceClass => Predicate.isFunction(c);
+const isInstanceClass = (c: unknown): c is InstanceClass => P.isFunction(c);
 
 /** The same instance built with `new` (and so by the class's own schema). */
 const rebuild = (node: Instance): Instance => {

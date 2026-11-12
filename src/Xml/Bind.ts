@@ -711,7 +711,7 @@ const isList = (value: Tree): value is ReadonlyArray<Tree> => Arr.isArray(value)
 
 /** Is this node a record? A non-array object in a string tree is a record of string trees. */
 const isTreeRecord = (value: Tree): value is Schema.TreeRecord<string | undefined> =>
-  Predicate.isObject(value) && !isList(value);
+  P.isObject(value) && !isList(value);
 
 const asList = (value: Tree, path: Path): Result.Result<ReadonlyArray<Tree>, XmlBindError> =>
   isList(value) ? Result.succeed(value) : failAt(path, "expected an array");
