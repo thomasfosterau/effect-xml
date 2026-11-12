@@ -94,6 +94,14 @@ describe("regular expressions", () => {
     expect(value("matches('abc', '^a.c$')")).toBe("true");
     expect(value("matches('xabc', '^abc')")).toBe("false");
     expect(value("matches('abab', '^(ab)\\1$')")).toBe("true");
+    // Case categories are exact under the `i` flag; literals and ranges fold.
+    expect(value("matches('m', '\\p{Lu}', 'i')")).toBe("false");
+    expect(value("matches('m', '\\P{Lu}', 'i')")).toBe("true");
+    expect(value("matches('M', '\\p{Lu}', 'i')")).toBe("true");
+    expect(value("matches('M', '[\\p{Ll}]', 'i')")).toBe("false");
+    expect(value("matches('Xm', 'x\\P{Lu}', 'i')")).toBe("true");
+    expect(value("matches('XM', 'x[a-z]\\p{Lu}*', 'i')")).toBe("true");
+    expect(value("matches('\u212a', 'k\\p{Lu}*', 'i')")).toBe("true");
     expect(value("replace('aaa', 'a+?', 'b')")).toBe("bbb");
     expect(value("replace('abc', '(?:a)(b)', '[$1]')")).toBe("[b]c");
     // \10 is group 1 and a literal 0 while there is no group 10 yet.
@@ -270,6 +278,12 @@ describe("nodes, QNames and URIs", () => {
     expect(value("resolve-uri('urn:y', 'http://x/')")).toBe("urn:y");
     expect(code("resolve-uri('b')")).toBe("FONS0005");
     expect(value("implicit-timezone()")).toBe("PT0S");
+  });
+
+  test("default-language is the host's, English unless given", () => {
+    expect(value("default-language()")).toBe("en");
+    expect(values("default-language()", { defaultLanguage: "fr-CA" })).toEqual(["fr-CA"]);
+    expect(value("default-language() instance of xs:language")).toBe("true");
   });
 });
 

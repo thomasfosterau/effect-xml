@@ -40,7 +40,7 @@ export const normalizeNewlines = (s: string): string =>
   s.includes("\r") ? s.replace(/\r\n?/g, "\n") : s;
 
 /** Fail unrecoverably with a static error. */
-const issue = (code: string, description: string): P<never> =>
+export const issue = (code: string, description: string): P<never> =>
   Parser.cut(Parser.fail({ code, description }));
 
 /** A syntax error with a description. */
