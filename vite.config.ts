@@ -17,6 +17,8 @@
  */
 
 import { defineConfig } from "vite-plus";
+import * as Option from "effect/Option";
+import * as R from "effect/Record";
 import { recommended } from "@effect/tsgo/oxlint-presets";
 import effect from "@enfect/oxlint";
 
@@ -28,7 +30,11 @@ import effect from "@enfect/oxlint";
  */
 const cacheInputs = [{ auto: true }, "!node_modules/**", "!docs/**", "pnpm-lock.yaml"];
 
-const maxWorkers = process.env.VITEST_MAX_WORKERS;
+// The worker count CI pins (`VITEST_MAX_WORKERS`), as a `test` member only
+// when it is set: vitest's own default applies otherwise.
+const workers = R.getSomes({
+  maxWorkers: Option.map(Option.fromNullishOr(process.env.VITEST_MAX_WORKERS), Number),
+});
 
 /**
  * A task of the command-line package (`packages/cli`), which the root's
@@ -170,9 +176,6 @@ export default defineConfig({
           "effect/use-console-service": "off",
           "effect/use-filesystem-service": "off",
           "effect/use-path-service": "off",
-          // `...(process.env.X ? { x } : {})` is how a vitest option is left
-          // unset under `exactOptionalPropertyTypes`.
-          "effect/no-conditional-empty-object-spread": "off",
         },
       },
       // The WHATWG tree constructor keeps three loops that ARE the spec's
@@ -540,7 +543,7 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
-    ...(maxWorkers === undefined ? {} : { maxWorkers: Number(maxWorkers) }),
+    ...workers,
     coverage: {
       provider: "istanbul",
       // `json` writes coverage-final.json, the Istanbul map `fallow audit`
