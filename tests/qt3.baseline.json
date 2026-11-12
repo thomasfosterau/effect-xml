@@ -110,7 +110,7 @@
     },
     "fn-base-uri": {
       "runnable": 82,
-      "passing": 47
+      "passing": 56
     },
     "fn-boolean": {
       "runnable": 143,
@@ -126,7 +126,7 @@
     },
     "fn-codepoints-to-string": {
       "runnable": 76,
-      "passing": 75
+      "passing": 76
     },
     "fn-collation-key": {
       "runnable": 28,
@@ -198,7 +198,7 @@
     },
     "fn-default-language": {
       "runnable": 5,
-      "passing": 0
+      "passing": 5
     },
     "fn-distinct-values": {
       "runnable": 105,
@@ -234,7 +234,7 @@
     },
     "fn-environment-variable": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-error": {
       "runnable": 97,
@@ -306,7 +306,7 @@
     },
     "fn-function-lookup": {
       "runnable": 618,
-      "passing": 610
+      "passing": 612
     },
     "fn-function-name": {
       "runnable": 25,
@@ -350,7 +350,7 @@
     },
     "fn-in-scope-prefixes": {
       "runnable": 57,
-      "passing": 55
+      "passing": 56
     },
     "fn-index-of": {
       "runnable": 53,
@@ -402,7 +402,7 @@
     },
     "fn-matches": {
       "runnable": 162,
-      "passing": 160
+      "passing": 162
     },
     "fn-matches.re": {
       "runnable": 1003,
@@ -1146,7 +1146,7 @@
     },
     "op-to": {
       "runnable": 168,
-      "passing": 164
+      "passing": 166
     },
     "op-union": {
       "runnable": 74,
@@ -1258,7 +1258,7 @@
     },
     "prod-CompElemConstructor": {
       "runnable": 95,
-      "passing": 93
+      "passing": 95
     },
     "prod-CompNamespaceConstructor": {
       "runnable": 42,
@@ -1282,7 +1282,7 @@
     },
     "prod-ContextItemDecl": {
       "runnable": 42,
-      "passing": 40
+      "passing": 41
     },
     "prod-ContextItemExpr": {
       "runnable": 45,
@@ -1290,7 +1290,7 @@
     },
     "prod-CopyNamespacesDecl": {
       "runnable": 36,
-      "passing": 35
+      "passing": 36
     },
     "prod-CountClause": {
       "runnable": 13,
@@ -1318,11 +1318,11 @@
     },
     "prod-DirElemConstructor": {
       "runnable": 69,
-      "passing": 67
+      "passing": 69
     },
     "prod-DirElemContent": {
       "runnable": 115,
-      "passing": 112
+      "passing": 115
     },
     "prod-DirElemContent.namespace": {
       "runnable": 133,
@@ -1418,7 +1418,7 @@
     },
     "prod-Lookup": {
       "runnable": 106,
-      "passing": 103
+      "passing": 106
     },
     "prod-MapConstructor": {
       "runnable": 42,
@@ -1426,15 +1426,15 @@
     },
     "prod-MapTest": {
       "runnable": 46,
-      "passing": 43
+      "passing": 46
     },
     "prod-ModuleImport": {
       "runnable": 105,
-      "passing": 103
+      "passing": 104
     },
     "prod-NameTest": {
       "runnable": 127,
-      "passing": 123
+      "passing": 127
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,
@@ -1530,7 +1530,7 @@
     },
     "prod-UnaryLookup": {
       "runnable": 33,
-      "passing": 32
+      "passing": 33
     },
     "prod-UnorderedExpr": {
       "runnable": 26,
@@ -1736,7 +1736,7 @@
     },
     "fn-codepoints-to-string": {
       "runnable": 70,
-      "passing": 69
+      "passing": 70
     },
     "fn-collation-key": {
       "runnable": 28,
@@ -1808,7 +1808,7 @@
     },
     "fn-default-language": {
       "runnable": 5,
-      "passing": 0
+      "passing": 5
     },
     "fn-distinct-values": {
       "runnable": 91,
@@ -1844,7 +1844,7 @@
     },
     "fn-environment-variable": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-error": {
       "runnable": 90,
@@ -1916,7 +1916,7 @@
     },
     "fn-function-lookup": {
       "runnable": 611,
-      "passing": 603
+      "passing": 605
     },
     "fn-function-name": {
       "runnable": 22,
@@ -2012,7 +2012,7 @@
     },
     "fn-matches": {
       "runnable": 161,
-      "passing": 159
+      "passing": 161
     },
     "fn-matches.re": {
       "runnable": 1002,
@@ -2756,7 +2756,7 @@
     },
     "op-to": {
       "runnable": 166,
-      "passing": 162
+      "passing": 164
     },
     "op-union": {
       "runnable": 20,
@@ -3036,7 +3036,7 @@
     },
     "prod-MapTest": {
       "runnable": 44,
-      "passing": 41
+      "passing": 44
     },
     "prod-ModuleImport": {
       "runnable": 0,

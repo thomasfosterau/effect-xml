@@ -10,7 +10,8 @@ import * as Option from "effect/Option";
 import { Parser } from "@thomasfosterau/effect-parse";
 import type { Annotation, EQName, Occurrence, SingleType } from "./ast.ts";
 import { ItemType, SequenceType } from "./ast.ts";
-import type { Lexical, P } from "./lexical.ts";
+import { isValidNCName } from "../../../Name.ts";
+import { issue, type Lexical, type P } from "./lexical.ts";
 
 /** The type parsers. */
 export interface Types {
@@ -25,6 +26,14 @@ export interface Types {
 
 /** `fn:normalize-space`, as applied to a `processing-instruction("…")` target. */
 const normalizeSpace = (s: string): string => s.trim().replace(/[ \t\r\n]+/g, " ");
+
+/** The target a `processing-instruction("…")` names, which must be an NCName once its whitespace is normalized. */
+const ncnameTarget = (literal: string): P<string> => {
+  const target = normalizeSpace(literal);
+  return isValidNCName(target)
+    ? Parser.succeed(target)
+    : issue("XPTY0004", `"${target}" is not an NCName, so it can't name a processing instruction`);
+};
 
 const element = (
   args: Option.Option<readonly [Option.Option<EQName>, Option.Option<readonly [EQName, boolean]>]>,
@@ -102,7 +111,7 @@ export const types = (lex: Lexical, annotations: P<ReadonlyArray<Annotation>>): 
   const piTest: P<ItemType> = Parser.map(
     call(
       "processing-instruction",
-      Parser.opt(Parser.alt(lexeme(ncname), Parser.map(stringLiteral, normalizeSpace))),
+      Parser.opt(Parser.alt(lexeme(ncname), Parser.flatMap(stringLiteral, ncnameTarget))),
     ),
     (target) => ItemType.ProcessingInstruction({ target }),
   );

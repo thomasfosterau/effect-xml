@@ -234,7 +234,7 @@ const nodeComparison =
   };
 
 /** The longest range `to` builds: a longer one is an implementation limit (`err:XPDY0130`). */
-const MAX_RANGE = 1_000_000n;
+const MAX_RANGE = 2_000_000n;
 
 const rangeBound = (s: Sequence, offset: number): bigint | undefined => {
   const a = optionalAtomic(s, "an operand of `to`", offset);
@@ -823,7 +823,16 @@ const lookupIn = (
   if (item instanceof ArrayItem)
     return keys === undefined
       ? item.members.flat()
-      : keys.flatMap((k) => arrayMember(item, k, offset));
+      : // The key is converted as an argument of `array:get` is: an untyped one is cast to xs:integer.
+        keys.flatMap((k) =>
+          arrayMember(
+            item,
+            k.type === AtomicTypes.untypedAtomic
+              ? castAtomic(k, AtomicTypes.integer, undefined, offset)
+              : k,
+            offset,
+          ),
+        );
   return raise("XPTY0004", "a lookup needs a map or an array", offset);
 };
 

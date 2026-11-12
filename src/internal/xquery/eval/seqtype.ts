@@ -232,7 +232,12 @@ const functionMatches = (
 ): boolean => {
   if (test.params === undefined) return true;
   if (arityOf(f) !== test.params.length) return false;
-  if (f instanceof MapItem) return f.toEntries().every(([, v]) => sequenceMatches(test.result, v));
+  // A map is a function whose result is a value or, for a key it lacks, the empty sequence.
+  if (f instanceof MapItem)
+    return (
+      sequenceMatches(test.result, []) &&
+      f.toEntries().every(([, v]) => sequenceMatches(test.result, v))
+    );
   if (f instanceof ArrayItem) return f.members.every((m) => sequenceMatches(test.result, m));
   const sig = signatureOf(f);
   return (

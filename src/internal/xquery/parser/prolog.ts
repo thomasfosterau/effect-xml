@@ -12,6 +12,7 @@ import * as Option from "effect/Option";
 import { Parser } from "@thomasfosterau/effect-parse";
 import type { Annotation, Decl as DeclT, Module as ModuleT, VersionDecl } from "./ast.ts";
 import { Decl, Module } from "./ast.ts";
+import { normalizeUri } from "./context.ts";
 import { isReserved, type Shared } from "./shared.ts";
 import type { P } from "./lexical.ts";
 import { syntax } from "./lexical.ts";
@@ -264,7 +265,7 @@ export const prolog = (shared: Shared): P<ModuleT> => {
     ),
     ([offset, [prefix, uri], decls]): Build =>
       (version) =>
-        Module.Library({ version, prefix, uri, prolog: decls, offset }),
+        Module.Library({ version, prefix, uri: normalizeUri(uri), prolog: decls, offset }),
   );
   const mainModule: P<Build> = Parser.map(
     Parser.seq(prologDecls, expr),

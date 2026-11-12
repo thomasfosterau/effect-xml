@@ -575,15 +575,18 @@ const declaration =
         ),
       ModuleImport: ({ prefix, uri, at, offset }) =>
         importDecl(fold, "module", prefix, uri, at, offset),
-      ContextItem: ({ type, offset }) =>
+      ContextItem: ({ type, value, offset }) =>
         setter(
-          withErrors(
-            fold,
-            Option.match(type, {
+          withErrors(fold, [
+            // A library module can't give the context item a value (XQuery 3.1 §4.10).
+            ...(Option.isSome(library) && Option.isSome(value)
+              ? fail("XQST0113", "a library module can't give the context item a value", offset)
+              : none),
+            ...Option.match(type, {
               onNone: () => none,
               onSome: (t) => itemType(scopeOf(fold.context), t),
             }),
-          ),
+          ]),
           "context-item",
           "XQST0099",
           "the context item",
