@@ -4,7 +4,8 @@
  *
  * The input is a generated SpreadsheetML worksheet (the shape of a large
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
- * stream (whole string and 64 KiB chunks), as bytes, as a DOM, with
+ * stream (whole string and 64 KiB chunks), as bytes, as a DOM (strictly and
+ * with `recover: true`, which reads it with the lexer, not directly), with
  * streaming selection of rows, and validated against a schema for the
  * worksheet (as events, and as typed values), queried with XPath
  * (`XQuery.evaluate` over the parsed DOM), and queried with `XQuery.stream`
@@ -120,6 +121,9 @@ await time("effect-xml SAX (bytes)", () =>
   Effect.runPromise(Stream.make(bytes).pipe(Sax.tokenizeBytes(), Stream.runDrain)),
 );
 await time("effect-xml DOM (Xml.parse)", () => Effect.runPromise(Effect.asVoid(Xml.parse(input))));
+await time("effect-xml DOM (Xml.parse, recover)", () =>
+  Effect.runPromise(Effect.asVoid(Xml.parse(input, { recover: true }))),
+);
 await time("effect-xml rows (Sax.select)", () =>
   Effect.runPromise(
     Stream.make(input).pipe(

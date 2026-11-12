@@ -9,6 +9,7 @@
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { XQueryError, errorCode } from "../../../../XQuery/Error.ts";
 import { canonicalEncoding } from "../../../../Encoding.ts";
@@ -31,6 +32,8 @@ import { orElse, raise, succeeds, unwrap } from "../raise.ts";
 import { arrayMember, contextItem, fetchResource } from "../runtime.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, arrayOf, atomOf, bool, int, isEmpty, mapOf, ofNode, str, text } from "./values.ts";
+
+const isQName = Schema.is(QName);
 
 /** How many characters (code points, not UTF-16 units) a string has. */
 const codepoints = (s: string): number => Arr.fromIterable(s).length;
@@ -445,7 +448,7 @@ const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
 
 const errorQName = (s: Sequence, call: Call): QName => {
   const [q] = s;
-  return q !== undefined && q instanceof AtomicValue && q.value instanceof QName
+  return q !== undefined && q instanceof AtomicValue && isQName(q.value)
     ? q.value
     : raise("XPTY0004", "fn:error's code must be an xs:QName", call.offset);
 };

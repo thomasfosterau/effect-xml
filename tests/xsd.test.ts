@@ -7,9 +7,13 @@ import * as P from "effect/Predicate";
 import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { Sax, Xml, Xsd } from "../src/index.ts";
 import * as Example from "../examples/xsd/order.generated.ts";
 import { splitEvery } from "./support/chunks.ts";
+
+const isXsdValidationError = Schema.is(Xsd.XsdValidationError);
+const isXmlElement = Schema.is(Xml.XmlElement);
 
 const XS = `xmlns:xs="http://www.w3.org/2001/XMLSchema"`;
 
@@ -36,7 +40,7 @@ const invalid = (model: Xsd.Model, doc: string, options?: Xsd.ParseOptions) => {
 
 /** The error, failing the test unless it is a validation error. */
 const validation = (e: Xsd.XsdError): Xsd.XsdValidationError => {
-  assert(e instanceof Xsd.XsdValidationError, `expected a validation error, got ${e.message}`);
+  assert(isXsdValidationError(e), `expected a validation error, got ${e.message}`);
   return e;
 };
 
@@ -45,7 +49,7 @@ const rule = (model: Xsd.Model, doc: string) => validation(invalid(model, doc)).
 const isRecord = (v: Xsd.XsdValue): v is Xsd.XsdRecord =>
   P.isObject(v) &&
   !Arr.isArray(v) &&
-  !(v instanceof Xml.XmlElement) &&
+  !isXmlElement(v) &&
   !(v instanceof Uint8Array) &&
   !BigDecimal.isBigDecimal(v);
 
@@ -484,7 +488,7 @@ describe("Xsd.parse — complex types", () => {
       value(model, `<anything ${ns} a="1">x<y:z xmlns:y="urn:y"><w/></y:z></anything>`),
     );
     const [z] = list(v, "$any");
-    assert(z instanceof Xml.XmlElement);
+    assert(isXmlElement(z));
     expect(z.name.clark).toBe("{urn:y}z");
     expect(v["$text"]).toBe("x");
     expect(v["$attributes"]).toEqual({ a: "1" });
@@ -578,7 +582,7 @@ describe("Xsd.parse — wildcards", () => {
   test("skip wildcards keep elements as DOM", () => {
     const v = record(value(model, `<r xmlns="urn:t"><a/><o:x xmlns:o="urn:o"><y/></o:x></r>`));
     const [x] = list(v, "$any");
-    assert(x instanceof Xml.XmlElement);
+    assert(isXmlElement(x));
     expect(Xml.serialize(x)).toBe(`<o:x xmlns:o="urn:o"><y/></o:x>`);
   });
 

@@ -212,6 +212,44 @@ export interface SaxOptions {
    * @since 0.1.0
    */
   readonly positions?: boolean;
+  /**
+   * Read malformed XML the way XML5 does instead of failing on it (default
+   * `false`).
+   *
+   * In XML mode, where the strict reading fails:
+   *
+   * - a `<` that opens no markup (one not followed by a name, `/`, `!` or
+   *   `?`, as in `a < b`) is text;
+   * - an `&` that starts no well-formed reference (`AT&T`, `&#xZZ;`, `&;`),
+   *   or a reference to an entity nobody declared (`&nbsp;`), is text, as
+   *   written: HTML's named references are not expanded;
+   * - in a start tag, an unquoted attribute value runs to whitespace or `>`
+   *   (`<a href=x.html>`), a valueless attribute has the value `""`, `<` and
+   *   `&` in a value are as in text, attributes need no whitespace between
+   *   them, a stray `/` is ignored, and an attribute whose name is not an XML
+   *   `Name` is dropped;
+   * - in an end tag, anything between the name and the `>` is ignored; `</`
+   *   followed by anything but a name is a comment up to the next `>` (a
+   *   bogus comment, as in XML5 and HTML), `</>` is dropped, and a `</` that
+   *   ends the input is text;
+   * - `<!` that starts no comment, CDATA section or DOCTYPE is a comment up
+   *   to the next `>`;
+   * - `]]>` in text is text;
+   * - references and CDATA sections outside the root element are read (the
+   *   tree builder, with its own `recover`, puts them in the root); an XML
+   *   declaration anywhere but at the very start, and a second DOCTYPE or
+   *   one after the root element's start, are dropped.
+   *
+   * A document strict XML reads is read the same. Characters XML does not
+   * allow still fail, as written or as a well-formed character reference
+   * (`&#0;`), and so do resource limits, encoding errors, markup cut off by
+   * the end of the input, comments with `--` in them and malformed
+   * declarations. A recovery is silent: nothing reports it. Ignored in HTML
+   * mode, which always recovers.
+   *
+   * @since 0.2.0
+   */
+  readonly recover?: boolean;
 }
 
 /** @internal */
@@ -224,6 +262,7 @@ export interface ResolvedOptions {
   readonly dtd: "ignore" | "internal";
   readonly scripting: boolean;
   readonly positions: boolean;
+  readonly recover: boolean;
 }
 
 /** @internal */
@@ -238,6 +277,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     dtd: options?.dtd ?? "ignore",
     scripting: options?.scripting ?? false,
     positions: options?.positions ?? true,
+    recover: mode === "xml" && options?.recover === true,
   };
 };
 
@@ -429,7 +469,8 @@ export const forEach = (
       ? { chunks: [input] }
       : decodeChunks(input, decodeOptions(options));
     const opts = resolveSaxOptions(options);
-    const lenient = options?.strict === false && opts.mode === "xml" && opts.dtd === "ignore";
+    const lenient =
+      options?.strict === false && opts.mode === "xml" && opts.dtd === "ignore" && !opts.recover;
     const failure = lenient
       ? (chunks.failure ?? forEachLeniently(chunks.chunks.join(""), f, opts))
       : runChunks(chunks, opts, (ev, position) => {
@@ -455,8 +496,8 @@ export interface ForEachOptions extends SaxBytesOptions {
    * forbids; an unknown or malformed reference is left as written; of the
    * resource limits only `maxTotalBytes` and `maxDepth` apply; markup that
    * cannot be read at all (a tag without its `>`) still fails. Applies to
-   * XML without `dtd: "internal"`; otherwise reading is strict. Default
-   * `true`.
+   * XML without `dtd: "internal"` or `recover`; otherwise reading is strict
+   * (or recovering). Default `true`.
    */
   readonly strict?: boolean;
 }

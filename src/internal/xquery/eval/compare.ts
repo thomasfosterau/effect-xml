@@ -13,6 +13,7 @@ import * as BigDecimal from "effect/BigDecimal";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { QName } from "../../../Name.ts";
 import { AtomicValue, atomicString } from "../atomic.ts";
 import {
@@ -30,6 +31,8 @@ import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../typ
 import { castAtomic, isStringLike, toDecimal, toNumber } from "./cast.ts";
 import { orElse, raise, unwrap } from "./raise.ts";
 import { durationOf, isTemporal, partsOf, timelineSeconds } from "./temporal.ts";
+
+const isQName = Schema.is(QName);
 
 /** A value comparison operator. */
 export type ValueOp = "eq" | "ne" | "lt" | "le" | "gt" | "ge";
@@ -119,7 +122,7 @@ const compareTemporal = (a: AtomicValue, b: AtomicValue, implicit: number): numb
 const noOrder = (a: AtomicValue, offset?: number): never =>
   raise("XPTY0004", `xs:${a.type.name} values have no order`, offset);
 
-const isQNameValue = (v: unknown): v is QName => v instanceof QName;
+const isQNameValue = (v: unknown): v is QName => isQName(v);
 
 const incomparable = (a: AtomicValue, b: AtomicValue, offset?: number): never =>
   raise("XPTY0004", `xs:${a.type.name} and xs:${b.type.name} values cannot be compared`, offset);

@@ -49,6 +49,7 @@ export interface ParseOptions extends BuildOptions {
 const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
   ...options,
   mode: "xml",
+  recover: options?.recover === true,
 });
 
 /**
@@ -62,6 +63,18 @@ const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
  * const doc = Effect.runSync(Xml.parse(`<order id="7"><item>Widget</item></order>`))
  * console.log(doc.root.attribute("id")) // "7"
  * console.log(doc.root.textContent) // "Widget"
+ * ```
+ *
+ * With `recover: true`, malformed XML is repaired rather than rejected: here
+ * an unescaped `&`, an unquoted attribute and an unclosed element.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import { Xml } from "@thomasfosterau/effect-xml"
+ *
+ * const doc = Effect.runSync(Xml.parse(`<p class=note>AT&T <b>bold`, { recover: true }))
+ * console.log(Xml.serializeDocument(doc)) // <p class="note">AT&amp;T <b>bold</b></p>
  * ```
  *
  * @since 0.1.0

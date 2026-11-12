@@ -44,6 +44,9 @@ import { serialize, type SerializationError, type WriterOptions } from "./Writer
 import { parse, type ParseOptions } from "./Xml.ts";
 import { maybe } from "../internal/optional.ts";
 
+const isXmlText = Schema.is(XmlText);
+const isXmlCData = Schema.is(XmlCData);
+
 // -----------------------------------------------------------------------------
 // Annotations
 // -----------------------------------------------------------------------------
@@ -617,7 +620,7 @@ const memberOf = (members: ReadonlyArray<Member>, el: XmlElement) =>
 
 const ownText = (el: XmlElement): string =>
   Arr.reduce(el.children, "", (out, node) =>
-    node instanceof XmlText || node instanceof XmlCData ? out + node.data : out,
+    isXmlText(node) || isXmlCData(node) ? out + node.data : out,
   );
 
 const describe = (el: XmlElement) => `<${el.name.qualified}>`;
