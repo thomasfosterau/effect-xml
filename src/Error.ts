@@ -89,11 +89,11 @@ export class UnexpectedEndTag extends Schema.TaggedError<
   UnexpectedEndTag,
   { readonly brand: unique symbol }
 >()("UnexpectedEndTag", {
-  name: Schema.String,
+  tagName: Schema.String,
   position: ErrorPosition,
 }) {
   override get message(): string {
-    return `Unexpected end tag </${this.name}> at ${showPosition(this.position)}`;
+    return `Unexpected end tag </${this.tagName}> at ${showPosition(this.position)}`;
   }
 }
 
@@ -191,11 +191,11 @@ export class UnboundNamespacePrefix extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("UnboundNamespacePrefix", {
   prefix: Schema.String,
-  name: Schema.String,
+  qualifiedName: Schema.String,
   position: ErrorPosition,
 }) {
   override get message(): string {
-    return `Unbound namespace prefix "${this.prefix}" in "${this.name}" at ${showPosition(
+    return `Unbound namespace prefix "${this.prefix}" in "${this.qualifiedName}" at ${showPosition(
       this.position,
     )}`;
   }
@@ -206,7 +206,7 @@ export class UnboundNamespacePrefix extends Schema.TaggedError<
  * (with namespace processing on): a name that is not a `QName`, a colon in
  * a processing instruction target or notation name, an empty prefixed
  * declaration (`xmlns:p=""`, XML 1.1 only), or a misuse of the reserved
- * `xml` / `xmlns` prefixes and namespaces. `name` is the offending name.
+ * `xml` / `xmlns` prefixes and namespaces. `invalidName` is the offending name.
  *
  * @since 0.1.0
  * @category errors
@@ -215,12 +215,12 @@ export class InvalidNamespace extends Schema.TaggedError<
   InvalidNamespace,
   { readonly brand: unique symbol }
 >()("InvalidNamespace", {
-  name: Schema.String,
+  invalidName: Schema.String,
   reason: Schema.String,
   position: ErrorPosition,
 }) {
   override get message(): string {
-    return `Namespace error in "${this.name}" at ${showPosition(this.position)}: ${this.reason}`;
+    return `Namespace error in "${this.invalidName}" at ${showPosition(this.position)}: ${this.reason}`;
   }
 }
 
