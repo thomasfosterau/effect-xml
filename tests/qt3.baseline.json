@@ -82,11 +82,11 @@
     },
     "fn-adjust-date-to-timezone": {
       "runnable": 41,
-      "passing": 39
+      "passing": 41
     },
     "fn-adjust-dateTime-to-timezone": {
       "runnable": 48,
-      "passing": 46
+      "passing": 48
     },
     "fn-adjust-time-to-timezone": {
       "runnable": 42,
@@ -106,7 +106,7 @@
     },
     "fn-avg": {
       "runnable": 239,
-      "passing": 238
+      "passing": 239
     },
     "fn-base-uri": {
       "runnable": 82,
@@ -394,7 +394,7 @@
     },
     "fn-local-name-from-QName": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-lower-case": {
       "runnable": 27,
@@ -454,7 +454,7 @@
     },
     "fn-namespace-uri-from-QName": {
       "runnable": 16,
-      "passing": 15
+      "passing": 16
     },
     "fn-nilled": {
       "runnable": 34,
@@ -582,7 +582,7 @@
     },
     "fn-string": {
       "runnable": 69,
-      "passing": 68
+      "passing": 69
     },
     "fn-string-join": {
       "runnable": 44,
@@ -806,7 +806,7 @@
     },
     "misc-CombinedErrorCodes": {
       "runnable": 230,
-      "passing": 212
+      "passing": 228
     },
     "misc-ErrorsAndOptimization": {
       "runnable": 7,
@@ -846,11 +846,11 @@
     },
     "op-add-dayTimeDuration-to-date": {
       "runnable": 25,
-      "passing": 24
+      "passing": 25
     },
     "op-add-dayTimeDuration-to-dateTime": {
       "runnable": 27,
-      "passing": 26
+      "passing": 27
     },
     "op-add-dayTimeDuration-to-time": {
       "runnable": 26,
@@ -862,7 +862,7 @@
     },
     "op-add-yearMonthDuration-to-date": {
       "runnable": 27,
-      "passing": 26
+      "passing": 27
     },
     "op-add-yearMonthDuration-to-dateTime": {
       "runnable": 29,
@@ -962,7 +962,7 @@
     },
     "op-divide-yearMonthDuration": {
       "runnable": 31,
-      "passing": 30
+      "passing": 31
     },
     "op-divide-yearMonthDuration-by-yearMonthDuration": {
       "runnable": 23,
@@ -1094,15 +1094,15 @@
     },
     "op-subtract-dateTimes": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dates": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dayTimeDuration-from-date": {
       "runnable": 23,
-      "passing": 22
+      "passing": 23
     },
     "op-subtract-dayTimeDuration-from-dateTime": {
       "runnable": 22,
@@ -1126,11 +1126,11 @@
     },
     "op-subtract-yearMonthDuration-from-dateTime": {
       "runnable": 23,
-      "passing": 22
+      "passing": 23
     },
     "op-subtract-yearMonthDurations": {
       "runnable": 33,
-      "passing": 32
+      "passing": 33
     },
     "op-time-equal": {
       "runnable": 58,
@@ -1226,11 +1226,11 @@
     },
     "prod-CastExpr": {
       "runnable": 2755,
-      "passing": 2740
+      "passing": 2755
     },
     "prod-CastExpr.derived": {
       "runnable": 153,
-      "passing": 141
+      "passing": 153
     },
     "prod-CastExpr.schema": {
       "runnable": 0,
@@ -1238,7 +1238,7 @@
     },
     "prod-CastableExpr": {
       "runnable": 785,
-      "passing": 773
+      "passing": 785
     },
     "prod-Comment": {
       "runnable": 45,
@@ -1574,7 +1574,7 @@
     },
     "xs-base64Binary": {
       "runnable": 39,
-      "passing": 37
+      "passing": 39
     },
     "xs-dateTimeStamp": {
       "runnable": 0,
@@ -1692,11 +1692,11 @@
     },
     "fn-adjust-date-to-timezone": {
       "runnable": 41,
-      "passing": 39
+      "passing": 41
     },
     "fn-adjust-dateTime-to-timezone": {
       "runnable": 48,
-      "passing": 46
+      "passing": 48
     },
     "fn-adjust-time-to-timezone": {
       "runnable": 42,
@@ -1716,7 +1716,7 @@
     },
     "fn-avg": {
       "runnable": 238,
-      "passing": 237
+      "passing": 238
     },
     "fn-base-uri": {
       "runnable": 4,
@@ -2004,7 +2004,7 @@
     },
     "fn-local-name-from-QName": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-lower-case": {
       "runnable": 27,
@@ -2064,7 +2064,7 @@
     },
     "fn-namespace-uri-from-QName": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-nilled": {
       "runnable": 13,
@@ -2192,7 +2192,7 @@
     },
     "fn-string": {
       "runnable": 69,
-      "passing": 68
+      "passing": 69
     },
     "fn-string-join": {
       "runnable": 39,
@@ -2704,11 +2704,11 @@
     },
     "op-subtract-dateTimes": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dates": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dayTimeDuration-from-date": {
       "runnable": 21,
@@ -2836,11 +2836,11 @@
     },
     "prod-CastExpr": {
       "runnable": 2737,
-      "passing": 2727
+      "passing": 2737
     },
     "prod-CastExpr.derived": {
       "runnable": 153,
-      "passing": 141
+      "passing": 153
     },
     "prod-CastExpr.schema": {
       "runnable": 0,
@@ -2848,7 +2848,7 @@
     },
     "prod-CastableExpr": {
       "runnable": 780,
-      "passing": 768
+      "passing": 780
     },
     "prod-Comment": {
       "runnable": 27,
@@ -3184,7 +3184,7 @@
     },
     "xs-base64Binary": {
       "runnable": 39,
-      "passing": 37
+      "passing": 39
     },
     "xs-dateTimeStamp": {
       "runnable": 0,
