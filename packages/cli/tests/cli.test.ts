@@ -156,7 +156,7 @@ layer(services)("generate", (it) => {
       );
       expect(refused).toBeInstanceOf(RemoteLocationRefused);
       expect(refused.message).toContain("pass --remote");
-      expect(fetched).toContain("export type Code = string;");
+      expect(fetched).toContain("export const Code = Schema.String;");
       expect(fetched).toContain("export const local = ");
       expect(requests).toContain(REMOTE);
     }),

@@ -3,7 +3,8 @@
  */
 import type * as BigDecimal from "effect/BigDecimal";
 import type * as Option from "effect/Option";
-import type { XmlElement } from "../Xml/Node.ts";
+import * as Schema from "effect/Schema";
+import { XmlElement } from "../Xml/Node.ts";
 
 /**
  * The value of a simple type.
@@ -59,13 +60,13 @@ export type XsdValue =
  * @since 0.1.0
  * @category models
  */
-export interface XsdRecord {
+export type XsdRecord = {
   readonly [property: string]:
     | XsdValue
     | ReadonlyArray<XsdValue>
     | Readonly<Record<string, string>>
     | undefined;
-}
+};
 
 /**
  * A valid document's root: the document element's expanded name and its value.
@@ -77,3 +78,65 @@ export interface Validated<A = XsdValue> {
   readonly name: string;
   readonly value: A;
 }
+
+/**
+ * The schema of {@link SimpleValue}: any value of a simple type, as it is,
+ * checked but not converted.
+ *
+ * @since 0.2.0
+ * @category schemas
+ */
+export const SimpleValue: Schema.Codec<SimpleValue> = Schema.Union([
+  Schema.String,
+  Schema.Number,
+  Schema.BigInt,
+  Schema.Boolean,
+  Schema.BigDecimal,
+  Schema.Uint8Array,
+  Schema.Array(Schema.suspend((): Schema.Codec<SimpleValue> => SimpleValue)),
+]);
+
+/** A DOM element as it is: the type side of the class's schema checks the instance, not its fields. */
+const Element = Schema.toType(XmlElement);
+
+/**
+ * The schema of {@link XsdRecord}: a record whose properties are values,
+ * arrays of values, or (for `$attributes`) strings by name.
+ *
+ * @since 0.2.0
+ * @category schemas
+ */
+export const XsdRecord: Schema.Codec<XsdRecord> = Schema.Record(
+  Schema.String,
+  Schema.Union([
+    Schema.suspend((): Schema.Codec<XsdValue> => XsdValue),
+    Schema.Array(Schema.suspend((): Schema.Codec<XsdValue> => XsdValue)),
+    Schema.Record(Schema.String, Schema.String),
+    Schema.Undefined,
+  ]),
+);
+
+/**
+ * The schema of {@link XsdValue}, the value of an element whatever its type:
+ * what a generated module uses for content the schema leaves open, such as
+ * an element of `xs:anyType`.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import * as Schema from "effect/Schema"
+ * import { Xsd } from "@thomasfosterau/effect-xml"
+ *
+ * const value = Effect.runSync(Schema.decodeUnknownEffect(Xsd.XsdValue)({ n: [1, 2], name: "a" }))
+ * console.log(value) // { n: [ 1, 2 ], name: 'a' }
+ * ```
+ *
+ * @since 0.2.0
+ * @category schemas
+ */
+export const XsdValue: Schema.Codec<XsdValue> = Schema.Union([
+  SimpleValue,
+  Element,
+  Schema.Option(Schema.Union([SimpleValue, Element, XsdRecord])),
+  XsdRecord,
+]);
