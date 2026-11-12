@@ -1,5 +1,142 @@
 # @thomasfosterau/effect-xml
 
+## 0.2.0
+
+### Minor Changes
+
+- [#182](https://github.com/thomasfosterau/effect-xml/pull/182) [`27b53b8`](https://github.com/thomasfosterau/effect-xml/commit/27b53b800b78515dbdcb890b3499c7b700f5c4ea) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Optional members and parameters are spelled `x?: T`, no longer `x?: T | undefined` ([#68](https://github.com/thomasfosterau/effect-xml/issues/68)). The package compiles with `exactOptionalPropertyTypes`, so the old spelling accepted an explicit `undefined` and the new one does not.
+
+  **Breaking:** a caller can no longer pass `undefined` explicitly to an optional option (`{ limits: maybeLimits }` where `maybeLimits` may be `undefined`); it omits the key instead. Passing the options object through unchanged, or building it so the key is only present when there is a value, needs no other change. At runtime nothing differs: an explicit `undefined` is still read as absent.
+
+  The public types affected, by module (import by subpath):
+
+  - `Sax`: `SaxOptions`, `SaxBytesOptions` and `ForEachOptions`.
+  - `Xml`: `ParseOptions` and `ParseBytesOptions`, `BuildOptions`, `PlainOptions`, `CursorOptions`, `C14nOptions`, `WriterOptions` and `WriterEvent` (`StartElement.inline`, and the `start` constructor's `inline` parameter), `XPath.CompileOptions` and `XPath.EvaluateOptions`, and in `Bind` `FieldBinding`, `ElementName`, `NameOptions`, `ElementOptions`, `DecodeOptions` and `EncodeOptions`.
+  - `Html`: `HtmlBytesOptions`, `HtmlFragmentOptions` and the options of `buildFragment`.
+  - `Xsd`: `ParseOptions` and `ValidateOptions` (`Validate`), `CompileOptions`, `GenerateOptions`, and the compiled `Model` types `ElementParticle`, `AnyParticle`, `GroupParticle`, `Facets`, `SimpleType`, `AttributeUse`, `ComplexType`, `ElementDeclaration` and `IdentityConstraint`. A `Model` built by hand must leave a member out rather than set it to `undefined`.
+  - `XQuery`: `CompileOptions` (and the static-context options it extends), `EvaluateOptions` (and the dynamic-context options it extends), `StaticResources` and `ResourceResolver`.
+  - `Encoding`: `DecodeOptions` and `SniffOptions`.
+  - `Limits`: unchanged.
+
+- [#195](https://github.com/thomasfosterau/effect-xml/pull/195) [`e7579f7`](https://github.com/thomasfosterau/effect-xml/commit/e7579f713086c287c0f2aba3f0e171c9630f79c7) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - The public API spells an absent value as `Option`, no longer `null` or `undefined` ([#68](https://github.com/thomasfosterau/effect-xml/issues/68)). **Breaking.** The encoded (JSON) form of every `Schema` class is unchanged: the fields that may be absent are `Schema.OptionFromNullOr`, so encoded documents still carry `null`, and decoding them gives `Option.none()`. Every change, by subpath (old → new):
+
+  **Root (`@thomasfosterau/effect-xml`)**
+
+  - `QName.prefix`: `string | null` → `Option<string>`; `QName.namespace`: `string | null` → `Option<string>`. `new QName({ prefix, local, namespace })` takes the `Option`s; `QName.simple`, `QName.fromRaw`, `qualified` and `clark` are unchanged.
+  - `LimitExceeded.position`: `{ offset, line, column } | null` → `Option<{ offset, line, column }>` (`Option.none()` for a limit hit while decoding bytes).
+  - `Encoding.canonicalEncoding(label)`: `string | null` → `Option<string>`.
+  - `Limits.resolveLimits(limits: Partial<Limits> | undefined)` → `resolveLimits(limits?: Partial<Limits>)`.
+
+  **`/Sax`**
+
+  - `SaxEvent.Doctype`: `publicId`, `systemId`, `internalSubset`: `string | null` → `Option<string>`.
+  - `SaxEvent.XmlDeclaration`: `encoding`: `string | null` → `Option<string>`; `standalone`: `boolean | null` → `Option<boolean>`.
+
+  **`/Xml`**
+
+  - `NameLike.namespace`: `string | null` → `Option<string>`.
+  - `NameArgs`: `[namespace: string | null, local: string]` → `[namespace: Option<string>, local: string]`, for `XmlElement.child`, `childElements`, `descendants`, `text`, `attributeNS` and the `Cursor` lookups: `el.child(null, "b")` becomes `el.child(Option.none(), "b")` (or `el.child(Xml.Ns.none("b"))`), `el.child(uri, "b")` becomes `el.child(Option.some(uri), "b")`.
+  - `XmlElement.attribute(name)`: `string | undefined` → `Option<string>`.
+  - `XmlDeclaration.encoding`: `string | null` → `Option<string>`; `XmlDeclaration.standalone`: `boolean | null` → `Option<boolean>`.
+  - `XmlDoctype.publicId`, `systemId`, `internalSubset`: `string | null` → `Option<string>`.
+  - `XmlDocument.declaration`: `XmlDeclaration | null` → `Option<XmlDeclaration>`; `XmlDocument.doctype`: `XmlDoctype | null` → `Option<XmlDoctype>`.
+  - `Cursor.parent`: `Cursor | null` → `Option<Cursor>` (`lang` and `base` were `Option`s already).
+  - `Ns.Namespace.uri`: `string | null` → `Option<string>`. `Ns.make(uri: string | null)` → `Ns.make(uri: string)`; names in no namespace use `Ns.none`, as before.
+  - `Bind.FieldBinding.namespace`, `Bind.ElementName.namespace`, `Bind.NameOptions.namespace` (and so `ElementOptions`): `string | null` (`null`: no namespace) → `Option<string>` (`Option.none()`: no namespace). Left out still means "inherit" / "any namespace": `Bind.named({ name: "note", namespace: "urn:notes" })` becomes `Bind.named({ name: "note", namespace: Option.some("urn:notes") })`.
+  - `XPath.NodeTest`: the `Name` test's `namespace`: `string | null` → `Option<string>`; the `Any` test's `namespace`: `string | null | undefined` (`undefined` for `*`) → `namespace?: Option<string>` (left out for `*`).
+  - `Writer.WriterOptions.escape`: `(codePoint: number) => string | undefined` → `(codePoint: number) => Option<string>` (`Option.none()` leaves the character to `invalid`).
+
+  **`/Html`**
+
+  - `HtmlAttribute.namespace`: `HtmlAttributeNamespace | null` → `Option<HtmlAttributeNamespace>`; `HtmlAttribute.prefix`: `string | null` → `Option<string>`.
+  - `HtmlElement.content`: `HtmlTemplateContent | null` → `Option<HtmlTemplateContent>`.
+  - `HtmlElement.attribute(name)`: `string | undefined` → `Option<string>`.
+  - `HtmlElement.attributeNS(namespace: HtmlAttributeNamespace | null, name)` → `attributeNS(namespace: Option<HtmlAttributeNamespace>, name)`.
+  - `HtmlDocument.doctype`: `HtmlDoctype | null` → `Option<HtmlDoctype>`.
+  - `Html.toXml`: a DOCTYPE's absent (`""`) identifiers become `Option.none()` (they were `null`), as the new `XmlDoctype` fields have it.
+
+  **`/Xsd`**
+
+  - `XsdSchemaError.location`: `string | null` → `Option<string>`.
+  - `XsdValue`: `SimpleValue | null | XmlElement | XsdRecord` → `SimpleValue | XmlElement | XsdRecord | Option<SimpleValue | XmlElement | XsdRecord>`. The value of an element declared `nillable` is now an `Option` of its value, `Option.none()` when it is nil (`xsi:nil="true"`; it was `null`) and `Option.some(value)` otherwise (it was the bare value).
+  - `Xsd.generate`: a nillable element's type is `Option.Option<T>` (it was `T | null`), and a module that has one imports `type * as Option from "effect/Option"`; a schema type named `Option` is now numbered (`Option2`), as `Xsd`, `Xml`, `BigDecimal` and `model` are.
+
+  **`/XQuery`**
+
+  - `ResourceResolver.text`: `(uri: string, encoding: string | undefined) => …` → `(uri: string, encoding: Option<string>) => …`.
+  - `Query.options` (an XQuery query): `CompileOptions | undefined` → `Option<CompileOptions>`.
+  - `XQueryError.code`, `errorCode(local)` and `NotStreamableCode` are `QName`s, so their `prefix` and `namespace` are `Option`s (see the root entry).
+
+- [#180](https://github.com/thomasfosterau/effect-xml/pull/180) [`d11452b`](https://github.com/thomasfosterau/effect-xml/commit/d11452b1ff3546cb78cbcba7a4a29813836a04ab) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Clear the type-aware lint findings ([#80](https://github.com/thomasfosterau/effect-xml/issues/80)). Three changes break downstream code that imports by subpath (effect-document, effect-rdf, effect-ext):
+
+  - **Nominal brands.** Every `Schema.Class` / `TaggedClass` / `TaggedError` the package exports now carries `{ readonly brand: unique symbol }` as its second type argument: `QName`, `XmlAttribute`, `XmlText`, `XmlCData`, `XmlComment`, `XmlElement`, the other Xml and Html nodes, `XmlBindError`, `XPathError`, `XQueryError`, `XsdSchemaError` / `XsdValidationError` and every error in `Error.ts`. A structurally compatible plain object no longer type-checks as an instance; build values with `new`. There is no runtime change.
+  - **Finite and integer schemas.** Positions and offsets (`line`, `column`, `offset`), `XPathError.offset`, `XQueryError.offset`, `XmlBindError.path` indices and `LimitExceeded.max` are `Schema.Int` / `Schema.Finite` instead of `Schema.Number`, so decoding rejects `NaN`, `Infinity`, `-Infinity` (and, for `Int`, fractions) in those fields. The `Xml.Bind` documentation uses `Schema.Finite` / `Schema.FiniteFromString`.
+  - **Renamed error fields** (a payload field `name` hid the error's own `name`): `UnexpectedEndTag.name` is now `tagName`; `UnboundNamespacePrefix.name` is now `qualifiedName`; `InvalidNamespace.name` is now `invalidName`.
+
+  Also: `unsafeTagName` / `unsafeAttrName` are `Brand.nominal` constructors with the same signature, and the internal lexer events are typed with `TagName` / `AttrName`.
+
+- [#183](https://github.com/thomasfosterau/effect-xml/pull/183) [`bf0e467`](https://github.com/thomasfosterau/effect-xml/commit/bf0e4677f9430918ac0017416cce71513ae5b857) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - `recover: true` now recovers in the tokenizer too, so `Xml.parse` and the other `Xml` parsers read XML from the wild (feeds with `AT&T` in a title, `&nbsp;`, unquoted attributes) instead of failing on it. A `<` that opens no markup is text. An `&` that starts no well-formed reference, or one to an undeclared entity, stays as written (HTML's named references are not expanded). An unquoted attribute value runs to whitespace or `>`, and a valueless attribute has the value `""`. `</` without a name and an unknown `<!…>` are bogus comments, as in XML5. References and CDATA sections outside the root go into the recovered tree, and a late XML declaration or DOCTYPE is dropped. `Sax.tokenize`, `Sax.forEach` and `Sax.collect` take the new `recover` option for the recovered events. Characters XML does not allow, resource limits and encoding errors still fail, and a document strict XML reads is read the same. Without `recover`, events, spans and errors are unchanged.
+
+- [#189](https://github.com/thomasfosterau/effect-xml/pull/189) [`2f6e477`](https://github.com/thomasfosterau/effect-xml/commit/2f6e477b2f183c7d73c5a235fe098437a379fa52) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Close small XQuery gaps: `fn:default-language` returns the new `defaultLanguage` option of `XQuery.evaluate` (default `en`); a library module that gives the context item a value is `err:XQST0113`; whitespace in a library module's namespace URI literal is normalized as it is in an import's; the `i` flag of `fn:matches`, `fn:replace` and `fn:tokenize` no longer makes `\p{Lu}` and `\p{Ll}` match every cased letter; an absolute `xml:base` stands as written (`base-uri` no longer adds a trailing slash to `http://example.com`); an array lookup casts an untyped key to `xs:integer`; a map is an instance of a function type only if its result type admits the empty sequence; a `processing-instruction("…")` test whose name is not an NCName is `err:XPTY0004`; a direct element constructor in another's content inherits only the namespaces its enclosing constructors declare; and a range may have up to two million items.
+
+- [#190](https://github.com/thomasfosterau/effect-xml/pull/190) [`94c7c14`](https://github.com/thomasfosterau/effect-xml/commit/94c7c148a5039cfe1e1a0bafd693506d8d6422a5) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - XQuery: the UCA collations (`http://www.w3.org/2013/collation/UCA?…`) run on `Intl.Collator`. `lang`, `strength`, `caseLevel`, `alternate`, `caseFirst`, `numeric` and `normalization` map onto it, `fallback=no` raises `err:FOCH0002` (`err:XQST0038` in `default collation`) for what it can't honour, `fn:contains` and its relatives match under them, `order by`, `group by`, value comparisons, `switch` and `fn:deep-equal` use them as the default collation, and `fn:collation-key` raises `err:FOCH0004` for them, since `Intl` has no sort keys.
+
+- [#200](https://github.com/thomasfosterau/effect-xml/pull/200) [`b0919e0`](https://github.com/thomasfosterau/effect-xml/commit/b0919e0ed6fd10e45228ed0b36072f7c353582a5) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - `Xsd.parser` decodes through an Effect `Schema` instead of casting to a type the caller names, and `Xsd.generate` writes a `Schema` for every type ([#181](https://github.com/thomasfosterau/effect-xml/issues/181)). **Breaking.** A value the schema does not describe now fails with a `Schema.SchemaError` instead of being typed as something it is not. Every change, on the `/Xsd` subpath (and `Xsd` from the root):
+
+  **`Xsd.parser`**
+
+  - `parser<A, S>(model, element, streams?: { [K in keyof S]: string }): Parser<A, S>` → `parser(model, element, schema, streams?: { [name]: { element, schema } }): Parser<S, C>`, which decodes each root value with `Schema.decodeUnknownEffect(schema)`. `parser(model, element)`, with no schema, still gives the `XsdValue` as it is, with no decoding pass (`Parser<typeof Xsd.XsdValue>`).
+  - `Parser<A, S>` → `Parser<S extends Schema.Top, C>`: `parse`, `parseBytes`, `parseStream`, `parseBytesStream` and `decode` give `S["Type"]` and fail with `Xsd.ParserError` (`XsdError | Schema.SchemaError`), needing `S["DecodingServices"]`. The parser has the schema as `schema`.
+  - `Parser.stream<B>(path, options?)` → `stream(path, schema, options?)`: each selected value decoded with `schema`.
+  - `Parser.streams.line` (a record of streams, typed by `S`) → `Parser.streams("line")` (a function of the child's name, typed by its schema).
+  - `Streams<S>` is gone; new: `Child<S>` (`{ element, schema }`), `Children`, `ParserError`.
+
+  **Values**
+
+  - New schemas `Xsd.XsdValue`, `Xsd.XsdRecord` and `Xsd.SimpleValue` for the types of the same names (what a generated module uses for `xs:anyType` content). `XsdRecord` is a type alias, no longer an interface.
+
+  **Generated modules (`Xsd.generate`, `effect-xml-xsd generate`)**
+
+  - A `Schema` per type and its type: `export const Line = Schema.Struct({ … })` with `export type Line = typeof Line.Type`, where they were `export interface Line { … }`; a simple type `export const Sku = Schema.String` with `export type Sku = typeof Sku.Type`. A type whose values can contain its own is written out as `export type Node = { … }` beside its schema.
+  - The value types are unchanged, except that the integer types that fit a `number` (`int`, `short`, …) decode through `Schema.Int`.
+  - Parsers: `Xsd.parser<Order, { readonly line: Line }>(model, "{urn}order", { line: "{urn}line" })` → `Xsd.parser(model, "{urn}order", Order, { line: { element: "{urn}line", schema: Line } })`.
+  - Imports: `import * as Schema from "effect/Schema"` and `import { Xml, Xsd } from …` (the value `Xml`, for `Schema.toType(Xml.XmlElement)`); the `effect/BigDecimal` and `effect/Option` type imports only for written-out types.
+  - A generated module no longer names a type `Schema`, `ReadonlyArray`, `Readonly`, `Record` or `Uint8Array` (they are numbered, as `model` was).
+
+  Regenerate generated modules after upgrading.
+
+### Patch Changes
+
+- [#161](https://github.com/thomasfosterau/effect-xml/pull/161) [`4192a61`](https://github.com/thomasfosterau/effect-xml/commit/4192a6189a75a7b818f1beb3b6bd89c7610580e8) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - The published package now includes `CHANGELOG.md`, so the release notes can be read from `node_modules`.
+
+- [#201](https://github.com/thomasfosterau/effect-xml/pull/201) [`8cb0266`](https://github.com/thomasfosterau/effect-xml/commit/8cb026657973f7555d38a72faf6b3c03e1f8f791) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Doc comments only: the HTML parsers (`Html.parseDocument`, `Html.parseDocumentStream`) now document character-reference decoding and the lockstep tokenizer, `Xsd.compile` the schema-for-schemas checks it skips, and the `Sax`, `Xml`, `Html`, `Xsd` and `XQuery` module comments link to their guides in `docs/`. No behaviour changes.
+
+- [#192](https://github.com/thomasfosterau/effect-xml/pull/192) [`5a6011a`](https://github.com/thomasfosterau/effect-xml/commit/5a6011aa4d80242327f50ee57df9320101c583df) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - `dtd: "internal"` no longer slows down a document that declares nothing. Until a DOCTYPE declares a general entity, it reads with the grammars, the scanner and (for complete input) the direct read that `dtd: "ignore"` uses, so a document without a DOCTYPE, or with one that declares no entity, reads about as fast as with `"ignore"`. An 8 MB document without a DOCTYPE took over 13 s as one string (`Sax.tokenizeString`, `Sax.forEach`, `Xml.parse`) and about 3× `"ignore"` in 64 KiB chunks; it now takes the same time as `"ignore"`. Events, spans and errors are unchanged, except for a processing instruction whose target is a `Name` but not a `QName`, such as `<?p: x?>`, which strict reading now rejects however the input is chunked (it was read only when the scanner, not the grammar, got to it whole).
+
+- [#198](https://github.com/thomasfosterau/effect-xml/pull/198) [`25638d7`](https://github.com/thomasfosterau/effect-xml/commit/25638d74eb9b3887fee98704ce52823d10a85566) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - With `dtd: "internal"`, reading a large document as one string no longer takes superlinear time once a DOCTYPE declares an entity ([#191](https://github.com/thomasfosterau/effect-xml/issues/191)). The DTD-aware text grammar searched for an `&` to the end of the buffer for every run of text; it now reads each run once. Events, positions and errors are unchanged.
+
+- [#164](https://github.com/thomasfosterau/effect-xml/pull/164) [`bdd4115`](https://github.com/thomasfosterau/effect-xml/commit/bdd41157f6b37334dd06df9338850b5bc3f58d2d) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - The `@thomasfosterau/effect-parse` peer range now accepts 0.5 as well as 0.4 (`^0.4.1 || ^0.5.0`), so an application on effect-parse 0.5 gets no peer conflict and no second copy.
+
+- [#159](https://github.com/thomasfosterau/effect-xml/pull/159) [`c97c198`](https://github.com/thomasfosterau/effect-xml/commit/c97c1980341b348f780b5bc17617d36618d22a90) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - `Sax.forEach`, `Xml.parse` and the other direct reads of complete input no longer spend most of a small document's time on setup: the name table each read allocates was built with `Array.from({ length: 256 })`, about 10 µs a call. Reading `<a/>` is now about 10× faster; events, spans and errors are unchanged.
+
+- [#163](https://github.com/thomasfosterau/effect-xml/pull/163) [`9177a3f`](https://github.com/thomasfosterau/effect-xml/commit/9177a3fbfa2c0d38f33fca98e2b3ae23ca01d9db) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - The package is now published one module per source file instead of one bundle per entry point, so bundlers can drop what a program never uses. A program that imports `@thomasfosterau/effect-xml/Sax` and calls only `Sax.forEach` now bundles about 105 KB of this package (minified, peers not counted) instead of 255 KB, and no longer carries the XQuery and XML Schema engines; `Xml.parse` from `@thomasfosterau/effect-xml/Xml` is about 110 KB. Importing from the root entry still brings in every layer: import from the layer's own entry point when bundle size matters.
+
+- [#160](https://github.com/thomasfosterau/effect-xml/pull/160) [`3b64969`](https://github.com/thomasfosterau/effect-xml/commit/3b6496912b1da2402ee971120994353aecc76386) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - An attribute value whose quote is never closed (`<a x="1>`) now fails with `UnexpectedEndOfInput` where the input ends, instead of `UnexpectedCharacter` at the attribute's name saying attributes must be separated by whitespace.
+
+- [#193](https://github.com/thomasfosterau/effect-xml/pull/193) [`9cb1593`](https://github.com/thomasfosterau/effect-xml/commit/9cb1593df8c0399fb8db4a65d3d20ff54bfc870c) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - XQuery: a comment, processing instruction, attribute or text node with no parent has no base URI (it no longer takes the static base URI), `fn:resolve-uri` follows RFC 3986 on the text as written (an IRI stays an IRI, a malformed reference or base is `FORG0002`), and `declare base-uri` collapses whitespace and resolves a relative URI against the host's base URI (`XPST0001` when there is none).
+
+- [#187](https://github.com/thomasfosterau/effect-xml/pull/187) [`f417ab2`](https://github.com/thomasfosterau/effect-xml/commit/f417ab24a9e9c5dc949219c61bfe3b62bc8bc1de) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Fix XQuery casting and date edge cases: dates, dateTimes, `xs:gYear` / `xs:gYearMonth` and durations beyond the supported range raise `err:FODT0001` / `err:FODT0002` (in casts, `adjust-*-to-timezone`, `avg` and date and duration arithmetic); `xs:anyURI` casts check escapes and the scheme; `24:00:00` casts to its canonical form; an `xs:untypedAtomic` argument for an `xs:QName` or `xs:NOTATION` parameter is `err:XPTY0117`; `xs:base64Binary` rejects non-zero padding bits, `xs:gMonth` rejects the XSD 1.0 `--MM--` form, and `namespaces: { "": uri }` sets the default element namespace.
+
+- [#168](https://github.com/thomasfosterau/effect-xml/pull/168) [`6633afd`](https://github.com/thomasfosterau/effect-xml/commit/6633afd316ee3b20699811926f8c68b638c2b288) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - XQuery: a declared variable's initializer must now match its declared type as it is, with no conversion (`declare variable $i as xs:double := 1` raises `XPTY0004`, as XQuery 3.1 §4.16 says); a value the host supplies for an external variable is still converted. The context item is checked against `declare context item as …` (in the main module and in every imported library module) and must be exactly one item, so a declared default that is empty, or a host context item of the wrong type, raises `XPTY0004`. A library module may import its own namespace under its own prefix.
+
+- [#188](https://github.com/thomasfosterau/effect-xml/pull/188) [`93bcde6`](https://github.com/thomasfosterau/effect-xml/commit/93bcde6f047bb6985262dae4d691aec71cb3932a) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Fix XQuery JSON conversion and map key edge cases: `fn:json-doc` reports undecodable bytes as `FOUT1200`, `fn:json-to-xml` and `fn:xml-to-json` follow F&O 3.1 for escapes, attributes, `indent`, option atomization, the `duplicates` values and the result's base URI, `group by` compares keys as `fn:deep-equal` does, and casting a float or double to `xs:decimal` keeps its exact value so it is the same map key.
+
+- [#196](https://github.com/thomasfosterau/effect-xml/pull/196) [`1624bac`](https://github.com/thomasfosterau/effect-xml/commit/1624bac2a9f063221949d208b65c2167d241eb1b) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - XQuery: a range `a to b` is held by its bounds wherever its items aren't needed, so `count(1 to 100000000)`, `(1 to 10000000000)[5]`, `fn:empty`, `fn:exists`, `fn:head`, `fn:tail`, `fn:reverse`, `fn:subsequence`, `fn:sum` and `fn:avg` of a range, general comparisons against a range (`5 = (1 to 10000000000)`), and `for` clauses and quantified expressions over one (which now iterate it instead of building it) work on ranges of any length. An operation that does build a range's items still stops at two million with `err:XPDY0130`.
+
+- [#185](https://github.com/thomasfosterau/effect-xml/pull/185) [`4e96c35`](https://github.com/thomasfosterau/effect-xml/commit/4e96c35ca9698044f041efe7ad7be2faf626a78b) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - `XQuery.CompileOptions`, `XQuery.ModuleSource` and `XQuery.StreamOptions` are declared as type aliases of the types they extended rather than as empty interfaces. They describe the same shapes; only code that merged declarations into those interfaces is affected.
+
+- [#166](https://github.com/thomasfosterau/effect-xml/pull/166) [`f636527`](https://github.com/thomasfosterau/effect-xml/commit/f636527d44349b84434a8da1c9a76d064ad167e5) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - XML Schema identity constraints (`xs:key`, `xs:unique`, `xs:keyref`) are checked in linear time: a key table was copied for every row added and every child that closed, and each uniqueness and reference check scanned it. Validating a 4 MB worksheet with a key on its rows drops from about 9.9 s to 1.5 s. Results and errors are unchanged.
+
 ## 0.1.0
 
 ### Minor Changes
