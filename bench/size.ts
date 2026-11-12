@@ -15,7 +15,11 @@
  * A budget may come down when a change shrinks a case; raise one only with
  * the reason in the PR.
  */
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as Arr from "effect/Array";
+import * as Console from "effect/Console";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { build } from "esbuild";
 
 /** The repository root, where `./dist/…` resolves. */
@@ -55,20 +59,43 @@ export const run = (s) => Xml.parse(s);`,
   },
 ];
 
+/** esbuild failed to bundle a case. */
+class BundleFailed extends Schema.TaggedError<BundleFailed, { readonly brand: unique symbol }>()(
+  "BundleFailed",
+  {
+    case: Schema.String,
+    cause: Schema.Unknown,
+  },
+) {}
+
+/** Some case is over its budget or pulls in code it should not. */
+class OverBudget extends Schema.TaggedError<OverBudget, { readonly brand: unique symbol }>()(
+  "OverBudget",
+  {
+    problems: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return this.problems.join("; ");
+  }
+}
+
 /** `c`'s program bundled and minified, peers left external. */
-const bundle = async (c: Case): Promise<string> => {
-  const result = await build({
-    stdin: { contents: c.source, resolveDir: root, loader: "js" },
-    bundle: true,
-    minify: true,
-    write: false,
-    format: "esm",
-    platform: "neutral",
-    external: ["effect", "@thomasfosterau/effect-parse"],
-    logLevel: "error",
-  });
-  return Arr.map(result.outputFiles, (file) => file.text).join("");
-};
+const bundle = (c: Case): Effect.Effect<string, BundleFailed> =>
+  Effect.tryPromise({
+    try: () =>
+      build({
+        stdin: { contents: c.source, resolveDir: root, loader: "js" },
+        bundle: true,
+        minify: true,
+        write: false,
+        format: "esm",
+        platform: "neutral",
+        external: ["effect", "@thomasfosterau/effect-parse"],
+        logLevel: "error",
+      }),
+    catch: (cause) => new BundleFailed({ case: c.name, cause }),
+  }).pipe(Effect.map((result) => Arr.map(result.outputFiles, (file) => file.text).join("")));
 
 /** What is wrong with `c`'s bundle, if anything. */
 const problemsOf = (c: Case, output: string): Array<string> => [
@@ -79,16 +106,24 @@ const problemsOf = (c: Case, output: string): Array<string> => [
 ];
 
 /** Bundles `c`, prints its size and returns its problems. */
-const check = async (c: Case): Promise<Array<string>> => {
-  const output = await bundle(c);
-  const problems = problemsOf(c, output);
-  const status = Arr.isArrayEmpty(problems) ? "ok  " : "FAIL";
-  console.log(`${status} ${c.name}: ${output.length} / ${c.budget} bytes`);
-  return problems.map((p) => `${c.name}: ${p}`);
-};
+const check = (c: Case) =>
+  Effect.gen(function* () {
+    const output = yield* bundle(c);
+    const problems = problemsOf(c, output);
+    const status = Arr.isArrayEmpty(problems) ? "ok  " : "FAIL";
+    yield* Console.log(`${status} ${c.name}: ${output.length} / ${c.budget} bytes`);
+    return problems.map((p) => `${c.name}: ${p}`);
+  });
 
-const failures = (await Promise.all(cases.map(check))).flat();
-if (Arr.isArrayNonEmpty(failures)) {
-  console.error(failures.join("\n"));
-  process.exitCode = 1;
-}
+const main = Effect.fn("size")(function* () {
+  const failures = (yield* Effect.forEach(cases, check, { concurrency: 1 })).flat();
+  return yield* Arr.match(failures, {
+    onEmpty: () => Effect.void,
+    onNonEmpty: (problems) =>
+      Console.error(problems.join("\n")).pipe(
+        Effect.andThen(Effect.fail(new OverBudget({ problems }))),
+      ),
+  });
+});
+
+NodeRuntime.runMain(main());

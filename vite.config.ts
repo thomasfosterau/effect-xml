@@ -408,24 +408,6 @@ export default defineConfig({
           "effect/avoid-try-catch": "off",
         },
       },
-      // The benchmark is a standalone program, like a build script: it times
-      // runs in loops, prints a table, runs its effects at the top level
-      // (it is the entry point), and imports optional third-party parsers
-      // that may not be installed (a failed dynamic import means "skip").
-      {
-        files: ["bench/**/*.ts"],
-        rules: {
-          "effect/imperative-loops": "off",
-          "effect/effect-run-in-body": "off",
-          "effect/use-console-service": "off",
-          "effect/avoid-try-catch": "off",
-          "effect/avoid-any": "off",
-          "effect/no-unknown-returns": "off",
-          // Runs are timed one after another on purpose; in parallel they
-          // would measure each other.
-          "eslint/no-await-in-loop": "off",
-        },
-      },
       // The example is a program: its one `Effect.runPromise` IS the entry
       // point the rule sends execution to (no platform runtime is a
       // dependency of this library to run it with instead).
