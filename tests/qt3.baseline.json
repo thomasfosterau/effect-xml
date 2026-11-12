@@ -129,7 +129,7 @@
       "passing": 75
     },
     "fn-collation-key": {
-      "runnable": 21,
+      "runnable": 28,
       "passing": 17
     },
     "fn-collection": {
@@ -137,16 +137,16 @@
       "passing": 26
     },
     "fn-compare": {
-      "runnable": 87,
-      "passing": 66
+      "runnable": 95,
+      "passing": 92
     },
     "fn-concat": {
       "runnable": 96,
       "passing": 96
     },
     "fn-contains": {
-      "runnable": 68,
-      "passing": 51
+      "runnable": 75,
+      "passing": 75
     },
     "fn-contains-token": {
       "runnable": 43,
@@ -189,8 +189,8 @@
       "passing": 31
     },
     "fn-deep-equal": {
-      "runnable": 247,
-      "passing": 245
+      "runnable": 248,
+      "passing": 248
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -229,8 +229,8 @@
       "passing": 29
     },
     "fn-ends-with": {
-      "runnable": 52,
-      "passing": 38
+      "runnable": 55,
+      "passing": 55
     },
     "fn-environment-variable": {
       "runnable": 12,
@@ -573,8 +573,8 @@
       "passing": 39
     },
     "fn-starts-with": {
-      "runnable": 60,
-      "passing": 47
+      "runnable": 64,
+      "passing": 64
     },
     "fn-static-base-uri": {
       "runnable": 18,
@@ -605,12 +605,12 @@
       "passing": 48
     },
     "fn-substring-after": {
-      "runnable": 50,
-      "passing": 37
+      "runnable": 54,
+      "passing": 54
     },
     "fn-substring-before": {
-      "runnable": 50,
-      "passing": 36
+      "runnable": 53,
+      "passing": 53
     },
     "fn-sum": {
       "runnable": 222,
@@ -829,8 +829,8 @@
       "passing": 17
     },
     "misc-UCACollation": {
-      "runnable": 73,
-      "passing": 73
+      "runnable": 89,
+      "passing": 88
     },
     "misc-XMLEdition": {
       "runnable": 11,
@@ -1306,7 +1306,7 @@
     },
     "prod-DefaultCollationDecl": {
       "runnable": 12,
-      "passing": 9
+      "passing": 12
     },
     "prod-DefaultNamespaceDecl": {
       "runnable": 59,
@@ -1739,7 +1739,7 @@
       "passing": 69
     },
     "fn-collation-key": {
-      "runnable": 21,
+      "runnable": 28,
       "passing": 17
     },
     "fn-collection": {
@@ -1747,16 +1747,16 @@
       "passing": 22
     },
     "fn-compare": {
-      "runnable": 87,
-      "passing": 66
+      "runnable": 95,
+      "passing": 92
     },
     "fn-concat": {
       "runnable": 96,
       "passing": 96
     },
     "fn-contains": {
-      "runnable": 60,
-      "passing": 45
+      "runnable": 67,
+      "passing": 67
     },
     "fn-contains-token": {
       "runnable": 36,
@@ -1799,8 +1799,8 @@
       "passing": 31
     },
     "fn-deep-equal": {
-      "runnable": 193,
-      "passing": 191
+      "runnable": 194,
+      "passing": 194
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -1839,8 +1839,8 @@
       "passing": 29
     },
     "fn-ends-with": {
-      "runnable": 52,
-      "passing": 38
+      "runnable": 55,
+      "passing": 55
     },
     "fn-environment-variable": {
       "runnable": 12,
@@ -2183,8 +2183,8 @@
       "passing": 33
     },
     "fn-starts-with": {
-      "runnable": 60,
-      "passing": 47
+      "runnable": 64,
+      "passing": 64
     },
     "fn-static-base-uri": {
       "runnable": 5,
@@ -2215,12 +2215,12 @@
       "passing": 48
     },
     "fn-substring-after": {
-      "runnable": 50,
-      "passing": 37
+      "runnable": 54,
+      "passing": 54
     },
     "fn-substring-before": {
-      "runnable": 50,
-      "passing": 36
+      "runnable": 53,
+      "passing": 53
     },
     "fn-sum": {
       "runnable": 222,
@@ -2439,8 +2439,8 @@
       "passing": 17
     },
     "misc-UCACollation": {
-      "runnable": 73,
-      "passing": 73
+      "runnable": 89,
+      "passing": 88
     },
     "misc-XMLEdition": {
       "runnable": 1,

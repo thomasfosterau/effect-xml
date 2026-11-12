@@ -27,7 +27,7 @@ import {
 import { orderAtomic } from "../compare.ts";
 import { raise, unwrap } from "../raise.ts";
 import { callFunction, isCallable } from "../runtime.ts";
-import { collate, collationArg, collationNamed, type Collation } from "./collation.ts";
+import { collationArg, collationNamed, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, arrayOf, atomOf, isEmpty, mapOf, text } from "./values.ts";
 
@@ -65,15 +65,7 @@ const compareKeys = (
 ): number => {
   const differing = Arr.findFirst(Arr.zip(x, y), ([a, b]) => {
     if (isNaNValue(a) || isNaNValue(b)) return isNaNValue(a) !== isNaNValue(b);
-    return (
-      orderAtomic(
-        a,
-        b,
-        call.ctx.dyn.implicitTimezone,
-        (s, t) => collate(collation, s, t),
-        call.offset,
-      ) !== 0
-    );
+    return orderAtomic(a, b, call.ctx.dyn.implicitTimezone, collation.compare, call.offset) !== 0;
   });
   return Option.match(differing, {
     onNone: () => x.length - y.length,
@@ -82,13 +74,7 @@ const compareKeys = (
         ? -1
         : isNaNValue(b)
           ? 1
-          : orderAtomic(
-              a,
-              b,
-              call.ctx.dyn.implicitTimezone,
-              (s, t) => collate(collation, s, t),
-              call.offset,
-            ),
+          : orderAtomic(a, b, call.ctx.dyn.implicitTimezone, collation.compare, call.offset),
   });
 };
 

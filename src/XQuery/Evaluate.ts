@@ -191,6 +191,37 @@ const run = (
  * Constructs the evaluator does not implement yet fail with the code
  * `NotImplemented` in {@link ImplementationNamespace}.
  *
+ * Collations are the Unicode codepoint collation (the default), the HTML ASCII
+ * case-insensitive collation and the UCA collations
+ * `http://www.w3.org/2013/collation/UCA?…` of Functions and Operators 3.1
+ * §5.3.3, which run on `Intl.Collator` (so their order follows the runtime's
+ * ICU data, which varies a little between Node versions). The URI's
+ * parameters, separated by `;`, map as follows:
+ *
+ * - `lang`: the locale (default `en`); one the runtime has no data for is unsupported.
+ * - `strength`: `primary`, `secondary`, `tertiary` (the default) and `identical`
+ *   (tertiary, then the code points of the NFD forms); `quaternary` is
+ *   tertiary, except with `alternate=shifted`, where it is unsupported.
+ * - `caseLevel`: `yes` with `strength=primary`; `no`.
+ * - `alternate`: `non-ignorable` (the default), `blanked` and `shifted` (with
+ *   `maxVariable=punct`, the only one the runtime has).
+ * - `caseFirst` (`upper`, `lower`, `no`), `numeric` (`yes`, `no`) and
+ *   `normalization` (`yes`, `no`; the runtime always normalizes).
+ * - `backwards`: `no`. `reorder` and `version` are unsupported.
+ * - `fallback`: `yes` (the default) ignores a parameter or value that is
+ *   unsupported or unknown; `no` fails with `err:FOCH0002` (`err:XQST0038` in
+ *   a `default collation` declaration, `err:XQST0076` in a clause).
+ *
+ * Every function and clause that takes a collation, and value comparisons,
+ * `switch` and `fn:deep-equal` under a `default collation`, compare with it.
+ * `Intl.Collator` has no sort keys and no collation units, so `fn:collation-key`
+ * fails with `err:FOCH0004` for a UCA collation, and `fn:contains`,
+ * `fn:starts-with`, `fn:ends-with`, `fn:substring-before` and
+ * `fn:substring-after` compare the substrings of the string, cut between
+ * grapheme clusters (and between digit runs under `numeric=yes`), with the
+ * substring: the first minimal match wins, and characters the collation
+ * ignores neither start nor end it.
+ *
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
