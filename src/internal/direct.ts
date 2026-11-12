@@ -194,6 +194,11 @@ class Pass {
     if (tok === undefined || tok._tag !== (xmlDecl ? "XmlDeclaration" : "Doctype")) {
       return undefined;
     }
+    // With `dtd: "internal"`, the lexer reads on from a DOCTYPE with an
+    // internal subset, which may declare something.
+    if (tok._tag === "Doctype" && tok.internalSubset !== null && this.opts.dtd === "internal") {
+      return undefined;
+    }
     if (!xmlDecl) this.prologEnded = true;
     ctx.end = state.pos;
     return declarationEvent(tok, ctx.positions ? ctx.span(pos, state.pos) : NO_SPAN);
@@ -202,7 +207,9 @@ class Pass {
 
 /**
  * Read complete `input` strictly, handing each event to `f`, without the
- * lexer (see the module's description). XML without a DTD only; input with a
+ * lexer (see the module's description). XML only, and with `dtd:
+ * "internal"` only up to a DOCTYPE with an internal subset (until which
+ * the lexer reads without the DTD-aware grammars, see `runChunks`); input with a
  * CR (whose offsets would need the lexer's CRLF records) or over the size
  * limit is not read at all.
  */
