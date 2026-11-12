@@ -64,7 +64,7 @@ export class Expander {
       ? new LimitExceeded({
           limit: failure.limit.name,
           max: failure.limit.max,
-          position: span.start,
+          position: Option.some(span.start),
         })
       : new InvalidEntity({ reference: `&${name};`, position: span.start, reason: failure.reason });
   }
@@ -95,7 +95,11 @@ export class Expander {
       if (isFault(o)) {
         // Positions inside replacement text mean little; report the reference.
         return P.isTagged(o.error, "LimitExceeded")
-          ? new LimitExceeded({ limit: o.error.limit, max: o.error.max, position: span.start })
+          ? new LimitExceeded({
+              limit: o.error.limit,
+              max: o.error.max,
+              position: Option.some(span.start),
+            })
           : new InvalidEntity({
               reference: `&${name};`,
               position: span.start,

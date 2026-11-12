@@ -6,13 +6,15 @@
  * `Xml.parse` builds without positions first (rerunning with them to report
  * a failure); it must agree with `Xml.parseStream`, which never does.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as P from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import { origin, Sax, Xml } from "../src/index.ts";
 import { documents } from "./support/documents.ts";
+import { some } from "./support/narrow.ts";
 import { plain } from "./support/plain.ts";
 
 /** The events of `doc` (or its failure), whole or in chunks of `size`. */
@@ -107,14 +109,13 @@ describe("the XML scanner", () => {
     const doc = `<root>\n  <a x="1" y="${"z".repeat(40)}"/></root>`;
     const failure = (positions: boolean) =>
       Effect.runSync(Effect.flip(Sax.collect(doc, { positions, limits: { maxTextLength: 10 } })));
-    expect(failure(true)).toMatchObject({
-      _tag: "LimitExceeded",
-      position: { line: 2, column: 12 },
-    });
-    expect(failure(false)).toMatchObject({
-      _tag: "LimitExceeded",
-      position: { line: 2, column: 3 },
-    });
+    const at = (positions: boolean) => {
+      const e = failure(positions);
+      assert(P.isTagged(e, "LimitExceeded"), "expected a limit failure");
+      return some(e.position);
+    };
+    expect(at(true)).toMatchObject({ line: 2, column: 12 });
+    expect(at(false)).toMatchObject({ line: 2, column: 3 });
   });
 
   test("Sax.forEach hands over the events Sax.tokenize streams, and its failure", () => {

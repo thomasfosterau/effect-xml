@@ -5,6 +5,7 @@
  * well-formed and still invalid against its schema, and a schema document can
  * be well-formed and still not a schema.
  */
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { showPosition } from "../Position.ts";
 
@@ -18,19 +19,21 @@ const ErrorPosition = Schema.Struct({
  * A schema could not be compiled: it is not a valid XML Schema, refers to a
  * component that doesn't exist, or uses a feature this library doesn't
  * support. `location` is the schema document (as it was named to the
- * compiler or in an `include` / `import`), when there is one.
+ * compiler or in an `include` / `import`), when there is one (encoded as
+ * `null` when there is none).
  *
  * @since 0.1.0
  * @category errors
  */
 export class XsdSchemaError extends Schema.TaggedError<XsdSchemaError>()("XsdSchemaError", {
   reason: Schema.String,
-  location: Schema.NullOr(Schema.String),
+  location: Schema.OptionFromNullOr(Schema.String),
 }) {
   override get message(): string {
-    return this.location === null
-      ? `Invalid schema: ${this.reason}`
-      : `Invalid schema ${this.location}: ${this.reason}`;
+    return Option.match(this.location, {
+      onNone: () => `Invalid schema: ${this.reason}`,
+      onSome: (location) => `Invalid schema ${location}: ${this.reason}`,
+    });
   }
 }
 

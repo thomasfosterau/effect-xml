@@ -6,6 +6,7 @@
  * tagged, callers can exhaustively narrow with `Effect.catchTag` /
  * `Effect.catchTags` and the type system guarantees every case is handled.
  */
+import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { showPosition } from "./Position.ts";
@@ -229,8 +230,9 @@ export type LimitName =
 
 /**
  * The input exceeded one of the configured resource limits. `position` is where
- * the offending construct starts, or `null` when the limit was hit while
- * decoding bytes (before there are any positions).
+ * the offending construct starts, or `Option.none()` when the limit was hit
+ * while decoding bytes (before there are any positions); it is encoded as
+ * `null` then.
  *
  * @since 0.1.0
  * @category errors
@@ -246,10 +248,13 @@ export class LimitExceeded extends Schema.TaggedError<LimitExceeded>()("LimitExc
     "maxEntityDepth",
   ]),
   max: Schema.Number,
-  position: Schema.NullOr(ErrorPosition),
+  position: Schema.OptionFromNullOr(ErrorPosition),
 }) {
   override get message(): string {
-    const at = this.position === null ? "" : ` at ${showPosition(this.position)}`;
+    const at = Option.match(this.position, {
+      onNone: () => "",
+      onSome: (position) => ` at ${showPosition(position)}`,
+    });
     return `Resource limit ${this.limit} (${this.max}) exceeded${at}`;
   }
 }
