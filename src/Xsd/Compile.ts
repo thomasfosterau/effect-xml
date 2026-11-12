@@ -99,7 +99,10 @@ const referencesOf = (doc: SchemaDocument): ReadonlyArray<Pending> => {
  * groups, element and attribute wildcards, substitution groups, `block`,
  * `xsi:type`, `xsi:nil`, and identity constraints. `xs:redefine` and the
  * XSD 1.1 additions (`override`, assertions, type alternatives, open
- * content) fail with an {@link XsdSchemaError}.
+ * content) fail with an {@link XsdSchemaError}. Schema-for-schemas checks such
+ * as Unique Particle Attribution and the derivation-by-restriction rules are
+ * not enforced (the first matching particle wins). See the guide at
+ * https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/xsd.md.
  *
  * @example
  * ```ts

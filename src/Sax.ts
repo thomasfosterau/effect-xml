@@ -1,5 +1,6 @@
 /**
- * Streaming SAX interface.
+ * Streaming SAX interface. The guide (options, limits, encodings) is at
+ * https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/sax.md.
  *
  * `Sax` exposes the {@link Lexer} as composable Effect `Stream` pipelines that
  * turn a stream of input chunks into a stream of strongly-typed {@link SaxEvent}s.

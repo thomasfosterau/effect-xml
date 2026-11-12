@@ -58,6 +58,13 @@ export const parseFragmentStream =
  * algorithm for misnested formatting tags, tables with foster parenting,
  * templates and foreign (SVG / MathML) content.
  *
+ * Character references decode the complete WHATWG named table, with maximal
+ * munch, the legacy semicolon-less references (`&copy`), the
+ * ambiguous-ampersand rule in attributes and the Windows-1252 numeric remap.
+ * The tokenizer and the tree builder run in lockstep, so `<title>` or
+ * `<style>` inside SVG is an ordinary element, not raw text. See the guide at
+ * https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/html.md.
+ *
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
@@ -130,6 +137,10 @@ export const parseDocumentFragment = (
 
 /**
  * Parse a stream of HTML chunks into a full document.
+ *
+ * The stream is tokenized before the tree builder sees it, so unlike
+ * {@link parseDocument} it cannot switch the tokenizer inside foreign content:
+ * `<title>` or `<style>` in SVG read as raw text here.
  *
  * @since 0.1.0
  * @category parsing

@@ -1,6 +1,6 @@
 # Contributing
 
-Maintained by Thomas Foster, with a workflow meant to be approachable for both humans and coding agents. Architecture, invariants and conventions are in [AGENTS.md](AGENTS.md); the user-facing overview and API reference are in [README.md](README.md).
+Maintained by Thomas Foster, with a workflow meant to be approachable for both humans and coding agents. Architecture, invariants and conventions are in [AGENTS.md](AGENTS.md); the short user-facing overview is in [README.md](README.md), the topic guides in [docs/](docs), and the API reference in each export's doc comment.
 
 ## Setup
 
@@ -36,7 +36,7 @@ vp test run tests/xml.test.ts        # a single file
 vp test run --silent=false tests/conformance.test.ts  # with the per-file html5lib report
 vp run build                         # emit dist/
 vp run size                          # bundle-size budgets (builds first)
-vp run docgen                        # run every @example, write docs/
+vp run docgen                        # run every @example, write docs/api/
 vp run test:coverage                 # Istanbul map for fallow
 vp run fallow:audit                  # change-set review (not a CI gate)
 vp run example                       # the tour in examples/usage.ts
@@ -50,7 +50,7 @@ uvx zizmor .github                   # GitHub Actions audit (config: .github/ziz
 - `vp run test:unit` includes the html5lib conformance gate and `packages/cli`'s tests.
 - `vp run build` is `vp pack` → `dist/` (one ESM module + `.d.ts` per source module, `unbundle`), and `packages/cli/dist/main.js` (the `effect-xml-xsd` executable).
 - `vp run size` bundles a consumer's `Sax.forEach` and `Xml.parse` from `dist/` with esbuild against their size budgets (`bench/size.ts`); it fails over a budget or when XQuery / XSD code is pulled in.
-- `vp run docgen` compiles and runs every `@example` against `dist/` and writes the (git-ignored) API reference to `docs/`.
+- `vp run docgen` compiles and runs every `@example` against `dist/` and writes the (git-ignored) API reference to `docs/api/`.
 - `vp run test:coverage` writes the Istanbul map at `coverage/coverage-final.json`, which `fallow audit` reads.
 
 ## Verification
@@ -78,4 +78,4 @@ Steps 2–8 are CI's required `ci` job, in its order.
 1. The [gates](#verification), each with its final pass/fail.
 2. A changeset (`pnpm changeset`) where [AGENTS.md](AGENTS.md#branches-and-pull-requests) requires one.
 3. `git fetch origin trunk && git rebase origin/trunk`
-4. Docs: `README.md` for any change to the public API; `AGENTS.md` for a new invariant or convention.
+4. Docs: the matching guide in `docs/` and the export's doc comment for any change to the public API (`README.md` only when the entry points change); `AGENTS.md` for a new invariant or convention.

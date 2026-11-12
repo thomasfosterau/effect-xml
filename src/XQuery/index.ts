@@ -1,6 +1,7 @@
 /**
  * The `XQuery` module: the XQuery and XPath Data Model (XDM 3.1) and the
- * errors of XQuery 3.1 and XPath 3.1.
+ * errors of XQuery 3.1 and XPath 3.1. The guide is at
+ * https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/xquery.md.
  *
  * Items are nodes ({@link XdmNode}, handles with identity and document order
  * over the `Xml` DOM), atomic values ({@link AtomicValue}, typed by the

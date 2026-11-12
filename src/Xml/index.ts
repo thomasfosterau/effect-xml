@@ -1,5 +1,6 @@
 /**
- * The `Xml` module: typed DOM, tree builder, and high-level parsing.
+ * The `Xml` module: typed DOM, tree builder, and high-level parsing. The guide
+ * is at https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/xml.md.
  *
  * @since 0.1.0
  */

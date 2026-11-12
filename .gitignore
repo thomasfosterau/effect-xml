@@ -148,9 +148,9 @@ fallow.sarif
 .claude/scheduled_tasks.lock
 .pnpm-store
 
-# Generated API reference (`vp run docgen`). Never committed; the README is
-# the reference consumers read.
-docs/
+# Generated API reference (`vp run docgen`). Never committed; the hand-written
+# guides beside it in docs/ are.
+docs/api/
 # QT3's shared source documents (vendored fixtures, see tests/fixtures/qt3/README.md).
 !tests/fixtures/qt3/docs/
 .vitest/

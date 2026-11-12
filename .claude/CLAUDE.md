@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Claude Code specifics only. The project's architecture, invariants and conventions are in AGENTS.md, the human procedure (setup, commands, gates, CI) in CONTRIBUTING.md and the user-facing overview in README.md; all three are imported at the bottom of this file, so nothing is duplicated here. Don't let fallow (or any tool) append `@AGENTS.md` to a CLAUDE.md; the imports below are the single source.
+Claude Code specifics only. The project's architecture, invariants and conventions are in AGENTS.md, the human procedure (setup, commands, gates, CI) in CONTRIBUTING.md and the short user-facing overview in README.md (the topic guides are in docs/); all three are imported at the bottom of this file, so nothing is duplicated here. Don't let fallow (or any tool) append `@AGENTS.md` to a CLAUDE.md; the imports below are the single source.
 
 ## Settings and hooks
 

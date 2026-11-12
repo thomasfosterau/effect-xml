@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/@effect/docgen/schema.json",
   "runExamples": true,
+  "outDir": "docs/api",
   "exclude": ["src/internal/**/*.ts"],
   "parseCompilerOptions": {
     "noEmit": true,

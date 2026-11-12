@@ -2,7 +2,8 @@
  * The `Html` module: lenient HTML tokenization, WHATWG tree construction
  * (`parseDocument`, `parseDocumentFragment`) and a lenient fragment builder
  * (`parseFragment`), all building the HTML DOM (`HtmlDocument`,
- * `HtmlElement`, …), which `toXml` converts to the XML DOM.
+ * `HtmlElement`, …), which `toXml` converts to the XML DOM. The guide is at
+ * https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/html.md.
  *
  * @since 0.1.0
  */
