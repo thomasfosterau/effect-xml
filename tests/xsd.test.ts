@@ -1,5 +1,6 @@
 import * as Option from "effect/Option";
-import { assert, describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Effect from "effect/Effect";
@@ -22,23 +23,26 @@ const XS = `xmlns:xs="http://www.w3.org/2001/XMLSchema"`;
 const schema = (body: string, attributes = "") =>
   `<xs:schema ${XS} ${attributes}>${body}</xs:schema>`;
 
-const compile = (xsd: string, options?: Xsd.CompileOptions) =>
-  Effect.runSync(Xsd.compile(xsd, options));
+const compile = (xsd: string, options?: Xsd.CompileOptions) => Xsd.compile(xsd, options);
 
-const compileError = (xsd: string, options?: Xsd.CompileOptions) => {
-  const r = Effect.runSync(Effect.result(Xsd.compile(xsd, options)));
-  assert(Result.isFailure(r), "expected the schema to be rejected");
-  return r.failure;
-};
+const compileError = (xsd: string, options?: Xsd.CompileOptions) =>
+  Effect.gen(function* () {
+    const r = yield* Effect.result(Xsd.compile(xsd, options));
+    assert(Result.isFailure(r), "expected the schema to be rejected");
+    return r.failure;
+  });
 
 const value = (model: Xsd.Model, doc: string, options?: Xsd.ParseOptions) =>
-  Effect.runSync(Xsd.parse(model, doc, options)).value;
+  Effect.gen(function* () {
+    return (yield* Xsd.parse(model, doc, options)).value;
+  });
 
-const invalid = (model: Xsd.Model, doc: string, options?: Xsd.ParseOptions) => {
-  const r = Effect.runSync(Effect.result(Xsd.parse(model, doc, options)));
-  assert(Result.isFailure(r), "expected the document to be rejected");
-  return r.failure;
-};
+const invalid = (model: Xsd.Model, doc: string, options?: Xsd.ParseOptions) =>
+  Effect.gen(function* () {
+    const r = yield* Effect.result(Xsd.parse(model, doc, options));
+    assert(Result.isFailure(r), "expected the document to be rejected");
+    return r.failure;
+  });
 
 /** The error, failing the test unless it is a validation error. */
 const validation = (e: Xsd.ParserError): Xsd.XsdValidationError => {
@@ -46,7 +50,10 @@ const validation = (e: Xsd.ParserError): Xsd.XsdValidationError => {
   return e;
 };
 
-const rule = (model: Xsd.Model, doc: string) => validation(invalid(model, doc)).rule;
+const rule = (model: Xsd.Model, doc: string) =>
+  Effect.gen(function* () {
+    return validation(yield* invalid(model, doc)).rule;
+  });
 
 const isRecord = (v: Xsd.XsdValue): v is Xsd.XsdRecord =>
   P.isObject(v) &&
@@ -106,81 +113,89 @@ const orderLine = (id: string, quantity: number) =>
   `<line id="${id}"><sku>ABC-000${quantity}</sku><quantity>${quantity}</quantity><price>1</price></line>`;
 
 describe("Xsd.compile", () => {
-  test("keys global components by expanded name", () => {
-    const model = compile(
-      schema(
-        `<xs:element name="a" type="t:T"/><xs:complexType name="T"/>`,
-        `targetNamespace="urn:t" xmlns:t="urn:t"`,
-      ),
-    );
-    expect(R.keys(model.elements)).toEqual(["{urn:t}a"]);
-    expect(model.elements["{urn:t}a"]?.type).toBe("{urn:t}T");
-    expect(model.types["{urn:t}T"]?._tag).toBe("ComplexType");
-  });
+  it.effect("keys global components by expanded name", () =>
+    Effect.gen(function* () {
+      const model = yield* compile(
+        schema(
+          `<xs:element name="a" type="t:T"/><xs:complexType name="T"/>`,
+          `targetNamespace="urn:t" xmlns:t="urn:t"`,
+        ),
+      );
+      expect(R.keys(model.elements)).toEqual(["{urn:t}a"]);
+      expect(model.elements["{urn:t}a"]?.type).toBe("{urn:t}T");
+      expect(model.types["{urn:t}T"]?._tag).toBe("ComplexType");
+    }),
+  );
 
-  test("loads includes and imports, resolving relative locations", () => {
-    const model = compile(
-      schema(
-        `<xs:include schemaLocation="parts/types.xsd"/>
+  it.effect("loads includes and imports, resolving relative locations", () =>
+    Effect.gen(function* () {
+      const model = yield* compile(
+        schema(
+          `<xs:include schemaLocation="parts/types.xsd"/>
          <xs:import namespace="urn:other" schemaLocation="../other.xsd"/>
          <xs:element name="a" type="t:T"/><xs:element name="b" type="o:O"/>`,
-        `targetNamespace="urn:t" xmlns:t="urn:t" xmlns:o="urn:other"`,
-      ),
-      {
-        location: "schemas/main.xsd",
-        documents: {
-          "schemas/parts/types.xsd": schema(
-            `<xs:simpleType name="T"><xs:restriction base="xs:int"/></xs:simpleType>`,
-            `targetNamespace="urn:t"`,
-          ),
-          "other.xsd": schema(
-            `<xs:simpleType name="O"><xs:restriction base="xs:boolean"/></xs:simpleType>`,
-            `targetNamespace="urn:other"`,
-          ),
+          `targetNamespace="urn:t" xmlns:t="urn:t" xmlns:o="urn:other"`,
+        ),
+        {
+          location: "schemas/main.xsd",
+          documents: {
+            "schemas/parts/types.xsd": schema(
+              `<xs:simpleType name="T"><xs:restriction base="xs:int"/></xs:simpleType>`,
+              `targetNamespace="urn:t"`,
+            ),
+            "other.xsd": schema(
+              `<xs:simpleType name="O"><xs:restriction base="xs:boolean"/></xs:simpleType>`,
+              `targetNamespace="urn:other"`,
+            ),
+          },
         },
-      },
-    );
-    expect(value(model, `<a xmlns="urn:t">5</a>`)).toBe(5);
-    expect(value(model, `<b xmlns="urn:t">true</b>`)).toBe(true);
-  });
+      );
+      expect(yield* value(model, `<a xmlns="urn:t">5</a>`)).toBe(5);
+      expect(yield* value(model, `<b xmlns="urn:t">true</b>`)).toBe(true);
+    }),
+  );
 
-  test("a chameleon include takes the including namespace", () => {
-    const model = compile(
-      schema(
-        `<xs:include schemaLocation="c.xsd"/><xs:element name="a" type="t:C"/>`,
-        `targetNamespace="urn:t" xmlns:t="urn:t"`,
-      ),
-      {
-        documents: {
-          "c.xsd": schema(
-            `<xs:complexType name="C"><xs:sequence><xs:element name="x" type="X"/></xs:sequence></xs:complexType>
+  it.effect("a chameleon include takes the including namespace", () =>
+    Effect.gen(function* () {
+      const model = yield* compile(
+        schema(
+          `<xs:include schemaLocation="c.xsd"/><xs:element name="a" type="t:C"/>`,
+          `targetNamespace="urn:t" xmlns:t="urn:t"`,
+        ),
+        {
+          documents: {
+            "c.xsd": schema(
+              `<xs:complexType name="C"><xs:sequence><xs:element name="x" type="X"/></xs:sequence></xs:complexType>
              <xs:simpleType name="X"><xs:restriction base="xs:int"/></xs:simpleType>`,
-          ),
+            ),
+          },
         },
-      },
-    );
-    expect(Arr.sort(R.keys(model.types), Order.String)).toEqual(["{urn:t}C", "{urn:t}X"]);
-    expect(value(model, `<t:a xmlns:t="urn:t"><x>1</x></t:a>`)).toEqual({ x: 1 });
-  });
+      );
+      expect(Arr.sort(R.keys(model.types), Order.String)).toEqual(["{urn:t}C", "{urn:t}X"]);
+      expect(yield* value(model, `<t:a xmlns:t="urn:t"><x>1</x></t:a>`)).toEqual({ x: 1 });
+    }),
+  );
 
-  test("fetches documents with resolve, once each", () => {
-    const fetched: Array<string> = [];
-    const model = compile(
-      schema(`<xs:include schemaLocation="b.xsd"/><xs:include schemaLocation="./b.xsd"/>`),
-      {
-        location: "http://example.com/s/a.xsd",
-        resolve: (location) =>
-          Effect.sync(() => {
-            fetched.push(location);
-            return schema(`<xs:element name="b" type="xs:string"/>`);
-          }),
-      },
-    );
-    expect(fetched).toEqual(["http://example.com/s/b.xsd"]);
-    expect(R.keys(model.elements)).toEqual(["b"]);
-  });
+  it.effect("fetches documents with resolve, once each", () =>
+    Effect.gen(function* () {
+      const fetched: Array<string> = [];
+      const model = yield* compile(
+        schema(`<xs:include schemaLocation="b.xsd"/><xs:include schemaLocation="./b.xsd"/>`),
+        {
+          location: "http://example.com/s/a.xsd",
+          resolve: (location) =>
+            Effect.sync(() => {
+              fetched.push(location);
+              return schema(`<xs:element name="b" type="xs:string"/>`);
+            }),
+        },
+      );
+      expect(fetched).toEqual(["http://example.com/s/b.xsd"]);
+      expect(R.keys(model.elements)).toEqual(["b"]);
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     [schema(`<xs:include schemaLocation="missing.xsd"/>`), "missing.xsd was not given"],
     [schema(`<xs:redefine schemaLocation="x.xsd"/>`), "xs:redefine is not supported"],
     [element("a", "Nope"), "no type named Nope"],
@@ -210,13 +225,15 @@ describe("Xsd.compile", () => {
       ),
       "backwards",
     ],
-  ])("rejects an invalid schema (%#)", (xsd, reason) => {
-    expect(compileError(xsd).message).toContain(reason);
-  });
+  ] as const)("rejects an invalid schema (%#)", ([xsd, reason]) =>
+    Effect.gen(function* () {
+      expect((yield* compileError(xsd)).message).toContain(reason);
+    }),
+  );
 });
 
 describe("Xsd.parse — simple types", () => {
-  test.each([
+  it.effect.each([
     ["xs:string", " a  b ", " a  b "],
     ["xs:token", " a \n b ", "a b"],
     ["xs:boolean", "1", true],
@@ -232,32 +249,40 @@ describe("Xsd.parse — simple types", () => {
     ["xs:gYear", "-0044", "-0044"],
     ["xs:anyURI", " http://x/ ", "http://x/"],
     ["xs:NMTOKENS", " a b\tc ", ["a", "b", "c"]],
-  ])("%s decodes %j", (type, input, expected) => {
-    expect(value(compile(element("v", type)), `<v>${input}</v>`)).toEqual(expected);
-  });
+  ] as const)("%s decodes %j", ([type, input, expected]) =>
+    Effect.gen(function* () {
+      expect(yield* value(yield* compile(element("v", type)), `<v>${input}</v>`)).toEqual(expected);
+    }),
+  );
 
-  test("decimal values are BigDecimals", () => {
-    const v = value(compile(element("v", "xs:decimal")), `<v>-.50</v>`);
-    assert(BigDecimal.isBigDecimal(v));
-    expect(BigDecimal.format(v)).toBe("-0.5");
-  });
+  it.effect("decimal values are BigDecimals", () =>
+    Effect.gen(function* () {
+      const v = yield* value(yield* compile(element("v", "xs:decimal")), `<v>-.50</v>`);
+      assert(BigDecimal.isBigDecimal(v));
+      expect(BigDecimal.format(v)).toBe("-0.5");
+    }),
+  );
 
-  test("binary values are bytes", () => {
-    expect(value(compile(element("v", "xs:hexBinary")), `<v>0aFF</v>`)).toEqual(
-      Uint8Array.of(10, 255),
-    );
-    expect(value(compile(element("v", "xs:base64Binary")), `<v>aGk=</v>`)).toEqual(
-      Uint8Array.of(104, 105),
-    );
-  });
+  it.effect("binary values are bytes", () =>
+    Effect.gen(function* () {
+      expect(yield* value(yield* compile(element("v", "xs:hexBinary")), `<v>0aFF</v>`)).toEqual(
+        Uint8Array.of(10, 255),
+      );
+      expect(yield* value(yield* compile(element("v", "xs:base64Binary")), `<v>aGk=</v>`)).toEqual(
+        Uint8Array.of(104, 105),
+      );
+    }),
+  );
 
-  test("QName values are expanded names", () => {
-    const model = compile(element("v", "xs:QName"));
-    expect(value(model, `<v xmlns:p="urn:p">p:x</v>`)).toBe("{urn:p}x");
-    expect(rule(model, `<v>q:x</v>`)).toBe("InvalidValue");
-  });
+  it.effect("QName values are expanded names", () =>
+    Effect.gen(function* () {
+      const model = yield* compile(element("v", "xs:QName"));
+      expect(yield* value(model, `<v xmlns:p="urn:p">p:x</v>`)).toBe("{urn:p}x");
+      expect(yield* rule(model, `<v>q:x</v>`)).toBe("InvalidValue");
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     ["xs:int", "2147483648"],
     ["xs:boolean", "yes"],
     ["xs:date", "2023-02-29"],
@@ -268,26 +293,30 @@ describe("Xsd.parse — simple types", () => {
     ["xs:language", "toolonglanguage"],
     ["xs:positiveInteger", "0"],
     ["xs:IDREFS", ""],
-  ])("%s rejects %j", (type, input) => {
-    expect(rule(compile(element("v", type)), `<v>${input}</v>`)).toBe("InvalidValue");
-  });
+  ] as const)("%s rejects %j", ([type, input]) =>
+    Effect.gen(function* () {
+      expect(yield* rule(yield* compile(element("v", type)), `<v>${input}</v>`)).toBe(
+        "InvalidValue",
+      );
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     [`<xs:length value="3"/>`, "abc", "ab"],
     [`<xs:minLength value="2"/><xs:maxLength value="3"/>`, "ab", "abcd"],
     [`<xs:pattern value="\\d{3}-[A-Z]+"/>`, "123-AB", "12-AB"],
     [`<xs:pattern value="a"/><xs:pattern value="b"/>`, "b", "c"],
     [`<xs:enumeration value="x"/><xs:enumeration value="y"/>`, "y", "z"],
     [`<xs:whiteSpace value="collapse"/><xs:length value="3"/>`, "  abc  ", "a b c"],
-  ])("string facets %s", (facets, ok, bad) => {
-    const model = restricted(facets);
-    expect(Result.isSuccess(Effect.runSync(Effect.result(Xsd.parse(model, `<v>${ok}</v>`))))).toBe(
-      true,
-    );
-    expect(rule(model, `<v>${bad}</v>`)).toBe("InvalidValue");
-  });
+  ] as const)("string facets %s", ([facets, ok, bad]) =>
+    Effect.gen(function* () {
+      const model = yield* restricted(facets);
+      expect(Result.isSuccess(yield* Effect.result(Xsd.parse(model, `<v>${ok}</v>`)))).toBe(true);
+      expect(yield* rule(model, `<v>${bad}</v>`)).toBe("InvalidValue");
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     [`<xs:minInclusive value="1"/><xs:maxExclusive value="10"/>`, "xs:int", "9", "10"],
     [`<xs:minExclusive value="0.5"/>`, "xs:decimal", "0.51", "0.5"],
     [`<xs:totalDigits value="3"/><xs:fractionDigits value="1"/>`, "xs:decimal", "12.3", "1.23"],
@@ -296,46 +325,50 @@ describe("Xsd.parse — simple types", () => {
     [`<xs:enumeration value="1.0"/>`, "xs:decimal", "1", "2"],
     [`<xs:minInclusive value="-5"/>`, "xs:long", "-5", "-6"],
     [`<xs:maxExclusive value="1e1"/>`, "xs:double", "9.5", "10"],
-  ])("ordered facets %s on %s", (facets, base, ok, bad) => {
-    const model = restricted(facets, base);
-    expect(Result.isSuccess(Effect.runSync(Effect.result(Xsd.parse(model, `<v>${ok}</v>`))))).toBe(
-      true,
-    );
-    expect(rule(model, `<v>${bad}</v>`)).toBe("InvalidValue");
-  });
+  ] as const)("ordered facets %s on %s", ([facets, base, ok, bad]) =>
+    Effect.gen(function* () {
+      const model = yield* restricted(facets, base);
+      expect(Result.isSuccess(yield* Effect.result(Xsd.parse(model, `<v>${ok}</v>`)))).toBe(true);
+      expect(yield* rule(model, `<v>${bad}</v>`)).toBe("InvalidValue");
+    }),
+  );
 
-  test("lists and unions", () => {
-    const model = compile(
-      schema(`
+  it.effect("lists and unions", () =>
+    Effect.gen(function* () {
+      const model = yield* compile(
+        schema(`
         <xs:simpleType name="Ints"><xs:list itemType="xs:int"/></xs:simpleType>
         <xs:simpleType name="Short"><xs:restriction base="Ints"><xs:maxLength value="2"/></xs:restriction></xs:simpleType>
         <xs:simpleType name="IntOrAuto"><xs:union memberTypes="xs:int">
           <xs:simpleType><xs:restriction base="xs:token"><xs:enumeration value="auto"/></xs:restriction></xs:simpleType>
         </xs:union></xs:simpleType>
         <xs:element name="l" type="Short"/><xs:element name="u" type="IntOrAuto"/>`),
-    );
-    expect(value(model, `<l> 1  2 </l>`)).toEqual([1, 2]);
-    expect(rule(model, `<l>1 2 3</l>`)).toBe("InvalidValue");
-    expect(rule(model, `<l>1 x</l>`)).toBe("InvalidValue");
-    expect(value(model, `<u>7</u>`)).toBe(7);
-    expect(value(model, `<u> auto </u>`)).toBe("auto");
-    expect(rule(model, `<u>manual</u>`)).toBe("InvalidValue");
-  });
+      );
+      expect(yield* value(model, `<l> 1  2 </l>`)).toEqual([1, 2]);
+      expect(yield* rule(model, `<l>1 2 3</l>`)).toBe("InvalidValue");
+      expect(yield* rule(model, `<l>1 x</l>`)).toBe("InvalidValue");
+      expect(yield* value(model, `<u>7</u>`)).toBe(7);
+      expect(yield* value(model, `<u> auto </u>`)).toBe("auto");
+      expect(yield* rule(model, `<u>manual</u>`)).toBe("InvalidValue");
+    }),
+  );
 
-  test("element defaults and fixed values", () => {
-    const model = compile(
-      schema(`<xs:element name="r"><xs:complexType><xs:sequence>
+  it.effect("element defaults and fixed values", () =>
+    Effect.gen(function* () {
+      const model = yield* compile(
+        schema(`<xs:element name="r"><xs:complexType><xs:sequence>
         <xs:element name="d" type="xs:int" default="5"/>
         <xs:element name="f" type="xs:decimal" fixed="1.0"/>
       </xs:sequence></xs:complexType></xs:element>`),
-    );
-    expect(record(value(model, `<r><d/><f>1</f></r>`))["d"]).toBe(5);
-    expect(rule(model, `<r><d/><f>2</f></r>`)).toBe("InvalidValue");
-  });
+      );
+      expect(record(yield* value(model, `<r><d/><f>1</f></r>`))["d"]).toBe(5);
+      expect(yield* rule(model, `<r><d/><f>2</f></r>`)).toBe("InvalidValue");
+    }),
+  );
 });
 
 describe("Xsd.parse — content models", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(`
       <xs:element name="r"><xs:complexType><xs:sequence>
         <xs:element name="a" type="xs:int" minOccurs="0"/>
@@ -351,21 +384,24 @@ describe("Xsd.parse — content models", () => {
       </xs:all></xs:complexType></xs:element>`),
   );
 
-  test("sequences, choices and counted repetition", () => {
-    expect(value(model, `<r><a>1</a><b>x</b><c>y</c><d>1</d><d>2</d></r>`)).toEqual({
-      a: 1,
-      b: ["x"],
-      c: ["y"],
-      d: ["1", "2"],
-    });
-    expect(value(model, `<r><c>y</c><d/><d/><d/></r>`)).toEqual({
-      b: [],
-      c: ["y"],
-      d: ["", "", ""],
-    });
-  });
+  it.effect("sequences, choices and counted repetition", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<r><a>1</a><b>x</b><c>y</c><d>1</d><d>2</d></r>`)).toEqual({
+        a: 1,
+        b: ["x"],
+        c: ["y"],
+        d: ["1", "2"],
+      });
+      expect(yield* value(model, `<r><c>y</c><d/><d/><d/></r>`)).toEqual({
+        b: [],
+        c: ["y"],
+        d: ["", "", ""],
+      });
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     [`<r><d/><d/></r>`, "UnexpectedElement"],
     [`<r><b/><d/></r>`, "MissingElement"],
     [`<r><b/><b/><b/><d/><d/></r>`, "UnexpectedElement"],
@@ -373,41 +409,59 @@ describe("Xsd.parse — content models", () => {
     [`<r><a>1</a><a>1</a></r>`, "UnexpectedElement"],
     [`<r><e/></r>`, "UnexpectedElement"],
     [`<r>text<b/><d/><d/></r>`, "UnexpectedText"],
-  ])("rejects %s", (doc, expected) => {
-    expect(rule(model, doc)).toBe(expected);
-  });
+  ] as const)("rejects %s", ([doc, expected]) =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* rule(model, doc)).toBe(expected);
+    }),
+  );
 
-  test("whitespace between elements is ignored in element-only content", () => {
-    expect(value(model, `<r>\n  <b/>\n  <d/> <d/>\n</r>`)).toEqual({ b: [""], c: [], d: ["", ""] });
-  });
+  it.effect("whitespace between elements is ignored in element-only content", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<r>\n  <b/>\n  <d/> <d/>\n</r>`)).toEqual({
+        b: [""],
+        c: [],
+        d: ["", ""],
+      });
+    }),
+  );
 
-  test("xs:all in any order, each at most once", () => {
-    expect(value(model, `<all><y>2</y><x>1</x></all>`)).toEqual({ x: 1, y: 2 });
-    expect(value(model, `<all><x>1</x></all>`)).toEqual({ x: 1 });
-    expect(rule(model, `<all><y>2</y></all>`)).toBe("MissingElement");
-    expect(rule(model, `<all><x>1</x><x>1</x></all>`)).toBe("UnexpectedElement");
-  });
+  it.effect("xs:all in any order, each at most once", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<all><y>2</y><x>1</x></all>`)).toEqual({ x: 1, y: 2 });
+      expect(yield* value(model, `<all><x>1</x></all>`)).toEqual({ x: 1 });
+      expect(yield* rule(model, `<all><y>2</y></all>`)).toBe("MissingElement");
+      expect(yield* rule(model, `<all><x>1</x><x>1</x></all>`)).toBe("UnexpectedElement");
+    }),
+  );
 
-  test("errors say what was expected, where", () => {
-    const e = validation(invalid(model, `<r>\n<b/>\n<e/></r>`));
-    expect(e.reason).toBe("<e> is not allowed here; expected <b> or <c> or <d>");
-    expect(e.path).toBe("/r");
-    expect(e.position).toEqual({ offset: 9, line: 3, column: 1 });
-  });
+  it.effect("errors say what was expected, where", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const e = validation(yield* invalid(model, `<r>\n<b/>\n<e/></r>`));
+      expect(e.reason).toBe("<e> is not allowed here; expected <b> or <c> or <d>");
+      expect(e.path).toBe("/r");
+      expect(e.position).toEqual({ offset: 9, line: 3, column: 1 });
+    }),
+  );
 
-  test("large bounds are counted, not unrolled", () => {
-    const big = compile(
-      schema(`<xs:element name="r"><xs:complexType><xs:sequence>
+  it.effect("large bounds are counted, not unrolled", () =>
+    Effect.gen(function* () {
+      const big = yield* compile(
+        schema(`<xs:element name="r"><xs:complexType><xs:sequence>
         <xs:element name="i" type="xs:int" minOccurs="1000" maxOccurs="100000"/>
       </xs:sequence></xs:complexType></xs:element>`),
-    );
-    expect(rule(big, repeatedItems(999))).toBe("MissingElement");
-    expect(list(record(value(big, repeatedItems(5000))), "i").length).toBe(5000);
-  });
+      );
+      expect(yield* rule(big, repeatedItems(999))).toBe("MissingElement");
+      expect(list(record(yield* value(big, repeatedItems(5000))), "i").length).toBe(5000);
+    }),
+  );
 });
 
 describe("Xsd.parse — complex types", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(
       `
       <xs:complexType name="Base">
@@ -443,63 +497,91 @@ describe("Xsd.parse — complex types", () => {
   );
   const ns = `xmlns="urn:t"`;
 
-  test("extension appends content and attributes", () => {
-    expect(value(model, `<ext ${ns} id="1" note="n"><a>x</a><b>2</b></ext>`)).toEqual({
-      id: 1,
-      kind: "base",
-      note: "n",
-      a: "x",
-      b: 2,
-    });
-    expect(rule(model, `<ext ${ns} id="1"><b>2</b><a>x</a></ext>`)).toBe("UnexpectedElement");
-  });
+  it.effect("extension appends content and attributes", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<ext ${ns} id="1" note="n"><a>x</a><b>2</b></ext>`)).toEqual({
+        id: 1,
+        kind: "base",
+        note: "n",
+        a: "x",
+        b: 2,
+      });
+      expect(yield* rule(model, `<ext ${ns} id="1"><b>2</b><a>x</a></ext>`)).toBe(
+        "UnexpectedElement",
+      );
+    }),
+  );
 
-  test("restriction can prohibit attributes", () => {
-    expect(value(model, `<res ${ns} id="3"><a>x</a></res>`)).toEqual({ id: 3, a: "x" });
-    expect(rule(model, `<res ${ns} id="3" kind="k"><a>x</a></res>`)).toBe("UnexpectedAttribute");
-  });
+  it.effect("restriction can prohibit attributes", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<res ${ns} id="3"><a>x</a></res>`)).toEqual({ id: 3, a: "x" });
+      expect(yield* rule(model, `<res ${ns} id="3" kind="k"><a>x</a></res>`)).toBe(
+        "UnexpectedAttribute",
+      );
+    }),
+  );
 
-  test("attributes: required, typed, unknown", () => {
-    expect(rule(model, `<ext ${ns}><a/><b>1</b></ext>`)).toBe("MissingAttribute");
-    expect(rule(model, `<ext ${ns} id="x"><a/><b>1</b></ext>`)).toBe("InvalidValue");
-    expect(rule(model, `<ext ${ns} id="1" other="1"><a/><b>1</b></ext>`)).toBe(
-      "UnexpectedAttribute",
-    );
-  });
+  it.effect("attributes: required, typed, unknown", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* rule(model, `<ext ${ns}><a/><b>1</b></ext>`)).toBe("MissingAttribute");
+      expect(yield* rule(model, `<ext ${ns} id="x"><a/><b>1</b></ext>`)).toBe("InvalidValue");
+      expect(yield* rule(model, `<ext ${ns} id="1" other="1"><a/><b>1</b></ext>`)).toBe(
+        "UnexpectedAttribute",
+      );
+    }),
+  );
 
-  test("simple content with attributes, restricted by facets", () => {
-    const v = record(value(model, `<money ${ns}>9.99</money>`));
-    expect(v["currency"]).toBe("AUD");
-    assert(BigDecimal.isBigDecimal(v["$value"]));
-    expect(rule(model, `<money ${ns}>11</money>`)).toBe("InvalidValue");
-    expect(rule(model, `<money ${ns} currency="USD">1</money>`)).toBe("InvalidValue");
-    expect(rule(model, `<money ${ns}>1<x/></money>`)).toBe("UnexpectedElement");
-  });
+  it.effect("simple content with attributes, restricted by facets", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const v = record(yield* value(model, `<money ${ns}>9.99</money>`));
+      expect(v["currency"]).toBe("AUD");
+      assert(BigDecimal.isBigDecimal(v["$value"]));
+      expect(yield* rule(model, `<money ${ns}>11</money>`)).toBe("InvalidValue");
+      expect(yield* rule(model, `<money ${ns} currency="USD">1</money>`)).toBe("InvalidValue");
+      expect(yield* rule(model, `<money ${ns}>1<x/></money>`)).toBe("UnexpectedElement");
+    }),
+  );
 
-  test("mixed content keeps its text", () => {
-    expect(value(model, `<mixed ${ns}>a <b>x</b> c</mixed>`)).toEqual({ b: ["x"], $text: "a  c" });
-  });
+  it.effect("mixed content keeps its text", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<mixed ${ns}>a <b>x</b> c</mixed>`)).toEqual({
+        b: ["x"],
+        $text: "a  c",
+      });
+    }),
+  );
 
-  test("empty content admits nothing, not even whitespace", () => {
-    expect(value(model, `<empty ${ns} x="1"/>`)).toEqual({ x: 1 });
-    expect(rule(model, `<empty ${ns}> </empty>`)).toBe("UnexpectedText");
-    expect(rule(model, `<empty ${ns}><a/></empty>`)).toBe("UnexpectedElement");
-  });
+  it.effect("empty content admits nothing, not even whitespace", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<empty ${ns} x="1"/>`)).toEqual({ x: 1 });
+      expect(yield* rule(model, `<empty ${ns}> </empty>`)).toBe("UnexpectedText");
+      expect(yield* rule(model, `<empty ${ns}><a/></empty>`)).toBe("UnexpectedElement");
+    }),
+  );
 
-  test("an element without a type is anyType", () => {
-    const v = record(
-      value(model, `<anything ${ns} a="1">x<y:z xmlns:y="urn:y"><w/></y:z></anything>`),
-    );
-    const [z] = list(v, "$any");
-    assert(isXmlElement(z));
-    expect(z.name.clark).toBe("{urn:y}z");
-    expect(v["$text"]).toBe("x");
-    expect(v["$attributes"]).toEqual({ a: "1" });
-  });
+  it.effect("an element without a type is anyType", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const v = record(
+        yield* value(model, `<anything ${ns} a="1">x<y:z xmlns:y="urn:y"><w/></y:z></anything>`),
+      );
+      const [z] = list(v, "$any");
+      assert(isXmlElement(z));
+      expect(z.name.clark).toBe("{urn:y}z");
+      expect(v["$text"]).toBe("x");
+      expect(v["$attributes"]).toEqual({ a: "1" });
+    }),
+  );
 });
 
 describe("Xsd.parse — derivation and substitution", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(`
       <xs:complexType name="Shape" abstract="true"><xs:attribute name="id" type="xs:ID"/></xs:complexType>
       <xs:complexType name="Circle"><xs:complexContent><xs:extension base="Shape">
@@ -522,54 +604,73 @@ describe("Xsd.parse — derivation and substitution", () => {
   );
   const XSI = `xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"`;
 
-  test("substitution group members appear for their head", () => {
-    expect(
-      value(model, `<drawing><circle r="1"/><square side="2"/><circle r="3"/></drawing>`),
-    ).toEqual({ circle: [{ r: 1 }, { r: 3 }], square: [{ side: 2 }] });
-    expect(rule(model, `<drawing><shape/></drawing>`)).toBe("UnexpectedElement");
-    expect(rule(model, `<plain><sub>x</sub></plain>`)).toBe("UnexpectedElement");
-    expect(rule(model, `<shape/>`)).toBe("InvalidType");
-  });
+  it.effect("substitution group members appear for their head", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(
+        yield* value(model, `<drawing><circle r="1"/><square side="2"/><circle r="3"/></drawing>`),
+      ).toEqual({ circle: [{ r: 1 }, { r: 3 }], square: [{ side: 2 }] });
+      expect(yield* rule(model, `<drawing><shape/></drawing>`)).toBe("UnexpectedElement");
+      expect(yield* rule(model, `<plain><sub>x</sub></plain>`)).toBe("UnexpectedElement");
+      expect(yield* rule(model, `<shape/>`)).toBe("InvalidType");
+    }),
+  );
 
-  test("xsi:type selects a derived type", () => {
-    expect(value(model, `<any ${XSI} xsi:type="Square" side="4"/>`)).toEqual(
-      Option.some({ side: 4, $type: "Square" }),
-    );
-    expect(rule(model, `<any/>`)).toBe("InvalidType");
-    expect(
-      rule(model, `<any ${XSI} xsi:type="xs:int" xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`),
-    ).toBe("InvalidType");
-    expect(rule(model, `<any ${XSI} xsi:type="Nope"/>`)).toBe("InvalidType");
-    expect(rule(model, `<locked ${XSI} xsi:type="Square" side="1"/>`)).toBe("InvalidType");
-  });
+  it.effect("xsi:type selects a derived type", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<any ${XSI} xsi:type="Square" side="4"/>`)).toEqual(
+        Option.some({ side: 4, $type: "Square" }),
+      );
+      expect(yield* rule(model, `<any/>`)).toBe("InvalidType");
+      expect(
+        yield* rule(
+          model,
+          `<any ${XSI} xsi:type="xs:int" xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`,
+        ),
+      ).toBe("InvalidType");
+      expect(yield* rule(model, `<any ${XSI} xsi:type="Nope"/>`)).toBe("InvalidType");
+      expect(yield* rule(model, `<locked ${XSI} xsi:type="Square" side="1"/>`)).toBe("InvalidType");
+    }),
+  );
 
-  test("xsi:nil", () => {
-    expect(value(model, `<any ${XSI} xsi:type="Circle" xsi:nil="true" r="1"/>`)).toEqual(
-      Option.none(),
-    );
-    // An abstract type can't govern an element, even a nil one.
-    expect(rule(model, `<any ${XSI} xsi:nil="true"/>`)).toBe("InvalidType");
-    expect(rule(model, `<circle ${XSI} xsi:nil="true" r="1"/>`)).toBe("Nil");
-    expect(rule(model, `<any ${XSI} xsi:nil="true" xsi:type="Circle" r="1">x</any>`)).toBe("Nil");
-  });
+  it.effect("xsi:nil", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<any ${XSI} xsi:type="Circle" xsi:nil="true" r="1"/>`)).toEqual(
+        Option.none(),
+      );
+      // An abstract type can't govern an element, even a nil one.
+      expect(yield* rule(model, `<any ${XSI} xsi:nil="true"/>`)).toBe("InvalidType");
+      expect(yield* rule(model, `<circle ${XSI} xsi:nil="true" r="1"/>`)).toBe("Nil");
+      expect(yield* rule(model, `<any ${XSI} xsi:nil="true" xsi:type="Circle" r="1">x</any>`)).toBe(
+        "Nil",
+      );
+    }),
+  );
 
-  test("IDs are unique and IDREFs resolve", () => {
-    expect(value(model, `<drawing><circle id="c" r="1"/><link>c</link></drawing>`)).toEqual({
-      circle: [{ id: "c", r: 1 }],
-      square: [],
-      link: "c",
-    });
-    expect(rule(model, `<drawing><circle id="c" r="1"/><square id="c" side="1"/></drawing>`)).toBe(
-      "InvalidValue",
-    );
-    expect(rule(model, `<drawing><circle id="c" r="1"/><link>d</link></drawing>`)).toBe(
-      "IdentityConstraint",
-    );
-  });
+  it.effect("IDs are unique and IDREFs resolve", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(
+        yield* value(model, `<drawing><circle id="c" r="1"/><link>c</link></drawing>`),
+      ).toEqual({
+        circle: [{ id: "c", r: 1 }],
+        square: [],
+        link: "c",
+      });
+      expect(
+        yield* rule(model, `<drawing><circle id="c" r="1"/><square id="c" side="1"/></drawing>`),
+      ).toBe("InvalidValue");
+      expect(yield* rule(model, `<drawing><circle id="c" r="1"/><link>d</link></drawing>`)).toBe(
+        "IdentityConstraint",
+      );
+    }),
+  );
 });
 
 describe("Xsd.parse — wildcards", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(
       `
       <xs:element name="known" type="xs:int"/>
@@ -583,30 +684,46 @@ describe("Xsd.parse — wildcards", () => {
     ),
   );
 
-  test("skip wildcards keep elements as DOM", () => {
-    const v = record(value(model, `<r xmlns="urn:t"><a/><o:x xmlns:o="urn:o"><y/></o:x></r>`));
-    const [x] = list(v, "$any");
-    assert(isXmlElement(x));
-    expect(Xml.serialize(x)).toBe(`<o:x xmlns:o="urn:o"><y/></o:x>`);
-  });
+  it.effect("skip wildcards keep elements as DOM", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const v = record(
+        yield* value(model, `<r xmlns="urn:t"><a/><o:x xmlns:o="urn:o"><y/></o:x></r>`),
+      );
+      const [x] = list(v, "$any");
+      assert(isXmlElement(x));
+      expect(Xml.serialize(x)).toBe(`<o:x xmlns:o="urn:o"><y/></o:x>`);
+    }),
+  );
 
-  test("strict wildcards validate against global declarations", () => {
-    expect(rule(model, `<r xmlns="urn:t"><a/><known>x</known></r>`)).toBe("InvalidValue");
-    expect(rule(model, `<r xmlns="urn:t"><a/><unknown/></r>`)).toBe("UnexpectedElement");
-    expect(rule(model, `<r xmlns="urn:t"><a/><b xmlns=""/></r>`)).toBe("UnexpectedElement");
-  });
+  it.effect("strict wildcards validate against global declarations", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* rule(model, `<r xmlns="urn:t"><a/><known>x</known></r>`)).toBe("InvalidValue");
+      expect(yield* rule(model, `<r xmlns="urn:t"><a/><unknown/></r>`)).toBe("UnexpectedElement");
+      expect(yield* rule(model, `<r xmlns="urn:t"><a/><b xmlns=""/></r>`)).toBe(
+        "UnexpectedElement",
+      );
+    }),
+  );
 
-  test("lax attribute wildcards validate what they know", () => {
-    const v = value(model, `<r xmlns="urn:t" xmlns:t="urn:t" t:flag="true" x="1"><a/></r>`);
-    expect(v).toMatchObject({ $attributes: { "{urn:t}flag": "true", x: "1" } });
-    expect(rule(model, `<r xmlns="urn:t" xmlns:t="urn:t" t:flag="maybe"><a/></r>`)).toBe(
-      "InvalidValue",
-    );
-  });
+  it.effect("lax attribute wildcards validate what they know", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const v = yield* value(
+        model,
+        `<r xmlns="urn:t" xmlns:t="urn:t" t:flag="true" x="1"><a/></r>`,
+      );
+      expect(v).toMatchObject({ $attributes: { "{urn:t}flag": "true", x: "1" } });
+      expect(yield* rule(model, `<r xmlns="urn:t" xmlns:t="urn:t" t:flag="maybe"><a/></r>`)).toBe(
+        "InvalidValue",
+      );
+    }),
+  );
 });
 
 describe("Xsd.parse — attribute wildcards across derivations", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(`
       <xs:attributeGroup name="g"><xs:anyAttribute namespace="urn:a urn:b" processContents="skip"/></xs:attributeGroup>
       <xs:complexType name="Base"><xs:attributeGroup ref="g"/><xs:anyAttribute namespace="urn:b urn:c" processContents="skip"/></xs:complexType>
@@ -617,21 +734,31 @@ describe("Xsd.parse — attribute wildcards across derivations", () => {
       <xs:element name="base" type="Base"/><xs:element name="wider" type="Wider"/><xs:element name="local" type="Local"/>`),
   );
 
-  test("a type's wildcards intersect", () => {
-    expect(value(model, `<base ${attr("urn:b")}/>`)).toEqual({ $attributes: { "{urn:b}x": "1" } });
-    expect(rule(model, `<base ${attr("urn:a")}/>`)).toBe("UnexpectedAttribute");
-  });
+  it.effect("a type's wildcards intersect", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<base ${attr("urn:b")}/>`)).toEqual({
+        $attributes: { "{urn:b}x": "1" },
+      });
+      expect(yield* rule(model, `<base ${attr("urn:a")}/>`)).toBe("UnexpectedAttribute");
+    }),
+  );
 
-  test("extension unites them with the base's", () => {
-    expect(value(model, `<wider ${attr("urn:z")}/>`)).toEqual({ $attributes: { "{urn:z}x": "1" } });
-    expect(rule(model, `<wider x="1"/>`)).toBe("UnexpectedAttribute");
-    expect(value(model, `<local x="1"/>`)).toEqual({ $attributes: { x: "1" } });
-    expect(rule(model, `<local ${attr("urn:a")}/>`)).toBe("UnexpectedAttribute");
-  });
+  it.effect("extension unites them with the base's", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* value(model, `<wider ${attr("urn:z")}/>`)).toEqual({
+        $attributes: { "{urn:z}x": "1" },
+      });
+      expect(yield* rule(model, `<wider x="1"/>`)).toBe("UnexpectedAttribute");
+      expect(yield* value(model, `<local x="1"/>`)).toEqual({ $attributes: { x: "1" } });
+      expect(yield* rule(model, `<local ${attr("urn:a")}/>`)).toBe("UnexpectedAttribute");
+    }),
+  );
 });
 
 describe("Xsd.parse — identity constraints", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(
       `<xs:element name="db"><xs:complexType><xs:sequence>
         <xs:element name="user" maxOccurs="unbounded"><xs:complexType>
@@ -648,32 +775,36 @@ describe("Xsd.parse — identity constraints", () => {
     ),
   );
 
-  test("valid keys, uniques and references", () => {
-    expect(
-      Result.isSuccess(
-        Effect.runSync(
-          Effect.result(
+  it.effect("valid keys, uniques and references", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(
+        Result.isSuccess(
+          yield* Effect.result(
             Xsd.parse(model, db(`<user id="a" email="x"/><user id="b"/><post author="a"/>`)),
           ),
         ),
-      ),
-    ).toBe(true);
-  });
+      ).toBe(true);
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     [`<user id="a"/><user id="a"/>`, "not unique"],
     [`<user/>`, "missing"],
     [`<user id="a" email="x"/><user id="b" email="x"/>`, "not unique"],
     [`<user id="a"/><post author="b"/>`, "refers to no"],
-  ])("rejects %s", (body, reason) => {
-    const e = validation(invalid(model, db(body)));
-    expect(e.rule).toBe("IdentityConstraint");
-    expect(e.reason).toContain(reason);
-  });
+  ] as const)("rejects %s", ([body, reason]) =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const e = validation(yield* invalid(model, db(body)));
+      expect(e.rule).toBe("IdentityConstraint");
+      expect(e.reason).toContain(reason);
+    }),
+  );
 });
 
 describe("Xsd.parse — identity constraints compare typed values", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(
       `<xs:element name="shop"><xs:complexType><xs:sequence>
         <xs:element name="item" minOccurs="0" maxOccurs="unbounded"><xs:complexType>
@@ -695,45 +826,63 @@ describe("Xsd.parse — identity constraints compare typed values", () => {
     ),
   );
   const accepts = (body: string) =>
-    Result.isSuccess(Effect.runSync(Effect.result(Xsd.parse(model, shop(body)))));
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      return Result.isSuccess(yield* Effect.result(Xsd.parse(model, shop(body))));
+    });
 
-  test("decimal 1.0 and 1 are the same value under a unique", () => {
-    const e = validation(
-      invalid(
-        model,
-        shop(`<item price="1.0"><code>1</code></item><item price="1"><code>2</code></item>`),
-      ),
-    );
-    expect(e.rule).toBe("IdentityConstraint");
-    expect(e.reason).toContain("not unique for price");
-  });
+  it.effect("decimal 1.0 and 1 are the same value under a unique", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const e = validation(
+        yield* invalid(
+          model,
+          shop(`<item price="1.0"><code>1</code></item><item price="1"><code>2</code></item>`),
+        ),
+      );
+      expect(e.rule).toBe("IdentityConstraint");
+      expect(e.reason).toContain("not unique for price");
+    }),
+  );
 
-  test("int 01 and 1 are the same value, so the same key", () => {
-    const e = validation(
-      invalid(model, shop(`<item><code>01</code></item><item><code> 1 </code></item>`)),
-    );
-    expect(e.reason).toContain("not unique for code");
-  });
+  it.effect("int 01 and 1 are the same value, so the same key", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const e = validation(
+        yield* invalid(model, shop(`<item><code>01</code></item><item><code> 1 </code></item>`)),
+      );
+      expect(e.reason).toContain("not unique for code");
+    }),
+  );
 
-  test("a keyref int 01 matches a key 1", () => {
-    expect(accepts(`<item><code>1</code></item><order code="01"/><order code="+1"/>`)).toBe(true);
-    expect(accepts(`<item><code>1</code></item><order code="2"/>`)).toBe(false);
-  });
+  it.effect("a keyref int 01 matches a key 1", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* accepts(`<item><code>1</code></item><order code="01"/><order code="+1"/>`),
+      ).toBe(true);
+      expect(yield* accepts(`<item><code>1</code></item><order code="2"/>`)).toBe(false);
+    }),
+  );
 
-  test("a string 1 and an int 1 are different values", () => {
-    expect(accepts(`<a k="1"/><b k="1"/>`)).toBe(true);
-    expect(accepts(`<b k="1"/><b k="01"/>`)).toBe(false);
-    expect(accepts(`<a k="1"/><a k="1"/>`)).toBe(false);
-  });
+  it.effect("a string 1 and an int 1 are different values", () =>
+    Effect.gen(function* () {
+      expect(yield* accepts(`<a k="1"/><b k="1"/>`)).toBe(true);
+      expect(yield* accepts(`<b k="1"/><b k="01"/>`)).toBe(false);
+      expect(yield* accepts(`<a k="1"/><a k="1"/>`)).toBe(false);
+    }),
+  );
 
-  test("a string value keeps its whitespace", () => {
-    expect(accepts(`<a k="x"/><a k=" x"/>`)).toBe(true);
-  });
+  it.effect("a string value keeps its whitespace", () =>
+    Effect.gen(function* () {
+      expect(yield* accepts(`<a k="x"/><a k=" x"/>`)).toBe(true);
+    }),
+  );
 
-  test("lists, unions and binary values compare by value", () => {
-    const typed = compile(
-      schema(
-        `<xs:simpleType name="ints"><xs:list itemType="xs:int"/></xs:simpleType>
+  it.effect("lists, unions and binary values compare by value", () =>
+    Effect.gen(function* () {
+      const typed = yield* compile(
+        schema(
+          `<xs:simpleType name="ints"><xs:list itemType="xs:int"/></xs:simpleType>
         <xs:simpleType name="either"><xs:union memberTypes="xs:int xs:string"/></xs:simpleType>
         <xs:element name="r"><xs:complexType><xs:sequence>
           <xs:element name="e" maxOccurs="unbounded"><xs:complexType>
@@ -745,24 +894,27 @@ describe("Xsd.parse — identity constraints compare typed values", () => {
         <xs:unique name="u"><xs:selector xpath="e"/><xs:field xpath="@u"/></xs:unique>
         <xs:unique name="h"><xs:selector xpath="e"/><xs:field xpath="@h"/></xs:unique>
         </xs:element>`,
-      ),
-    );
-    const ok = (body: string) =>
-      Result.isSuccess(Effect.runSync(Effect.result(Xsd.parse(typed, `<r>${body}</r>`))));
-    expect(ok(`<e l="1 2"/><e l="01  2"/>`)).toBe(false);
-    expect(ok(`<e l="1 2"/><e l="2 1"/>`)).toBe(true);
-    expect(ok(`<e u="1"/><e u="01"/>`)).toBe(false);
-    expect(ok(`<e u="a"/><e u="b"/>`)).toBe(true);
-    expect(ok(`<e h="0A"/><e h="0a"/>`)).toBe(false);
-  });
+        ),
+      );
+      const ok = (body: string) =>
+        Effect.gen(function* () {
+          return Result.isSuccess(yield* Effect.result(Xsd.parse(typed, `<r>${body}</r>`)));
+        });
+      expect(yield* ok(`<e l="1 2"/><e l="01  2"/>`)).toBe(false);
+      expect(yield* ok(`<e l="1 2"/><e l="2 1"/>`)).toBe(true);
+      expect(yield* ok(`<e u="1"/><e u="01"/>`)).toBe(false);
+      expect(yield* ok(`<e u="a"/><e u="b"/>`)).toBe(true);
+      expect(yield* ok(`<e h="0A"/><e h="0a"/>`)).toBe(false);
+    }),
+  );
 });
 
 describe("Xsd.parse — well-formedness and roots", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(`<xs:element name="a" type="xs:string"/><xs:element name="b" type="xs:int"/>`),
   );
 
-  test.each([
+  it.effect.each([
     [`<a>x</b>`, "MismatchedEndTag"],
     [`<a>x</a><a/>`, "InvalidDocumentStructure"],
     [`<a>x</a>text`, "InvalidDocumentStructure"],
@@ -770,68 +922,86 @@ describe("Xsd.parse — well-formedness and roots", () => {
     [`<p:a/>`, "UnboundNamespacePrefix"],
     [`<a x="1" x="2"/>`, "DuplicateAttribute"],
     [``, "InvalidDocumentStructure"],
-  ])("%s fails with %s", (doc, tag) => {
-    expect(invalid(model, doc)._tag).toBe(tag);
-  });
+  ] as const)("%s fails with %s", ([doc, tag]) =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect((yield* invalid(model, doc))._tag).toBe(tag);
+    }),
+  );
 
-  test("an undeclared root is unexpected", () => {
-    expect(rule(model, `<c/>`)).toBe("UnexpectedElement");
-  });
+  it.effect("an undeclared root is unexpected", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      expect(yield* rule(model, `<c/>`)).toBe("UnexpectedElement");
+    }),
+  );
 
-  test("a parser accepts only its own root", () => {
-    const b = Xsd.parser(model, "b", Schema.Int);
-    expect(Effect.runSync(b.parse(`<b>4</b>`))).toBe(4);
-    const e = validation(Effect.runSync(Effect.flip(b.parse(`<a>x</a>`))));
-    expect(e.reason).toBe("the document element is <a>, not <b>");
-  });
+  it.effect("a parser accepts only its own root", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const b = Xsd.parser(model, "b", Schema.Int);
+      expect(yield* b.parse(`<b>4</b>`)).toBe(4);
+      const e = validation(yield* Effect.flip(b.parse(`<a>x</a>`)));
+      expect(e.reason).toBe("the document element is <a>, not <b>");
+    }),
+  );
 });
 
 describe("Xsd streaming", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(`<xs:element name="r"><xs:complexType><xs:sequence>
       <xs:element name="n" type="xs:int" maxOccurs="unbounded"/>
     </xs:sequence><xs:attribute name="v" type="xs:string"/></xs:complexType></xs:element>`),
   );
   const doc = `<r v="é&amp;x">${Array.from({ length: 20 }, (_, i) => `<n> ${i} </n>`).join("")}</r>`;
 
-  test.each([1, 2, 3, 7, 64])("chunks of %i give the same value", (size) => {
-    const v = Effect.runSync(Xsd.parseStream(model)(Stream.fromIterable(splitEvery(doc, size))));
-    expect(v.value).toEqual(value(model, doc));
-  });
+  it.effect.each([1, 2, 3, 7, 64] as const)("chunks of %i give the same value", (size) =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const v = yield* Xsd.parseStream(model)(Stream.fromIterable(splitEvery(doc, size)));
+      expect(v.value).toEqual(yield* value(model, doc));
+    }),
+  );
 
-  test("a parser's streams, for children in no namespace", () => {
-    const parser = Xsd.parser(model, "r", Xsd.XsdRecord, {
-      n: { element: "n", schema: Schema.Int },
-    });
-    const ns = Effect.runSync(
-      Stream.fromIterable(splitEvery(doc, 7)).pipe(
+  it.effect("a parser's streams, for children in no namespace", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const parser = Xsd.parser(model, "r", Xsd.XsdRecord, {
+        n: { element: "n", schema: Schema.Int },
+      });
+      const ns = yield* Stream.fromIterable(splitEvery(doc, 7)).pipe(
         Sax.tokenize(),
         parser.streams("n"),
         Stream.runCollect,
-      ),
-    );
-    expect(Array.from(ns)).toEqual(Array.from({ length: 20 }, (_, i) => i));
-  });
+      );
+      expect(Array.from(ns)).toEqual(Array.from({ length: 20 }, (_, i) => i));
+    }),
+  );
 
-  test("bytes", () => {
-    const v = Effect.runSync(Xsd.parseBytes(model, new TextEncoder().encode(doc)));
-    expect(v.value).toEqual(value(model, doc));
-  });
+  it.effect("bytes", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const v = yield* Xsd.parseBytes(model, new TextEncoder().encode(doc));
+      expect(v.value).toEqual(yield* value(model, doc));
+    }),
+  );
 
-  test("validate passes events through and fails fast", () => {
-    const events = Effect.runSync(
-      Sax.tokenizeString(`<r><n>1</n></r>`).pipe(Xsd.validate(model), Stream.runCollect),
-    );
-    expect(Array.from(events).map((e) => e._tag)).toEqual([
-      "StartElement",
-      "StartElement",
-      "Text",
-      "EndElement",
-      "EndElement",
-    ]);
-    let seen = 0;
-    const failed = Effect.runSync(
-      Effect.flip(
+  it.effect("validate passes events through and fails fast", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const events = yield* Sax.tokenizeString(`<r><n>1</n></r>`).pipe(
+        Xsd.validate(model),
+        Stream.runCollect,
+      );
+      expect(Array.from(events).map((e) => e._tag)).toEqual([
+        "StartElement",
+        "StartElement",
+        "Text",
+        "EndElement",
+        "EndElement",
+      ]);
+      let seen = 0;
+      const failed = yield* Effect.flip(
         Stream.fromIterable(
           splitEvery(`<r><n>1</n><n>x</n>${"<n>2</n>".repeat(1000)}</r>`, 4),
         ).pipe(
@@ -840,15 +1010,15 @@ describe("Xsd streaming", () => {
           Xsd.validate(model),
           Stream.runDrain,
         ),
-      ),
-    );
-    expect(failed._tag).toBe("XsdValidationError");
-    expect(seen).toBeLessThan(20);
-  });
+      );
+      expect(failed._tag).toBe("XsdValidationError");
+      expect(seen).toBeLessThan(20);
+    }),
+  );
 });
 
 describe("Xsd.select", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(
       `<xs:element name="sheet"><xs:complexType><xs:sequence>
         <xs:element name="title" type="xs:string"/>
@@ -873,132 +1043,149 @@ describe("Xsd.select", () => {
   const ns = { namespaces: { s: "urn:s" } };
   /** How selecting `path` from a one-row sheet fails. */
   const fail = (path: string) =>
-    Effect.runSync(
-      Effect.flip(
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      return yield* Effect.flip(
         Stream.make(sheet(rows(1))).pipe(
           Sax.tokenize(),
           Xsd.select(model, path, ns),
           Stream.runDrain,
         ),
-      ),
-    );
+      );
+    });
   const selected = (doc: string, path: string, size = 64) =>
-    Effect.runSync(
-      Stream.fromIterable(splitEvery(doc, size)).pipe(
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      return yield* Stream.fromIterable(splitEvery(doc, size)).pipe(
         Sax.tokenize(),
         Xsd.select(model, path, ns),
         Stream.runCollect,
-      ),
-    );
+      );
+    });
 
-  test.each([1, 5, 64])("emits each selected element's value (chunks of %i)", (size) => {
-    expect(selected(sheet(rows(3)), "/s:sheet/s:row", size)).toEqual([
-      { r: 1, c: [0, 0] },
-      { r: 2, c: [1, 1] },
-      { r: 3, c: [2, 2] },
-    ]);
-  });
+  it.effect.each([1, 5, 64] as const)(
+    "emits each selected element's value (chunks of %i)",
+    (size) =>
+      Effect.gen(function* () {
+        expect(yield* selected(sheet(rows(3)), "/s:sheet/s:row", size)).toEqual([
+          { r: 1, c: [0, 0] },
+          { r: 2, c: [1, 1] },
+          { r: 3, c: [2, 2] },
+        ]);
+      }),
+  );
 
-  test("predicates on attributes and descendant steps", () => {
-    const doc = sheet(`<row r="1" hidden="true"><c>1</c></row><row r="2"><c>2</c></row>`);
-    expect(selected(doc, "//s:row[not(@hidden)]")).toEqual([{ r: 2, c: [2] }]);
-    expect(selected(doc, "//s:c")).toEqual([1, 2]);
-  });
+  it.effect("predicates on attributes and descendant steps", () =>
+    Effect.gen(function* () {
+      const doc = sheet(`<row r="1" hidden="true"><c>1</c></row><row r="2"><c>2</c></row>`);
+      expect(yield* selected(doc, "//s:row[not(@hidden)]")).toEqual([{ r: 2, c: [2] }]);
+      expect(yield* selected(doc, "//s:c")).toEqual([1, 2]);
+    }),
+  );
 
-  test("a selected element is left out of its parent's value", () => {
-    const events: Array<Xsd.XsdValue> = [];
-    const program = Stream.make(sheet(`<head n="1"/>${rows(2)}`)).pipe(
-      Sax.tokenize(),
-      Xsd.select(model, "/s:sheet/s:row | /s:sheet/s:head", ns),
-      Stream.runForEach((v) => Effect.sync(() => events.push(v))),
-    );
-    const failed = Effect.runSync(Effect.flip(program));
-    // A union is not streamable.
-    expect(failed._tag).toBe("XPathError");
-    const root = Effect.runSync(
-      Stream.make(sheet(`<head n="1"/>${rows(2)}`)).pipe(
+  it.effect("a selected element is left out of its parent's value", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const events: Array<Xsd.XsdValue> = [];
+      const program = Stream.make(sheet(`<head n="1"/>${rows(2)}`)).pipe(
+        Sax.tokenize(),
+        Xsd.select(model, "/s:sheet/s:row | /s:sheet/s:head", ns),
+        Stream.runForEach((v) => Effect.sync(() => events.push(v))),
+      );
+      const failed = yield* Effect.flip(program);
+      // A union is not streamable.
+      expect(failed._tag).toBe("XPathError");
+      const root = yield* Stream.make(sheet(`<head n="1"/>${rows(2)}`)).pipe(
         Sax.tokenize(),
         Xsd.select(model, "/s:sheet", ns),
         Stream.runCollect,
-      ),
-    );
-    // Selecting the document element emits the whole value.
-    expect(record(root[0] ?? Option.none())).toEqual({
-      title: "T",
-      head: { n: 1 },
-      row: [
-        { r: 1, c: [0, 0] },
-        { r: 2, c: [1, 1] },
-      ],
-    });
-  });
-
-  test("the parent's array stays empty and a single child is left out", () => {
-    const parser = Xsd.parser(model, "{urn:s}sheet");
-    const doc = sheet(`<head n="1"/>${rows(2)}`);
-    const run = <A>(path: string, of: Schema.Codec<A>) =>
-      Effect.runSync(
-        Stream.make(doc).pipe(Sax.tokenize(), parser.stream(path, of, ns), Stream.runCollect),
       );
-    // A schema may describe part of a value: `c` is dropped.
-    const row = Schema.Struct({ r: Schema.Int });
-    expect(run("s:sheet/s:row", row)).toEqual([{ r: 1 }, { r: 2 }]);
-    expect(run("s:sheet/s:head", Schema.Struct({ n: Schema.Int }))).toEqual([{ n: 1 }]);
-  });
+      // Selecting the document element emits the whole value.
+      expect(record(root[0] ?? Option.none())).toEqual({
+        title: "T",
+        head: { n: 1 },
+        row: [
+          { r: 1, c: [0, 0] },
+          { r: 2, c: [1, 1] },
+        ],
+      });
+    }),
+  );
 
-  test("fails at the first violation, after emitting what came before it", () => {
-    const seen: Array<Xsd.XsdValue> = [];
-    const failed = Effect.runSync(
-      Effect.flip(
+  it.effect("the parent's array stays empty and a single child is left out", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const parser = Xsd.parser(model, "{urn:s}sheet");
+      const doc = sheet(`<head n="1"/>${rows(2)}`);
+      const run = <A>(path: string, of: Schema.Codec<A>) =>
+        Stream.make(doc).pipe(Sax.tokenize(), parser.stream(path, of, ns), Stream.runCollect);
+      // A schema may describe part of a value: `c` is dropped.
+      expect(yield* run("s:sheet/s:row", Schema.Struct({ r: Schema.Int }))).toEqual([
+        { r: 1 },
+        { r: 2 },
+      ]);
+      expect(yield* run("s:sheet/s:head", Schema.Struct({ n: Schema.Int }))).toEqual([{ n: 1 }]);
+    }),
+  );
+
+  it.effect("fails at the first violation, after emitting what came before it", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const seen: Array<Xsd.XsdValue> = [];
+      const failed = yield* Effect.flip(
         Stream.make(sheet(`${rows(2)}<row r="x"/>${rows(2)}`)).pipe(
           Sax.tokenize(),
           Xsd.select(model, "/s:sheet/s:row", ns),
           Stream.runForEach((v) => Effect.sync(() => seen.push(v))),
         ),
-      ),
-    );
-    expect(failed._tag).toBe("XsdValidationError");
-    expect(seen).toHaveLength(2);
-  });
+      );
+      expect(failed._tag).toBe("XsdValidationError");
+      expect(seen).toHaveLength(2);
+    }),
+  );
 
-  test("the root option applies", () => {
-    const failed = Effect.runSync(
-      Effect.flip(
+  it.effect("the root option applies", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const failed = yield* Effect.flip(
         Stream.make(sheet(rows(1))).pipe(
           Sax.tokenize(),
           Xsd.select(model, "//s:row", { ...ns, root: "{urn:s}keyed" }),
           Stream.runDrain,
         ),
-      ),
-    );
-    expect(failed._tag).toBe("XsdValidationError");
-  });
+      );
+      expect(failed._tag).toBe("XsdValidationError");
+    }),
+  );
 
-  test("elements in an identity-constraint scope are emitted when it closes", () => {
-    const doc = `<keyed xmlns="urn:s"><group><item id="1"/><item id="2"/></group><group><item id="3"/><item id="3"/></group></keyed>`;
-    const seen: Array<Xsd.XsdValue> = [];
-    const failed = Effect.runSync(
-      Effect.flip(
+  it.effect("elements in an identity-constraint scope are emitted when it closes", () =>
+    Effect.gen(function* () {
+      const model = yield* modelFx;
+      const doc = `<keyed xmlns="urn:s"><group><item id="1"/><item id="2"/></group><group><item id="3"/><item id="3"/></group></keyed>`;
+      const seen: Array<Xsd.XsdValue> = [];
+      const failed = yield* Effect.flip(
         Stream.make(doc).pipe(
           Sax.tokenize(),
           Xsd.select(model, "//s:item", ns),
           Stream.runForEach((v) => Effect.sync(() => seen.push(v))),
         ),
-      ),
-    );
-    expect(failed._tag).toBe("XsdValidationError");
-    // The first group's items were released when it closed; the second's never were.
-    expect(seen).toEqual([{ id: 1 }, { id: 2 }]);
-  });
+      );
+      expect(failed._tag).toBe("XsdValidationError");
+      // The first group's items were released when it closed; the second's never were.
+      expect(seen).toEqual([{ id: 1 }, { id: 2 }]);
+    }),
+  );
 
-  test("an invalid or unstreamable path fails the stream", () => {
-    expect(fail("s:sheet/s:row[1]")._tag).toBe("XPathError");
-    expect(fail("s:sheet/(")._tag).toBe("XPathError");
-  });
+  it.effect("an invalid or unstreamable path fails the stream", () =>
+    Effect.gen(function* () {
+      expect((yield* fail("s:sheet/s:row[1]"))._tag).toBe("XPathError");
+      expect((yield* fail("s:sheet/("))._tag).toBe("XPathError");
+    }),
+  );
 });
 
 describe("Xsd.generate", () => {
-  const model = compile(
+  const modelFx = compile(
     schema(
       `<xs:simpleType name="Colour"><xs:restriction base="xs:token">
          <xs:enumeration value="red"/><xs:enumeration value="blue"/></xs:restriction></xs:simpleType>
@@ -1015,44 +1202,50 @@ describe("Xsd.generate", () => {
       `targetNamespace="urn:t" xmlns:t="urn:t"`,
     ),
   );
-  const source = Effect.runSync(Xsd.generate(model, { importFrom: "pkg" }));
-
-  test("schemas, their types, the model and parsers", () => {
-    expect(source).toContain(`import * as Schema from "effect/Schema";`);
-    expect(source).toContain(`import { Xml, Xsd } from "pkg";`);
-    // The types are the schemas' types, so no type-only import is needed.
-    expect(source).not.toContain(`import type`);
-    expect(source).toContain(`export const Colour = Schema.Literals(["red", "blue"]);`);
-    expect(source).toContain(`export type Colour = typeof Colour.Type;`);
-    expect(source).toContain(
-      `export const Base = Schema.Struct({\n  /** The attribute id. */\n  "id": Schema.BigInt,\n});`,
-    );
-    expect(source).toContain(`export type Base = typeof Base.Type;`);
-    expect(source).toContain(`  "price": Schema.BigDecimal,`);
-    expect(source).toContain(`  "colour": Schema.Array(Colour),`);
-    expect(source).toContain(`  "first-name": Schema.optionalKey(Schema.String),`);
-    expect(source).toContain(`  "$any": Schema.Array(Schema.toType(Xml.XmlElement)),`);
-    expect(source).toContain(`export const model: Xsd.Model = {`);
-    // `model` is taken by the module itself, so the parser for <model> is
-    // numbered; the derived type comes first in the union, as the base's
-    // schema would take its values too.
-    expect(source).toContain(
-      `export const model2 = Xsd.parser(model, "{urn:t}model", Schema.Option(Schema.Union([Schema.Struct({ ...Derived.fields, "$type": Schema.Literal("{urn:t}Derived") }), Base])));`,
-    );
-    // A root with repeated children gets a stream for each.
-    expect(source).toContain(
-      [
-        `export const thing = Xsd.parser(model, "{urn:t}thing", Thing, {`,
-        `  /** Streams the <colour> children (colour). */`,
-        `  colour: { element: "colour", schema: Colour },`,
-        `});`,
-      ].join("\n"),
-    );
+  const sourceFx = Effect.fn("sourceFx")(function* () {
+    return yield* Xsd.generate(yield* modelFx, { importFrom: "pkg" });
   });
 
-  test("enumerations become literal unions where they can", () => {
-    const enums = compile(
-      schema(`
+  it.effect("schemas, their types, the model and parsers", () =>
+    Effect.gen(function* () {
+      const source = yield* sourceFx();
+      expect(source).toContain(`import * as Schema from "effect/Schema";`);
+      expect(source).toContain(`import { Xml, Xsd } from "pkg";`);
+      // The types are the schemas' types, so no type-only import is needed.
+      expect(source).not.toContain(`import type`);
+      expect(source).toContain(`export const Colour = Schema.Literals(["red", "blue"]);`);
+      expect(source).toContain(`export type Colour = typeof Colour.Type;`);
+      expect(source).toContain(
+        `export const Base = Schema.Struct({\n  /** The attribute id. */\n  "id": Schema.BigInt,\n});`,
+      );
+      expect(source).toContain(`export type Base = typeof Base.Type;`);
+      expect(source).toContain(`  "price": Schema.BigDecimal,`);
+      expect(source).toContain(`  "colour": Schema.Array(Colour),`);
+      expect(source).toContain(`  "first-name": Schema.optionalKey(Schema.String),`);
+      expect(source).toContain(`  "$any": Schema.Array(Schema.toType(Xml.XmlElement)),`);
+      expect(source).toContain(`export const model: Xsd.Model = {`);
+      // `model` is taken by the module itself, so the parser for <model> is
+      // numbered; the derived type comes first in the union, as the base's
+      // schema would take its values too.
+      expect(source).toContain(
+        `export const model2 = Xsd.parser(model, "{urn:t}model", Schema.Option(Schema.Union([Schema.Struct({ ...Derived.fields, "$type": Schema.Literal("{urn:t}Derived") }), Base])));`,
+      );
+      // A root with repeated children gets a stream for each.
+      expect(source).toContain(
+        [
+          `export const thing = Xsd.parser(model, "{urn:t}thing", Thing, {`,
+          `  /** Streams the <colour> children (colour). */`,
+          `  colour: { element: "colour", schema: Colour },`,
+          `});`,
+        ].join("\n"),
+      );
+    }),
+  );
+
+  it.effect("enumerations become literal unions where they can", () =>
+    Effect.gen(function* () {
+      const enums = yield* compile(
+        schema(`
         <xs:simpleType name="Level"><xs:restriction base="xs:int"><xs:enumeration value="1"/><xs:enumeration value="+2"/></xs:restriction></xs:simpleType>
         <xs:simpleType name="Big"><xs:restriction base="xs:integer"><xs:enumeration value="+10"/></xs:restriction></xs:simpleType>
         <xs:simpleType name="Yes"><xs:restriction base="xs:boolean"><xs:enumeration value="1"/></xs:restriction></xs:simpleType>
@@ -1062,37 +1255,42 @@ describe("Xsd.generate", () => {
         <xs:simpleType name="Words"><xs:list itemType="Spaced"/></xs:simpleType>
         <xs:simpleType name="Either"><xs:union memberTypes="Level Yes"/></xs:simpleType>
         <xs:simpleType name="Mixed"><xs:union memberTypes="Level xs:double"/></xs:simpleType>`),
-    );
-    const out = Effect.runSync(Xsd.generate(enums));
-    expect(out).toContain(`export const Level = Schema.Literals([1, 2]);`);
-    expect(out).toContain(`export const Big = Schema.Literal(10n);`);
-    expect(out).toContain(`export const Yes = Schema.Literal(true);`);
-    expect(out).toContain(`export const Day = Schema.Literal("2024-01-01");`);
-    expect(out).toContain(`export const Ratio = Schema.BigDecimal;`);
-    expect(out).toContain(`export const Spaced = Schema.Literal("a b");`);
-    expect(out).toContain(`export const Words = Schema.Array(Schema.Literal("a b"));`);
-    expect(out).toContain(`export const Either = Schema.Literals([1, 2, true]);`);
-    expect(out).toContain(
-      `export const Mixed = Schema.Union([Schema.Literals([1, 2]), Schema.Number]);`,
-    );
-  });
+      );
+      const out = yield* Xsd.generate(enums);
+      expect(out).toContain(`export const Level = Schema.Literals([1, 2]);`);
+      expect(out).toContain(`export const Big = Schema.Literal(10n);`);
+      expect(out).toContain(`export const Yes = Schema.Literal(true);`);
+      expect(out).toContain(`export const Day = Schema.Literal("2024-01-01");`);
+      expect(out).toContain(`export const Ratio = Schema.BigDecimal;`);
+      expect(out).toContain(`export const Spaced = Schema.Literal("a b");`);
+      expect(out).toContain(`export const Words = Schema.Array(Schema.Literal("a b"));`);
+      expect(out).toContain(`export const Either = Schema.Literals([1, 2, true]);`);
+      expect(out).toContain(
+        `export const Mixed = Schema.Union([Schema.Literals([1, 2]), Schema.Number]);`,
+      );
+    }),
+  );
 
-  test("an invalid model fails", () => {
-    const broken: Xsd.Model = {
-      elements: {},
-      attributes: {},
-      types: { T: { _tag: "SimpleType", name: "T", variety: "atomic", base: "Nope" } },
-    };
-    expect(Effect.runSync(Effect.flip(Xsd.generate(broken))).message).toContain("Nope");
-  });
+  it.effect("an invalid model fails", () =>
+    Effect.gen(function* () {
+      const broken: Xsd.Model = {
+        elements: {},
+        attributes: {},
+        types: { T: { _tag: "SimpleType", name: "T", variety: "atomic", base: "Nope" } },
+      };
+      expect((yield* Effect.flip(Xsd.generate(broken))).message).toContain("Nope");
+    }),
+  );
 
-  test("is deterministic", () => {
-    expect(
-      Effect.runSync(
-        Xsd.generate(compile(Effect.runSync(Effect.succeed(schema(`<xs:element name="x"/>`))))),
-      ),
-    ).toBe(Effect.runSync(Xsd.generate(compile(schema(`<xs:element name="x"/>`)))));
-  });
+  it.effect("is deterministic", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* Xsd.generate(
+          yield* compile(yield* Effect.succeed(schema(`<xs:element name="x"/>`))),
+        ),
+      ).toBe(yield* Xsd.generate(yield* compile(schema(`<xs:element name="x"/>`))));
+    }),
+  );
 });
 
 describe("the generated example (examples/xsd)", () => {
@@ -1104,18 +1302,21 @@ describe("the generated example (examples/xsd)", () => {
   const xsd = SOURCES["../examples/xsd/order.xsd"] ?? "";
   const generated = SOURCES["../examples/xsd/order.generated.ts"] ?? "";
 
-  test("is what the generator writes today", () => {
-    const model = compile(xsd);
-    const source = Effect.runSync(
-      Xsd.generate(model, { importFrom: "../../src/index.ts", source: "order.xsd" }),
-    );
-    // Regenerate with the CLI (packages/cli): effect-xml-xsd generate examples/xsd/order.xsd -o examples/xsd/order.generated.ts --import-from ../../src/index.ts
-    expect(source).toBe(generated);
-  });
+  it.effect("is what the generator writes today", () =>
+    Effect.gen(function* () {
+      const model = yield* compile(xsd);
+      const source = yield* Xsd.generate(model, {
+        importFrom: "../../src/index.ts",
+        source: "order.xsd",
+      });
+      // Regenerate with the CLI (packages/cli): effect-xml-xsd generate examples/xsd/order.xsd -o examples/xsd/order.generated.ts --import-from ../../src/index.ts
+      expect(source).toBe(generated);
+    }),
+  );
 
-  test("its parser produces the values its types describe", () => {
-    const order: Example.Order = Effect.runSync(
-      Example.order.parse(
+  it.effect("its parser produces the values its types describe", () =>
+    Effect.gen(function* () {
+      const order: Example.Order = yield* Example.order.parse(
         `<order xmlns="urn:example:order" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                 xmlns:x="urn:x" number="7" paid="1">
            <customer xsi:type="Person"><name>Ann</name></customer>
@@ -1123,56 +1324,58 @@ describe("the generated example (examples/xsd)", () => {
            <line id="a"><sku>ABC-0001</sku><quantity>2</quantity><price currency="EUR">1.5</price><note>n</note></line>
            <x:extra/>
          </order>`,
-      ),
-    );
-    expect(order.number).toBe(7);
-    expect(order.paid).toBe(true);
-    expect(order.customer).toEqual({ name: "Ann", $type: "{urn:example:order}Person" });
-    // Every type derived from the abstract Party is a Party.
-    const party: Example.Party = order.customer;
-    expect(party.name).toBe("Ann");
-    const [line] = order.line;
-    assert(line !== undefined);
-    expect(line.quantity).toBe(2n);
-    expect(line.price.currency).toBe("EUR");
-    expect(BigDecimal.format(line.price.$value)).toBe("1.5");
-    expect(Arr.map(order.$any, (e) => e.name.clark)).toEqual(["{urn:x}extra"]);
-  });
+      );
+      expect(order.number).toBe(7);
+      expect(order.paid).toBe(true);
+      expect(order.customer).toEqual({ name: "Ann", $type: "{urn:example:order}Person" });
+      // Every type derived from the abstract Party is a Party.
+      const party: Example.Party = order.customer;
+      expect(party.name).toBe("Ann");
+      const [line] = order.line;
+      assert(line !== undefined);
+      expect(line.quantity).toBe(2n);
+      expect(line.price.currency).toBe("EUR");
+      expect(BigDecimal.format(line.price.$value)).toBe("1.5");
+      expect(Arr.map(order.$any, (e) => e.name.clark)).toEqual(["{urn:x}extra"]);
+    }),
+  );
 
-  test("its parser streams the repeated children of the root", () => {
-    const lines = Effect.runSync(
-      Sax.tokenizeString(
+  it.effect("its parser streams the repeated children of the root", () =>
+    Effect.gen(function* () {
+      const lines = yield* Sax.tokenizeString(
         `<order xmlns="urn:example:order" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" number="1">
            <customer xsi:type="Person"><name>A</name></customer><placed>2026-01-01T00:00:00Z</placed>
            ${orderLine("a", 1)}${orderLine("b", 2)}</order>`,
-      ).pipe(Example.order.streams("line"), Stream.runCollect),
-    );
-    const typed: ReadonlyArray<Example.Line> = Array.from(lines);
-    expect(Arr.map(typed, (l) => [l.id, l.quantity])).toEqual([
-      ["a", 1n],
-      ["b", 2n],
-    ]);
-  });
+      ).pipe(Example.order.streams("line"), Stream.runCollect);
+      const typed: ReadonlyArray<Example.Line> = Array.from(lines);
+      expect(Arr.map(typed, (l) => [l.id, l.quantity])).toEqual([
+        ["a", 1n],
+        ["b", 2n],
+      ]);
+    }),
+  );
 
-  test("its unique constraint holds", () => {
-    const line = `<line id="ID"><sku>ABC-0001</sku><quantity>1</quantity><price>1</price></line>`;
-    const e = validation(
-      Effect.runSync(
-        Effect.flip(
+  it.effect("its unique constraint holds", () =>
+    Effect.gen(function* () {
+      const line = `<line id="ID"><sku>ABC-0001</sku><quantity>1</quantity><price>1</price></line>`;
+      const e = validation(
+        yield* Effect.flip(
           Example.order.parse(
             `<order xmlns="urn:example:order" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" number="1">
                <customer xsi:type="Person"><name>A</name></customer><placed>2026-01-01T00:00:00Z</placed>
                ${line.replace("ID", "a")}${line.replace("ID", "b")}</order>`,
           ),
         ),
-      ),
-    );
-    expect(e.rule).toBe("IdentityConstraint");
-  });
+      );
+      expect(e.rule).toBe("IdentityConstraint");
+    }),
+  );
 });
 
 const featuresDoc = (body: string, attributes = "") =>
   `<features xmlns="urn:features" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:o="urn:o" ${attributes}>${body}</features>`;
+
+const featuresTree = `<tree label="root"><node label="a"><node xsi:type="Weighted" weight="0.5"/></node></tree>`;
 
 describe("the generated features module (tests/xsd)", () => {
   const SOURCES = import.meta.glob<string>("./xsd/features.*", {
@@ -1182,60 +1385,66 @@ describe("the generated features module (tests/xsd)", () => {
   });
   const xsd = SOURCES["./xsd/features.xsd"] ?? "";
   const generated = SOURCES["./xsd/features.generated.ts"] ?? "";
-  const tree = `<tree label="root"><node label="a"><node xsi:type="Weighted" weight="0.5"/></node></tree>`;
 
-  test("is what the generator writes today", () => {
-    const source = Effect.runSync(
-      Xsd.generate(compile(xsd), { importFrom: "../../src/index.ts", source: "features.xsd" }),
-    );
-    // Regenerate with the CLI (packages/cli): effect-xml-xsd generate tests/xsd/features.xsd -o tests/xsd/features.generated.ts --import-from ../../src/index.ts
-    expect(source).toBe(generated);
-  });
+  it.effect("is what the generator writes today", () =>
+    Effect.gen(function* () {
+      const source = yield* Xsd.generate(yield* compile(xsd), {
+        importFrom: "../../src/index.ts",
+        source: "features.xsd",
+      });
+      // Regenerate with the CLI (packages/cli): effect-xml-xsd generate tests/xsd/features.xsd -o tests/xsd/features.generated.ts --import-from ../../src/index.ts
+      expect(source).toBe(generated);
+    }),
+  );
 
-  test("recursive types, substitution groups, nil, lists, unions, mixed content and wildcards", () => {
-    const parsed: Features.Features = Effect.runSync(
-      Features.features.parse(
-        featuresDoc(
-          `${tree}<item sku="i"/><item sku="j" xsi:type="Special"><reason>r</reason></item><special sku="s"><reason>q</reason></special>
-           <note xsi:nil="true"/><words> a  b </words><setting>2</setting><setting>true</setting>
-           <data>0aFF</data><prose>one <em>two</em> three</prose><extra><any>x</any></extra>`,
-          `o:flag="on"`,
-        ),
-      ),
-    );
-    const [inner] = parsed.tree.node;
-    assert(inner !== undefined);
-    expect(inner.label).toBe("a");
-    const [weighted] = inner.node;
-    assert(weighted !== undefined && "$type" in weighted);
-    expect(weighted.$type).toBe("{urn:features}Weighted");
-    expect(BigDecimal.format(weighted.weight)).toBe("0.5");
-    // A value of the derived type keeps its own properties.
-    expect(parsed.item).toEqual([
-      { sku: "i" },
-      { sku: "j", reason: "r", $type: "{urn:features}Special" },
-    ]);
-    expect(parsed.special).toEqual([{ sku: "s", reason: "q" }]);
-    expect(parsed.note).toEqual(Option.none());
-    expect(parsed.words).toEqual(["a", "b"]);
-    expect(parsed.setting).toEqual([2, true]);
-    expect(parsed.data).toEqual(new Uint8Array([0x0a, 0xff]));
-    expect(parsed.prose).toEqual({ em: ["two"], $text: "one  three" });
-    expect(parsed.$attributes).toEqual({ "{urn:o}flag": "on" });
-  });
+  it.effect(
+    "recursive types, substitution groups, nil, lists, unions, mixed content and wildcards",
+    () =>
+      Effect.gen(function* () {
+        const parsed: Features.Features = yield* Features.features.parse(
+          featuresDoc(
+            `${featuresTree}<item sku="i"/><item sku="j" xsi:type="Special"><reason>r</reason></item><special sku="s"><reason>q</reason></special>
+             <note xsi:nil="true"/><words> a  b </words><setting>2</setting><setting>true</setting>
+             <data>0aFF</data><prose>one <em>two</em> three</prose><extra><any>x</any></extra>`,
+            `o:flag="on"`,
+          ),
+        );
+        const [inner] = parsed.tree.node;
+        assert(inner !== undefined);
+        expect(inner.label).toBe("a");
+        const [weighted] = inner.node;
+        assert(weighted !== undefined && "$type" in weighted);
+        expect(weighted.$type).toBe("{urn:features}Weighted");
+        expect(BigDecimal.format(weighted.weight)).toBe("0.5");
+        // A value of the derived type keeps its own properties.
+        expect(parsed.item).toEqual([
+          { sku: "i" },
+          { sku: "j", reason: "r", $type: "{urn:features}Special" },
+        ]);
+        expect(parsed.special).toEqual([{ sku: "s", reason: "q" }]);
+        expect(parsed.note).toEqual(Option.none());
+        expect(parsed.words).toEqual(["a", "b"]);
+        expect(parsed.setting).toEqual([2, true]);
+        expect(parsed.data).toEqual(new Uint8Array([0x0a, 0xff]));
+        expect(parsed.prose).toEqual({ em: ["two"], $text: "one  three" });
+        expect(parsed.$attributes).toEqual({ "{urn:o}flag": "on" });
+      }),
+  );
 
-  test("a recursive type's parser and the streams of its children", () => {
-    const node: Features.Node = Effect.runSync(
-      Features.node.parse(`<node xmlns="urn:features"><node/><node label="b"/></node>`),
-    );
-    expect(node).toEqual({ node: [{ node: [] }, { label: "b", node: [] }] });
-    const settings: ReadonlyArray<Features.Setting> = Array.from(
-      Effect.runSync(
-        Sax.tokenizeString(
-          featuresDoc(`${tree}<item sku="i"/><words/><setting>1</setting><setting>false</setting>`),
+  it.effect("a recursive type's parser and the streams of its children", () =>
+    Effect.gen(function* () {
+      const node: Features.Node = yield* Features.node.parse(
+        `<node xmlns="urn:features"><node/><node label="b"/></node>`,
+      );
+      expect(node).toEqual({ node: [{ node: [] }, { label: "b", node: [] }] });
+      const settings: ReadonlyArray<Features.Setting> = Array.from(
+        yield* Sax.tokenizeString(
+          featuresDoc(
+            `${featuresTree}<item sku="i"/><words/><setting>1</setting><setting>false</setting>`,
+          ),
         ).pipe(Features.features.streams("setting"), Stream.runCollect),
-      ),
-    );
-    expect(settings).toEqual([1, false]);
-  });
+      );
+      expect(settings).toEqual([1, false]);
+    }),
+  );
 });

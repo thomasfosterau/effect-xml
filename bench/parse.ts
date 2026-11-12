@@ -25,9 +25,11 @@
  * `pnpm-workspace.yaml` and `pnpm-lock.yaml` afterwards) to include them.
  * None of them reports positions per event.
  */
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as Arr from "effect/Array";
-import * as Option from "effect/Option";
+import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -37,22 +39,22 @@ import { Html, Sax, Xml, Xsd, XQuery } from "../src/index.ts";
 const SML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const megabytes = Number(process.argv[2] ?? 8);
 
+/** One row of the worksheet: eight cells. */
+const rowOf = (r: number): string =>
+  `<row r="${r}" spans="1:8">${Arr.map(Arr.range(0, 7), (c) => {
+    const ref = `${String.fromCharCode(65 + c)}${r}`;
+    return c % 3 === 0
+      ? `<c r="${ref}" t="s"><v>${(r * 7 + c) % 1000}</v></c>`
+      : `<c r="${ref}" s="1"><v>${(r * c) / 7}</v></c>`;
+  }).join("")}</row>`;
+
+/** Whole rows, generated until their text reaches `bytes`. */
 const sheet = (bytes: number): string => {
-  const rows: Array<string> = [];
-  let size = 0;
-  for (let r = 1; size < bytes; r++) {
-    let row = `<row r="${r}" spans="1:8">`;
-    for (let c = 0; c < 8; c++) {
-      const ref = `${String.fromCharCode(65 + c)}${r}`;
-      row +=
-        c % 3 === 0
-          ? `<c r="${ref}" t="s"><v>${(r * 7 + c) % 1000}</v></c>`
-          : `<c r="${ref}" s="1"><v>${(r * c) / 7}</v></c>`;
-    }
-    row += "</row>";
-    rows.push(row);
-    size += row.length;
-  }
+  const rows = Arr.unfold({ r: 1, size: 0 }, ({ r, size }) => {
+    if (size >= bytes) return Option.none();
+    const row = rowOf(r);
+    return Option.some([row, { r: r + 1, size: size + row.length }] as const);
+  });
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="${SML}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${rows.join("")}</sheetData></worksheet>`;
 };
 
@@ -86,38 +88,71 @@ const input = sheet(megabytes * 1024 * 1024);
 const bytes = new TextEncoder().encode(input);
 const chunks = input.match(/[\s\S]{1,65536}/g) ?? [];
 
-const time = async (
-  name: string,
-  run: () => void | Promise<void>,
-  runs = 5,
-  size = input.length,
-) => {
-  await run(); // warm up
-  const samples: Array<number> = [];
-  for (let i = 0; i < runs; i++) {
-    const start = performance.now();
-    await run();
-    samples.push(performance.now() - start);
-  }
-  const median = Arr.sort(samples, Order.Number)[Math.floor(samples.length / 2)] ?? 0;
-  const mbps = size / 1024 / 1024 / (median / 1000);
-  console.log(
-    `${name.padEnd(36)} ${median.toFixed(0).padStart(6)} ms  ${mbps.toFixed(1).padStart(6)} MB/s`,
-  );
-};
+/** `body` under a DOCTYPE that declares an entity the body never references (#191). */
+const withEntity = (body: string) =>
+  body.replace("<worksheet", '<!DOCTYPE worksheet [<!ENTITY e "x">]>\n<worksheet');
+
+// `vpx bench/parse.ts 8 entity` times only the rows whose name contains the second argument.
+const only = Option.fromNullishOr(process.argv[3]);
+
+/** Runs `run` once to warm up, then `runs` times, and prints the median. */
+const time = <E>(name: string, run: Effect.Effect<unknown, E>, runs = 5, size = input.length) =>
+  Effect.gen(function* () {
+    if (Option.isSome(only) && !name.includes(only.value)) return;
+    yield* run; // warm up
+    const samples = yield* Effect.forEach(
+      Arr.range(1, runs),
+      () =>
+        Effect.gen(function* () {
+          const start = performance.now();
+          yield* run;
+          return performance.now() - start;
+        }),
+      { concurrency: 1 },
+    );
+    const median = Arr.sort(samples, Order.Number)[Math.floor(samples.length / 2)] ?? 0;
+    const mbps = size / 1024 / 1024 / (median / 1000);
+    yield* Console.log(
+      `${name.padEnd(36)} ${median.toFixed(0).padStart(6)} ms  ${mbps.toFixed(1).padStart(6)} MB/s`,
+    );
+  });
+
+/** A benchmark of a third-party parser's work, which is synchronous. */
+const timeSync = (name: string, run: () => void) => time(name, Effect.sync(run));
+
+/** A comparison parser that is not installed, so its benchmark is skipped. */
+class NotInstalled extends Schema.TaggedError<NotInstalled, { readonly brand: unique symbol }>()(
+  "NotInstalled",
+  {
+    pkg: Schema.String,
+  },
+) {}
 
 /**
  * A third-party parser the benchmark compares against, if it is installed:
  * `Module` is the slice of its exports the benchmark calls.
  */
-const optional = async <Module>(pkg: string): Promise<Option.Option<Module>> => {
-  try {
-    const module: Module = await import(pkg);
-    return Option.some(module);
-  } catch {
-    return Option.none();
-  }
-};
+const optional = <Module>(pkg: string): Effect.Effect<Option.Option<Module>> =>
+  Effect.option(
+    Effect.tryPromise({
+      try: (): Promise<Module> => import(pkg),
+      catch: () => new NotInstalled({ pkg }),
+    }),
+  );
+
+/** Benchmarks `run` against a comparison parser, when it is installed. */
+const compare = <Module>(
+  label: string,
+  installed: Effect.Effect<Option.Option<Module>>,
+  run: (module: Module) => void,
+) =>
+  Effect.flatMap(
+    installed,
+    Option.match({
+      onNone: () => Effect.void,
+      onSome: (module) => timeSync(label, () => run(module)),
+    }),
+  );
 
 type Handler = (...args: ReadonlyArray<unknown>) => void;
 
@@ -148,158 +183,14 @@ interface EksmlSaxModule {
   createSaxParser(options: { readonly entities: boolean }): Writable;
 }
 interface DomModule {
-  parse(input: string, options?: { readonly entities: boolean }): unknown;
+  parse(input: string, options?: { readonly entities: boolean }): void;
 }
 interface FxpModule {
   readonly XMLParser: new (options: { readonly ignoreAttributes: boolean }) => {
-    parse(input: string): unknown;
+    parse(input: string): void;
   };
 }
 
-console.log(`input: ${(input.length / 1024 / 1024).toFixed(1)} MB worksheet\n`);
-
-await time("effect-xml SAX (string)", () =>
-  Effect.runPromise(Sax.tokenizeString(input).pipe(Stream.runDrain)),
-);
-await time("effect-xml SAX (64 KiB chunks)", () =>
-  Effect.runPromise(Stream.fromIterable(chunks).pipe(Sax.tokenize(), Stream.runDrain)),
-);
-await time("effect-xml SAX (bytes)", () =>
-  Effect.runPromise(Stream.make(bytes).pipe(Sax.tokenizeBytes(), Stream.runDrain)),
-);
-await time("effect-xml SAX (dtd internal)", () =>
-  Effect.runPromise(Sax.tokenizeString(input, { dtd: "internal" }).pipe(Stream.runDrain)),
-);
-await time("effect-xml DOM (Xml.parse)", () => Effect.runPromise(Effect.asVoid(Xml.parse(input))));
-await time("effect-xml DOM (dtd internal)", () =>
-  Effect.runPromise(Effect.asVoid(Xml.parse(input, { dtd: "internal" }))),
-);
-// The worksheet with a DOCTYPE that declares entities, and references to
-// them: the DTD-aware grammars, which a document without one doesn't pay.
-const declared = input
-  .replaceAll('s="1"', 's="&s;"')
-  .replaceAll("<v>0</v>", "&sd;")
-  .replace(
-    "<worksheet",
-    '<!DOCTYPE worksheet [<!ENTITY s "1"><!ENTITY sd "<v>0</v>">]>\n<worksheet',
-  );
-await time("effect-xml DOM (DOCTYPE + entities)", () =>
-  Effect.runPromise(Effect.asVoid(Xml.parse(declared, { dtd: "internal" }))),
-);
-await time("effect-xml DOM (Xml.parse, recover)", () =>
-  Effect.runPromise(Effect.asVoid(Xml.parse(input, { recover: true }))),
-);
-await time("effect-xml rows (Sax.select)", () =>
-  Effect.runPromise(
-    Stream.make(input).pipe(
-      Sax.tokenize(),
-      Sax.select("//x:row", { namespaces: { x: SML } }),
-      Stream.runDrain,
-    ),
-  ),
-);
-
-const model = await Effect.runPromise(Xsd.compile(worksheetSchema));
-await time("effect-xml XSD events (Xsd.validate)", () =>
-  Effect.runPromise(
-    Stream.fromIterable(chunks).pipe(Sax.tokenize(), Xsd.validate(model), Stream.runDrain),
-  ),
-);
-await time("effect-xml XSD values (Xsd.parse)", () =>
-  Effect.runPromise(Effect.asVoid(Xsd.parse(model, input))),
-);
-// The schemas `Xsd.generate` writes for the worksheet: the same values,
-// decoded through them (one more pass over the value tree).
-const Cell = Schema.Struct({
-  r: Schema.optionalKey(Schema.String),
-  s: Schema.Int,
-  t: Schema.Literals(["b", "n", "e", "s", "str", "inlineStr"]),
-  v: Schema.optionalKey(Schema.String),
-});
-const Row = Schema.Struct({
-  r: Schema.optionalKey(Schema.Int),
-  spans: Schema.optionalKey(Schema.String),
-  c: Schema.Array(Cell),
-});
-const Worksheet = Schema.Struct({ sheetData: Schema.Struct({ row: Schema.Array(Row) }) });
-const worksheet = Xsd.parser(model, `{${SML}}worksheet`, Worksheet);
-await time("effect-xml XSD typed values (Xsd.parser)", () =>
-  Effect.runPromise(Effect.asVoid(worksheet.parse(input))),
-);
-
-// XPath over the parsed worksheet: the even rows' cell values. Compiled
-// once; each run evaluates it against a fresh XDM view of the same DOM (so
-// node handles are built during the run, as for a newly loaded document).
-const sheetDom = await Effect.runPromise(Xml.parse(input));
-const rowsQuery = await Effect.runPromise(
-  Effect.fromResult(
-    XQuery.XPath.compile("//x:row[@r mod 2 = 0]/x:c/x:v", { namespaces: { x: SML } }),
-  ),
-);
-await time("effect-xml XPath (XQuery.evaluate)", () =>
-  Effect.runPromise(
-    Effect.asVoid(XQuery.evaluate(rowsQuery, { context: XQuery.XdmNode.fromDocument(sheetDom) })),
-  ),
-);
-
-// The same queries streamed (`XQuery.stream` over the SAX events of 64 KiB
-// chunks, each row built and queried as it ends), against the DOM: parsing
-// the document and evaluating the query over it, as a caller without
-// streaming would.
-const rowsStream = await Effect.runPromise(Effect.fromResult(XQuery.compileStream(rowsQuery)));
-await time("effect-xml XQuery.stream (rows)", () =>
-  Effect.runPromise(
-    Stream.fromIterable(chunks).pipe(Sax.tokenize(), XQuery.stream(rowsStream), Stream.runDrain),
-  ),
-);
-await time("effect-xml XQuery DOM (rows)", () =>
-  Effect.runPromise(
-    Effect.asVoid(
-      Effect.flatMap(Xml.parse(input), (dom) => XQuery.evaluate(rowsQuery, { context: dom })),
-    ),
-  ),
-);
-const mapQuery = await Effect.runPromise(
-  Effect.fromResult(
-    XQuery.compile("//x:row ! map { 'r': string(@r), 'cells': array { x:c/x:v ! string() } }", {
-      namespaces: { x: SML },
-    }),
-  ),
-);
-const mapStream = await Effect.runPromise(Effect.fromResult(XQuery.compileStream(mapQuery)));
-await time("effect-xml XQuery.stream (row maps)", () =>
-  Effect.runPromise(
-    Stream.fromIterable(chunks).pipe(Sax.tokenize(), XQuery.stream(mapStream), Stream.runDrain),
-  ),
-);
-await time("effect-xml XQuery DOM (row maps)", () =>
-  Effect.runPromise(
-    Effect.asVoid(
-      Effect.flatMap(Xml.parse(input), (dom) => XQuery.evaluate(mapQuery, { context: dom })),
-    ),
-  ),
-);
-
-// Xml.XPath over the same DOM: a document-wide selection with an attribute
-// predicate, and small lookups compiled once and run from every row (the
-// shape of a configuration lookup, and of XSD identity-constraint fields).
-const cellsPath = Xml.XPath.compile("//x:row/x:c[@t = 's']/x:v", { namespaces: { x: SML } });
-const cellPath = Xml.XPath.compile("x:c[starts-with(@r, 'B')]/x:v", { namespaces: { x: SML } });
-const rowElements = sheetDom.root.elements.flatMap((data) => data.elements);
-if (Result.isSuccess(cellsPath) && Result.isSuccess(cellPath)) {
-  const cells = cellsPath.success;
-  const cell = cellPath.success;
-  await time("effect-xml XPath (Xml.XPath.select)", () => {
-    Xml.XPath.select(cells, sheetDom);
-  });
-  await time("effect-xml XPath lookups (per row)", () => {
-    for (const row of rowElements) Xml.XPath.first(cell, row);
-  });
-}
-
-// The worksheet again, against its schema with identity constraints: a key
-// over the rows' numbers and, in each row, unique cell references, so the
-// selectors and fields are evaluated once per row and once per cell.
 const keyedSchema = worksheetSchema
   .replace(
     `</xs:sequence></xs:complexType></xs:element>
@@ -315,19 +206,22 @@ const keyedSchema = worksheetSchema
         <xs:unique name="cell" xmlns:x="${SML}"><xs:selector xpath="x:c"/><xs:field xpath="@r"/></xs:unique>
       </xs:element>`,
   );
-const keyedModel = await Effect.runPromise(Xsd.compile(keyedSchema));
-await time("effect-xml XSD identity (Xsd.validate)", () =>
-  Effect.runPromise(
-    Stream.fromIterable(chunks).pipe(Sax.tokenize(), Xsd.validate(keyedModel), Stream.runDrain),
-  ),
-);
 
-// The same megabytes of a product catalog, against a schema that exercises
-// more of XML Schema than the worksheet's: an abstract head element whose
-// substitution group members are types derived by extension, a choice,
-// optional elements, simple content with attributes, a list type with a
-// length facet, a pattern, decimal range and digit facets, an enumeration,
-// dates, durations, and integer and dateTime attributes with defaults.
+// The schemas `Xsd.generate` writes for the worksheet: the same values,
+// decoded through them (one more pass over the value tree).
+const Cell = Schema.Struct({
+  r: Schema.optionalKey(Schema.String),
+  s: Schema.Int,
+  t: Schema.Literals(["b", "n", "e", "s", "str", "inlineStr"]),
+  v: Schema.optionalKey(Schema.String),
+});
+const Row = Schema.Struct({
+  r: Schema.optionalKey(Schema.Int),
+  spans: Schema.optionalKey(Schema.String),
+  c: Schema.Array(Cell),
+});
+const Worksheet = Schema.Struct({ sheetData: Schema.Struct({ row: Schema.Array(Row) }) });
+
 const CAT = "urn:example:catalog";
 const catalogSchema = `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="${CAT}" targetNamespace="${CAT}" elementFormDefault="qualified">
   <xs:simpleType name="Sku"><xs:restriction base="xs:token"><xs:pattern value="[A-Z]{3}-\\d{4}"/></xs:restriction></xs:simpleType>
@@ -357,34 +251,29 @@ const catalogSchema = `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xm
     <xs:element ref="product" maxOccurs="unbounded"/>
   </xs:sequence><xs:attribute name="updated" type="xs:dateTime"/></xs:complexType></xs:element>
 </xs:schema>`;
-const catalog = ((): string => {
-  const items: Array<string> = [];
-  let size = 0;
-  for (let n = 0; size < megabytes * 1024 * 1024; n++) {
-    const sku = `${String.fromCharCode(65 + (n % 26), 65 + ((n >> 3) % 26), 65 + ((n >> 6) % 26))}-${String(n % 10000).padStart(4, "0")}`;
-    const released =
-      n % 2 === 0
-        ? ""
-        : `<released>20${String(n % 25).padStart(2, "0")}-0${(n % 9) + 1}-1${n % 10}</released>`;
-    const common = `<title>Item ${n} &amp; co</title><price>${(n % 997) + 0.25}</price>${released}<tags>t${n % 7} new sale</tags>`;
-    const item =
-      n % 3 === 0
-        ? `<disc sku="${sku}" rating="${["G", "PG", "M", "R"][n % 4]}">${common}` +
-          `<track n="1">PT3M${n % 60}S</track><track n="2">PT4M1S</track><track n="3">PT2M59.5S</track></disc>`
-        : `<book sku="${sku}" stock="${n % 50}" pages="${(n % 900) + 1}">${common}` +
-          `<isbn>978-0-${n}</isbn><author>A. Writer</author><author>B. Other</author></book>`;
-    items.push(item);
-    size += item.length;
-  }
+/** One product of the catalog, a book or a disc by turns. */
+const itemOf = (n: number): string => {
+  const sku = `${String.fromCharCode(65 + (n % 26), 65 + ((n >> 3) % 26), 65 + ((n >> 6) % 26))}-${String(n % 10000).padStart(4, "0")}`;
+  const released =
+    n % 2 === 0
+      ? ""
+      : `<released>20${String(n % 25).padStart(2, "0")}-0${(n % 9) + 1}-1${n % 10}</released>`;
+  const common = `<title>Item ${n} &amp; co</title><price>${(n % 997) + 0.25}</price>${released}<tags>t${n % 7} new sale</tags>`;
+  return n % 3 === 0
+    ? `<disc sku="${sku}" rating="${["G", "PG", "M", "R"][n % 4]}">${common}` +
+        `<track n="1">PT3M${n % 60}S</track><track n="2">PT4M1S</track><track n="3">PT2M59.5S</track></disc>`
+    : `<book sku="${sku}" stock="${n % 50}" pages="${(n % 900) + 1}">${common}` +
+        `<isbn>978-0-${n}</isbn><author>A. Writer</author><author>B. Other</author></book>`;
+};
+
+const catalogOf = (): string => {
+  const items = Arr.unfold({ n: 0, size: 0 }, ({ n, size }) => {
+    if (size >= megabytes * 1024 * 1024) return Option.none();
+    const item = itemOf(n);
+    return Option.some([item, { n: n + 1, size: size + item.length }] as const);
+  });
   return `<?xml version="1.0"?>\n<catalog xmlns="${CAT}" updated="2026-11-04T12:00:00Z">${items.join("")}</catalog>`;
-})();
-const catalogModel = await Effect.runPromise(Xsd.compile(catalogSchema));
-await time(
-  "effect-xml XSD catalog (Xsd.parse)",
-  () => Effect.runPromise(Effect.asVoid(Xsd.parse(catalogModel, catalog))),
-  5,
-  catalog.length,
-);
+};
 // The catalog's generated schemas, as for the worksheet.
 const productFields = {
   sku: Schema.String,
@@ -394,30 +283,26 @@ const productFields = {
   released: Schema.optionalKey(Schema.String),
   tags: Schema.optionalKey(Schema.Array(Schema.String)),
 };
-const Book = Schema.Struct({
-  ...productFields,
-  pages: Schema.optionalKey(Schema.BigInt),
-  isbn: Schema.optionalKey(Schema.String),
-  issn: Schema.optionalKey(Schema.String),
-  author: Schema.Array(Schema.String),
-});
-const Disc = Schema.Struct({
-  ...productFields,
-  rating: Schema.optionalKey(Schema.Literals(["G", "PG", "M", "R"])),
-  track: Schema.Array(Schema.Struct({ n: Schema.Int, $value: Schema.String })),
-});
 const Catalog = Schema.Struct({
   updated: Schema.optionalKey(Schema.String),
-  book: Schema.Array(Book),
-  disc: Schema.Array(Disc),
+  book: Schema.Array(
+    Schema.Struct({
+      ...productFields,
+      pages: Schema.optionalKey(Schema.BigInt),
+      isbn: Schema.optionalKey(Schema.String),
+      issn: Schema.optionalKey(Schema.String),
+      author: Schema.Array(Schema.String),
+    }),
+  ),
+  disc: Schema.Array(
+    Schema.Struct({
+      ...productFields,
+      rating: Schema.optionalKey(Schema.Literals(["G", "PG", "M", "R"])),
+      track: Schema.Array(Schema.Struct({ n: Schema.Int, $value: Schema.String })),
+    }),
+  ),
 });
-const catalogParser = Xsd.parser(catalogModel, `{${CAT}}catalog`, Catalog);
-await time(
-  "effect-xml XSD catalog typed (Xsd.parser)",
-  () => Effect.runPromise(Effect.asVoid(catalogParser.parse(catalog))),
-  5,
-  catalog.length,
-);
+const catalog = catalogOf();
 
 // The same megabytes of HTML: a block that runs the adoption agency
 // (misnested <b>/<i>), implied end tags (<p>, <td>), table insertion modes,
@@ -426,92 +311,215 @@ const htmlBlock = (n: number): string =>
   `<div class="x"><p>Hello <b>world <i>${n}</b> &amp; more</i></p>` +
   `<table><tr><td>x<td>y</table><svg><rect/></svg></div>\r\n`;
 const html = ((): string => {
-  const blocks: Array<string> = [];
-  let size = 0;
-  for (let n = 0; size < megabytes * 1024 * 1024; n++) {
+  const blocks = Arr.unfold({ n: 0, size: 0 }, ({ n, size }) => {
+    if (size >= megabytes * 1024 * 1024) return Option.none();
     const block = htmlBlock(n);
-    blocks.push(block);
-    size += block.length;
-  }
+    return Option.some([block, { n: n + 1, size: size + block.length }] as const);
+  });
   return `<!DOCTYPE html><html><head><title>bench</title></head><body>${blocks.join("")}</body></html>`;
 })();
-console.log("");
-await time(
-  "effect-xml HTML (Html.parseDocument)",
-  () => Effect.runPromise(Effect.asVoid(Html.parseDocument(html))),
-  5,
-  html.length,
-);
-await time(
-  "effect-xml HTML (Html.parseFragment)",
-  () => Effect.runPromise(Effect.asVoid(Html.parseFragment(html))),
-  5,
-  html.length,
-);
 
-const saxes = await optional<SaxesModule>("saxes");
-if (Option.isSome(saxes)) {
-  await time("saxes (SAX)", () => {
-    const p = new saxes.value.SaxesParser({ xmlns: true });
-    p.on("opentag", () => {});
-    p.on("text", () => {});
-    p.write(input).close();
-  });
-}
-const sax = await optional<SaxModule>("sax");
-if (Option.isSome(sax)) {
-  await time("sax (SAX)", () => {
-    const p = sax.value.parser(true, { xmlns: true });
-    p.onopentag = () => {};
-    p.write(input).close();
-  });
-}
-const htmlparser2 = await optional<Htmlparser2Module>("htmlparser2");
-if (Option.isSome(htmlparser2)) {
-  await time("htmlparser2 (SAX, xmlMode)", () => {
-    const p = new htmlparser2.value.Parser(
-      { onopentag: () => {}, ontext: () => {} },
-      { xmlMode: true },
+const main = Effect.fn("bench")(function* () {
+  yield* Console.log(`input: ${(input.length / 1024 / 1024).toFixed(1)} MB worksheet\n`);
+
+  yield* time("effect-xml SAX (string)", Sax.tokenizeString(input).pipe(Stream.runDrain));
+  yield* time(
+    "effect-xml SAX (64 KiB chunks)",
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), Stream.runDrain),
+  );
+  yield* time(
+    "effect-xml SAX (bytes)",
+    Stream.make(bytes).pipe(Sax.tokenizeBytes(), Stream.runDrain),
+  );
+  yield* time(
+    "effect-xml SAX (dtd internal)",
+    Sax.tokenizeString(input, { dtd: "internal" }).pipe(Stream.runDrain),
+  );
+  yield* time("effect-xml DOM (Xml.parse)", Xml.parse(input));
+  yield* time("effect-xml DOM (dtd internal)", Xml.parse(input, { dtd: "internal" }));
+  // The worksheet with a DOCTYPE that declares entities, and references to
+  // them: the DTD-aware grammars, which a document without one doesn't pay.
+  const declared = input
+    .replaceAll('s="1"', 's="&s;"')
+    .replaceAll("<v>0</v>", "&sd;")
+    .replace(
+      "<worksheet",
+      '<!DOCTYPE worksheet [<!ENTITY s "1"><!ENTITY sd "<v>0</v>">]>\n<worksheet',
     );
-    p.write(input);
-    p.end();
-  });
-}
-const easysax = await optional<EasysaxModule>("easysax");
-if (Option.isSome(easysax)) {
-  await time("easysax (SAX)", () => {
-    const p = new easysax.value.default();
-    p.on("startNode", () => {});
-    p.on("textNode", () => {});
-    p.write(input);
-    p.end();
-  });
-}
-const eksmlSax = await optional<EksmlSaxModule>("@eksml/xml/sax");
-if (Option.isSome(eksmlSax)) {
-  await time("@eksml/xml (SAX)", () => {
-    const p = eksmlSax.value.createSaxParser({ entities: true });
-    p.on("openTag", () => {});
-    p.on("text", () => {});
-    p.write(input);
-    p.close();
-  });
-}
-const eksml = await optional<DomModule>("@eksml/xml/parser");
-if (Option.isSome(eksml)) {
-  await time("@eksml/xml (DOM)", () => {
-    eksml.value.parse(input, { entities: true });
-  });
-}
-const txml = await optional<DomModule>("txml");
-if (Option.isSome(txml)) {
-  await time("txml (DOM)", () => {
-    txml.value.parse(input);
-  });
-}
-const fxp = await optional<FxpModule>("fast-xml-parser");
-if (Option.isSome(fxp)) {
-  await time("fast-xml-parser (DOM)", () => {
-    new fxp.value.XMLParser({ ignoreAttributes: false }).parse(input);
-  });
-}
+  yield* time("effect-xml DOM (DOCTYPE + entities)", Xml.parse(declared, { dtd: "internal" }));
+  // A DOCTYPE that declares an entity the body never references, read whole:
+  // the DTD-aware text grammar over one large string (#191). The sizes show it
+  // is linear.
+  const entityDoc = withEntity(input);
+  yield* time(
+    "effect-xml Sax.forEach (entity)",
+    Sax.forEach(entityDoc, () => {}, { dtd: "internal" }),
+  );
+  yield* time("effect-xml DOM (entity, whole)", Xml.parse(entityDoc, { dtd: "internal" }));
+  yield* Effect.forEach(
+    [1, 2, 4, 8],
+    (mb) => {
+      const doc = withEntity(sheet(mb * 1024 * 1024));
+      return time(
+        `effect-xml Sax.forEach (entity, ${mb} MB)`,
+        Sax.forEach(doc, () => {}, { dtd: "internal" }),
+        5,
+        doc.length,
+      );
+    },
+    { concurrency: 1 },
+  );
+  yield* time("effect-xml DOM (Xml.parse, recover)", Xml.parse(input, { recover: true }));
+  yield* time(
+    "effect-xml rows (Sax.select)",
+    Stream.make(input).pipe(
+      Sax.tokenize(),
+      Sax.select("//x:row", { namespaces: { x: SML } }),
+      Stream.runDrain,
+    ),
+  );
+
+  const model = yield* Xsd.compile(worksheetSchema);
+  yield* time(
+    "effect-xml XSD events (Xsd.validate)",
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), Xsd.validate(model), Stream.runDrain),
+  );
+  yield* time("effect-xml XSD values (Xsd.parse)", Xsd.parse(model, input));
+  yield* time(
+    "effect-xml XSD typed values (Xsd.parser)",
+    Xsd.parser(model, `{${SML}}worksheet`, Worksheet).parse(input),
+  );
+
+  // XPath over the parsed worksheet: the even rows' cell values. Compiled
+  // once; each run evaluates it against a fresh XDM view of the same DOM (so
+  // node handles are built during the run, as for a newly loaded document).
+  const sheetDom = yield* Xml.parse(input);
+  const rowsQuery = yield* Effect.fromResult(
+    XQuery.XPath.compile("//x:row[@r mod 2 = 0]/x:c/x:v", { namespaces: { x: SML } }),
+  );
+  yield* time(
+    "effect-xml XPath (XQuery.evaluate)",
+    Effect.suspend(() =>
+      XQuery.evaluate(rowsQuery, { context: XQuery.XdmNode.fromDocument(sheetDom) }),
+    ),
+  );
+
+  // The same queries streamed (`XQuery.stream` over the SAX events of 64 KiB
+  // chunks, each row built and queried as it ends), against the DOM: parsing
+  // the document and evaluating the query over it, as a caller without
+  // streaming would.
+  const rowsStream = yield* Effect.fromResult(XQuery.compileStream(rowsQuery));
+  yield* time(
+    "effect-xml XQuery.stream (rows)",
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), XQuery.stream(rowsStream), Stream.runDrain),
+  );
+  yield* time(
+    "effect-xml XQuery DOM (rows)",
+    Effect.flatMap(Xml.parse(input), (dom) => XQuery.evaluate(rowsQuery, { context: dom })),
+  );
+  const mapQuery = yield* Effect.fromResult(
+    XQuery.compile("//x:row ! map { 'r': string(@r), 'cells': array { x:c/x:v ! string() } }", {
+      namespaces: { x: SML },
+    }),
+  );
+  const mapStream = yield* Effect.fromResult(XQuery.compileStream(mapQuery));
+  yield* time(
+    "effect-xml XQuery.stream (row maps)",
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), XQuery.stream(mapStream), Stream.runDrain),
+  );
+  yield* time(
+    "effect-xml XQuery DOM (row maps)",
+    Effect.flatMap(Xml.parse(input), (dom) => XQuery.evaluate(mapQuery, { context: dom })),
+  );
+
+  // Xml.XPath over the same DOM: a document-wide selection with an attribute
+  // predicate, and small lookups compiled once and run from every row (the
+  // shape of a configuration lookup, and of XSD identity-constraint fields).
+  const cellsPath = Xml.XPath.compile("//x:row/x:c[@t = 's']/x:v", { namespaces: { x: SML } });
+  const cellPath = Xml.XPath.compile("x:c[starts-with(@r, 'B')]/x:v", { namespaces: { x: SML } });
+  const rowElements = sheetDom.root.elements.flatMap((data) => data.elements);
+  if (Result.isSuccess(cellsPath) && Result.isSuccess(cellPath)) {
+    const cells = cellsPath.success;
+    const cell = cellPath.success;
+    yield* timeSync("effect-xml XPath (Xml.XPath.select)", () => {
+      Xml.XPath.select(cells, sheetDom);
+    });
+    yield* timeSync("effect-xml XPath lookups (per row)", () => {
+      Arr.forEach(rowElements, (row) => Xml.XPath.first(cell, row));
+    });
+  }
+
+  // The worksheet again, against its schema with identity constraints: a key
+  // over the rows' numbers and, in each row, unique cell references, so the
+  // selectors and fields are evaluated once per row and once per cell.
+  const keyedModel = yield* Xsd.compile(keyedSchema);
+  yield* time(
+    "effect-xml XSD identity (Xsd.validate)",
+    Stream.fromIterable(chunks).pipe(Sax.tokenize(), Xsd.validate(keyedModel), Stream.runDrain),
+  );
+
+  const catalogModel = yield* Xsd.compile(catalogSchema);
+  yield* time(
+    "effect-xml XSD catalog (Xsd.parse)",
+    Xsd.parse(catalogModel, catalog),
+    5,
+    catalog.length,
+  );
+  yield* time(
+    "effect-xml XSD catalog typed (Xsd.parser)",
+    Xsd.parser(catalogModel, `{${CAT}}catalog`, Catalog).parse(catalog),
+    5,
+    catalog.length,
+  );
+
+  yield* Console.log("");
+  yield* time("effect-xml HTML (Html.parseDocument)", Html.parseDocument(html), 5, html.length);
+  yield* time("effect-xml HTML (Html.parseFragment)", Html.parseFragment(html), 5, html.length);
+
+  yield* Effect.all(
+    [
+      compare("saxes (SAX)", optional<SaxesModule>("saxes"), (m) => {
+        const p = new m.SaxesParser({ xmlns: true });
+        p.on("opentag", () => {});
+        p.on("text", () => {});
+        p.write(input).close();
+      }),
+      compare("sax (SAX)", optional<SaxModule>("sax"), (m) => {
+        const p = m.parser(true, { xmlns: true });
+        p.onopentag = () => {};
+        p.write(input).close();
+      }),
+      compare("htmlparser2 (SAX, xmlMode)", optional<Htmlparser2Module>("htmlparser2"), (m) => {
+        const p = new m.Parser({ onopentag: () => {}, ontext: () => {} }, { xmlMode: true });
+        p.write(input);
+        p.end();
+      }),
+      compare("easysax (SAX)", optional<EasysaxModule>("easysax"), (m) => {
+        const p = new m.default();
+        p.on("startNode", () => {});
+        p.on("textNode", () => {});
+        p.write(input);
+        p.end();
+      }),
+      compare("@eksml/xml (SAX)", optional<EksmlSaxModule>("@eksml/xml/sax"), (m) => {
+        const p = m.createSaxParser({ entities: true });
+        p.on("openTag", () => {});
+        p.on("text", () => {});
+        p.write(input);
+        p.close();
+      }),
+      compare("@eksml/xml (DOM)", optional<DomModule>("@eksml/xml/parser"), (m) => {
+        m.parse(input, { entities: true });
+      }),
+      compare("txml (DOM)", optional<DomModule>("txml"), (m) => {
+        m.parse(input);
+      }),
+      compare("fast-xml-parser (DOM)", optional<FxpModule>("fast-xml-parser"), (m) => {
+        new m.XMLParser({ ignoreAttributes: false }).parse(input);
+      }),
+    ],
+    { concurrency: 1, discard: true },
+  );
+});
+
+NodeRuntime.runMain(main());

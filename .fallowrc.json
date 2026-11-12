@@ -12,13 +12,18 @@
     "packages/cli/src/main.ts",
     "packages/cli/tests/**/*.test.ts",
     "packages/cli/vite.config.ts",
-    "bench/parse.ts",
-    "bench/size.ts",
     "vite.config.ts"
   ],
+  "supportEntry": ["bench/parse.ts", "bench/size.ts"],
   "ignoreExports": [
-    { "file": "src/Xsd/Validate.ts", "exports": ["select"] },
-    { "file": "{examples,tests}/xsd/*.generated.ts", "exports": ["*"] }
+    {
+      "file": "src/Xsd/Validate.ts",
+      "exports": ["select"]
+    },
+    {
+      "file": "{examples,tests}/xsd/*.generated.ts",
+      "exports": ["*"]
+    }
   ],
   "duplicates": { "ignore": ["{examples,tests}/xsd/*.generated.ts"] },
   "ignorePatterns": ["**/dist/**", "**/docs/**", "**/coverage/**", "tests/fixtures/**"],

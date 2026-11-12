@@ -17,11 +17,11 @@
  * `QT3_REPORT=1` lists the disagreements and prints the counts as a new
  * baseline.
  */
-import { afterAll, describe, expect, test } from "vite-plus/test";
+import { expect } from "vite-plus/test";
+import { layer } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as R from "effect/Record";
 import * as Result from "effect/Result";
@@ -279,65 +279,63 @@ const sum = (counts: Record<string, Counts>): Counts =>
     static: a.static + c.static,
   }));
 
-/** One runtime for the file's fixture services (the file system), provided once. */
-const runtime = ManagedRuntime.make(Fixtures.layer);
-afterAll(() => runtime.dispose());
-
-describe("W3C QT3 parse-only pass", () => {
-  test("meets the per-test-set parse baselines", async () => {
-    const started = performance.now();
-    const { baseline, results } = await runtime.runPromise(
+/**
+ * The file's fixture services (the file system), built once for the block.
+ * The report prints to the real console, so the test services are left out.
+ */
+layer(Fixtures.layer, { excludeTestServices: true })("W3C QT3 parse-only pass", (it) => {
+  it.effect(
+    "meets the per-test-set parse baselines",
+    () =>
       Effect.gen(function* () {
-        const want = yield* readBaseline;
+        const started = performance.now();
+        const baseline = yield* readBaseline;
         const sets = yield* readCatalog();
         const tests = sets.flatMap((s) => s.cases);
-        const verdicts = yield* Effect.forEach(
+        const results = yield* Effect.forEach(
           SPECS,
           (spec) => Effect.map(runSpec(spec, tests), (vs) => [spec, vs] as const),
           { concurrency: 1 },
         );
-        return { baseline: want, results: verdicts };
-      }),
-    );
-    const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    const counts = R.fromEntries(
-      results.map(([spec, verdicts]) => [spec, countsBySet(verdicts)] as const),
-    );
-    const report = Effect.runSync(reportRequested("QT3_REPORT"));
-    await Effect.runPromise(
-      Effect.all(
-        [
-          report
-            ? Console.log(
-                results
-                  .flatMap(([spec, verdicts]) =>
-                    verdicts.flatMap((v) =>
-                      Option.toArray(
-                        Option.map(
-                          Option.orElse(v.syntax, () => v.static),
-                          (why) => `${spec} ${v.set}/${v.name}: ${why}`,
+        const seconds = ((performance.now() - started) / 1000).toFixed(1);
+        const counts = R.fromEntries(
+          results.map(([spec, verdicts]) => [spec, countsBySet(verdicts)] as const),
+        );
+        const report = yield* reportRequested("QT3_REPORT");
+        yield* Effect.all(
+          [
+            report
+              ? Console.log(
+                  results
+                    .flatMap(([spec, verdicts]) =>
+                      verdicts.flatMap((v) =>
+                        Option.toArray(
+                          Option.map(
+                            Option.orElse(v.syntax, () => v.static),
+                            (why) => `${spec} ${v.set}/${v.name}: ${why}`,
+                          ),
                         ),
                       ),
-                    ),
-                  )
-                  .join("\n"),
-              )
-            : Effect.void,
-          report ? Console.log(encodeCounts(counts)) : Effect.void,
-          Console.log(
-            `qt3 parse: ${seconds}s; ` +
-              SPECS.map((spec) => {
-                const t = sum(counts[spec] ?? {});
-                return `${spec} syntax ${t.syntax}/${t.runnable}, static ${t.static}/${t.runnable}`;
-              }).join("; "),
-          ),
-        ],
-        { concurrency: 1 },
-      ),
-    );
-    expect([
-      ...shortfalls("XQ31", baseline.XQ31, counts["XQ31"] ?? {}),
-      ...shortfalls("XP31", baseline.XP31, counts["XP31"] ?? {}),
-    ]).toEqual([]);
-  }, 300_000);
+                    )
+                    .join("\n"),
+                )
+              : Effect.void,
+            report ? Console.log(encodeCounts(counts)) : Effect.void,
+            Console.log(
+              `qt3 parse: ${seconds}s; ` +
+                SPECS.map((spec) => {
+                  const t = sum(counts[spec] ?? {});
+                  return `${spec} syntax ${t.syntax}/${t.runnable}, static ${t.static}/${t.runnable}`;
+                }).join("; "),
+            ),
+          ],
+          { concurrency: 1 },
+        );
+        expect([
+          ...shortfalls("XQ31", baseline.XQ31, counts["XQ31"] ?? {}),
+          ...shortfalls("XP31", baseline.XP31, counts["XP31"] ?? {}),
+        ]).toEqual([]);
+      }),
+    300_000,
+  );
 });

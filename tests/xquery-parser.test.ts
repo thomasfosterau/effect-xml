@@ -5,7 +5,8 @@
  * parse-only pass (`tests/qt3-parse.test.ts`) measures the grammar against
  * the whole suite; these are the cases worth pinning down.
  */
-import { assert, describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -51,7 +52,7 @@ const tree = (query: string, options?: XQuery.CompileOptions) => body(expectQuer
 const none = Option.none();
 
 describe("grammar notes", () => {
-  test("leading-lone-slash: a token that can start a path after `/` starts one", () => {
+  it("leading-lone-slash: a token that can start a path after `/` starts one", () => {
     expectError("/ * 5", "XPST0003");
     expectQuery("(/) * 5");
     expectQuery("5 * /");
@@ -61,7 +62,7 @@ describe("grammar notes", () => {
     expectXPath("/ < 5");
   });
 
-  test("occurrence indicators are greedy", () => {
+  it("occurrence indicators are greedy", () => {
     expect(tree("4 treat as item() + - 5")).toMatchObject({
       _tag: "Binary",
       op: "-",
@@ -72,7 +73,7 @@ describe("grammar notes", () => {
     });
   });
 
-  test("reserved function names are never function calls", () => {
+  it("reserved function names are never function calls", () => {
     expectError("if(1)", "XPST0003");
     expectError("declare function switch() { 1 }; 1", "XPST0003");
     expectQuery("fn:if#0, local:node#0", {
@@ -84,7 +85,7 @@ describe("grammar notes", () => {
     expect(tree("node()")).toMatchObject({ _tag: "AxisStep" });
   });
 
-  test("`-` belongs to names; `*` is a wildcard or multiplication; `<` a comparison or a constructor", () => {
+  it("`-` belongs to names; `*` is a wildcard or multiplication; `<` a comparison or a constructor", () => {
     expectError("let $a-b := 1 return $a - b", "XPST0008");
     expectQuery("let $a-b := 1 return $a-b");
     expect(tree("* * *")).toMatchObject({ _tag: "Binary", op: "*", left: { _tag: "AxisStep" } });
@@ -92,7 +93,7 @@ describe("grammar notes", () => {
     expect(tree("<a/>")).toMatchObject({ _tag: "DirElement" });
   });
 
-  test("`?` is an argument placeholder or a lookup", () => {
+  it("`?` is an argument placeholder or a lookup", () => {
     expect(tree("concat(?, 'b')")).toMatchObject({
       _tag: "FunctionCall",
       args: [{ _tag: "Placeholder" }, { _tag: "StringLiteral" }],
@@ -107,13 +108,13 @@ describe("grammar notes", () => {
     });
   });
 
-  test("comparisons and ranges do not chain", () => {
+  it("comparisons and ranges do not chain", () => {
     expectError("1 = 2 = 3", "XPST0003");
     expectError("1 to 2 to 3", "XPST0003");
     expectQuery("(1 = 2) = false()");
   });
 
-  test("map{a:b} is the QName a:b", () => {
+  it("map{a:b} is the QName a:b", () => {
     expectError("map{a:b}", "XPST0003", { namespaces: { a: "urn:a" } });
     expectQuery("map{a :b}");
     expectQuery("map{a: b}");
@@ -121,7 +122,7 @@ describe("grammar notes", () => {
 });
 
 describe("lexical rules", () => {
-  test("comments nest, and are not comments inside literals or constructors", () => {
+  it("comments nest, and are not comments inside literals or constructors", () => {
     expect(tree("(: a (: nested :) b :) 1")).toMatchObject({ _tag: "IntegerLiteral", value: "1" });
     expectError("(: unterminated (: nested :) 1", "XPST0003");
     expect(tree('"(: not a comment :)"')).toMatchObject({ value: "(: not a comment :)" });
@@ -130,7 +131,7 @@ describe("lexical rules", () => {
     });
   });
 
-  test("XQuery string literals decode references; XPath's do not", () => {
+  it("XQuery string literals decode references; XPath's do not", () => {
     expect(tree(`"a&lt;&#x42;&#67;""d"`)).toMatchObject({ value: 'a<BC"d' });
     expect(body(expectXPath(`"a&lt;"`))).toMatchObject({ value: "a&lt;" });
     expectError(`"&bogus;"`, "XPST0003");
@@ -138,7 +139,7 @@ describe("lexical rules", () => {
     expectError(`"&"`, "XPST0003");
   });
 
-  test("numeric literals: integer, decimal and double; a name may not follow directly", () => {
+  it("numeric literals: integer, decimal and double; a name may not follow directly", () => {
     expect(tree("1, 1.5, .5, 1., 1e3, 1.5E-3")).toMatchObject({
       _tag: "Sequence",
       items: [
@@ -155,14 +156,14 @@ describe("lexical rules", () => {
     expectQuery("1-1");
   });
 
-  test("EQNames: Q{uri}local, whitespace-normalized", () => {
+  it("EQNames: Q{uri}local, whitespace-normalized", () => {
     expectQuery("for $Q{ urn:foo bar }x in 1 return $Q{urn:foo   bar}x");
     expectQuery("Q{http://www.w3.org/2005/xpath-functions}concat('a', 'b')");
     expectQuery("//Q{urn:x}*");
     expectError("/Q{http://www.w3.org/2000/xmlns/}a", "XQST0070");
   });
 
-  test("keywords are names wherever a name can stand", () => {
+  it("keywords are names wherever a name can stand", () => {
     expect(tree("for/if/return/element")).toMatchObject({
       _tag: "Path",
       steps: [
@@ -177,7 +178,7 @@ describe("lexical rules", () => {
 });
 
 describe("direct constructors", () => {
-  test("attributes, enclosed expressions and boundary whitespace", () => {
+  it("attributes, enclosed expressions and boundary whitespace", () => {
     expect(tree(`<a x="1{2}3" y='{{}}'> <b/> {4} &amp; </a>`)).toMatchObject({
       _tag: "DirElement",
       attributes: [
@@ -200,7 +201,7 @@ describe("direct constructors", () => {
     });
   });
 
-  test("namespace declarations are scoped to the element", () => {
+  it("namespace declarations are scoped to the element", () => {
     expect(tree(`<p:a xmlns:p="urn:p" xmlns="urn:d"><p:b/></p:a>`)).toMatchObject({
       namespaces: [
         { prefix: Option.some("p"), uri: "urn:p" },
@@ -213,14 +214,14 @@ describe("direct constructors", () => {
     expectError(`<a x="1" x="2"/>`, "XQST0040");
   });
 
-  test("end tags must match", () => {
+  it("end tags must match", () => {
     expect(expectError("<a><b></a></b>", "XQST0118").offset).toBe(3);
     expectError("<a>}</a>", "XPST0003");
     expectError("<?xml version='1.0'?><a/>", "XPST0003");
     expectQuery("<a><![CDATA[<x>]]><!-- c --><?pi data?></a>");
   });
 
-  test("computed and string constructors", () => {
+  it("computed and string constructors", () => {
     expect(tree("element e { 1 }")).toMatchObject({
       _tag: "CompElement",
       name: { _tag: "Static", name: { local: "e" } },
@@ -240,7 +241,7 @@ describe("direct constructors", () => {
 });
 
 describe("expressions", () => {
-  test("paths: absolute, descendant and abbreviated steps", () => {
+  it("paths: absolute, descendant and abbreviated steps", () => {
     expect(tree("//a/../@b")).toMatchObject({
       _tag: "Path",
       root: "descendants",
@@ -254,13 +255,13 @@ describe("expressions", () => {
     expect(tree("attribute(a)")).toMatchObject({ _tag: "AxisStep", axis: "attribute" });
   });
 
-  test("the namespace axis is XPath's only", () => {
+  it("the namespace axis is XPath's only", () => {
     expectXPath("namespace::*");
     expectError("namespace::*", "XPST0003");
     expectError("/*/namespace-node()", "XQST0134");
   });
 
-  test("FLWOR clauses", () => {
+  it("FLWOR clauses", () => {
     expect(
       tree(`
         for $x at $i in (1, 2, 3)
@@ -296,7 +297,7 @@ describe("expressions", () => {
     );
   });
 
-  test("conditional, switch, typeswitch, try / catch", () => {
+  it("conditional, switch, typeswitch, try / catch", () => {
     expect(tree("if (1) then 2 else 3")).toMatchObject({ _tag: "If" });
     expect(tree("switch (1) case 1 case 2 return 'a' default return 'b'")).toMatchObject({
       _tag: "Switch",
@@ -311,7 +312,7 @@ describe("expressions", () => {
     expectError("switch (1) case 1 return 2", "XPST0003");
   });
 
-  test("arrows, simple maps and string concatenation", () => {
+  it("arrows, simple maps and string concatenation", () => {
     expect(tree("'a' => upper-case() => concat('b')")).toMatchObject({
       _tag: "ArrowCall",
       name: { local: "concat" },
@@ -322,7 +323,7 @@ describe("expressions", () => {
     expectError("'a' => upper-case(1)", "XPST0017");
   });
 
-  test("inline functions, named references and dynamic calls", () => {
+  it("inline functions, named references and dynamic calls", () => {
     expect(tree("function ($a as xs:integer) as xs:integer { $a + 1 }(1)")).toMatchObject({
       _tag: "DynamicCall",
       function: { _tag: "InlineFunction" },
@@ -333,7 +334,7 @@ describe("expressions", () => {
     expectError("%public function () { 1 }", "XQST0125");
   });
 
-  test("validate and extension expressions", () => {
+  it("validate and extension expressions", () => {
     expect(tree("validate lax { <a/> }")).toMatchObject({
       _tag: "Validate",
       mode: Option.some("lax"),
@@ -347,7 +348,7 @@ describe("expressions", () => {
 });
 
 describe("types", () => {
-  test("sequence types, kind tests and function, map and array tests", () => {
+  it("sequence types, kind tests and function, map and array tests", () => {
     expectQuery(
       `() instance of empty-sequence(),
        1 instance of xs:integer?,
@@ -368,13 +369,13 @@ describe("types", () => {
 });
 
 describe("static errors", () => {
-  test("XPST0003 carries the offset of the problem and says what was expected", () => {
+  it("XPST0003 carries the offset of the problem and says what was expected", () => {
     const e = expectError("for $x in (1, 2) retrun $x", "XPST0003");
     expect(e.offset).toBe(17);
     expect(e.description).toContain('"return"');
   });
 
-  test("XPST0081, XPST0008 and XPST0017", () => {
+  it("XPST0081, XPST0008 and XPST0017", () => {
     expect(expectError("p:a", "XPST0081").offset).toBe(0);
     expectQuery("p:a", { namespaces: { p: "urn:p" } });
     expect(expectError("1 + $x", "XPST0008").offset).toBe(4);
@@ -387,7 +388,7 @@ describe("static errors", () => {
     expectQuery("x:f(1)", { namespaces: { x: "urn:x" }, opaqueNamespaces: ["urn:x"] });
   });
 
-  test("the prolog: duplicates, reserved namespaces and order", () => {
+  it("the prolog: duplicates, reserved namespaces and order", () => {
     expectError("declare boundary-space strip; declare boundary-space preserve; 1", "XQST0068");
     expectError("declare namespace p = 'urn:a'; declare namespace p = 'urn:b'; 1", "XQST0033");
     expectError("declare namespace xml = 'urn:a'; 1", "XQST0070");
@@ -415,7 +416,7 @@ describe("static errors", () => {
     expectQuery("module namespace m = 'urn:m'; declare function m:f() { 1 };");
   });
 
-  test("the static context records the prolog's settings", () => {
+  it("the static context records the prolog's settings", () => {
     const q = expectQuery(
       "declare boundary-space preserve; declare default element namespace 'urn:e'; declare namespace p = 'urn:p'; 1",
     );
