@@ -16,7 +16,15 @@ import * as P from "effect/Predicate";
 import { AtomicValue, atomicString, fromLexical } from "../atomic.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../types.ts";
 import { raise, unwrap } from "./raise.ts";
-import { durationOf, durationValue, formatParts, isTemporal, partsOf } from "./temporal.ts";
+import {
+  checkDateRange,
+  durationInRange,
+  durationOf,
+  durationValue,
+  formatParts,
+  isTemporal,
+  partsOf,
+} from "./temporal.ts";
 
 /** Resolves a namespace prefix for a cast to `xs:QName` (`""` for the default namespace). */
 export type PrefixResolver = (prefix: string) => string | undefined;
@@ -133,13 +141,74 @@ const castPrimitive = (value: AtomicValue, target: AtomicType, offset?: number):
   return cannotCast(from, target, offset);
 };
 
+/** Whether a string is a valid `xs:anyURI` under XML Schema 1.0: escapes are well formed and a scheme, if any, is a scheme. */
+const isAnyUri = (text: string): boolean => {
+  const scheme = /^([^/?#:]*):/.exec(text)?.[1];
+  return (
+    !/%(?![0-9A-Fa-f]{2})/.test(text) &&
+    (scheme === undefined || /^[A-Za-z][A-Za-z0-9+.-]*$/.test(scheme))
+  );
+};
+
+/** `err:FODT0001` / `err:FODT0002` when a date or duration is beyond the range this implementation supports. */
+const checkRange = (value: AtomicValue, offset?: number): void => {
+  const type = value.type;
+  if (type.primitive === "duration") {
+    if (!durationInRange(durationOf(value)))
+      raise(
+        "FODT0002",
+        `the duration ${String(value.value)} is beyond the supported range`,
+        offset,
+      );
+  } else if (
+    type.primitive === "dateTime" ||
+    type.primitive === "date" ||
+    type.primitive === "gYearMonth" ||
+    type.primitive === "gYear"
+  ) {
+    const parts = partsOf(value);
+    if (Option.isSome(parts)) checkDateRange(parts.value, offset);
+  }
+};
+
+/** A dateTime or time with the end of the day (`24:00:00`) written as the start of the next (XSD 1.1 §3.3.7). */
+const canonicalMidnight = (value: AtomicValue, text: string): AtomicValue => {
+  const type = value.type;
+  if ((type.primitive !== "dateTime" && type.primitive !== "time") || !text.includes("24:"))
+    return value;
+  return Option.match(partsOf(value), {
+    onNone: () => value,
+    onSome: (parts) => new AtomicValue(type, formatParts(type, parts)),
+  });
+};
+
+/**
+ * A value read from a lexical form in its canonical form, or `err:FODT0001` /
+ * `err:FODT0002` when it is a date or duration beyond the range this
+ * implementation supports, or `err:FORG0001` for an `xs:anyURI` that is not a
+ * URI reference.
+ */
+const checked = (value: AtomicValue, offset?: number): AtomicValue => {
+  const text = value.value;
+  if (!P.isString(text)) return value;
+  if (derivesFrom(value.type, AtomicTypes.anyURI)) {
+    if (!isAnyUri(text))
+      raise("FORG0001", `"${text}" is not a valid xs:${value.type.name}`, offset);
+    return value;
+  }
+  const canonical = canonicalMidnight(value, text);
+  // A shorter form cannot hold a year or an amount beyond the range.
+  if (text.length >= 10) checkRange(canonical, offset);
+  return canonical;
+};
+
 /** The lexical form `lexical` read as `target`. */
 const read = (
   target: AtomicType,
   lexical: string,
   resolve: PrefixResolver | undefined,
   offset?: number,
-): AtomicValue => unwrap(fromLexical(target, lexical, { resolve }), offset);
+): AtomicValue => checked(unwrap(fromLexical(target, lexical, { resolve }), offset), offset);
 
 /** The primitive type a cast goes through before restricting to `target`. */
 const via = (target: AtomicType): AtomicType =>

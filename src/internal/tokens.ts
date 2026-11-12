@@ -10,6 +10,10 @@
  *   cut, carrying an {@link Issue} (or, inside a declaration, the
  *   declaration's context label), and the lexer reports it as a typed error.
  * - HTML recovers, following WHATWG tokenization: every input yields tokens.
+ * - XML with `recover: true` reads what strict XML reads exactly as strict XML
+ *   does, and recovers where strict XML fails at a `<` or `&` that starts
+ *   nothing, or an attribute HTML would read (XML5, after xml5ever): see
+ *   {@link recoverText} and {@link recoverStartTag}.
  *
  * The grammars also run on partial input (`State.partial`), where running
  * into the end of the buffer means "Incomplete"; that is what keeps the
@@ -151,6 +155,8 @@ const spanned = <A, E>(
 
 interface EntityConfig {
   readonly strict: boolean;
+  /** XML `recover: true` (with `strict`): see `EntityOptions.recover` in `entities.ts`. */
+  readonly recover: boolean;
   readonly entities: EntityTable;
   readonly legacy: EntityTable | undefined;
   /** Declared entities (XML with `dtd: "internal"`). */
@@ -168,11 +174,13 @@ const decoded = (cfg: EntityConfig, inAttribute: boolean) => {
     legacy: cfg.legacy,
     dtd: cfg.dtd,
     strict: cfg.strict,
+    recover: cfg.recover,
     inAttribute,
   };
   const normalizeWhitespace = cfg.strict && inAttribute;
-  // XML: a literal `<` in an attribute value (§3.1), or `]]>` in text (§2.4).
-  const banned = cfg.strict ? (inAttribute ? "<" : "]]>") : undefined;
+  // XML: a literal `<` in an attribute value (§3.1), or `]]>` in text (§2.4);
+  // both are text when recovering.
+  const banned = cfg.strict && !cfg.recover ? (inAttribute ? "<" : "]]>") : undefined;
   const context = inAttribute
     ? "reading an attribute value (`<` must be escaped)"
     : "reading text (`]]>` must be escaped)";
@@ -221,14 +229,26 @@ const textRun = (cfg: EntityConfig): P<Step> => {
       spanned(decoded(cfg, false)(Token.takeTill("<")), text),
     );
   }
-  // With a DTD, text also stops at a reference to an entity with markup in it,
-  // which is a token of its own.
+  return dtdText(cfg, dtd, []);
+};
+
+/**
+ * Text with a DTD, which also stops at a reference to an entity with markup
+ * in it, a token of its own; `more` is what else text takes in (recovering,
+ * a stray `<`).
+ */
+const dtdText = (
+  cfg: EntityConfig,
+  dtd: DtdSlot,
+  more: ReadonlyArray<Parser.Parser<string>>,
+): P<Step> => {
   const markupRef = markupReference(dtd);
   const body = Parser.taken(
     Parser.repeat(
       Parser.alt(
         Token.takeTill("<&", { min: 1 }),
         Parser.preceded(Parser.not(markupRef), Token.literal("&")),
+        ...more,
       ),
       { min: 1 },
     ),
@@ -284,11 +304,9 @@ const startElement = (
 const validNames = (
   tag: Extract<Tok, { readonly _tag: "StartElement" }>,
 ): Result.Result<Step, Issue> => {
-  const { name, attributes, start } = tag;
-  // The element name follows the `<`.
-  const at = invalidNameAt(name);
-  if (at !== -1)
-    return Result.fail(Issue.Char({ context: "reading an element name", offset: start + 1 + at }));
+  const { attributes } = tag;
+  const named = validElementName(tag);
+  if (Result.isFailure(named)) return named;
   const attribute = attributes.find((a) => invalidNameAt(a.name) !== -1);
   return attribute === undefined
     ? Result.succeed([tag])
@@ -298,6 +316,17 @@ const validNames = (
           offset: attribute.start + invalidNameAt(attribute.name),
         }),
       );
+};
+
+/** The start tag read, failing where its element name stops being an XML `Name` (§2.3). */
+const validElementName = (
+  tag: Extract<Tok, { readonly _tag: "StartElement" }>,
+): Result.Result<Step, Issue> => {
+  // The element name follows the `<`.
+  const at = invalidNameAt(tag.name);
+  return at === -1
+    ? Result.succeed([tag])
+    : Result.fail(Issue.Char({ context: "reading an element name", offset: tag.start + 1 + at }));
 };
 
 /**
@@ -350,20 +379,30 @@ const xmlStartTag = (cfg: EntityConfig): P<Step> => {
   return Parser.tryMap(tag, validNames);
 };
 
-/** `<name attr=value … >` or `/>`, as HTML reads it. */
-const startTag = (cfg: EntityConfig): P<Step> => {
-  const value = decoded(cfg, true);
-  const attrValue: P<string> = Parser.dispatch(
+/**
+ * An attribute value as HTML reads it: quoted, `""` right before the `>`,
+ * or unquoted up to whitespace or `>`.
+ */
+const htmlAttributeValue = (value: (p: Parser.Parser<string>) => P<string>): P<string> =>
+  Parser.dispatch(
     nextChar,
     { ...quotedValues(value), ">": Parser.succeed("") },
     value(Token.takeTill(ws + ">", { min: 1 })),
   );
-  // An attribute's name runs to whitespace, `=`, `/` or `>`; its span takes
-  // in the whitespace after a valueless one.
+
+/** An attribute name as HTML reads it: up to whitespace, `=`, `/` or `>`. */
+const htmlAttributeName = Parser.taken(
+  Parser.seq(Token.noneOf(ws + "/>"), Token.takeTill(ws + "=/>")),
+);
+
+/** `<name attr=value … >` or `/>`, as HTML reads it. */
+const startTag = (cfg: EntityConfig): P<Step> => {
+  const attrValue = htmlAttributeValue(decoded(cfg, true));
+  // Its span takes in the whitespace after a valueless one.
   // (Built as the attribute itself, with no pairs or span in between.)
   const attribute: P<TokAttribute | null> = Parser.struct({
     start: Parser.location,
-    name: Parser.taken(Parser.seq(Token.noneOf(ws + "/>"), Token.takeTill(ws + "=/>"))),
+    name: htmlAttributeName,
     value: Parser.preceded(
       S0,
       Parser.orElseSucceed(
@@ -441,6 +480,117 @@ const htmlEndTag: P<Step> = Parser.alt(
   ),
   spanned(Parser.terminated(endTagOpen, eof), text),
   Parser.as(Parser.seq(endTagOpen, Token.rest, eof), none),
+);
+
+// -----------------------------------------------------------------------------
+// XML recovery (`recover: true`)
+// -----------------------------------------------------------------------------
+//
+// Each grammar here reads what its strict counterpart reads, to the same
+// token at the same offset, and recovers only where that one fails: so a
+// well-formed document is read exactly as strictly, and the scanner (an
+// optimisation of the strict grammars) stays one of these too. They follow
+// XML5 (and xml5ever), which takes the HTML tokenizer's recoveries without
+// its raw text, its name lowercasing or its character references.
+
+/** `<` and what makes it markup: a name start character, `/`, `!` or `?`. */
+const markupOpen = Parser.seq(Token.literal("<"), Token.oneOf([...nameStart, "/!?"]));
+
+/** A `<` that opens no markup, which is text. */
+const strayLessThanSign = Parser.preceded(Parser.not(markupOpen), Token.literal("<"));
+
+/**
+ * Text up to the next `<` that opens markup, with character references
+ * decoded: a stray `<` (`a < b`) is text, an `&` that starts no reference,
+ * or one to an entity nobody declared, is itself, and so is `]]>`.
+ */
+const recoverText = (cfg: EntityConfig): P<Step> => {
+  const dtd = cfg.dtd;
+  if (dtd === undefined) {
+    const body = Parser.taken(
+      Parser.repeat(Parser.alt(Token.takeTill("<", { min: 1 }), strayLessThanSign), { min: 1 }),
+    );
+    return spanned(decoded(cfg, false)(body), text);
+  }
+  return dtdText(cfg, dtd, [strayLessThanSign]);
+};
+
+/**
+ * The attributes a recovering start tag keeps: those whose names are XML
+ * `Name`s (§2.3), as the strict grammar requires of all of them. The others
+ * (`<a "b">`, `<p class=x &>`) are dropped, and so is {@link noAttribute}.
+ */
+const namedAttributes = (attributes: ReadonlyArray<TokAttribute>): ReadonlyArray<TokAttribute> =>
+  attributes.every((a) => invalidNameAt(a.name) === -1)
+    ? attributes
+    : attributes.filter((a) => invalidNameAt(a.name) === -1);
+
+/** What a stray `/` in a recovering start tag reads as: no `Name`, so dropped. */
+const noAttribute: TokAttribute = { name: "", value: "", start: 0, end: 0 };
+
+/**
+ * `<name attr="value" … >` or `/>` as XML reads it, recovering as HTML does:
+ * an unquoted value runs to whitespace or `>`, a valueless attribute's value
+ * is `""`, attributes need no whitespace between them, and a `/` not before
+ * the `>` is ignored. `<` and `&` in a value are text. The element name must
+ * still be a `Name`.
+ */
+const recoverStartTag = (cfg: EntityConfig): P<Step> => {
+  const attrValue = htmlAttributeValue(decoded(cfg, true));
+  // Built as the attribute itself, with no pairs or span in between; the
+  // span of a valueless one ends with its name.
+  const attribute: P<TokAttribute> = Parser.struct({
+    start: Parser.location,
+    name: htmlAttributeName,
+    value: Parser.orElseSucceed(
+      Parser.preceded(Parser.delimited(S0, Token.literal("="), S0), Parser.cut(attrValue)),
+      () => "",
+    ),
+    end: Parser.location,
+  });
+  const slash: P<TokAttribute> = Parser.as(
+    Parser.seq(Token.literal("/"), Parser.not(gt)),
+    noAttribute,
+  );
+  const close = Parser.preceded(
+    S0,
+    Parser.alt(Parser.as(gt, false), Parser.as(Token.literal("/>"), true)),
+  );
+  const tag = Parser.struct({
+    _tag: Parser.succeed("StartElement" as const),
+    start: Parser.location,
+    name: startTagName,
+    attributes: Parser.map(
+      Parser.repeat(Parser.preceded(S0, Parser.alt(attribute, slash))),
+      namedAttributes,
+    ),
+    selfClosing: close,
+    end: Parser.location,
+  });
+  return Parser.tryMap(tag, validElementName);
+};
+
+/**
+ * `</name>` as XML reads it, recovering as XML5 does: what follows the name
+ * up to the `>` is ignored, `</` followed by anything but a name is a bogus
+ * comment up to the next `>`, `</>` is dropped, and a `</` that ends the
+ * input is text.
+ */
+const recoverEndTag: P<Step> = Parser.alt(
+  spanned(
+    Parser.delimited(
+      Parser.seq(endTagOpen, Parser.peek(Token.oneOf(nameStart))),
+      Parser.taken(Parser.seq(Token.oneOf(nameStart), Token.takeWhile(nameChar))),
+      Parser.cut(Parser.seq(Token.takeTill(">"), gt)),
+    ),
+    endElement,
+  ),
+  Parser.as(Token.literal("</>"), none),
+  spanned(
+    Parser.delimited(Parser.seq(endTagOpen, Parser.peek(anyChar)), Token.takeTill(">"), gtOrEof),
+    commentTok,
+  ),
+  spanned(Parser.terminated(endTagOpen, eof), text),
 );
 
 /** After `<!--`: data up to `-->` or `--!>` (WHATWG comment states). */
@@ -818,8 +968,7 @@ const dispatchMarkup = (
 
 const makeGrammars = (cfg: EntityConfig): Grammars => {
   // (With a DTD, `textRun` also produces entity references.)
-  const textToken = textRun(cfg);
-  const start = cfg.strict ? xmlStartTag(cfg) : startTag(cfg);
+  const textToken = cfg.recover ? recoverText(cfg) : textRun(cfg);
   const tagOpen = Parser.seq(Token.literal("<"), Token.oneOf(nameStart));
   let data: P<Step>;
   if (cfg.strict) {
@@ -831,16 +980,25 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
       committed(Token.literal("<!--"), comment(true)),
       committed(Token.literal("<![CDATA["), cdata(true)),
       committed(Parser.seq(Token.literal("<!"), Ascii.caseless("DOCTYPE")), xmlDoctypeToken),
-      badMarkupDeclaration,
+      // Recovering, any other `<!` is a bogus comment (XML5).
+      cfg.recover ? bogusComment("<!") : badMarkupDeclaration,
     );
-    const badOpen = Parser.preceded(Token.literal("<"), unexpected("opening a tag"));
+    // Recovering, a `<` that opens nothing is text (`recoverText` reads it).
+    const badOpen = cfg.recover
+      ? textToken
+      : Parser.preceded(Token.literal("<"), unexpected("opening a tag"));
     data = dispatchMarkup(
       textToken,
-      { "/": Parser.cut(xmlEndTag), "!": markupDeclaration, "?": Parser.cut(piToken) },
-      Parser.cut(start),
+      {
+        "/": cfg.recover ? recoverEndTag : Parser.cut(xmlEndTag),
+        "!": markupDeclaration,
+        "?": Parser.cut(piToken),
+      },
+      Parser.cut(cfg.recover ? recoverStartTag(cfg) : xmlStartTag(cfg)),
       badOpen,
     );
   } else {
+    const start = startTag(cfg);
     // At EOF an unfinished start tag is dropped.
     const startOrDrop = Parser.alt(
       Parser.backtrack(start),
@@ -894,30 +1052,39 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
 
 const cache = new WeakMap<
   Record<string, string>,
-  { xml?: Grammars; html?: Grammars; dtd?: Grammars }
+  { xml?: Grammars; html?: Grammars; dtd?: Grammars; recover?: Grammars; recoverDtd?: Grammars }
 >();
 
 /**
  * The grammars for a mode and named-entity table (built once per table). With
  * `dtd: "internal"` (XML) they are built once per table too, reading the
- * declared entities through their {@link Grammars.dtd} slot.
+ * declared entities through their {@link Grammars.dtd} slot; so are XML's
+ * recovering grammars (`recover`, ignored in HTML, which always recovers),
+ * with a DTD and without.
  */
 export const grammars = (
   mode: "xml" | "html",
   entities: Record<string, string>,
   dtd: boolean,
+  recover = false,
 ): Grammars => {
   let byMode = cache.get(entities);
   if (byMode === undefined) cache.set(entities, (byMode = {}));
-  if (dtd)
-    return (byMode.dtd ??= makeGrammars({
+  const xml = (withDtd: boolean, recovering: boolean): Grammars =>
+    makeGrammars({
       strict: true,
+      recover: recovering,
       entities,
       legacy: undefined,
-      dtd: new DtdSlot(),
-    }));
+      dtd: withDtd ? new DtdSlot() : undefined,
+    });
+  if (mode === "xml" && recover) {
+    return dtd ? (byMode.recoverDtd ??= xml(true, true)) : (byMode.recover ??= xml(false, true));
+  }
+  if (dtd) return (byMode.dtd ??= xml(true, false));
   return (byMode[mode] ??= makeGrammars({
     strict: mode === "xml",
+    recover: false,
     entities,
     legacy: mode === "html" ? htmlLegacyEntities : undefined,
   }));

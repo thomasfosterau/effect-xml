@@ -55,6 +55,12 @@ export interface EntityOptions {
   readonly legacy?: EntityTable | undefined;
   /** When true, an unknown/unterminated reference is a hard error; when false it is left verbatim. */
   readonly strict: boolean;
+  /**
+   * XML with `recover: true` (with `strict`): a malformed reference, or one to
+   * an entity nobody declared, is left verbatim; a well-formed character
+   * reference to a character XML does not allow is still an error.
+   */
+  readonly recover?: boolean;
   /** Apply the ambiguous-ampersand rule (the value is an attribute value). */
   readonly inAttribute?: boolean | undefined;
   /** Entities declared in a DTD, resolved when referenced (XML only; see `dtd.ts`). */
@@ -178,9 +184,14 @@ const bad = (
  * lower case and the code point must be a `Char` (§4.1); with it, WHATWG
  * rules apply: `X` is allowed, the `;` is optional and 0x80–0x9F map as
  * Windows-1252. An unrepresentable code point is an error in strict mode,
- * U+FFFD otherwise.
+ * U+FFFD otherwise; a malformed reference is an error where `malformed` is
+ * set, literal text otherwise.
  */
-const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part> => {
+const numericReference = (
+  strict: boolean,
+  lenient: boolean,
+  malformed: boolean,
+): Parser.Parser<Part> => {
   const value = Parser.preceded(
     Token.literal("&#"),
     Parser.alt(
@@ -205,7 +216,7 @@ const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part
         ? { reference: taken, reason: "code point out of range", relativeOffset }
         : "\uFFFD";
     }),
-    bad(strict, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const)),
+    bad(malformed, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const)),
   );
 };
 
@@ -218,8 +229,8 @@ const has = (table: EntityTable, name: string) => Object.prototype.hasOwnPropert
  * value one followed by `=` or a letter or digit is left alone. The tables
  * decide how long the reference is; the grammar then takes that much.
  */
-const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
-  const { entities, legacy, strict, dtd } = options;
+const namedReference = (options: EntityOptions, malformed: boolean): Parser.Parser<Part> => {
+  const { entities, legacy, dtd } = options;
   const inAttribute = options.inAttribute ?? false;
   /** The length of the reference at `&name` + `next`, or 0 if none decodes. */
   const lengthOf = ([name, next]: readonly [string, string]): number => {
@@ -264,7 +275,7 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
   );
   const takes: Array<Parser.Parser<Part>> = [];
   const unknown = bad(
-    strict,
+    malformed,
     Parser.alt(
       Parser.map(
         Parser.taken(Parser.seq(Token.takeUntil(";"), semicolon)),
@@ -287,8 +298,10 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
 
 const grammarFor = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> => {
   const text = Token.takeTill("&", { min: 1 });
-  const numeric = numericReference(options.strict, options.legacy !== undefined);
-  const named = namedReference(options);
+  // Whether a malformed or unknown reference is an error (strict, not recovering).
+  const malformed = options.strict && options.recover !== true;
+  const numeric = numericReference(options.strict, options.legacy !== undefined, malformed);
+  const named = namedReference(options, malformed);
   // `&#` starts a numeric reference, any other `&` a named one.
   const afterAmpersand = Parser.peek(
     Parser.preceded(ampersand, Parser.alt(Token.any, Parser.succeed(""))),
@@ -317,7 +330,7 @@ const grammar = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> => 
   }
   let byKey = byEntities.get(options.entities);
   if (byKey === undefined) byEntities.set(options.entities, (byKey = MutableHashMap.empty()));
-  const key = `${options.strict}:${options.inAttribute ?? false}:${options.legacy === undefined ? "" : "legacy"}`;
+  const key = `${options.strict}:${options.recover ?? false}:${options.inAttribute ?? false}:${options.legacy === undefined ? "" : "legacy"}`;
   const built = Option.getOrElse(MutableHashMap.get(byKey, key), () => {
     const fresh = grammarFor(options);
     MutableHashMap.set(byKey, key, fresh);

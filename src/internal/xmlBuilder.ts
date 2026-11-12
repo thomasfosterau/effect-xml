@@ -590,9 +590,16 @@ export const buildChunks = (
   Effect.suspend(() => {
     const chunks = input();
     // `strict: false`: build from a lenient pass; if it fails at all, the
-    // strict passes below report the failure exactly.
+    // strict passes below report the failure exactly. Not when recovering,
+    // which the lenient reader does not.
     const opts = resolveSaxOptions(saxOptions);
-    if (!strict && opts.mode === "xml" && opts.dtd === "ignore" && chunks.failure === undefined) {
+    if (
+      !strict &&
+      !opts.recover &&
+      opts.mode === "xml" &&
+      opts.dtd === "ignore" &&
+      chunks.failure === undefined
+    ) {
       const lenient = lenientPass(chunks.chunks.join(""), opts, options);
       if (Result.isSuccess(lenient)) return Effect.succeed(lenient.success);
     }
