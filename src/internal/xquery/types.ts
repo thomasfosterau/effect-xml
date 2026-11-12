@@ -7,8 +7,8 @@
  * XDM adds: `xs:untypedAtomic`, `xs:yearMonthDuration`, `xs:dayTimeDuration`
  * and `xs:dateTimeStamp`.
  */
-import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
+import * as Record from "effect/Record";
 import { builtin, XS } from "../../Xsd/Model.ts";
 import { builtinBase } from "../xsd/datatypes.ts";
 
@@ -96,57 +96,57 @@ const xdmBases: Readonly<Partial<Record<AtomicTypeName, AtomicTypeName>>> = {
   dateTimeStamp: "dateTime",
 };
 
-const names: ReadonlyArray<AtomicTypeName> = [
-  "anyAtomicType",
-  "untypedAtomic",
-  "string",
-  "normalizedString",
-  "token",
-  "language",
-  "NMTOKEN",
-  "Name",
-  "NCName",
-  "ID",
-  "IDREF",
-  "ENTITY",
-  "anyURI",
-  "QName",
-  "NOTATION",
-  "boolean",
-  "decimal",
-  "integer",
-  "nonPositiveInteger",
-  "negativeInteger",
-  "long",
-  "int",
-  "short",
-  "byte",
-  "nonNegativeInteger",
-  "unsignedLong",
-  "unsignedInt",
-  "unsignedShort",
-  "unsignedByte",
-  "positiveInteger",
-  "float",
-  "double",
-  "duration",
-  "yearMonthDuration",
-  "dayTimeDuration",
-  "dateTime",
-  "dateTimeStamp",
-  "time",
-  "date",
-  "gYearMonth",
-  "gYear",
-  "gMonthDay",
-  "gDay",
-  "gMonth",
-  "hexBinary",
-  "base64Binary",
-];
+/** Every {@link AtomicTypeName}, as a record so that the compiler checks the list is complete. */
+const declared = {
+  anyAtomicType: null,
+  untypedAtomic: null,
+  string: null,
+  normalizedString: null,
+  token: null,
+  language: null,
+  NMTOKEN: null,
+  Name: null,
+  NCName: null,
+  ID: null,
+  IDREF: null,
+  ENTITY: null,
+  anyURI: null,
+  QName: null,
+  NOTATION: null,
+  boolean: null,
+  decimal: null,
+  integer: null,
+  nonPositiveInteger: null,
+  negativeInteger: null,
+  long: null,
+  int: null,
+  short: null,
+  byte: null,
+  nonNegativeInteger: null,
+  unsignedLong: null,
+  unsignedInt: null,
+  unsignedShort: null,
+  unsignedByte: null,
+  positiveInteger: null,
+  float: null,
+  double: null,
+  duration: null,
+  yearMonthDuration: null,
+  dayTimeDuration: null,
+  dateTime: null,
+  dateTimeStamp: null,
+  time: null,
+  date: null,
+  gYearMonth: null,
+  gYear: null,
+  gMonthDay: null,
+  gDay: null,
+  gMonth: null,
+  hexBinary: null,
+  base64Binary: null,
+} satisfies { readonly [K in AtomicTypeName]: null };
 
-const isAtomicTypeName = (local: string): local is AtomicTypeName =>
-  Arr.some(names, (name) => name === local);
+const isAtomicTypeName = (local: string): local is AtomicTypeName => Object.hasOwn(declared, local);
 
 /**
  * The base of a type by name: XDM's own, else XML Schema's, with the primitive
@@ -168,20 +168,24 @@ const baseName = (name: AtomicTypeName): Option.Option<AtomicTypeName> => {
 };
 
 /**
- * Build the type objects base-first (`names` lists every type after its
- * base), so every `base` is the shared object.
+ * Build the type objects, each once, so every `base` is the shared object.
  */
-const buildTypes = (): { readonly [K in AtomicTypeName]: AtomicType } =>
-  // SAFETY: the fold sets every member of `names`, which lists every `AtomicTypeName`.
-  Arr.reduce(names, {} as Record<AtomicTypeName, AtomicType>, (built, name) => {
-    const base = Option.map(baseName(name), (b) => built[b]);
+const buildTypes = (): { readonly [K in AtomicTypeName]: AtomicType } => {
+  const built: Partial<Record<AtomicTypeName, AtomicType>> = {};
+  const typeOf = (name: AtomicTypeName): AtomicType => {
+    const known = built[name];
+    if (known !== undefined) return known;
+    const base = Option.map(baseName(name), typeOf);
     const primitive = Option.match(base, {
       onNone: () => name,
       onSome: (b) => (b.name === "anyAtomicType" ? name : b.primitive),
     });
-    built[name] = { name, base, primitive };
-    return built;
-  });
+    const type: AtomicType = { name, base, primitive };
+    built[name] = type;
+    return type;
+  };
+  return Record.map(declared, (_, name) => typeOf(name));
+};
 
 /**
  * Every built-in atomic type, by local name.

@@ -65,6 +65,9 @@ interface Expected {
 }
 
 /** No accepted outcome: the start of a union. */
+/** No module sources yet: the fold over a query's modules starts here. */
+const noModules: Record<string, ReadonlyArray<XQuery.ModuleSource>> = {};
+
 const nothing: Expected = { codes: [], value: false };
 
 /** The outcomes an assertion tree accepts: `any-of` is a union; anything but an error is a value. */
@@ -228,12 +231,10 @@ const runSpec = (spec: Spec, tests: ReadonlyArray<TestCase>) =>
             spec,
             t,
             query,
-            Arr.reduce(
-              modules,
-              // SAFETY: an empty record is a record of any value type.
-              {} as Record<string, ReadonlyArray<XQuery.ModuleSource>>,
-              (acc, m) => ({ ...acc, [m.uri]: [...(acc[m.uri] ?? []), m.source] }),
-            ),
+            Arr.reduce(modules, noModules, (acc, m) => ({
+              ...acc,
+              [m.uri]: [...(acc[m.uri] ?? []), m.source],
+            })),
           ),
         ),
       ),

@@ -81,25 +81,21 @@ export const AttrName = Brand.make<AttrName>(
 );
 
 /**
- * Cast a string the lexer has already validated to a {@link TagName} without
- * re-running the regex. Internal use only.
+ * Brand a string the lexer has already validated as a {@link TagName} without
+ * re-running the regex (a nominal brand constructor: no check, no cost). Internal use only.
  *
  * @since 0.1.0
  * @category names
  */
-export const unsafeTagName = (s: string): TagName =>
-  // SAFETY: the caller (the lexer's name grammar) has already validated `s`.
-  s as TagName;
+export const unsafeTagName: (s: string) => TagName = Brand.nominal<TagName>();
 
 /**
- * Cast a lexer-validated string to an {@link AttrName}. Internal use only.
+ * Brand a lexer-validated string as an {@link AttrName}. Internal use only.
  *
  * @since 0.1.0
  * @category names
  */
-export const unsafeAttrName = (s: string): AttrName =>
-  // SAFETY: the caller (the lexer's name grammar) has already validated `s`.
-  s as AttrName;
+export const unsafeAttrName: (s: string) => AttrName = Brand.nominal<AttrName>();
 
 // -----------------------------------------------------------------------------
 // Reserved namespace URIs

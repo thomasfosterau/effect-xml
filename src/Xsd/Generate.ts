@@ -215,9 +215,10 @@ export const generate = (
 ): Effect.Effect<string, XsdSchemaError> =>
   Effect.suspend(() => {
     const runtime = new Runtime(model);
-    const failed = Arr.findFirst(R.keys(model.types), (key) => Result.isFailure(runtime.type(key)));
-    if (Option.isSome(failed))
-      return Effect.map(Effect.fromResult(runtime.type(failed.value)), () => "");
+    const failed = Arr.findFirst(R.keys(model.types), (key) =>
+      Result.isFailure(runtime.type(key)),
+    );
+    if (Option.isSome(failed)) return Effect.as(Effect.fromResult(runtime.type(failed.value)), "");
     return Effect.succeed(write(model, runtime, options));
   });
 

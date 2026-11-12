@@ -4,7 +4,7 @@
  * `new` would have produced from the same fields. If an `effect` upgrade
  * changes what a `Schema` class instance holds, this fails.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Eq from "effect/Equal";
@@ -12,6 +12,7 @@ import * as Hash from "effect/Hash";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Html, Sax, Xml } from "../src/index.ts";
@@ -60,11 +61,13 @@ type Instance =
 /** A class the parsers build, constructed (and validated) from its own fields. */
 type InstanceClass = new (fields: Instance) => Instance;
 
+const isInstanceClass = (c: unknown): c is InstanceClass => Predicate.isFunction(c);
+
 /** The same instance built with `new` (and so by the class's own schema). */
 const rebuild = (node: Instance): Instance => {
-  // SAFETY: each instance's constructor is its Schema class, which takes the
-  // instance as its fields.
-  const Class = node.constructor as InstanceClass;
+  // Each instance's constructor is its Schema class, which takes the instance as its fields.
+  const Class = node.constructor;
+  assert(isInstanceClass(Class), "an instance's constructor is its class");
   return new Class(node);
 };
 

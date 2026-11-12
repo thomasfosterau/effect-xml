@@ -379,19 +379,34 @@ interface Resolved {
   readonly identifier: string | undefined;
 }
 
-/** The value each binding annotation key carries. */
-interface BindingAnnotations {
-  readonly [FieldBindingId]: FieldBinding;
-  readonly [ElementNameId]: ElementName;
-}
+/** Is this annotation value a {@link FieldBinding}? */
+const isFieldBinding = /*#__PURE__*/ Schema.is(
+  Schema.Struct({
+    node: Schema.Literals(["attribute", "element", "text"]),
+    name: Schema.optional(Schema.String),
+    namespace: Schema.optional(Schema.NullOr(Schema.String)),
+    prefix: Schema.optional(Schema.String),
+    wrapper: Schema.optional(Schema.String),
+  }),
+);
 
-const annotationAt = <K extends keyof BindingAnnotations>(
+/** Is this annotation value an {@link ElementName}? */
+const isElementName = /*#__PURE__*/ Schema.is(
+  Schema.Struct({
+    name: Schema.String,
+    namespace: Schema.optional(Schema.NullOr(Schema.String)),
+    prefix: Schema.optional(Schema.String),
+  }),
+);
+
+/** The value of a binding annotation `key` on `ast`, if it is one `guard` accepts (only `annotations` writes them). */
+const annotationAt = <A>(
   ast: SchemaAST.AST,
-  key: K,
-): BindingAnnotations[K] | undefined => {
+  key: string,
+  guard: (u: unknown) => u is A,
+): A | undefined => {
   const found = ast.context?.annotations?.[key] ?? SchemaAST.resolve(ast)?.[key];
-  // SAFETY: the values under the binding keys are only written by `annotations`.
-  return found as BindingAnnotations[K] | undefined;
+  return guard(found) ? found : undefined;
 };
 
 /** `outer`'s value unless it was left out. */
@@ -415,8 +430,8 @@ const mergeField = (
 
 const resolve = (ast: SchemaAST.AST, outer?: Omit<Resolved, "ast">): Resolved => {
   const here = {
-    field: mergeField(outer?.field, annotationAt(ast, FieldBindingId)),
-    named: outer?.named ?? annotationAt(ast, ElementNameId),
+    field: mergeField(outer?.field, annotationAt(ast, FieldBindingId, isFieldBinding)),
+    named: outer?.named ?? annotationAt(ast, ElementNameId, isElementName),
     identifier: outer?.identifier ?? SchemaAST.resolveIdentifier(ast),
   };
   if (ast.encoding !== undefined) return resolve(Arr.lastNonEmpty(ast.encoding).to, here);
@@ -694,6 +709,10 @@ const asString = (value: Tree, path: Path): Result.Result<string, XmlBindError> 
 
 const isList = (value: Tree): value is ReadonlyArray<Tree> => Arr.isArray(value);
 
+/** Is this node a record? A non-array object in a string tree is a record of string trees. */
+const isTreeRecord = (value: Tree): value is Schema.TreeRecord<string | undefined> =>
+  Predicate.isObject(value) && !isList(value);
+
 const asList = (value: Tree, path: Path): Result.Result<ReadonlyArray<Tree>, XmlBindError> =>
   isList(value) ? Result.succeed(value) : failAt(path, "expected an array");
 
@@ -701,10 +720,7 @@ const asRecord = (
   value: Tree,
   path: Path,
 ): Result.Result<R.ReadonlyRecord<string, Tree>, XmlBindError> =>
-  P.isObject(value) && !isList(value)
-    ? // SAFETY: a non-array object in a string tree is a record of string trees.
-      Result.succeed(value as R.ReadonlyRecord<string, Tree>)
-    : failAt(path, "expected an object");
+  isTreeRecord(value) ? Result.succeed(value) : failAt(path, "expected an object");
 
 const elementName = (struct: StructPlan, inherited: string | null, path: Path) =>
   struct.defaultName === undefined

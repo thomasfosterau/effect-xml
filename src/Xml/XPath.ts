@@ -818,7 +818,7 @@ const cursorAt = (node: XdmNode, element: XmlElement, context: Context): Cursor 
   return chain
     .slice(0, -1)
     .toReversed()
-    .reduce((c, below) => c.at(below.node.domStart), base);
+    .reduce((c, below) => c.at(below.element, below.node.domStart), base);
 };
 
 /**
