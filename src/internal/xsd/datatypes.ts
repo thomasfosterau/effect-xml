@@ -463,7 +463,9 @@ const temporalType = (name: string): Builtin => ({
 const two = (bits: bigint) => 2n ** bits;
 
 /** Every built-in simple type, by local name in the XSD namespace. */
-interface Builtins extends R.ReadonlyRecord<string, Builtin> {}
+interface Builtins {
+  readonly [key: string]: Builtin;
+}
 
 const builtins: Builtins = {
   anySimpleType: stringLike("anyType", "preserve"),
