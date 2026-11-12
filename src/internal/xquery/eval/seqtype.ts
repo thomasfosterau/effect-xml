@@ -342,6 +342,19 @@ const seqSubtype = (a: SeqType, b: SeqType): boolean => {
 // The function conversion rules
 // -----------------------------------------------------------------------------
 
+/** An `xs:untypedAtomic` for an expected atomic type: cast, unless the type depends on in-scope namespaces (`err:XPTY0117`). */
+const convertUntyped = (a: AtomicValue, target: AtomicType, offset?: number): AtomicValue => {
+  if (target === AtomicTypes.anyAtomicType || target === AtomicTypes.untypedAtomic) return a;
+  // The prefixes of an untyped value have no namespace context to resolve them in (XQuery 3.1 §3.1.5.2).
+  if (derivesFrom(target, AtomicTypes.QName) || derivesFrom(target, AtomicTypes.NOTATION))
+    return raise(
+      "XPTY0117",
+      `an xs:untypedAtomic cannot be converted to xs:${target.name}, which depends on in-scope namespaces`,
+      offset,
+    );
+  return castAtomic(a, target, undefined, offset);
+};
+
 /** Convert an atomized value to an expected atomic type: cast `xs:untypedAtomic`, promote numbers and URIs. */
 const convertAtomic = (a: AtomicValue, test: ItemTest, offset?: number): AtomicValue => {
   if (test.kind === "numeric") {
@@ -351,10 +364,7 @@ const convertAtomic = (a: AtomicValue, test: ItemTest, offset?: number): AtomicV
   }
   if (test.kind !== "atomic") return a;
   const target = test.type;
-  if (a.type === AtomicTypes.untypedAtomic)
-    return target === AtomicTypes.anyAtomicType || target === AtomicTypes.untypedAtomic
-      ? a
-      : castAtomic(a, target, undefined, offset);
+  if (a.type === AtomicTypes.untypedAtomic) return convertUntyped(a, target, offset);
   if (derivesFrom(a.type, target)) return a;
   const promotes =
     (target === AtomicTypes.double && isNumericType(a.type)) ||
