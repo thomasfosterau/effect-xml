@@ -614,6 +614,14 @@ export const buildChunks = (
       const lenient = lenientPass(chunks.chunks.join(""), opts, options);
       if (Result.isSuccess(lenient)) return Effect.succeed(lenient.success);
     }
+    // `strict: false` and recovering: a document strict XML reads is read
+    // the same when recovering (event for event), so read it strictly first,
+    // directly, and recover only if that fails. (The lenient reader reads
+    // some documents strict XML rejects, not as recovering does.)
+    if (!strict && opts.recover) {
+      const direct = buildPass(chunks, { ...saxOptions, recover: false }, options, true);
+      if (Result.isSuccess(direct)) return Effect.succeed(direct.success);
+    }
     const lean = buildPass(chunks, saxOptions, options, true);
     return Result.isSuccess(lean)
       ? Effect.succeed(lean.success)

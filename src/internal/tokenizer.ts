@@ -56,7 +56,10 @@ export class Tokenizer {
    */
   constructor(opts: ResolvedOptions, reuse = false, eagerDtd = false) {
     this.opts = opts;
-    const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined;
+    const dtd =
+      opts.mode === "xml" && opts.dtd === "internal"
+        ? new Dtd(opts.limits, opts.recover)
+        : undefined;
     this.dtd = dtd;
     this.lexer = new Lexer({
       mode: opts.mode,
@@ -69,7 +72,7 @@ export class Tokenizer {
       recover: opts.recover,
       eagerDtd,
     });
-    this.expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
+    this.expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities, opts.recover);
     this.guard = new Guard(opts.limits, opts.mode === "xml");
   }
 

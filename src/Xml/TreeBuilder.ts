@@ -48,7 +48,10 @@ export interface BuildOptions {
    * With `Xml.parse` and the other `Xml` parsers, it also has the tokenizer
    * recover (see `Sax.SaxOptions.recover`): a `<` or `&` that starts nothing
    * is text, unquoted and valueless attributes are read as HTML reads them,
-   * and references and CDATA sections outside the root go into it. Characters
+   * references and CDATA sections outside the root go into it, `</>` closes
+   * the element open innermost, comments may hold `--`, and markup the input
+   * ends inside of, malformed DOCTYPEs and processing instructions and
+   * entity replacement text that is not balanced markup are read. Characters
    * XML does not allow, resource limits and encoding errors still fail.
    * `build` repairs only the events it is given: tokenize with `recover` for
    * the rest.

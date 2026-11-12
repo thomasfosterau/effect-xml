@@ -7,6 +7,13 @@
  * spliced in, with every event given the reference's span. Each entity is
  * lexed once and its events reused, so a document with many references costs
  * linear time, while each use still counts against the expansion budget.
+ *
+ * Replacement text must be balanced markup. With `recover: true` it is read
+ * as recovering XML reads content and then balanced: an end tag that closes
+ * nothing opened in it is dropped, one that names an element open further
+ * out closes the ones inside it first, the elements still open at its end
+ * are closed there, and a declaration in it is dropped. Characters XML does
+ * not allow, recursion, external entities and the limits still fail.
  */
 import { unsafeAttrName } from "../Name.ts";
 import { InvalidEntity, LimitExceeded, type LexError } from "../Error.ts";
@@ -47,10 +54,13 @@ export class Expander {
 
   private readonly dtd: Dtd;
   private readonly entities: Record<string, string>;
+  /** XML `recover: true`: repair replacement text that is not balanced markup. */
+  private readonly recover: boolean;
 
-  constructor(dtd: Dtd, entities: Record<string, string>) {
+  constructor(dtd: Dtd, entities: Record<string, string>, recover = false) {
     this.dtd = dtd;
     this.entities = entities;
+    this.recover = recover;
   }
 
   /** The events a markup entity reference stands for, or the fault it causes. */
@@ -84,6 +94,7 @@ export class Expander {
       entities: this.entities,
       dtd: this.dtd,
       content: true,
+      recover: this.recover,
     });
     lexer.push(value);
     const outputs = lexer.end();
@@ -91,6 +102,7 @@ export class Expander {
     const unbalanced = () =>
       this.fail(name, span, { reason: "replacement text is not balanced markup" });
     let depth = 0;
+    const balanced = new Balanced(events);
     /** Take one output of the replacement text; a failure ends the expansion. */
     const take = (o: LexOutput): Failure | null => {
       if (isFault(o)) {
@@ -114,9 +126,15 @@ export class Expander {
         return null;
       }
       if (isDoctypeEvent(o) || isXmlDeclarationEvent(o)) {
-        return this.fail(name, span, {
-          reason: "a declaration is not allowed in entity replacement text",
-        });
+        return this.recover
+          ? null
+          : this.fail(name, span, {
+              reason: "a declaration is not allowed in entity replacement text",
+            });
+      }
+      if (this.recover) {
+        balanced.take(o);
+        return null;
       }
       if (isStartElementEvent(o) && !o.selfClosing) depth++;
       else if (isEndElementEvent(o) && --depth < 0) return unbalanced();
@@ -133,10 +151,50 @@ export class Expander {
       return failure === null;
     });
     if (failure !== null) return failure;
-    if (depth !== 0) return unbalanced();
+    if (this.recover) balanced.end();
+    else if (depth !== 0) return unbalanced();
     const expansion = { events, charge: this.dtd.spent - before };
     MutableHashMap.set(this.cache, name, expansion);
     return expansion;
+  }
+}
+
+/**
+ * Recovery: the events of replacement text, kept balanced in `out` (see
+ * {@link Expander}). Each end tag it adds has the span of its start tag:
+ * every event of an expansion is given the reference's span anyway.
+ */
+class Balanced {
+  private readonly out: Array<LexEvent>;
+  /** The start tags open, innermost last. */
+  private readonly open: Array<Extract<LexEvent, { _tag: "StartElement" }>> = [];
+
+  constructor(out: Array<LexEvent>) {
+    this.out = out;
+  }
+
+  take(ev: LexEvent): void {
+    if (isStartElementEvent(ev)) {
+      if (!ev.selfClosing) this.open.push(ev);
+    } else if (isEndElementEvent(ev)) {
+      const at = Arr.findLastIndex(this.open, (s) => s.name === ev.name);
+      if (Option.isNone(at)) return;
+      this.closeTo(at.value + 1);
+      this.open.pop();
+    }
+    this.out.push(ev);
+  }
+
+  /** The end of the replacement text: close what is still open. */
+  end(): void {
+    this.closeTo(0);
+  }
+
+  /** Close the open elements above the first `depth`, innermost first. */
+  private closeTo(depth: number): void {
+    Arr.forEach(Arr.reverse(this.open.splice(depth)), (start) =>
+      this.out.push({ name: start.name, span: start.span, _tag: "EndElement" }),
+    );
   }
 }
 

@@ -232,8 +232,26 @@ export interface SaxOptions {
    *   `Name` is dropped;
    * - in an end tag, anything between the name and the `>` is ignored; `</`
    *   followed by anything but a name is a comment up to the next `>` (a
-   *   bogus comment, as in XML5 and HTML), `</>` is dropped, and a `</` that
-   *   ends the input is text;
+   *   bogus comment, as in XML5 and HTML), and a `</` that ends the input is
+   *   text;
+   * - XML5's short end tag `</>` closes the element open innermost: it is an
+   *   `EndElement` with that element's name, and is dropped when none is
+   *   open (an end tag closes the elements up to the innermost one it
+   *   names, as the recovering tree builder closes them);
+   * - a comment runs to `-->` or `--!>`, `--` in it included, as in HTML;
+   * - markup the input ends inside of is read as HTML reads it there: a
+   *   comment, CDATA section or processing instruction keeps its data, and an
+   *   unfinished start or end tag is dropped;
+   * - a DOCTYPE keyword may be in any case (`<!doctype html>`), a malformed
+   *   DOCTYPE is read as HTML reads it (with no internal subset; one with no
+   *   name is dropped), a processing instruction whose target is a `Name`
+   *   keeps it and its data up to `?>`, a malformed XML declaration is
+   *   dropped, and any other `<?` is a comment up to the next `>`;
+   * - with `dtd: "internal"`, an entity's replacement text is read as this
+   *   content is, and balanced (an element left open in it is closed at its
+   *   end, an end tag for nothing opened in it and a declaration are
+   *   dropped); a reference to an undeclared entity in it is text, and an
+   *   entity whose value is not well-formed is not declared;
    * - `<!` that starts no comment, CDATA section or DOCTYPE is a comment up
    *   to the next `>`;
    * - `]]>` in text is text;
@@ -244,10 +262,10 @@ export interface SaxOptions {
    *
    * A document strict XML reads is read the same. Characters XML does not
    * allow still fail, as written or as a well-formed character reference
-   * (`&#0;`), and so do resource limits, encoding errors, markup cut off by
-   * the end of the input, comments with `--` in them and malformed
-   * declarations. A recovery is silent: nothing reports it. Ignored in HTML
-   * mode, which always recovers.
+   * (`&#0;`), and so do resource limits, encoding errors, an element name
+   * that is not an XML `Name`, recursive and external entities and a
+   * malformed internal subset. A recovery is silent: nothing reports it.
+   * Ignored in HTML mode, which always recovers.
    *
    * @since 0.2.0
    */

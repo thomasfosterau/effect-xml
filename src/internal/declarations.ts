@@ -258,20 +258,25 @@ export interface DoctypeBody {
 
 /**
  * What follows `<!`:
- * `'DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'`
+ * `'DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'`, its
+ * keyword read by `open` (XML's is `DOCTYPE`, in upper case).
  */
-export const doctype: Parser.Parser<DoctypeBody> = Parser.gen(function* () {
-  yield* Token.literal("DOCTYPE");
-  yield* S;
-  const name = yield* Parser.cut(Name.pipe(Parser.expected("document type name")));
-  const externalId = yield* Parser.optional(Parser.preceded(S, ExternalID));
-  yield* S0;
-  const subset = yield* Parser.optional(InternalSubset);
-  yield* Parser.cut(Token.literal(">"));
-  return {
-    name,
-    publicId: externalId?.publicId ?? null,
-    systemId: externalId?.systemId ?? null,
-    internalSubset: subset === undefined ? null : subset.trim() || null,
-  };
-}).pipe(Parser.context("DOCTYPE"));
+export const doctypeWith = (open: Parser.Parser<string>): Parser.Parser<DoctypeBody> =>
+  Parser.gen(function* () {
+    yield* open;
+    yield* S;
+    const name = yield* Parser.cut(Name.pipe(Parser.expected("document type name")));
+    const externalId = yield* Parser.optional(Parser.preceded(S, ExternalID));
+    yield* S0;
+    const subset = yield* Parser.optional(InternalSubset);
+    yield* Parser.cut(Token.literal(">"));
+    return {
+      name,
+      publicId: externalId?.publicId ?? null,
+      systemId: externalId?.systemId ?? null,
+      internalSubset: subset === undefined ? null : subset.trim() || null,
+    };
+  }).pipe(Parser.context("DOCTYPE"));
+
+/** What follows `<!` in XML: {@link doctypeWith} the keyword `DOCTYPE`. */
+export const doctype: Parser.Parser<DoctypeBody> = doctypeWith(Token.literal("DOCTYPE"));

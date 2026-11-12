@@ -56,8 +56,17 @@ const PREDEFINED: PredefinedEntities = { lt: "<", gt: ">", amp: "&", apos: "'", 
 export const collapse = (s: string): string => s.replace(/ +/g, " ").replace(/^ | $/g, "");
 
 /** A character reference body (`#38`, `#x26`) as a string, or null if it isn't a valid one. */
+/** A character reference's body (`#…`), well-formed whatever character it refers to. */
+const charRefSyntax = /^#(?:x([0-9a-fA-F]+)|([0-9]+))$/;
+
+/** Whether `raw` has a well-formed character reference to a character XML does not allow. */
+const refersToForbidden = (raw: string): boolean =>
+  Array.from(raw.matchAll(/&(#[^;&]*);/g)).some(
+    ([, body = ""]) => charRefSyntax.test(body) && charRef(body) === null,
+  );
+
 const charRef = (body: string): string | null => {
-  const m = /^#(?:x([0-9a-fA-F]+)|([0-9]+))$/.exec(body);
+  const m = charRefSyntax.exec(body);
   if (m === null) return null;
   // One of the two groups matched.
   const cp = m[1] !== undefined ? parseInt(m[1], 16) : parseInt(m[2] ?? "", 10);
@@ -336,8 +345,17 @@ export class Dtd implements EntityResolver {
 
   private readonly limits: Limits;
 
-  constructor(limits: Limits) {
+  /**
+   * XML `recover: true`: an entity whose value is not well-formed is not
+   * declared (so a reference to it is text, as written), and a reference to
+   * an undeclared entity in replacement text is text too. Recursion, external
+   * entities and the limits still fail.
+   */
+  private readonly recover: boolean;
+
+  constructor(limits: Limits, recover = false) {
     this.limits = limits;
+    this.recover = recover;
   }
 
   /** Read an internal subset's declarations. */
@@ -367,6 +385,15 @@ export class Dtd implements EntityResolver {
   private declareEntity(decl: Extract<Decl, { _tag: "Entity" }>): DeclarationError | null {
     // Every entity value must be well-formed, whether or not it is ever used.
     const value = decl.value === null ? null : this.literal(decl.value);
+    // Recovering, it is not declared, unless a reference in it is to a
+    // character XML does not allow, which still fails.
+    if (
+      value !== null &&
+      !P.isString(value) &&
+      this.recover &&
+      !refersToForbidden(decl.value ?? "")
+    )
+      return null;
     if (value !== null && !P.isString(value))
       return {
         offset: 0,
@@ -560,6 +587,7 @@ export class Dtd implements EntityResolver {
     }
     const predefined = PREDEFINED[body];
     if (predefined !== undefined) return out + predefined;
+    if (this.recover && !this.declares(body)) return out + segment;
     const value = this.replacement(body, stack);
     if (!P.isString(value)) return value;
     const inner = this.expand(value, inAttribute, [...stack, body]);

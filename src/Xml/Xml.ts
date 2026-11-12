@@ -39,7 +39,10 @@ export interface ParseOptions extends BuildOptions {
    * reading, as `Sax.forEach` reads (see `Sax.ForEachOptions.strict`), for
    * documents known to be well-formed: a well-formed document gives the same
    * tree, about twice as fast. If lenient reading fails, the document is read
-   * strictly, so a failure is always the strict one. Default `true`.
+   * strictly, so a failure is always the strict one. With `recover: true`,
+   * the document is read strictly first (strict reading's fast path, not
+   * the lenient one), and recovered from only if that fails: the tree is
+   * the same either way. Default `true`.
    *
    * @since 0.1.0
    */

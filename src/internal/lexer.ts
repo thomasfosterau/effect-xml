@@ -57,7 +57,7 @@ import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
 import type { Dtd } from "./dtd.ts";
 import { hasAsciiNames } from "./entities.ts";
-import { grammars, type Grammars, Issue, type RawKind, type Tok } from "./tokens.ts";
+import { grammars, type Grammars, Issue, type RawKind, type Step, type Tok } from "./tokens.ts";
 
 // -----------------------------------------------------------------------------
 // Output model
@@ -192,7 +192,8 @@ export interface LexerOptions {
   /**
    * XML: recover where the strict grammars fail at a `<` or `&` that starts
    * nothing, an unquoted or valueless attribute, or markup out of place at
-   * the top level (see `tokens.ts` and {@link Lexer.placed}). What strict XML
+   * the top level, a short end tag `</>`, and markup the input ends inside of
+   * (see `tokens.ts` and {@link Lexer.place}). What strict XML
    * reads is read the same; characters XML does not allow still fail.
    */
   readonly recover?: boolean;
@@ -520,21 +521,25 @@ export class Lexer {
     if (dtd !== undefined && this.dtdOn) this.grammars.dtd.current = dtd;
     // The compiled grammar runs on the reused state; on a failure `Parser.run`
     // re-runs the interpreter, so `mode` and the reported failure are its.
-    const step = Parser.run(this.grammar(), state);
+    let step = Parser.run(this.grammar(), state);
     if (step === Input.Fail) {
       if (state.mode === "Incomplete" && !this.ended) {
         this.retryAt = this.buf.length + 1 + ((this.buf.length - start) >> 1);
         return null;
       }
-      this.failed = true;
-      return [{ _tag: "Fault", error: this.toError(state) }];
+      const error = this.toError(state);
+      step = this.atEof(state, start, error);
+      if (step === Input.Fail) {
+        this.failed = true;
+        return [{ _tag: "Fault", error }];
+      }
     }
     this.positions.anchor(this.base + start);
     if (this.forbidden !== -1 && this.forbidden < this.base + state.pos) {
       this.failed = true;
       return [{ _tag: "Fault", error: this.forbiddenCharacter() }];
     }
-    if (this.recover) return this.accept(state.pos, step.filter(this.placed));
+    if (this.recover) return this.accept(state.pos, this.recovered(step));
     if (this.options.mode === "xml" && step.some(this.misplaced)) {
       this.failed = true;
       // `misplaced` recorded why.
@@ -543,6 +548,23 @@ export class Lexer {
       );
     }
     return this.accept(state.pos, step);
+  }
+
+  /**
+   * XML, recovering: the token at buffer index `start` read with
+   * {@link Grammars.atEof}, where the data grammar failed with `error`
+   * because the complete input ends inside it; `Input.Fail` otherwise, and
+   * when that fails too. (A failure at the end of the input is one the
+   * lexer reports as `UnexpectedEndOfInput`.)
+   */
+  private atEof(
+    state: Input.State<string>,
+    start: number,
+    error: LexError | LimitExceeded,
+  ): Step | Input.Fail {
+    const grammar = this.grammars.atEof;
+    if (grammar === undefined || error._tag !== "UnexpectedEndOfInput") return Input.Fail;
+    return Parser.run(grammar, state.reset(start, { partial: false }));
   }
 
   /** Take in the tokens of a step that ends at buffer index `end`: their events. */
@@ -627,7 +649,11 @@ export class Lexer {
     if (ev._tag === "StartElement") {
       if (!ev.selfClosing) this.depth++;
       this.prologEnded = true;
-    } else if (ev._tag === "EndElement" && this.depth > 0) this.depth--;
+      if (this.recover && !ev.selfClosing) this.opened.push(ev.name);
+    } else if (ev._tag === "EndElement") {
+      if (this.depth > 0) this.depth--;
+      if (this.recover) this.closed(ev.name);
+    }
     this.cursor = end;
     this.retryAt = 0;
     this.compact();
@@ -761,32 +787,68 @@ export class Lexer {
   };
 
   /**
-   * XML, recovering: whether to keep `t`, as {@link misplaced} would accept
-   * it and further. References and CDATA sections outside the root element
-   * are kept, for the tree builder to place (it puts character data before
-   * the root in a synthesized one, and after it under the root). An XML
-   * declaration anywhere but at the very start, and a document type
-   * declaration after the first or after the root element's start, are
-   * dropped: XML5 reads a late `<?xml …?>` as a processing instruction, but
-   * the `xml` target is reserved (§2.6), and the first declaration is the
-   * document's.
+   * XML, recovering: the tokens of a step that are kept, as {@link place}
+   * keeps them (a step is nearly always one token).
+   */
+  private recovered(step: Step): Step {
+    if (step.length === 1) {
+      const only = step[0];
+      const kept = only === undefined ? undefined : this.place(only);
+      return kept === only ? step : kept === undefined ? [] : [kept];
+    }
+    return step.flatMap((t) => Arr.fromNullishOr(this.place(t)));
+  }
+
+  /**
+   * XML, recovering: `t` as it is kept, or `undefined` when it is dropped,
+   * as {@link misplaced} would accept it and further. References and CDATA
+   * sections outside the root element are kept, for the tree builder to
+   * place (it puts character data before the root in a synthesized one, and
+   * after it under the root). An XML declaration anywhere but at the very
+   * start, and a document type declaration after the first or after the root
+   * element's start, are dropped: XML5 reads a late `<?xml …?>` as a
+   * processing instruction, but the `xml` target is reserved (§2.6), and the
+   * first declaration is the document's. XML5's short end tag `</>` (an end
+   * tag with no name) closes the element open innermost, so it is given that
+   * name ({@link opened}), and dropped when none is.
    */
   // A `switch` and a method built once, as `misplaced`.
-  private readonly placed = (t: Tok): boolean => {
+  private readonly place = (t: Tok): Tok | undefined => {
     switch (t._tag) {
       case "StartElement":
-      case "EndElement":
-        return !this.misplaced(t);
+        if (!t.selfClosing) this.opened.push(t.name);
+        this.misplaced(t);
+        return t;
+      case "EndElement": {
+        const name = t.name === "" ? this.opened.at(-1) : t.name;
+        if (name === undefined) return undefined;
+        this.closed(name);
+        this.misplaced(t);
+        return name === t.name ? t : { ...t, name };
+      }
       case "Doctype":
-        if (this.prologEnded) return false;
+        if (this.prologEnded) return undefined;
         this.prologEnded = true;
-        return true;
+        return t;
       case "XmlDeclaration":
-        return this.base + t.start === 0;
+        return this.base + t.start === 0 ? t : undefined;
       default:
-        return true;
+        return t;
     }
   };
+
+  /**
+   * XML, recovering: the names of the elements open, outermost first, as
+   * the recovering tree builder keeps them: an end tag closes the elements
+   * up to the innermost one it names, and closes none when none is open.
+   */
+  private readonly opened: Array<string> = [];
+
+  /** XML, recovering: an end tag for `name` has been read (see {@link opened}). */
+  private closed(name: string): void {
+    const at = this.opened.lastIndexOf(name);
+    if (at !== -1) this.opened.length = at;
+  }
 
   /** Is the lexer outside the root element of a document? */
   private outside(): boolean {

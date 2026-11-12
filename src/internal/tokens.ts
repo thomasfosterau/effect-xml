@@ -12,8 +12,11 @@
  * - HTML recovers, following WHATWG tokenization: every input yields tokens.
  * - XML with `recover: true` reads what strict XML reads exactly as strict XML
  *   does, and recovers where strict XML fails at a `<` or `&` that starts
- *   nothing, or an attribute HTML would read (XML5, after xml5ever): see
- *   {@link recoverText} and {@link recoverStartTag}.
+ *   nothing, an attribute HTML would read, a comment with `--` in it, a
+ *   malformed DOCTYPE or processing instruction (XML5, after xml5ever): see
+ *   {@link recoverText}, {@link recoverStartTag}, {@link recoverComment},
+ *   {@link recoverDoctype} and {@link recoverPi}. Markup the input ends
+ *   inside of is read by {@link Grammars.atEof}.
  *
  * The grammars also run on partial input (`State.partial`), where running
  * into the end of the buffer means "Incomplete"; that is what keeps the
@@ -27,7 +30,7 @@ import { Ascii, Compiler, Input, Parser, Token } from "@thomasfosterau/effect-pa
 import * as Data from "effect/Data";
 import { identity } from "effect/Function";
 import * as Result from "effect/Result";
-import { doctype as xmlDoctype, processingInstruction } from "./declarations.ts";
+import { doctype as xmlDoctype, doctypeWith, processingInstruction } from "./declarations.ts";
 import { decode, htmlLegacyEntities, type EntityLimit, type EntityTable } from "./entities.ts";
 import { DtdSlot } from "./dtd.ts";
 import { invalidNameAt } from "./names.ts";
@@ -605,8 +608,9 @@ const recoverStartTag = (cfg: EntityConfig): P<Step> => {
 /**
  * `</name>` as XML reads it, recovering as XML5 does: what follows the name
  * up to the `>` is ignored, `</` followed by anything but a name is a bogus
- * comment up to the next `>`, `</>` is dropped, and a `</` that ends the
- * input is text.
+ * comment up to the next `>`, `</>` is XML5's short end tag (an end tag with
+ * no name, which the lexer gives the name of the element it closes, see
+ * `Lexer.place`), and a `</` that ends the input is text.
  */
 const recoverEndTag: P<Step> = Parser.alt(
   spanned(
@@ -617,7 +621,7 @@ const recoverEndTag: P<Step> = Parser.alt(
     ),
     endElement,
   ),
-  Parser.as(Token.literal("</>"), none),
+  spanned(Token.literal("</>"), (_, start, end) => endElement("", start, end)),
   spanned(
     Parser.delimited(Parser.seq(endTagOpen, Parser.peek(anyChar)), Token.takeTill(">"), gtOrEof),
     commentTok,
@@ -857,6 +861,125 @@ const htmlDoctype: Parser.Parser<Step> = spanned(
 );
 
 // -----------------------------------------------------------------------------
+// XML recovery: comments, DOCTYPEs, processing instructions and EOF
+// -----------------------------------------------------------------------------
+
+/**
+ * Recovering, `<!--` and data up to `-->` or `--!>`, `--` in it included
+ * (HTML, XML5). Strict XML ends a comment at its first `--`, which must be
+ * the `-->`: where it is, this ends there too. One the input ends inside of
+ * keeps its data, as in HTML (a comment `<!-->` or `<!--->` is then empty).
+ */
+const recoverComment: P<Step> = spanned(
+  Parser.preceded(
+    Token.literal("<!--"),
+    Parser.alt(
+      Parser.terminated(commentData, commentClose),
+      // (Only on complete input: on partial input `commentData` asks for more.)
+      Parser.as(gt, ""),
+      Parser.as(Token.literal("->"), ""),
+      commentAtEof,
+    ),
+  ),
+  commentTok,
+);
+
+/** Recovering, `<![CDATA[…]]>`; one the input ends inside of keeps its data, as in HTML. */
+const recoverCdata: P<Step> = cdata(false);
+
+/**
+ * Recovering, `<!DOCTYPE …>`: as strict XML reads it (with its keyword in
+ * any case, `<!doctype html>`), or else as HTML does (the WHATWG DOCTYPE
+ * states: a missing name or identifier, unquoted junk, a missing `>` at the
+ * end of the input), with no internal subset. One with no name is dropped.
+ */
+const recoverDoctype: P<Step> = Parser.alt(
+  Parser.backtrack(
+    spanned(
+      Parser.preceded(Token.literal("<!"), doctypeWith(Ascii.caseless("DOCTYPE"))),
+      (dt, start, end): Tok => ({ _tag: "Doctype", ...dt, forceQuirks: false, start, end }),
+    ),
+  ),
+  Parser.map(
+    located(
+      Parser.preceded(Parser.seq(Token.literal("<!"), Ascii.caseless("DOCTYPE")), doctypeFields),
+    ),
+    // (Quirks are HTML's.)
+    ({ start, value: [name, publicId, systemId], end }): Step =>
+      name === ""
+        ? none
+        : [
+            {
+              _tag: "Doctype",
+              name,
+              publicId,
+              systemId,
+              internalSubset: null,
+              forceQuirks: false,
+              start,
+              end,
+            },
+          ],
+  ),
+);
+
+/** A processing instruction's target as a recovering read takes it: up to whitespace, `?` or `>`. */
+const piTarget = Token.takeTill(ws + "?>");
+
+/**
+ * The rest of a processing instruction up to `?>`, or to the end of the
+ * input when it ends inside of it (only on complete input: on partial input
+ * `takeUntil` asks for more).
+ */
+const piRest: Parser.Parser<string> = Parser.alt(
+  Parser.terminated(Token.takeUntil("?>"), Token.literal("?>")),
+  Parser.map(Parser.terminated(Token.rest, eof), (data) =>
+    data.endsWith("?") ? data.slice(0, -1) : data,
+  ),
+);
+
+/**
+ * Recovering, `<?…?>` that strict XML does not read: with a target that is
+ * an XML `Name`, a processing instruction whose data runs to `?>` (`<?pi?x?>`);
+ * a malformed XML declaration (its target `xml` in any case) is dropped, as
+ * a late one is; any other is a bogus comment up to the next `>`, as HTML
+ * reads every `<?`. One the input ends inside of keeps its data.
+ */
+const malformedPi: P<Step> = (() => {
+  const rest = piRest;
+  const named = spanned(
+    Parser.preceded(Token.literal("<?"), Parser.seq(piTarget, Parser.preceded(S0, rest))),
+    ([target, data], start, end): Tok => ({
+      _tag: "ProcessingInstruction",
+      target,
+      data,
+      start,
+      end,
+    }),
+  );
+  const dropped = Parser.as(Parser.seq(Token.literal("<?"), rest), none);
+  const bogus = bogusComment("<?");
+  return Parser.flatMap(Parser.peek(Parser.preceded(Token.literal("<?"), piTarget)), (target) =>
+    target.toLowerCase() === "xml" ? dropped : invalidNameAt(target) === -1 ? named : bogus,
+  );
+})();
+
+/** Recovering, `<?…?>`: as strict XML reads it, or else {@link malformedPi}. */
+const recoverPi: P<Step> = Parser.alt(Parser.backtrack(piToken), malformedPi);
+
+/**
+ * Recovering, a start or end tag the input ends inside of, which is dropped
+ * as HTML drops it. Only ever run on complete input, where the data grammar
+ * failed at its end (see `Lexer.parse`): a tag is the one token whose
+ * recovering grammar fails there, as it fails elsewhere where its element
+ * name is not an XML `Name`.
+ */
+const recoverAtEof: P<Step> = Parser.as(
+  Parser.seq(Token.literal("<"), Token.oneOf([...nameStart, "/"]), Token.rest, eof),
+  none,
+);
+
+// -----------------------------------------------------------------------------
 // Raw text: <script>, <style>, <title>, … (HTML only)
 // -----------------------------------------------------------------------------
 
@@ -970,6 +1093,12 @@ export interface Grammars {
   readonly rcdataToEnd: P<Step>;
   /** The slot to point at the document's DTD before each run (used with `dtd: "internal"` only). */
   readonly dtd: DtdSlot;
+  /**
+   * XML, recovering: the token at the cursor of a complete input, where the
+   * data grammar failed because the input ends inside it (a start or end tag,
+   * which is dropped: see {@link recoverAtEof}). Not set for the other sets.
+   */
+  readonly atEof?: P<Step>;
 }
 
 /**
@@ -1009,9 +1138,12 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
     const committed = <A>(open: Parser.Parser<unknown>, p: P<A>): P<A> =>
       Parser.preceded(Parser.peek(open), Parser.cut(p));
     const markupDeclaration = Parser.alt(
-      committed(Token.literal("<!--"), comment(true)),
-      committed(Token.literal("<![CDATA["), cdata(true)),
-      committed(Parser.seq(Token.literal("<!"), Ascii.caseless("DOCTYPE")), xmlDoctypeToken),
+      committed(Token.literal("<!--"), cfg.recover ? recoverComment : comment(true)),
+      committed(Token.literal("<![CDATA["), cfg.recover ? recoverCdata : cdata(true)),
+      committed(
+        Parser.seq(Token.literal("<!"), Ascii.caseless("DOCTYPE")),
+        cfg.recover ? recoverDoctype : xmlDoctypeToken,
+      ),
       // Recovering, any other `<!` is a bogus comment (XML5).
       cfg.recover ? bogusComment("<!") : badMarkupDeclaration,
     );
@@ -1024,7 +1156,7 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
       {
         "/": cfg.recover ? recoverEndTag : Parser.cut(xmlEndTag),
         "!": markupDeclaration,
-        "?": Parser.cut(piToken),
+        "?": Parser.cut(cfg.recover ? recoverPi : piToken),
       },
       Parser.cut(cfg.recover ? recoverStartTag(cfg) : xmlStartTag(cfg)),
       badOpen,
@@ -1079,6 +1211,7 @@ const makeGrammars = (cfg: EntityConfig): Grammars => {
     plaintext: Compiler.jit(plaintext),
     rcdataToEnd: Compiler.jit(rcdataToEnd),
     dtd: cfg.dtd ?? new DtdSlot(),
+    ...maybe("atEof", cfg.recover ? Compiler.jit(recoverAtEof) : undefined),
   };
 };
 

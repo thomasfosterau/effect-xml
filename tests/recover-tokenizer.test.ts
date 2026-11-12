@@ -1,9 +1,12 @@
 /**
- * Tokenizer-level recovery (`recover: true` in XML mode, #52): a `<` or `&`
- * that starts nothing, unquoted and valueless attributes, and markup out of
- * place at the top level are read rather than failing; characters XML does
- * not allow, resource limits and encoding errors still fail. A strict parse
- * of the same inputs fails exactly as it did before recovery existed.
+ * Tokenizer-level recovery (`recover: true` in XML mode, #52, #184): a `<` or
+ * `&` that starts nothing, unquoted and valueless attributes, markup out of
+ * place at the top level, the short end tag `</>`, comments with `--` in
+ * them, markup the input ends inside of, malformed DOCTYPEs and processing
+ * instructions, and entity replacement text that is not balanced markup are
+ * read rather than failing; characters XML does not allow, resource limits
+ * and encoding errors still fail. A strict parse of the same inputs fails
+ * exactly as it did before recovery existed.
  */
 import { describe, expect } from "vite-plus/test";
 import { it } from "@effect/vitest";
@@ -83,10 +86,9 @@ describe("recover: a `<` that opens no markup", () => {
     }),
   );
 
-  it.effect("`</` and no name: a bogus comment, `</>` dropped, `</` at the end text", () =>
+  it.effect("`</` and no name: a bogus comment, `</` at the end text", () =>
     Effect.gen(function* () {
       expect(yield* recovered("<a>x</ y>z</a>")).toBe("<a>x<!-- y-->z</a>");
-      expect(yield* recovered("<a>x</>z</a>")).toBe("<a>xz</a>");
       expect(yield* recovered("<a>x</")).toBe("<a>x&lt;/</a>");
       // What follows an end tag's name is ignored.
       expect(yield* recovered("<a><b>x</b junk></a>")).toBe("<a><b>x</b></a>");
@@ -258,11 +260,405 @@ describe("recover: what still fails", () => {
     }),
   );
 
-  it.effect("markup the input ends inside of", () =>
+  it.effect("an element name that is not an XML Name", () =>
     Effect.gen(function* () {
-      expect(failure(yield* recoverResult("<a><b x='1"))._tag).toBe("UnexpectedEndOfInput");
-      expect(failure(yield* recoverResult("<a><b"))._tag).toBe("UnexpectedEndOfInput");
+      expect(yield* failureTag("<a!b>")).toBe("UnexpectedCharacter");
+      expect(yield* failureTag("<a><b!c x='1'>")).toBe("UnexpectedCharacter");
+      // (A tag the input ends inside of is dropped before its name is checked.)
+      expect(yield* recovered("<a><b!c x='1'")).toBe("<a/>");
     }),
+  );
+
+  it.effect("a forbidden character in markup the input ends inside of", () =>
+    Effect.gen(function* () {
+      expect(yield* failureTag("<a><!-- \u0001")).toBe("UnexpectedCharacter");
+      expect(yield* failureTag("<a><b x='\u0001")).toBe("UnexpectedCharacter");
+      expect(yield* failureTag("<a><?pi \u0001")).toBe("UnexpectedCharacter");
+    }),
+  );
+
+  it.effect("entity replacement text: recursion, characters XML does not allow, limits", () =>
+    Effect.gen(function* () {
+      expect(yield* internalFailure(`<!ENTITY e "<b>&e;</b>">`, "&e;")).toMatchObject({
+        _tag: "InvalidEntity",
+        reason: 'recursive entity "e"',
+      });
+      expect((yield* internalFailure(`<!ENTITY e "<b>&#0;</b>">`, "&e;"))._tag).toBe(
+        "MalformedDeclaration",
+      );
+      expect((yield* internalFailure(`<!ENTITY e "<b>&#38;#0;</b>">`, "&e;"))._tag).toBe(
+        "InvalidEntity",
+      );
+      expect(
+        yield* internalFailure(`<!ENTITY e "<b>xxxxxxxx</b>">`, "&e;&e;&e;", {
+          maxEntityExpansion: 20,
+        }),
+      ).toMatchObject({ _tag: "LimitExceeded", limit: "maxEntityExpansion" });
+    }),
+  );
+});
+
+/** The tag, name or data, and span offsets of each recovered event. */
+const outline = (input: string, options?: Sax.SaxOptions) =>
+  Effect.map(events(input, options), (all) =>
+    all.map((e) => [
+      e._tag,
+      Sax.isStartElement(e) || Sax.isEndElement(e)
+        ? e.name
+        : Sax.isProcessingInstruction(e)
+          ? `${e.target}|${e.data}`
+          : Sax.isDoctype(e)
+            ? e.name
+            : "data" in e
+              ? e.data
+              : "",
+      e.span.start.offset,
+      e.span.end.offset,
+    ]),
+  );
+
+/** Whether every chunk size of `input` gives its whole events and spans (failing the test if not). */
+const chunkSafe = (input: string, options: Sax.SaxOptions = {}) =>
+  Effect.gen(function* () {
+    const whole = yield* tokenized([input], { recover: true, ...options });
+    expect(Exit.isSuccess(whole), input).toBe(true);
+    yield* Effect.forEach(
+      Arr.range(1, input.length),
+      (size) =>
+        Effect.gen(function* () {
+          return expect(
+            yield* tokenized(chunked(input, size), { recover: true, ...options }),
+            `${input} in chunks of ${size}`,
+          ).toStrictEqual(whole);
+        }),
+      { concurrency: 1, discard: true },
+    );
+    return true;
+  });
+
+/** A recovering `dtd: "internal"` parse's failure, of `<a>body</a>` under an internal subset. */
+const internalFailure = (subset: string, body: string, limits: Xml.ParseOptions["limits"] = {}) =>
+  Effect.gen(function* () {
+    return failure(
+      yield* Effect.result(
+        Xml.parse(`<!DOCTYPE a [${subset}]><a>${body}</a>`, {
+          recover: true,
+          dtd: "internal",
+          limits,
+        }),
+      ),
+    );
+  });
+
+/** A recovering `dtd: "internal"` parse of `<a>body</a>`, serialized without its DOCTYPE. */
+const internal = (subset: string, body: string) =>
+  Effect.gen(function* () {
+    const doc = yield* Xml.parse(`<!DOCTYPE a [${subset}]><a>${body}</a>`, {
+      recover: true,
+      dtd: "internal",
+    });
+    return Xml.serializeDocument(doc).replace(/^<!DOCTYPE[^\]]*\]>/, "");
+  });
+
+describe("recover: the short end tag `</>`", () => {
+  it.effect("closes the element open innermost: an end tag with its name", () =>
+    Effect.gen(function* () {
+      expect(yield* recovered("<a><b>x</>y</>")).toBe("<a><b>x</b>y</a>");
+      expect(yield* recovered("<a><b><c/>x</></a>")).toBe("<a><b><c/>x</b></a>");
+      expect(yield* outline("<a><b>x</></>")).toStrictEqual([
+        ["StartElement", "a", 0, 3],
+        ["StartElement", "b", 3, 6],
+        ["Text", "x", 6, 7],
+        ["EndElement", "b", 7, 10],
+        ["EndElement", "a", 10, 13],
+      ]);
+      // (`</>` closes the root, which a recovering tree builder keeps open.)
+      expect(yield* recovered("<a>x</>z</a>")).toBe("<a>xz</a>");
+    }),
+  );
+
+  it.effect(
+    "closes what the tree builder has open: after a mismatched end tag, and after the root",
+    () =>
+      Effect.gen(function* () {
+        // `</a>` closes `b` and `a`, so `</>` has nothing to close.
+        expect((yield* outline("<a><b></a></>")).map(([tag, name]) => [tag, name])).toStrictEqual([
+          ["StartElement", "a"],
+          ["StartElement", "b"],
+          ["EndElement", "a"],
+        ]);
+        // An end tag that names nothing open closes nothing.
+        expect((yield* outline("<a><b></c></>")).at(-1)).toStrictEqual(["EndElement", "b", 10, 13]);
+        expect(yield* recovered("<a></a><b>x</>y")).toBe("<a><b>x</b>y</a>");
+      }),
+  );
+
+  it.effect("is dropped with no element open", () =>
+    Effect.gen(function* () {
+      expect(yield* outline("</><a/></>")).toStrictEqual([["StartElement", "a", 3, 7]]);
+    }),
+  );
+
+  it.effect("gives the same events at every chunk size", () =>
+    Effect.gen(function* () {
+      expect(yield* chunkSafe("<a><b>x</><c>y</></><d></>")).toBe(true);
+      expect(yield* chunkSafe("<a><b>x</><c>y</></><d></>", { dtd: "internal" })).toBe(true);
+    }),
+  );
+});
+
+describe("recover: comments with `--` in them", () => {
+  it.effect("are comments up to `-->` or `--!>`, as in HTML", () =>
+    Effect.gen(function* () {
+      expect((yield* outline("<a><!-- a -- b -->c</a>")).slice(1, 3)).toStrictEqual([
+        ["Comment", " a -- b ", 3, 18],
+        ["Text", "c", 18, 19],
+      ]);
+      expect((yield* outline("<a><!--a--->b</a>"))[1]).toStrictEqual(["Comment", "a-", 3, 12]);
+      expect((yield* outline("<a><!-- x --!>y</a>")).slice(1, 3)).toStrictEqual([
+        ["Comment", " x ", 3, 14],
+        ["Text", "y", 14, 15],
+      ]);
+    }),
+  );
+
+  it.effect("a comment strict XML reads ends where it does", () =>
+    Effect.gen(function* () {
+      expect((yield* outline("<a><!---->x--></a>"))[1]).toStrictEqual(["Comment", "", 3, 10]);
+      expect((yield* outline("<a><!-->x--></a>"))[1]).toStrictEqual(["Comment", ">x", 3, 12]);
+    }),
+  );
+
+  it.effect("give the same events at every chunk size", () =>
+    Effect.gen(function* () {
+      expect(yield* chunkSafe("<a><!-- a -- b -->c<!--x--!>-->d<!---- -->e</a>")).toBe(true);
+    }),
+  );
+});
+
+describe("recover: markup the input ends inside of", () => {
+  it.effect("a comment, CDATA section or processing instruction keeps its data", () =>
+    Effect.gen(function* () {
+      expect(yield* outline("<a>t<!-- x -")).toStrictEqual([
+        ["StartElement", "a", 0, 3],
+        ["Text", "t", 3, 4],
+        ["Comment", " x ", 4, 12],
+      ]);
+      expect((yield* outline("<a><!-- x --"))[1]).toStrictEqual(["Comment", " x ", 3, 12]);
+      expect((yield* outline("<a><!-- x --!"))[1]).toStrictEqual(["Comment", " x ", 3, 13]);
+      expect((yield* outline("<a><![CDATA[x]]"))[1]).toStrictEqual(["CData", "x]]", 3, 15]);
+      expect((yield* outline("<a><?pi x y?"))[1]).toStrictEqual([
+        "ProcessingInstruction",
+        "pi|x y",
+        3,
+        12,
+      ]);
+      expect(yield* recovered("<a><![CDATA[x")).toBe("<a><![CDATA[x]]></a>");
+    }),
+  );
+
+  it.effect("a comment `<!-->` or `<!--->` with no end is empty, as in HTML", () =>
+    Effect.gen(function* () {
+      expect((yield* outline("<a><!-->x")).slice(1)).toStrictEqual([
+        ["Comment", "", 3, 8],
+        ["Text", "x", 8, 9],
+      ]);
+      expect((yield* outline("<a><!--->x"))[1]).toStrictEqual(["Comment", "", 3, 9]);
+    }),
+  );
+
+  it.effect("an unfinished start or end tag is dropped, as in HTML", () =>
+    Effect.gen(function* () {
+      expect(yield* recovered("<a><b x='1")).toBe("<a/>");
+      expect(yield* recovered("<a>t<b x=1 y")).toBe("<a>t</a>");
+      expect(yield* recovered("<a><b")).toBe("<a/>");
+      expect(yield* recovered("<a><b>x</b")).toBe("<a><b>x</b></a>");
+      expect(yield* outline("<a>t</a")).toStrictEqual([
+        ["StartElement", "a", 0, 3],
+        ["Text", "t", 3, 4],
+      ]);
+    }),
+  );
+
+  it.effect("give the same events at every chunk size", () =>
+    Effect.forEach(
+      [
+        "<a>t<!-- x -- y",
+        "<a><!-->x",
+        "<a><![CDATA[x]]",
+        "<a><?pi x?",
+        "<a><?123 x",
+        "<?xml version='1.0'",
+        "<a>t<b x='1>2",
+        "<a>t</a",
+        "<!doctype a SYSTEM 'x",
+      ],
+      (doc) =>
+        Effect.gen(function* () {
+          return expect(yield* chunkSafe(doc), doc).toBe(true);
+        }),
+      { concurrency: 1, discard: true },
+    ),
+  );
+});
+
+describe("recover: DOCTYPEs and processing instructions", () => {
+  it.effect("a DOCTYPE keyword in any case", () =>
+    Effect.gen(function* () {
+      const doc = success(yield* recoverResult("<!doctype html><html/>"));
+      expect(some(doc.doctype).name).toBe("html");
+      const subset = `<!doctype a [<!ENTITY e "E">]><a>&e;</a>`;
+      expect(
+        success(yield* Effect.result(Xml.parse(subset, { recover: true, dtd: "internal" }))).root
+          .textContent,
+      ).toBe("E");
+    }),
+  );
+
+  it.effect("a malformed DOCTYPE as HTML reads it; one with no name is dropped", () =>
+    Effect.gen(function* () {
+      const xhtml = success(
+        yield* recoverResult(`<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"><html/>`),
+      );
+      expect(some(xhtml.doctype).publicId).toEqual(Option.some("-//W3C//DTD XHTML 1.0 Strict//EN"));
+      expect(some(xhtml.doctype).systemId).toEqual(Option.none());
+      expect((yield* outline(`<!DOCTYPE a junk><a/>`))[0]).toStrictEqual(["Doctype", "a", 0, 17]);
+      expect(yield* outline(`<!DOCTYPE><a/>`)).toStrictEqual([["StartElement", "a", 10, 14]]);
+      const event = at(yield* events(`<!doctype a junk>`), 0);
+      expect(Sax.isDoctype(event) && event.forceQuirks).toBe(false);
+    }),
+  );
+
+  it.effect("a processing instruction whose target is a Name keeps it, its data to `?>`", () =>
+    Effect.gen(function* () {
+      expect((yield* outline("<a><?pi?x?></a>"))[1]).toStrictEqual([
+        "ProcessingInstruction",
+        "pi|?x",
+        3,
+        11,
+      ]);
+      expect((yield* outline("<a><?a:b:c d?></a>"))[1]).toStrictEqual([
+        "ProcessingInstruction",
+        "a:b:c|d",
+        3,
+        14,
+      ]);
+    }),
+  );
+
+  it.effect("one whose target is not a Name is a bogus comment up to `>`", () =>
+    Effect.gen(function* () {
+      expect((yield* outline("<a><?123 x?></a>"))[1]).toStrictEqual(["Comment", "123 x?", 3, 12]);
+      expect((yield* outline("<a><? x>y</a>")).slice(1, 3)).toStrictEqual([
+        ["Comment", " x", 3, 8],
+        ["Text", "y", 8, 9],
+      ]);
+    }),
+  );
+
+  it.effect("a malformed XML declaration is dropped", () =>
+    Effect.gen(function* () {
+      expect(yield* outline(`<?xml version=1.0?><a/>`)).toStrictEqual([
+        ["StartElement", "a", 19, 23],
+      ]);
+      expect(yield* outline(`<?XML version="1.0"?><a/>`)).toStrictEqual([
+        ["StartElement", "a", 21, 25],
+      ]);
+      expect((yield* outline(`<a><?xml-stylesheet href="x"?></a>`))[1]).toStrictEqual([
+        "ProcessingInstruction",
+        'xml-stylesheet|href="x"',
+        3,
+        30,
+      ]);
+    }),
+  );
+
+  it.effect("give the same events at every chunk size", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* chunkSafe(`<?xml version=1.0?><!doctype a PUBLIC "p"><a><?pi?x?><?1 x?><? y></a>`),
+      ).toBe(true);
+    }),
+  );
+});
+
+describe("recover: entity replacement text that is not balanced markup", () => {
+  it.effect("an element left open is closed at its end", () =>
+    Effect.gen(function* () {
+      expect(yield* internal(`<!ENTITY e "<b>t">`, "&e;x")).toBe("<a><b>t</b>x</a>");
+      expect(yield* internal(`<!ENTITY e "<b><c>t</b>u">`, "&e;")).toBe("<a><b><c>t</c></b>u</a>");
+    }),
+  );
+
+  it.effect("an end tag for nothing open in it is dropped", () =>
+    Effect.gen(function* () {
+      expect(yield* internal(`<!ENTITY e "x</a>y">`, "&e;z")).toBe("<a>xyz</a>");
+    }),
+  );
+
+  it.effect("it is read as recovering content is, its declarations dropped", () =>
+    Effect.gen(function* () {
+      expect(yield* internal(`<!ENTITY e "<b x=1>AT&#38;T &#38;nbsp;</>">`, "&e;")).toBe(
+        `<a><b x="1">AT&amp;T &amp;nbsp;</b></a>`,
+      );
+      expect(yield* internal(`<!ENTITY e "<?xml version='1.0'?><b/>">`, "&e;")).toBe("<a><b/></a>");
+    }),
+  );
+
+  it.effect("a reference to an undeclared entity in it is text, as written", () =>
+    Effect.gen(function* () {
+      expect(yield* internal(`<!ENTITY e "x &u; y">`, "&e;")).toBe("<a>x &amp;u; y</a>");
+      expect(yield* internal(`<!ENTITY e "<b>&u;</b>">`, "&e;")).toBe("<a><b>&amp;u;</b></a>");
+    }),
+  );
+
+  it.effect("an entity whose value is not well-formed is not declared", () =>
+    Effect.gen(function* () {
+      expect(yield* internal(`<!ENTITY e "a & b"><!ENTITY f "F">`, "&e;&f;")).toBe(
+        "<a>&amp;e;F</a>",
+      );
+    }),
+  );
+
+  it.effect("the SAX events of an expansion are balanced", () =>
+    Effect.gen(function* () {
+      const all = yield* events(`<!DOCTYPE a [<!ENTITY e "<b><c>t</b></d>">]><a>&e;</a>`, {
+        dtd: "internal",
+      });
+      expect(
+        all.flatMap((e) =>
+          Sax.isStartElement(e) || Sax.isEndElement(e) ? [`${e._tag}:${e.name}`] : [],
+        ),
+      ).toStrictEqual([
+        "StartElement:a",
+        "StartElement:b",
+        "StartElement:c",
+        "EndElement:c",
+        "EndElement:b",
+        "EndElement:a",
+      ]);
+    }),
+  );
+});
+
+describe("recover with `strict: false`", () => {
+  it.effect("reads a document strict XML reads directly, and recovers from one it doesn't", () =>
+    Effect.forEach(
+      [
+        `<?xml version="1.0"?><a x="1"><b>t</b><!--c--></a>`,
+        `<a x=1>AT&T <b>x</></a>`,
+        `<a xmlns:p="urn:p"><p:b/></a><!--after-->`,
+        `<a><b x='1`,
+      ],
+      (doc) =>
+        Effect.gen(function* () {
+          return expect(
+            Xml.serializeDocument(yield* Xml.parse(doc, { recover: true, strict: false })),
+            doc,
+          ).toBe(yield* recovered(doc));
+        }),
+      { concurrency: 1, discard: true },
+    ),
   );
 });
 
@@ -272,7 +668,8 @@ describe("recover: chunk boundaries", () => {
     `<feed xmlns="urn:f"><title>AT&T &nbsp; &#xZZ; &; a < b <</title>` +
     `<link href=http://x/?a=1&b=2 rel=alternate nowrap/>` +
     `<entry x="a<b"y='&c' / z>1 <= 2 ]]> </ x></></entry>` +
-    `<!bogus><p>&eacute;t&eacute;</p></feed><?xml version="1.0"?><!DOCTYPE late>tail &amp; </`;
+    `<!bogus><p>&eacute;t&eacute;</p><!-- a -- b --><?1 x?><?pi?y?><q>q</></feed>` +
+    `<?xml version="1.0"?><!DOCTYPE late>tail &amp; <!-- unterminated -- `;
 
   it.effect("give the same events and spans at every chunk size", () =>
     Effect.gen(function* () {
@@ -349,6 +746,38 @@ describe("recover: documents that need no recovery", () => {
       );
     }),
   );
+
+  it.effect("with #184's recoveries spliced in, the scanner and the grammars agree", () => {
+    // What recovery reads since #184, at a place each document picks, and
+    // markup each document is cut off inside of.
+    const spliced = ["</>", "<!-- a -- b -->", "<!-- x --!>", "<!doctype a>", "<?1 x?>", "<?p?x?>"];
+    const cut = ["<!-- x", "<![CDATA[x", "<?pi x", "<b x='1", "</b"];
+    const variants = docs.slice(0, 600).flatMap((doc, i) => {
+      const where = (i * 7919) % (doc.length + 1);
+      return [
+        doc.slice(0, where) + (spliced[i % spliced.length] ?? "") + doc.slice(where),
+        doc.slice(0, where) + (cut[i % cut.length] ?? ""),
+      ];
+    });
+    return Effect.forEach(
+      variants,
+      (doc) =>
+        Effect.forEach(
+          [doc.length, 1, 3],
+          (size) =>
+            Effect.gen(function* () {
+              return expect(
+                yield* tokenized(chunked(doc, size), { recover: true }),
+                `${doc} in chunks of ${size}`,
+              ).toStrictEqual(
+                yield* tokenized(chunked(doc, size), { recover: true, dtd: "internal" }),
+              );
+            }),
+          { concurrency: 1, discard: true },
+        ),
+      { concurrency: 1, discard: true },
+    );
+  });
 
   it.effect("the scanner and the recovering grammars agree, whole and chunked", () =>
     Effect.forEach(
@@ -450,7 +879,117 @@ describe("without recover", () => {
       "UnexpectedCharacter",
       'Unexpected character "]" at 1:4 while reading text (`]]>` must be escaped)',
     ],
+    // #184
+    [
+      "<a><b>x</>y</a>",
+      "UnexpectedCharacter",
+      'Unexpected character ">" at 1:10 while opening an end tag',
+    ],
+    [
+      "<a><!-- a -- b --></a>",
+      "UnexpectedCharacter",
+      'Unexpected character "-" at 1:11 while reading a comment (only `-->` may contain `--`)',
+    ],
+    [
+      "<a><!-- a --!></a>",
+      "UnexpectedCharacter",
+      'Unexpected character "-" at 1:11 while reading a comment (only `-->` may contain `--`)',
+    ],
+    ["<a><!-- x", "UnexpectedEndOfInput", "Unexpected end of input at 1:10 while parsing markup"],
+    [
+      "<a><![CDATA[x",
+      "UnexpectedEndOfInput",
+      "Unexpected end of input at 1:14 while parsing markup",
+    ],
+    [
+      "<a><?pi x",
+      "MalformedDeclaration",
+      'Malformed processing instruction at 1:8: expected ":" or "?>", found " "',
+    ],
+    ["<a><b x='1", "UnexpectedEndOfInput", "Unexpected end of input at 1:11 while parsing markup"],
+    ["<a><b", "UnexpectedEndOfInput", "Unexpected end of input at 1:6 while parsing markup"],
+    ["<a></b", "UnexpectedEndOfInput", "Unexpected end of input at 1:7 while parsing markup"],
+    [
+      "<!doctype a><a/>",
+      "MalformedDeclaration",
+      'Malformed DOCTYPE at 1:3: expected "DOCTYPE", found "d"',
+    ],
+    [
+      '<!DOCTYPE a PUBLIC "p"><a/>',
+      "MalformedDeclaration",
+      'Malformed DOCTYPE at 1:23: expected whitespace, found ">"',
+    ],
+    [
+      "<!DOCTYPE><a/>",
+      "MalformedDeclaration",
+      'Malformed DOCTYPE at 1:10: expected whitespace, found ">"',
+    ],
+    [
+      "<a><?123 x?></a>",
+      "MalformedDeclaration",
+      'Malformed processing instruction at 1:6: expected processing instruction target, found "1"',
+    ],
+    [
+      "<a><?pi?x?></a>",
+      "MalformedDeclaration",
+      'Malformed processing instruction at 1:8: expected ":", whitespace or "?>", found "?"',
+    ],
+    [
+      "<?xml version=1.0?><a/>",
+      "MalformedDeclaration",
+      'Malformed processing instruction at 1:15: expected "\\"" or "\'", found "1"',
+    ],
+    [
+      "<?XML version='1.0'?><a/>",
+      "MalformedDeclaration",
+      'Malformed processing instruction at 1:3: expected processing instruction target, found "X"',
+    ],
   ];
+
+  // The same with `dtd: "internal"`, as on trunk before #184.
+  const withDtd: ReadonlyArray<readonly [string, string, string]> = [
+    [
+      `<!DOCTYPE a [<!ENTITY e "<b>">]><a>&e;</a>`,
+      "InvalidEntity",
+      'Invalid entity reference "&e;" at 1:36: replacement text is not balanced markup',
+    ],
+    [
+      `<!DOCTYPE a [<!ENTITY e "</a>">]><a>&e;</a>`,
+      "InvalidEntity",
+      'Invalid entity reference "&e;" at 1:37: replacement text is not balanced markup',
+    ],
+    [
+      `<!DOCTYPE a [<!ENTITY e "x &u; y">]><a>&e;</a>`,
+      "InvalidEntity",
+      'Invalid entity reference "&e;" at 1:40: unknown entity',
+    ],
+    [
+      `<!DOCTYPE a [<!ENTITY e "a & b">]><a>&e;</a>`,
+      "MalformedDeclaration",
+      'Malformed DOCTYPE internal subset at 1:1: expected a valid value for entity "e" (invalid reference), found "<"',
+    ],
+    [
+      `<!DOCTYPE a [<!ENTITY e "<?xml version='1.0'?><b/>">]><a>&e;</a>`,
+      "InvalidEntity",
+      'Invalid entity reference "&e;" at 1:58: Invalid document structure at 1:1: the XML declaration must be at the very start of the document',
+    ],
+  ];
+
+  it.effect('with `dtd: "internal"`, the same inputs fail with the same errors as before', () =>
+    Effect.forEach(
+      withDtd,
+      ([input, tag, message]) =>
+        Effect.gen(function* () {
+          const error = failure(yield* Effect.result(Xml.parse(input, { dtd: "internal" })));
+          expect([error._tag, error.message], input).toStrictEqual([tag, message]);
+          const recovering = yield* Effect.result(
+            Xml.parse(input, { recover: true, dtd: "internal" }),
+          );
+          expect(Result.isSuccess(recovering), input).toBe(true);
+        }),
+      { concurrency: 1, discard: true },
+    ),
+  );
 
   it.effect("the same inputs fail with the same errors as before", () =>
     Effect.forEach(
