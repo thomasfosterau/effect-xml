@@ -110,7 +110,7 @@
     },
     "fn-base-uri": {
       "runnable": 82,
-      "passing": 56
+      "passing": 82
     },
     "fn-boolean": {
       "runnable": 143,
@@ -534,7 +534,7 @@
     },
     "fn-resolve-uri": {
       "runnable": 39,
-      "passing": 37
+      "passing": 39
     },
     "fn-reverse": {
       "runnable": 70,
@@ -806,7 +806,7 @@
     },
     "misc-CombinedErrorCodes": {
       "runnable": 230,
-      "passing": 228
+      "passing": 229
     },
     "misc-ErrorsAndOptimization": {
       "runnable": 7,
@@ -1218,7 +1218,7 @@
     },
     "prod-BaseURIDecl": {
       "runnable": 38,
-      "passing": 33
+      "passing": 38
     },
     "prod-BoundarySpaceDecl": {
       "runnable": 28,
@@ -2144,7 +2144,7 @@
     },
     "fn-resolve-uri": {
       "runnable": 38,
-      "passing": 36
+      "passing": 38
     },
     "fn-reverse": {
       "runnable": 66,
