@@ -132,10 +132,10 @@ const shortfalls = (
 describe("W3C QT3 conformance", () => {
   test("meets the per-test-set baselines", async () => {
     const started = performance.now();
+    const read = await catalog;
     const { baseline, sets, results } = await runtime.runPromise(
       Effect.gen(function* () {
         const expected = yield* readBaseline;
-        const read = yield* Effect.tryPromise(() => catalog);
         const tests = read.flatMap((s) => s.cases);
         const documents = yield* loadDocuments(tests);
         const verdicts = yield* Effect.forEach(
