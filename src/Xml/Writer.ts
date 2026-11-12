@@ -41,6 +41,8 @@ import { byKey, byNamespaceThenLocal } from "../internal/order.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
 import { XmlDocument, type XmlAttribute, type XmlElement, type XmlNode } from "./Node.ts";
 
+const isXmlDocument = Schema.is(XmlDocument);
+
 // -----------------------------------------------------------------------------
 // Events
 // -----------------------------------------------------------------------------
@@ -169,7 +171,7 @@ const eventOf = (node: XmlNode): WriterEvent =>
  */
 export function* events(node: XmlNode | XmlDocument): Generator<WriterEvent> {
   yield* Iterable.map(
-    preorder(node instanceof XmlDocument ? node.children : [node], (n) =>
+    preorder(isXmlDocument(node) ? node.children : [node], (n) =>
       isElement(n) ? n.children : undefined,
     ),
     (step) => (isEnter(step) ? eventOf(step.node) : end),
@@ -194,6 +196,8 @@ export class SerializationError extends Schema.TaggedError<
     return `Cannot serialize: ${this.reason}`;
   }
 }
+
+const isSerializationError = Schema.is(SerializationError);
 
 /**
  * Options for the writer: declaration, encoding, indentation, handling of characters XML 1.0 forbids, and namespace management.
@@ -613,7 +617,7 @@ export class XmlWriter {
       attrs = this.attributesAsIs(element, ev.attributes);
     } else {
       const names = this.names(ev);
-      if (names instanceof SerializationError) return names;
+      if (isSerializationError(names)) return names;
       element = names.element;
       scope = names.scope;
       attrs = this.attributesManaged(names);
@@ -840,7 +844,7 @@ export const serializeSync = (
   node: XmlNode | XmlDocument,
   options: WriterOptions = {},
 ): Result.Result<string, SerializationError> => {
-  const isDoc = node instanceof XmlDocument;
+  const isDoc = isXmlDocument(node);
   const manage = (options.namespaces ?? "manage") === "manage";
   const writer = new XmlWriter(
     // The prefixes the tree uses are declared on its root.

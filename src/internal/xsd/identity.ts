@@ -17,7 +17,7 @@ import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
-import { XmlAttribute, XmlElement } from "../../Xml/Node.ts";
+import type { XmlElement } from "../../Xml/Node.ts";
 import { compile, select, type Path, type XPathNode } from "../../Xml/XPath.ts";
 import type { IdentityConstraint } from "../../Xsd/Model.ts";
 import { identityKey, normalize, type SimpleChecker, type ValueContext } from "./datatypes.ts";
@@ -75,14 +75,11 @@ const compiled = (constraint: IdentityConstraint): Result.Result<Compiled, strin
   return out;
 };
 
-const valueOf = (node: XPathNode): string =>
-  node instanceof XmlAttribute
-    ? node.value
-    : node instanceof XmlElement
-      ? node.textContent
-      : P.hasProperty(node, "data") && P.isString(node.data)
-        ? node.data
-        : "";
+const valueOf = (node: XPathNode): string => {
+  if ("value" in node) return node.value;
+  if (P.isTagged(node, "XmlElement")) return node.textContent;
+  return P.hasProperty(node, "data") && P.isString(node.data) ? node.data : "";
+};
 
 const fieldValue = (node: XPathNode, typeOf: TypeOf): FieldValue => {
   const raw = valueOf(node);
@@ -124,7 +121,7 @@ const show = (values: ReadonlyArray<FieldValue>): string =>
 
 const selected = (c: Compiled, scope: XmlElement): ReadonlyArray<XmlElement> =>
   Arr.flatMap(c.selectors, (s) =>
-    Arr.filter(select(s, scope), (n): n is XmlElement => n instanceof XmlElement),
+    Arr.filter(select(s, scope), (n): n is XmlElement => P.isTagged(n, "XmlElement")),
   );
 
 /**

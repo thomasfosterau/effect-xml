@@ -18,10 +18,13 @@ import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { Namespaces } from "../Name.ts";
 import { byKey, byNamespaceThenLocal } from "../internal/order.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
 import { XmlDocument, type XmlElement, type XmlNode } from "./Node.ts";
+
+const isXmlDocument = Schema.is(XmlDocument);
 
 /**
  * Options for {@link exclusive}.
@@ -136,7 +139,7 @@ export const exclusive = (
   options?: C14nOptions,
 ): string => {
   const comments = options?.comments ?? false;
-  const isDoc = input instanceof XmlDocument;
+  const isDoc = isXmlDocument(input);
   const nodes: ReadonlyArray<XmlNode> = isDoc ? input.children : Arr.ensure(input);
   const parts = nodes.map((node) => {
     // The namespace bindings rendered by each open element and its ancestors.
