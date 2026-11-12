@@ -7,13 +7,14 @@ import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { QName } from "../../Name.ts";
 import { type XQueryError, xqueryError } from "../../XQuery/Error.ts";
 import { AtomicValue, atomicString } from "./atomic.ts";
 import type { XdmNode } from "./node.ts";
+import { exactDecimal } from "./eval/cast.ts";
 import { partsOf, timelineSeconds } from "./eval/temporal.ts";
 import { AtomicTypes, derivesFrom, isNumericType } from "./types.ts";
 
@@ -177,7 +178,7 @@ export type Sequence = ReadonlyArray<Item>;
  * @since 0.1.0
  * @category guards
  */
-export const isNode = (item: Item): item is XdmNode => Predicate.isTagged(item, "XdmNode");
+export const isNode = (item: Item): item is XdmNode => P.isTagged(item, "XdmNode");
 
 /**
  * Whether an item is an atomic value.
@@ -185,8 +186,7 @@ export const isNode = (item: Item): item is XdmNode => Predicate.isTagged(item, 
  * @since 0.1.0
  * @category guards
  */
-export const isAtomic = (item: Item): item is AtomicValue =>
-  Predicate.isTagged(item, "AtomicValue");
+export const isAtomic = (item: Item): item is AtomicValue => P.isTagged(item, "AtomicValue");
 
 /**
  * Whether an item is a function item, as `instance of function(*)` tests it: maps and arrays are functions too.
@@ -195,9 +195,7 @@ export const isAtomic = (item: Item): item is AtomicValue =>
  * @category guards
  */
 export const isFunction = (item: Item): item is FunctionItem | MapItem | ArrayItem =>
-  Predicate.isTagged(item, "FunctionItem") ||
-  Predicate.isTagged(item, "MapItem") ||
-  Predicate.isTagged(item, "ArrayItem");
+  P.isTagged(item, "FunctionItem") || P.isTagged(item, "MapItem") || P.isTagged(item, "ArrayItem");
 
 const isQName = /*#__PURE__*/ Schema.is(QName);
 
@@ -206,33 +204,17 @@ const isQName = /*#__PURE__*/ Schema.is(QName);
 // -----------------------------------------------------------------------------
 
 /** The exact decimal expansion of a finite double. */
-const exactDecimal = (n: number): string => {
-  if (Number.isInteger(n) && Math.abs(n) < 2 ** 53) return String(n);
-  const view = new DataView(new ArrayBuffer(8));
-  view.setFloat64(0, n);
-  const bits = view.getBigUint64(0);
-  const negative = bits >> 63n === 1n;
-  const exponent = Number((bits >> 52n) & 0x7ffn);
-  const fraction = bits & ((1n << 52n) - 1n);
-  const mantissa = exponent === 0 ? fraction : fraction | (1n << 52n);
-  const power = (exponent === 0 ? 1 : exponent) - 1075;
-  const value =
-    power >= 0
-      ? BigDecimal.fromBigInt(mantissa << BigInt(power))
-      : // m × 2^-k = m × 5^k / 10^k, exactly.
-        BigDecimal.make(mantissa * 5n ** BigInt(-power), -power);
-  const formatted = atomicString(AtomicValue.decimal(value));
-  return negative ? `-${formatted}` : formatted;
-};
+const exactDecimalString = (n: number): string =>
+  atomicString(AtomicValue.decimal(exactDecimal(n)));
 
 /** The key a numeric value is stored under: its exact value, so `1`, `1.0` and `1e0` are one key. */
 const numericKey = (atomic: AtomicValue): string => {
   const v = atomic.value;
-  if (Predicate.isNumber(v)) {
+  if (P.isNumber(v)) {
     if (Number.isNaN(v)) return "n:NaN";
     if (!Number.isFinite(v)) return v > 0 ? "n:INF" : "n:-INF";
     // Negative zero is the same key as zero.
-    return `n:${exactDecimal(v === 0 ? 0 : v)}`;
+    return `n:${exactDecimalString(v === 0 ? 0 : v)}`;
   }
   return `n:${atomicString(atomic)}`;
 };
@@ -262,7 +244,7 @@ export const sameKey = (atomic: AtomicValue): string => {
     derivesFrom(type, AtomicTypes.anyURI)
   )
     return `s:${atomicString(atomic)}`;
-  if (isQName(v)) return `q:{${v.namespace ?? ""}}${v.local}`;
+  if (isQName(v)) return `q:{${Option.getOrElse(v.namespace, () => "")}}${v.local}`;
   // Dates and times by the instant they denote (24:00:00 is the next day's
   // midnight): with a timezone on the timeline, without one as local time.
   const parts = partsOf(atomic);
@@ -298,12 +280,12 @@ const atomizeItem = (item: Item, out: Array<AtomicValue>): Option.Option<XQueryE
     out.push(typedValue(item));
     return Option.none();
   }
-  if (Predicate.isTagged(item, "ArrayItem"))
+  if (P.isTagged(item, "ArrayItem"))
     return Arr.findFirst(Arr.flatten(item.members), (member) => atomizeItem(member, out));
   return Option.some(
     xqueryError(
       "FOTY0013",
-      `a ${Predicate.isTagged(item, "MapItem") ? "map" : "function"} cannot be atomized`,
+      `a ${P.isTagged(item, "MapItem") ? "map" : "function"} cannot be atomized`,
     ),
   );
 };
@@ -380,15 +362,15 @@ export const effectiveBooleanValue = (sequence: Sequence): Result.Result<boolean
     return noEbv("a sequence of two or more items starting with an atomic value");
   if (!isAtomic(first)) return noEbv("a function item");
   const { type, value } = first;
-  if (Predicate.isBoolean(value)) return Result.succeed(value);
+  if (P.isBoolean(value)) return Result.succeed(value);
   if (
     type === AtomicTypes.untypedAtomic ||
     derivesFrom(type, AtomicTypes.string) ||
     derivesFrom(type, AtomicTypes.anyURI)
   )
     return Result.succeed(atomicString(first) !== "");
-  if (Predicate.isNumber(value)) return Result.succeed(value !== 0 && !Number.isNaN(value));
-  if (Predicate.isBigInt(value)) return Result.succeed(value !== 0n);
+  if (P.isNumber(value)) return Result.succeed(value !== 0 && !Number.isNaN(value));
+  if (P.isBigInt(value)) return Result.succeed(value !== 0n);
   if (BigDecimal.isBigDecimal(value)) return Result.succeed(!BigDecimal.isZero(value));
   return noEbv(`an xs:${type.name}`);
 };

@@ -12,7 +12,8 @@ import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { QName } from "../../../Name.ts";
 import { AtomicValue, atomicString } from "../atomic.ts";
 import {
@@ -30,6 +31,9 @@ import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../typ
 import { castAtomic, isStringLike, toDecimal, toNumber } from "./cast.ts";
 import { orElse, raise, unwrap } from "./raise.ts";
 import { durationOf, isTemporal, partsOf, timelineSeconds } from "./temporal.ts";
+import { uriOf } from "../../qnames.ts";
+
+const isQName = Schema.is(QName);
 
 /** A value comparison operator. */
 export type ValueOp = "eq" | "ne" | "lt" | "le" | "gt" | "ge";
@@ -79,7 +83,7 @@ const compareNumeric = (a: AtomicValue, b: AtomicValue): number => {
     const y = single ? Math.fround(toNumber(b)) : toNumber(b);
     return compareFloating(x, y);
   }
-  if (Predicate.isBigInt(a.value) && Predicate.isBigInt(b.value)) return order(a.value, b.value);
+  if (P.isBigInt(a.value) && P.isBigInt(b.value)) return order(a.value, b.value);
   return BigDecimal.Order(toDecimal(a), toDecimal(b));
 };
 
@@ -119,7 +123,7 @@ const compareTemporal = (a: AtomicValue, b: AtomicValue, implicit: number): numb
 const noOrder = (a: AtomicValue, offset?: number): never =>
   raise("XPTY0004", `xs:${a.type.name} values have no order`, offset);
 
-const isQNameValue = (v: unknown): v is QName => v instanceof QName;
+const isQNameValue = (v: unknown): v is QName => isQName(v);
 
 const incomparable = (a: AtomicValue, b: AtomicValue, offset?: number): never =>
   raise("XPTY0004", `xs:${a.type.name} and xs:${b.type.name} values cannot be compared`, offset);
@@ -133,13 +137,9 @@ const compareOther = (
 ): number => {
   const x = a.value;
   const y = b.value;
-  if (Predicate.isBoolean(x) && Predicate.isBoolean(y)) return Number(x) - Number(y);
+  if (P.isBoolean(x) && P.isBoolean(y)) return Number(x) - Number(y);
   if (isQNameValue(x) && isQNameValue(y) && a.type.primitive === b.type.primitive)
-    return ordering
-      ? noOrder(a, offset)
-      : x.namespace === y.namespace && x.local === y.local
-        ? 0
-        : 1;
+    return ordering ? noOrder(a, offset) : uriOf(x) === uriOf(y) && x.local === y.local ? 0 : 1;
   if (x instanceof Uint8Array && y instanceof Uint8Array && a.type.primitive === b.type.primitive)
     return bytesCompare(x, y);
   return incomparable(a, b, offset);
@@ -214,10 +214,18 @@ export const valueCompare = (
   b: AtomicValue,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean =>
   holds(
     op,
-    compareAtomic(asString(a), asString(b), op !== "eq" && op !== "ne", implicitTimezone, offset),
+    compareAtomic(
+      asString(a),
+      asString(b),
+      op !== "eq" && op !== "ne",
+      implicitTimezone,
+      offset,
+      strings,
+    ),
   );
 
 /**
@@ -230,8 +238,9 @@ export const orderCompare = (
   b: AtomicValue,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): number => {
-  const c = compareAtomic(asString(a), asString(b), true, implicitTimezone, offset);
+  const c = compareAtomic(asString(a), asString(b), true, implicitTimezone, offset, strings);
   return Number.isNaN(c) ? 0 : c;
 };
 
@@ -263,13 +272,17 @@ export const generalCompare = (
   right: Sequence,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean => {
   const xs = unwrap(atomize(left), offset);
   const ys = unwrap(atomize(right), offset);
   return xs.some((x) =>
     ys.some((y) => {
       const [a, b] = generalPair(x, y, offset);
-      return holds(op, compareAtomic(a, b, op !== "eq" && op !== "ne", implicitTimezone, offset));
+      return holds(
+        op,
+        compareAtomic(a, b, op !== "eq" && op !== "ne", implicitTimezone, offset, strings),
+      );
     }),
   );
 };
@@ -302,6 +315,7 @@ export const generalCompareCompatible = (
   right: Sequence,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean => {
   const ordering = op !== "eq" && op !== "ne";
   const lb = singleBoolean(left);
@@ -321,7 +335,7 @@ export const generalCompareCompatible = (
         isNumericType(x.type) || isNumericType(y.type)
           ? [numberOf(x), numberOf(y)]
           : generalPair(x, y, offset);
-      return holds(op, compareAtomic(a, b, ordering, implicitTimezone, offset));
+      return holds(op, compareAtomic(a, b, ordering, implicitTimezone, offset, strings));
     }),
   );
 };
@@ -330,8 +344,7 @@ export const generalCompareCompatible = (
 // fn:deep-equal
 // -----------------------------------------------------------------------------
 
-const isNaNValue = (v: AtomicValue): boolean =>
-  Predicate.isNumber(v.value) && Number.isNaN(v.value);
+const isNaNValue = (v: AtomicValue): boolean => P.isNumber(v.value) && Number.isNaN(v.value);
 
 /** Whether two atomic values are equal as `deep-equal` takes them: NaN equals NaN, incomparable values are unequal. */
 export const atomicDeepEqual = (
@@ -352,8 +365,21 @@ export const atomicDeepEqual = (
   return c === 0;
 };
 
+/**
+ * A key that values equal as {@link atomicDeepEqual} takes them share, for
+ * grouping a sequence into candidates to compare one by one (`fn:distinct-values`,
+ * `group by`): numbers by their value as a float, strings by the collation's
+ * `bucket` (a form equal strings share), and other values by primitive type.
+ */
+export const equalityBucket = (a: AtomicValue, bucket: (s: string) => string): string => {
+  // Equal numbers of any types round to the same float.
+  if (isNumericType(a.type)) return `n:${String(Math.fround(toNumber(a)))}`;
+  if (isStringLike(a.type) || a.type.primitive === "anyURI") return `s:${bucket(String(a.value))}`;
+  return `t:${a.type.primitive}`;
+};
+
 const nameKey = (n: XdmNode): string =>
-  Option.match(n.name, { onNone: () => "", onSome: (q) => `{${q.namespace ?? ""}}${q.local}` });
+  Option.match(n.name, { onNone: () => "", onSome: (q) => `{${uriOf(q) ?? ""}}${q.local}` });
 
 /** The children deep-equal compares: elements and text (comments and processing instructions don't count). */
 const significant = (n: XdmNode): Sequence =>

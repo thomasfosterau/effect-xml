@@ -13,7 +13,7 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import type {
   Annotation,
@@ -29,6 +29,7 @@ import {
   annotationErrors,
   annotationName,
   bind,
+  absoluteCollation,
   collationErrors,
   isVisibility,
   expr,
@@ -44,6 +45,7 @@ import {
   scopeOf,
   show,
 } from "./analyze.ts";
+import { hasScheme, isReference, resolveReference } from "../../uri.ts";
 import type { Arity } from "./builtins.ts";
 import { Namespaces } from "./builtins.ts";
 import {
@@ -363,7 +365,7 @@ const decimalFormatDecl = (
   const key = `decimal-format:${name}`;
   const declared = withContext(fold, (c) => ({
     ...c,
-    decimalFormats: HashMap.set(c.decimalFormats, name, Record.fromEntries(d.properties)),
+    decimalFormats: HashMap.set(c.decimalFormats, name, R.fromEntries(d.properties)),
   }));
   return once(
     withErrors(declared, [
@@ -527,14 +529,36 @@ const declaration =
           offset,
           (c) => ({
             ...c,
-            defaultCollation: uri,
+            // A relative URI resolves against the base URI declared so far.
+            defaultCollation: Option.getOrElse(
+              absoluteCollation(scopeOf(fold.context), uri),
+              () => uri,
+            ),
           }),
         ),
-      BaseURI: ({ uri, offset }) =>
-        setter(fold, "base-uri", "XQST0032", "the base URI", offset, (c) => ({
-          ...c,
-          baseUri: Option.some(uri),
-        })),
+      BaseURI: ({ uri, offset }) => {
+        // The literal is an xs:anyURI: whitespace collapsed. A relative one is resolved against
+        // the base URI the host gave; with none, the static base URI could not be absolute.
+        const written = normalizeUri(uri);
+        const absoluteBase = Option.match(fold.context.baseUri, {
+          onNone: () => (hasScheme(written) ? Option.some(written) : Option.none()),
+          onSome: (base) =>
+            hasScheme(written) ? Option.some(written) : resolveReference(written, base),
+        });
+        return setter(
+          withErrors(
+            fold,
+            Option.isSome(absoluteBase) || !isReference(written)
+              ? none
+              : fail("XPST0001", `the base URI "${written}" is not absolute`, offset),
+          ),
+          "base-uri",
+          "XQST0032",
+          "the base URI",
+          offset,
+          (c) => ({ ...c, baseUri: Option.some(Option.getOrElse(absoluteBase, () => written)) }),
+        );
+      },
       Construction: ({ preserve, offset }) =>
         setter(fold, "construction", "XQST0067", "construction", offset, (c) => ({
           ...c,
@@ -570,15 +594,18 @@ const declaration =
         ),
       ModuleImport: ({ prefix, uri, at, offset }) =>
         importDecl(fold, "module", prefix, uri, at, offset),
-      ContextItem: ({ type, offset }) =>
+      ContextItem: ({ type, value, offset }) =>
         setter(
-          withErrors(
-            fold,
-            Option.match(type, {
+          withErrors(fold, [
+            // A library module can't give the context item a value (XQuery 3.1 §4.10).
+            ...(Option.isSome(library) && Option.isSome(value)
+              ? fail("XQST0113", "a library module can't give the context item a value", offset)
+              : none),
+            ...Option.match(type, {
               onNone: () => none,
               onSome: (t) => itemType(scopeOf(fold.context), t),
             }),
-          ),
+          ]),
           "context-item",
           "XQST0099",
           "the context item",

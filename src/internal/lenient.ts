@@ -16,6 +16,7 @@
  * computed then. There are no positions otherwise.
  */
 import { Input, Parser } from "@thomasfosterau/effect-parse";
+import * as Option from "effect/Option";
 import {
   LimitExceeded,
   type SaxError,
@@ -26,7 +27,7 @@ import type { Limits } from "../Limits.ts";
 import { origin, type Position } from "../Position.ts";
 import { unsafeAttrName, unsafeTagName } from "../Name.ts";
 import type { Attribute, ResolvedOptions, SaxEvent } from "../Sax.ts";
-import { endElement, startElement } from "./convert.ts";
+import { doctypeEvent, xmlDeclarationEvent } from "./convert.ts";
 import { LazyPosition, LineIndex } from "./position.ts";
 import { namedReference, NO_SPAN, numericReference, type Ref, Reused } from "./scan.ts";
 import { grammars, type Tok } from "./tokens.ts";
@@ -248,7 +249,9 @@ class Pass {
     const { maxDepth } = this.options.limits;
     if (!selfClosing && ++this.depth > maxDepth) {
       const position = positionAt(this.input, lt);
-      return this.fail(new LimitExceeded({ limit: "maxDepth", max: maxDepth, position }));
+      return this.fail(
+        new LimitExceeded({ limit: "maxDepth", max: maxDepth, position: Option.some(position) }),
+      );
     }
     const failure = this.visitor.start(name, this.attributes, count, selfClosing, lt);
     return this.step(failure, selfClosing ? close + 2 : close + 1);
@@ -361,7 +364,7 @@ export const readLeniently = (
 ): SaxError | null => {
   if (input.length > options.limits.maxTotalBytes) {
     const max = options.limits.maxTotalBytes;
-    return new LimitExceeded({ limit: "maxTotalBytes", max, position: origin });
+    return new LimitExceeded({ limit: "maxTotalBytes", max, position: Option.some(origin) });
   }
   // Line ends as the strict lexer has them.
   const text = input.indexOf("\r") === -1 ? input : input.replace(/\r\n?/g, "\n");
@@ -472,7 +475,7 @@ class SaxVisitor implements Visitor {
   ): SaxError | null {
     for (let k = 0; k < count; k++) {
       const a = reused.attributes[k];
-      const n = attributes.names[k] ?? "";
+      const n = unsafeAttrName(attributes.names[k] ?? "");
       const v = attributes.values[k] ?? "";
       if (a === undefined) reused.attributes[k] = { name: n, value: v, span: NO_SPAN };
       else {
@@ -481,11 +484,11 @@ class SaxVisitor implements Visitor {
       }
     }
     const ev = reused.start;
-    ev.name = name;
+    ev.name = unsafeTagName(name);
     ev.attributes =
       count === 0 ? NO_ATTRIBUTES : (reused.lists[count] ??= reused.attributes.slice(0, count));
     ev.selfClosing = selfClosing;
-    return this.emit(startElement(ev), at);
+    return this.emit(ev, at);
   }
 
   start(
@@ -516,8 +519,8 @@ class SaxVisitor implements Visitor {
   end(name: string, at: number): SaxError | null {
     const reused = this.reused;
     if (reused !== undefined) {
-      reused.end.name = name;
-      return this.emit(endElement(reused.end), at);
+      reused.end.name = unsafeTagName(name);
+      return this.emit(reused.end, at);
     }
     // SAFETY: as above.
     return this.emit({ name: unsafeTagName(name), span: NO_SPAN, _tag: "EndElement" }, at);
@@ -543,22 +546,8 @@ class SaxVisitor implements Visitor {
   declaration(tok: DeclarationTok, at: number): SaxError | null {
     return this.emit(
       tok._tag === "XmlDeclaration"
-        ? {
-            version: tok.version,
-            encoding: tok.encoding,
-            standalone: tok.standalone,
-            span: NO_SPAN,
-            _tag: "XmlDeclaration",
-          }
-        : {
-            name: tok.name,
-            publicId: tok.publicId,
-            systemId: tok.systemId,
-            internalSubset: tok.internalSubset,
-            forceQuirks: tok.forceQuirks,
-            span: NO_SPAN,
-            _tag: "Doctype",
-          },
+        ? xmlDeclarationEvent({ ...tok, span: NO_SPAN })
+        : doctypeEvent({ ...tok, span: NO_SPAN }),
       at,
     );
   }

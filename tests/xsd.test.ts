@@ -1,15 +1,20 @@
+import * as Option from "effect/Option";
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { Sax, Xml, Xsd } from "../src/index.ts";
 import * as Example from "../examples/xsd/order.generated.ts";
 import { splitEvery } from "./support/chunks.ts";
+
+const isXsdValidationError = Schema.is(Xsd.XsdValidationError);
+const isXmlElement = Schema.is(Xml.XmlElement);
 
 const XS = `xmlns:xs="http://www.w3.org/2001/XMLSchema"`;
 
@@ -36,16 +41,17 @@ const invalid = (model: Xsd.Model, doc: string, options?: Xsd.ParseOptions) => {
 
 /** The error, failing the test unless it is a validation error. */
 const validation = (e: Xsd.XsdError): Xsd.XsdValidationError => {
-  assert(e instanceof Xsd.XsdValidationError, `expected a validation error, got ${e.message}`);
+  assert(isXsdValidationError(e), `expected a validation error, got ${e.message}`);
   return e;
 };
 
 const rule = (model: Xsd.Model, doc: string) => validation(invalid(model, doc)).rule;
 
 const isRecord = (v: Xsd.XsdValue): v is Xsd.XsdRecord =>
-  Predicate.isObject(v) &&
+  P.isObject(v) &&
   !Arr.isArray(v) &&
-  !(v instanceof Xml.XmlElement) &&
+  !Option.isOption(v) &&
+  !isXmlElement(v) &&
   !(v instanceof Uint8Array) &&
   !BigDecimal.isBigDecimal(v);
 
@@ -106,7 +112,7 @@ describe("Xsd.compile", () => {
         `targetNamespace="urn:t" xmlns:t="urn:t"`,
       ),
     );
-    expect(Record.keys(model.elements)).toEqual(["{urn:t}a"]);
+    expect(R.keys(model.elements)).toEqual(["{urn:t}a"]);
     expect(model.elements["{urn:t}a"]?.type).toBe("{urn:t}T");
     expect(model.types["{urn:t}T"]?._tag).toBe("ComplexType");
   });
@@ -152,7 +158,7 @@ describe("Xsd.compile", () => {
         },
       },
     );
-    expect(Arr.sort(Record.keys(model.types), Order.String)).toEqual(["{urn:t}C", "{urn:t}X"]);
+    expect(Arr.sort(R.keys(model.types), Order.String)).toEqual(["{urn:t}C", "{urn:t}X"]);
     expect(value(model, `<t:a xmlns:t="urn:t"><x>1</x></t:a>`)).toEqual({ x: 1 });
   });
 
@@ -170,7 +176,7 @@ describe("Xsd.compile", () => {
       },
     );
     expect(fetched).toEqual(["http://example.com/s/b.xsd"]);
-    expect(Record.keys(model.elements)).toEqual(["b"]);
+    expect(R.keys(model.elements)).toEqual(["b"]);
   });
 
   test.each([
@@ -484,7 +490,7 @@ describe("Xsd.parse — complex types", () => {
       value(model, `<anything ${ns} a="1">x<y:z xmlns:y="urn:y"><w/></y:z></anything>`),
     );
     const [z] = list(v, "$any");
-    assert(z instanceof Xml.XmlElement);
+    assert(isXmlElement(z));
     expect(z.name.clark).toBe("{urn:y}z");
     expect(v["$text"]).toBe("x");
     expect(v["$attributes"]).toEqual({ a: "1" });
@@ -525,10 +531,9 @@ describe("Xsd.parse — derivation and substitution", () => {
   });
 
   test("xsi:type selects a derived type", () => {
-    expect(value(model, `<any ${XSI} xsi:type="Square" side="4"/>`)).toEqual({
-      side: 4,
-      $type: "Square",
-    });
+    expect(value(model, `<any ${XSI} xsi:type="Square" side="4"/>`)).toEqual(
+      Option.some({ side: 4, $type: "Square" }),
+    );
     expect(rule(model, `<any/>`)).toBe("InvalidType");
     expect(
       rule(model, `<any ${XSI} xsi:type="xs:int" xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`),
@@ -538,7 +543,9 @@ describe("Xsd.parse — derivation and substitution", () => {
   });
 
   test("xsi:nil", () => {
-    expect(value(model, `<any ${XSI} xsi:type="Circle" xsi:nil="true" r="1"/>`)).toBeNull();
+    expect(value(model, `<any ${XSI} xsi:type="Circle" xsi:nil="true" r="1"/>`)).toEqual(
+      Option.none(),
+    );
     // An abstract type can't govern an element, even a nil one.
     expect(rule(model, `<any ${XSI} xsi:nil="true"/>`)).toBe("InvalidType");
     expect(rule(model, `<circle ${XSI} xsi:nil="true" r="1"/>`)).toBe("Nil");
@@ -578,7 +585,7 @@ describe("Xsd.parse — wildcards", () => {
   test("skip wildcards keep elements as DOM", () => {
     const v = record(value(model, `<r xmlns="urn:t"><a/><o:x xmlns:o="urn:o"><y/></o:x></r>`));
     const [x] = list(v, "$any");
-    assert(x instanceof Xml.XmlElement);
+    assert(isXmlElement(x));
     expect(Xml.serialize(x)).toBe(`<o:x xmlns:o="urn:o"><y/></o:x>`);
   });
 
@@ -913,7 +920,7 @@ describe("Xsd.select", () => {
       ),
     );
     // Selecting the document element emits the whole value.
-    expect(record(root[0] ?? null)).toEqual({
+    expect(record(root[0] ?? Option.none())).toEqual({
       title: "T",
       head: { n: 1 },
       row: [
@@ -1012,6 +1019,7 @@ describe("Xsd.generate", () => {
   test("types, the model and parsers", () => {
     expect(source).toContain(`import type * as BigDecimal from "effect/BigDecimal";`);
     expect(source).toContain(`import type { Xml } from "pkg";`);
+    expect(source).toContain(`import type * as Option from "effect/Option";`);
     expect(source).toContain(`export type Colour = "red" | "blue";`);
     expect(source).toContain(
       `export interface Base {\n  /** The attribute id. */\n  readonly id: bigint;\n}`,
@@ -1023,7 +1031,7 @@ describe("Xsd.generate", () => {
     expect(source).toContain(`export const model: Xsd.Model = {`);
     // `model` is taken by the module itself, so the parser for <model> is numbered.
     expect(source).toContain(
-      `export const model2 = Xsd.parser<Base | (Derived & { readonly $type: "{urn:t}Derived" }) | null>(model, "{urn:t}model");`,
+      `export const model2 = Xsd.parser<Option.Option<Base | (Derived & { readonly $type: "{urn:t}Derived" })>>(model, "{urn:t}model");`,
     );
     // A root with repeated children gets a stream for each.
     expect(source).toContain(

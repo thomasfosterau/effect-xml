@@ -4,7 +4,10 @@
  *
  * The input is a generated SpreadsheetML worksheet (the shape of a large
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
- * stream (whole string and 64 KiB chunks), as bytes, as a DOM, with
+ * stream (whole string and 64 KiB chunks), as bytes, as a DOM (strictly and
+ * with `recover: true`, which reads it with the lexer, not directly), with
+ * `dtd: "internal"` (as SAX and DOM, and as a DOM with a DOCTYPE that
+ * declares entities the worksheet references), with
  * streaming selection of rows, and validated against a schema for the
  * worksheet (as events, and as typed values), queried with XPath
  * (`XQuery.evaluate` over the parsed DOM), and queried with `XQuery.stream`
@@ -22,6 +25,7 @@
  * None of them reports positions per event.
  */
 import * as Arr from "effect/Array";
+import * as Option from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
 import * as Result from "effect/Result";
@@ -100,13 +104,55 @@ const time = async (
   );
 };
 
-const optional = async (pkg: string): Promise<any> => {
+/**
+ * A third-party parser the benchmark compares against, if it is installed:
+ * `Module` is the slice of its exports the benchmark calls.
+ */
+const optional = async <Module>(pkg: string): Promise<Option.Option<Module>> => {
   try {
-    return await import(pkg);
+    const module: Module = await import(pkg);
+    return Option.some(module);
   } catch {
-    return undefined;
+    return Option.none();
   }
 };
+
+type Handler = (...args: ReadonlyArray<unknown>) => void;
+
+/** A streaming parser fed with `write` and finished with `end` or `close`. */
+interface Writable {
+  on(event: string, handler: Handler): void;
+  write(input: string): Writable;
+  end(): void;
+  close(): void;
+}
+
+interface SaxesModule {
+  readonly SaxesParser: new (options: { readonly xmlns: boolean }) => Writable;
+}
+interface SaxModule {
+  parser(strict: boolean, options: { readonly xmlns: boolean }): Writable & { onopentag: Handler };
+}
+interface Htmlparser2Module {
+  readonly Parser: new (
+    handlers: { readonly onopentag: Handler; readonly ontext: Handler },
+    options: { readonly xmlMode: boolean },
+  ) => Writable;
+}
+interface EasysaxModule {
+  readonly default: new () => Writable;
+}
+interface EksmlSaxModule {
+  createSaxParser(options: { readonly entities: boolean }): Writable;
+}
+interface DomModule {
+  parse(input: string, options?: { readonly entities: boolean }): unknown;
+}
+interface FxpModule {
+  readonly XMLParser: new (options: { readonly ignoreAttributes: boolean }) => {
+    parse(input: string): unknown;
+  };
+}
 
 console.log(`input: ${(input.length / 1024 / 1024).toFixed(1)} MB worksheet\n`);
 
@@ -119,7 +165,28 @@ await time("effect-xml SAX (64 KiB chunks)", () =>
 await time("effect-xml SAX (bytes)", () =>
   Effect.runPromise(Stream.make(bytes).pipe(Sax.tokenizeBytes(), Stream.runDrain)),
 );
+await time("effect-xml SAX (dtd internal)", () =>
+  Effect.runPromise(Sax.tokenizeString(input, { dtd: "internal" }).pipe(Stream.runDrain)),
+);
 await time("effect-xml DOM (Xml.parse)", () => Effect.runPromise(Effect.asVoid(Xml.parse(input))));
+await time("effect-xml DOM (dtd internal)", () =>
+  Effect.runPromise(Effect.asVoid(Xml.parse(input, { dtd: "internal" }))),
+);
+// The worksheet with a DOCTYPE that declares entities, and references to
+// them: the DTD-aware grammars, which a document without one doesn't pay.
+const declared = input
+  .replaceAll('s="1"', 's="&s;"')
+  .replaceAll("<v>0</v>", "&sd;")
+  .replace(
+    "<worksheet",
+    '<!DOCTYPE worksheet [<!ENTITY s "1"><!ENTITY sd "<v>0</v>">]>\n<worksheet',
+  );
+await time("effect-xml DOM (DOCTYPE + entities)", () =>
+  Effect.runPromise(Effect.asVoid(Xml.parse(declared, { dtd: "internal" }))),
+);
+await time("effect-xml DOM (Xml.parse, recover)", () =>
+  Effect.runPromise(Effect.asVoid(Xml.parse(input, { recover: true }))),
+);
 await time("effect-xml rows (Sax.select)", () =>
   Effect.runPromise(
     Stream.make(input).pipe(
@@ -329,62 +396,69 @@ await time(
   html.length,
 );
 
-const saxes = await optional("saxes");
-if (saxes) {
+const saxes = await optional<SaxesModule>("saxes");
+if (Option.isSome(saxes)) {
   await time("saxes (SAX)", () => {
-    const p = new saxes.SaxesParser({ xmlns: true });
+    const p = new saxes.value.SaxesParser({ xmlns: true });
     p.on("opentag", () => {});
     p.on("text", () => {});
     p.write(input).close();
   });
 }
-const sax = await optional("sax");
-if (sax) {
+const sax = await optional<SaxModule>("sax");
+if (Option.isSome(sax)) {
   await time("sax (SAX)", () => {
-    const p = sax.parser(true, { xmlns: true });
+    const p = sax.value.parser(true, { xmlns: true });
     p.onopentag = () => {};
     p.write(input).close();
   });
 }
-const htmlparser2 = await optional("htmlparser2");
-if (htmlparser2) {
+const htmlparser2 = await optional<Htmlparser2Module>("htmlparser2");
+if (Option.isSome(htmlparser2)) {
   await time("htmlparser2 (SAX, xmlMode)", () => {
-    const p = new htmlparser2.Parser({ onopentag: () => {}, ontext: () => {} }, { xmlMode: true });
+    const p = new htmlparser2.value.Parser(
+      { onopentag: () => {}, ontext: () => {} },
+      { xmlMode: true },
+    );
     p.write(input);
     p.end();
   });
 }
-const easysax = await optional("easysax");
-if (easysax) {
+const easysax = await optional<EasysaxModule>("easysax");
+if (Option.isSome(easysax)) {
   await time("easysax (SAX)", () => {
-    const p = new easysax.default();
+    const p = new easysax.value.default();
     p.on("startNode", () => {});
     p.on("textNode", () => {});
     p.write(input);
     p.end();
   });
 }
-const eksmlSax = await optional("@eksml/xml/sax");
-if (eksmlSax) {
+const eksmlSax = await optional<EksmlSaxModule>("@eksml/xml/sax");
+if (Option.isSome(eksmlSax)) {
   await time("@eksml/xml (SAX)", () => {
-    const p = eksmlSax.createSaxParser({ entities: true });
+    const p = eksmlSax.value.createSaxParser({ entities: true });
     p.on("openTag", () => {});
     p.on("text", () => {});
     p.write(input);
     p.close();
   });
 }
-const eksml = await optional("@eksml/xml/parser");
-if (eksml) {
-  await time("@eksml/xml (DOM)", () => eksml.parse(input, { entities: true }));
+const eksml = await optional<DomModule>("@eksml/xml/parser");
+if (Option.isSome(eksml)) {
+  await time("@eksml/xml (DOM)", () => {
+    eksml.value.parse(input, { entities: true });
+  });
 }
-const txml = await optional("txml");
-if (txml) {
-  await time("txml (DOM)", () => txml.parse(input));
+const txml = await optional<DomModule>("txml");
+if (Option.isSome(txml)) {
+  await time("txml (DOM)", () => {
+    txml.value.parse(input);
+  });
 }
-const fxp = await optional("fast-xml-parser");
-if (fxp) {
-  await time("fast-xml-parser (DOM)", () =>
-    new fxp.XMLParser({ ignoreAttributes: false }).parse(input),
-  );
+const fxp = await optional<FxpModule>("fast-xml-parser");
+if (Option.isSome(fxp)) {
+  await time("fast-xml-parser (DOM)", () => {
+    new fxp.value.XMLParser({ ignoreAttributes: false }).parse(input);
+  });
 }

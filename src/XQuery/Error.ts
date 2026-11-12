@@ -8,7 +8,8 @@
  * tagged error class carries all of them, so callers branch on `code`.
  */
 import * as Arr from "effect/Array";
-import * as Predicate from "effect/Predicate";
+import * as Option from "effect/Option";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { QName } from "../Name.ts";
 import type { Item, Sequence } from "../internal/xquery/item.ts";
@@ -35,7 +36,7 @@ export const ErrorNamespace = "http://www.w3.org/2005/xqt-errors";
  * @category errors
  */
 export const errorCode = (local: string): QName =>
-  new QName({ prefix: "err", local, namespace: ErrorNamespace });
+  new QName({ prefix: Option.some("err"), local, namespace: Option.some(ErrorNamespace) });
 
 /**
  * The namespace of the error codes this implementation adds to the
@@ -57,7 +58,7 @@ const itemTags: ReadonlyArray<Item["_tag"]> = [
 ];
 
 const isItem = (u: unknown): u is Item =>
-  Predicate.hasProperty(u, "_tag") && itemTags.some((tag) => u._tag === tag);
+  P.hasProperty(u, "_tag") && itemTags.some((tag) => u._tag === tag);
 
 /** An XDM sequence, checked item by item (an error value is never encoded). */
 const ErrorValue = /*#__PURE__*/ Schema.declare(
@@ -90,10 +91,13 @@ const ErrorValue = /*#__PURE__*/ Schema.declare(
  * @since 0.1.0
  * @category errors
  */
-export class XQueryError extends Schema.TaggedError<XQueryError>()("XQueryError", {
+export class XQueryError extends Schema.TaggedError<
+  XQueryError,
+  { readonly brand: unique symbol }
+>()("XQueryError", {
   code: QName,
   description: Schema.String,
-  offset: Schema.optional(Schema.Number),
+  offset: Schema.optional(Schema.Int),
   value: Schema.optional(ErrorValue),
 }) {
   override get message(): string {
@@ -126,4 +130,4 @@ export const xqueryError = (local: string, description: string, offset?: number)
  * @category errors
  */
 export const hasErrorCode = (error: XQueryError, local: string): boolean =>
-  error.code.namespace === ErrorNamespace && error.code.local === local;
+  Option.contains(error.code.namespace, ErrorNamespace) && error.code.local === local;

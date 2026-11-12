@@ -47,8 +47,8 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import type { EQName, Expr as ExprT, ItemType, NodeTest as NodeTestT } from "../parser/ast.ts";
 import { Expr, ItemType as ItemTypes, NodeTest } from "../parser/ast.ts";
 import { isDescendantOrSelfNode } from "../eval/walk.ts";
@@ -131,7 +131,7 @@ const plan = (steps: ReadonlyArray<SelectionStep>, operations: ReadonlyArray<Ope
 
 /** Whether an analysis (or a part of one) failed. */
 export const failed = (result: Plan | Split | NotStreamable): result is NotStreamable =>
-  Predicate.isTagged(result, "NotStreamable");
+  P.isTagged(result, "NotStreamable");
 
 // -----------------------------------------------------------------------------
 // The focus: how an expression uses the item it is evaluated against
@@ -292,7 +292,7 @@ const walk = (
   rules: Rules,
 ): NotStreamable | undefined => {
   if (Arr.isArray(value)) return firstOf(value, (v) => walk(v, top, uses, rules));
-  if (!Predicate.isObject(value)) return undefined;
+  if (!P.isObject(value)) return undefined;
   if (Expr.$is("Path")(value)) return walkPath(value, top, uses, rules);
   if (Expr.$is("AxisStep")(value)) return walkStep(value, top, uses, rules);
   if (Expr.$is("Filter")(value))
@@ -307,7 +307,7 @@ const walk = (
     return callUses(value.name, value.arity, value.offset, top, uses, rules);
   if ((Expr.$is("ContextItem")(value) || Expr.$is("UnaryLookup")(value)) && top)
     uses.content = true;
-  return firstOf(Record.values(value), (v) => walk(v, top, uses, rules));
+  return firstOf(R.values(value), (v) => walk(v, top, uses, rules));
 };
 
 /** A path: its first step has the focus, the others the nodes before them. */

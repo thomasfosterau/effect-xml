@@ -12,6 +12,7 @@
  */
 import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";
+import * as Option from "effect/Option";
 import { isIn, tagSet } from "../internal/tagSet.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
 import {
@@ -58,12 +59,12 @@ const escapeAttribute = (s: string): string =>
   );
 
 /** An attribute's serialized name: the namespaced ones take their prefixed forms. */
-const attributeName = (a: HtmlAttribute): string => {
-  if (a.namespace === "xml") return `xml:${a.name}`;
-  if (a.namespace === "xmlns") return a.name === "xmlns" ? "xmlns" : `xmlns:${a.name}`;
-  if (a.namespace === "xlink") return `xlink:${a.name}`;
-  return a.name;
-};
+const attributeName = (a: HtmlAttribute): string =>
+  Option.match(a.namespace, {
+    onNone: () => a.name,
+    onSome: (namespace) =>
+      namespace === "xmlns" && a.name === "xmlns" ? "xmlns" : `${namespace}:${a.name}`,
+  });
 
 const isVoid = (el: HtmlElement): boolean => el.namespace === "html" && isIn(VOID, el.name);
 
@@ -73,7 +74,10 @@ const isVoid = (el: HtmlElement): boolean => el.namespace === "html" && isIn(VOI
  */
 const contentOf = (node: HtmlNode): ReadonlyArray<HtmlNode> | undefined => {
   if (!isHtmlElement(node) || isVoid(node)) return undefined;
-  return node.content === null ? node.children : node.content.children;
+  return Option.match(node.content, {
+    onNone: () => node.children,
+    onSome: (content) => content.children,
+  });
 };
 
 /**
@@ -138,7 +142,9 @@ const open = (node: HtmlNode, raw: Array<boolean>): string =>
 export const serialize = (node: HtmlNode | HtmlDocument): string => {
   if (!isHtmlDocument(node)) return serializeFragment([node]);
   return (
-    (node.doctype === null ? "" : `<!DOCTYPE ${node.doctype.name}>`) +
-    serializeFragment(node.children)
+    Option.match(node.doctype, {
+      onNone: () => "",
+      onSome: (doctype) => `<!DOCTYPE ${doctype.name}>`,
+    }) + serializeFragment(node.children)
   );
 };

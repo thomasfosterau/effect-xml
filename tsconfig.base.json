@@ -51,7 +51,7 @@
           "globalRandomInEffect": "warning",
           "globalTimers": "warning",
           "globalTimersInEffect": "warning",
-          "instanceOfSchema": "warning",
+          "instanceOfSchema": "error",
           "newPromise": "warning",
           "nodeBuiltinImport": "warning",
           "preferSchemaOverJson": "warning",

@@ -11,7 +11,7 @@
  */
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import type * as Result from "effect/Result";
 import type { QName } from "../../../Name.ts";
 import type { XQueryError } from "../../../XQuery/Error.ts";
@@ -129,7 +129,7 @@ export const singleAtomic = (sequence: Sequence, what: string, offset?: number):
 /** An array's member at a 1-based position: `err:FOAY0001` when there is none. */
 export const arrayMember = (array: ArrayItem, position: AtomicValue, offset?: number): Sequence => {
   const v = position.value;
-  if (!Predicate.isBigInt(v) || !derivesFrom(position.type, AtomicTypes.integer))
+  if (!P.isBigInt(v) || !derivesFrom(position.type, AtomicTypes.integer))
     return raise(
       "XPTY0004",
       `an array is indexed by an xs:integer, not xs:${position.type.name}`,
@@ -152,7 +152,7 @@ export const callFunction = (
   const key = singleAtomic(args[0] ?? [], "the key", offset);
   if (f instanceof MapItem) return Option.getOrElse(f.get(key), () => []);
   // An array is a function(xs:integer) as item()*: the function conversion rules
-  // cast an untyped argument (a lookup with `?` does not convert).
+  // cast an untyped argument.
   return arrayMember(
     f,
     key.type === AtomicTypes.untypedAtomic
@@ -204,6 +204,8 @@ export interface Dynamic {
   readonly currentDateTime: string;
   /** The implicit timezone, in minutes east of UTC. */
   readonly implicitTimezone: number;
+  /** The default language, as the `xs:language` value `fn:default-language` returns. */
+  readonly defaultLanguage: string;
   /** The environment variables `fn:environment-variable` reads, by name. */
   readonly environment: Readonly<Record<string, string>>;
 }

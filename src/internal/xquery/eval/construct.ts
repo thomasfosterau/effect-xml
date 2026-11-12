@@ -19,11 +19,12 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { isValidNCName, QName } from "../../../Name.ts";
 import type { XmlAttribute, XmlElement, XmlNode } from "../../../Xml/Node.ts";
 import * as Nodes from "../../nodes.ts";
+import { prefixOf, uriOf } from "../../qnames.ts";
 import { isEnter, preorder } from "../../tree.ts";
 import { atomicString, type AtomicValue } from "../atomic.ts";
 import { ArrayItem, atomize, isAtomic, isNode, type Sequence } from "../item.ts";
@@ -36,6 +37,7 @@ import { AtomicTypes, derivesFrom } from "../types.ts";
 import { raise, unwrap } from "./raise.ts";
 import type { Code, Ctx } from "./runtime.ts";
 import { resolve, type Scope } from "./scope.ts";
+import { maybe } from "../../optional.ts";
 
 /** The evaluator's expression compiler, passed in to avoid an import cycle. */
 type CompileExpr = (e: ExprT, scope: Scope) => Code;
@@ -63,7 +65,7 @@ const modesOf = (scope: Scope): Modes => {
     strip: c.boundarySpace === "strip",
     preserve: c.copyNamespaces.preserve,
     inherit: c.copyNamespaces.inherit,
-    options: { baseUri: Option.getOrUndefined(c.baseUri) },
+    options: maybe("baseUri", Option.getOrUndefined(c.baseUri)),
   };
 };
 
@@ -71,10 +73,10 @@ const modesOf = (scope: Scope): Modes => {
 // Namespace declarations in the DOM
 // -----------------------------------------------------------------------------
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
 const isDeclaration = (a: XmlAttribute): boolean =>
-  a.name.prefix === "xmlns" || (a.name.prefix === null && a.name.local === "xmlns");
+  prefixOf(a.name) === "xmlns" || (prefixOf(a.name) === null && a.name.local === "xmlns");
 
 /** A namespace declaration attribute, named as the XML tree builder names one. */
 const declaration = (prefix: string, uri: string): XmlAttribute =>
@@ -98,11 +100,12 @@ const ownScope = (element: XmlElement): Bindings => {
     if (lookup(out, prefix) === undefined) out.push([prefix, uri]);
   };
   element.attributes.forEach((a) => {
-    if (isDeclaration(a)) add(a.name.prefix === null ? "" : a.name.local, a.value);
+    if (isDeclaration(a)) add(prefixOf(a.name) === null ? "" : a.name.local, a.value);
   });
   [element.name, ...element.attributes.map((a) => a.name)].forEach((n) => {
-    if (n.namespace !== null && n.prefix !== "xml" && n.prefix !== "xmlns")
-      add(n.prefix ?? "", n.namespace);
+    const uri = uriOf(n);
+    const prefix = prefixOf(n);
+    if (uri !== null && prefix !== "xml" && prefix !== "xmlns") add(prefix ?? "", uri);
   });
   return out;
 };
@@ -134,12 +137,12 @@ const stripNamespaces = (root: XmlElement): XmlElement => {
     }
     if (isEnter(step)) {
       const inherited = parent?.defaultNamespace ?? "";
-      const unprefixed = node.name.prefix === null;
+      const unprefixed = prefixOf(node.name) === null;
       frames.push({
         source: node,
         children: [],
-        defaultNamespace: unprefixed ? (node.name.namespace ?? "") : inherited,
-        undeclare: unprefixed && node.name.namespace === null && inherited !== "",
+        defaultNamespace: unprefixed ? (uriOf(node.name) ?? "") : inherited,
+        undeclare: unprefixed && uriOf(node.name) === null && inherited !== "",
       });
       return result;
     }
@@ -161,7 +164,7 @@ const stripNamespaces = (root: XmlElement): XmlElement => {
 /** What a namespace node stands for. */
 const bindingOf = (node: XdmNode): NamespaceBinding | undefined => {
   const dom = node.dom;
-  return !Predicate.isString(dom) && "uri" in dom ? dom : undefined;
+  return !P.isString(dom) && "uri" in dom ? dom : undefined;
 };
 
 /** The DOM of an element node, copied as the copy-namespaces mode says (before its new parent is known). */
@@ -179,19 +182,36 @@ const copyElement = (node: XdmNode, element: XmlElement, modes: Modes): XmlEleme
   ]);
 };
 
-/** A copied element placed under a parent with bindings `parent`: what it must declare to keep its own in-scope namespaces. */
-const fixup = (element: XmlElement, parent: Bindings, inherit: boolean): XmlElement => {
+/**
+ * A copied element placed under a parent with bindings `parent`: what it must
+ * declare to keep its own in-scope namespaces. `explicit` is given for a
+ * direct constructor written in the parent's content: the namespaces declared
+ * by the constructors enclosing it.
+ */
+const fixup = (
+  element: XmlElement,
+  parent: Bindings,
+  inherit: boolean,
+  explicit: Bindings | undefined,
+): XmlElement => {
   const own = ownScope(element);
-  const extra = inherit
-    ? element.name.prefix === null &&
-      element.name.namespace === null &&
-      lookup(own, "") === undefined &&
-      (lookup(parent, "") ?? "") !== ""
-      ? [declaration("", "")]
-      : []
-    : parent.flatMap(([prefix, uri]) =>
-        uri !== "" && lookup(own, prefix) === undefined ? [declaration(prefix, "")] : [],
-      );
+  const extra = explicit
+    ? // A direct constructor written in the content: only what the enclosing constructors declare is inherited.
+      parent.flatMap(([prefix, uri]) =>
+        uri !== "" && lookup(own, prefix) === undefined && lookup(explicit, prefix) !== uri
+          ? [declaration(prefix, "")]
+          : [],
+      )
+    : inherit
+      ? prefixOf(element.name) === null &&
+        uriOf(element.name) === null &&
+        lookup(own, "") === undefined &&
+        (lookup(parent, "") ?? "") !== ""
+        ? [declaration("", "")]
+        : []
+      : parent.flatMap(([prefix, uri]) =>
+          uri !== "" && lookup(own, prefix) === undefined ? [declaration(prefix, "")] : [],
+        );
   return Arr.isArrayNonEmpty(extra)
     ? withAttributes(element, [...extra, ...element.attributes])
     : element;
@@ -209,8 +229,21 @@ const flattenArrays = (items: Sequence): Sequence =>
       )
     : items;
 
-/** A part of a constructor's content: literal text, or an expression's code. */
-type Part = string | Code;
+/**
+ * A part of a constructor's content: literal text, an expression's code, or
+ * a direct element constructor written as content, whose namespaces are
+ * those of its enclosing declarations and its own names, never those the
+ * parent only has for its names (XQuery 3.1 §3.9.1.4).
+ */
+type Part = string | Code | DirectContent;
+
+/** A direct element constructor written in the content of another. */
+class DirectContent {
+  readonly code: Code;
+  constructor(code: Code) {
+    this.code = code;
+  }
+}
 
 /**
  * The content of an element or document constructor as it is gathered
@@ -222,6 +255,8 @@ class Content {
   readonly attributes: Array<XmlAttribute> = [];
   readonly namespaces: Array<NamespaceBinding> = [];
   readonly children: Array<XmlNode> = [];
+  /** The positions among the children of the direct element constructors written in the content. */
+  readonly direct: Array<number> = [];
   private hasChild = false;
   private readonly modes: Modes;
   /** A document's content: attributes and namespace nodes are type errors. */
@@ -238,7 +273,7 @@ class Content {
     if (data === "") return;
     const last = this.children.length - 1;
     const prev = this.children[last];
-    if (prev !== undefined && Predicate.isTagged(prev, "XmlText"))
+    if (prev !== undefined && P.isTagged(prev, "XmlText"))
       this.children[last] = Nodes.text(prev.data + data);
     else this.children.push(Nodes.text(data));
     this.hasChild = true;
@@ -273,10 +308,17 @@ class Content {
       );
   }
 
-  private node(node: XdmNode): void {
+  /** The value of a direct element constructor written as content. */
+  nested(items: Sequence): void {
+    items.forEach((item) => {
+      if (isNode(item)) this.node(item, true);
+    });
+  }
+
+  private node(node: XdmNode, direct = false): void {
     const dom = node.dom;
     const binding = bindingOf(node);
-    if (!Predicate.isString(dom) && "value" in dom && "name" in dom) {
+    if (!P.isString(dom) && "value" in dom && "name" in dom) {
       this.leading("an attribute");
       this.attributes.push(dom);
     } else if (binding !== undefined) {
@@ -286,12 +328,10 @@ class Content {
     else if (node.kind === "text") this.text(node.stringValue);
     else {
       this.hasChild = true;
-      if (Predicate.isTagged(dom, "XmlElement"))
+      if (P.isTagged(dom, "XmlElement")) {
+        if (direct) this.direct.push(this.children.length);
         this.children.push(copyElement(node, dom, this.modes));
-      else if (
-        Predicate.isTagged(dom, "XmlComment") ||
-        Predicate.isTagged(dom, "XmlProcessingInstruction")
-      )
+      } else if (P.isTagged(dom, "XmlComment") || P.isTagged(dom, "XmlProcessingInstruction"))
         this.children.push(dom);
     }
   }
@@ -307,7 +347,8 @@ const gather = (
 ): Content => {
   const content = new Content(modes, document, offset);
   parts.forEach((part) => {
-    if (Predicate.isString(part)) content.text(part);
+    if (P.isString(part)) content.text(part);
+    else if (part instanceof DirectContent) content.nested(part.code(ctx));
     else content.sequence(part(ctx));
   });
   return content;
@@ -329,19 +370,21 @@ const bind = (bindings: Bindings, prefix: string, uri: string, offset: number): 
 
 /** An attribute's name with a prefix its element can bind to its namespace (namespace fixup). */
 const attributeName = (name: QName, bindings: Bindings): QName => {
-  if (name.namespace === null || name.prefix === "xml") return name;
-  if (name.prefix !== null) {
-    const known = lookup(bindings, name.prefix);
+  const namespace = uriOf(name);
+  const written = prefixOf(name);
+  if (namespace === null || written === "xml") return name;
+  if (written !== null) {
+    const known = lookup(bindings, written);
     if (known === undefined) {
-      bindings.push([name.prefix, name.namespace]);
+      bindings.push([written, namespace]);
       return name;
     }
-    if (known === name.namespace) return name;
+    if (known === namespace) return name;
   }
-  const existing = bindings.find(([p, uri]) => p !== "" && uri === name.namespace);
+  const existing = bindings.find(([p, uri]) => p !== "" && uri === namespace);
   const prefix = existing?.[0] ?? freshPrefix(bindings);
-  if (existing === undefined) bindings.push([prefix, name.namespace]);
-  return Nodes.qname(prefix, name.local, name.namespace);
+  if (existing === undefined) bindings.push([prefix, namespace]);
+  return Nodes.qname(prefix, name.local, namespace);
 };
 
 /**
@@ -355,27 +398,31 @@ const buildElement = (
   content: Content,
   modes: Modes,
   offset: number,
+  explicit: Bindings = declared,
 ): XdmNode => {
   const bindings: Bindings = [...declared];
   content.namespaces.forEach((n) => bind(bindings, n.prefix, n.uri, offset));
-  if (name.namespace === null) {
-    if (name.prefix === null && (lookup(bindings, "") ?? "") !== "")
+  const namespace = uriOf(name);
+  if (namespace === null) {
+    if (prefixOf(name) === null && (lookup(bindings, "") ?? "") !== "")
       raise(
         "XQDY0102",
         `the element ${name.local} is in no namespace but a default namespace is bound`,
         offset,
       );
-  } else if (name.prefix !== "xml") bind(bindings, name.prefix ?? "", name.namespace, offset);
+  } else if (prefixOf(name) !== "xml") bind(bindings, prefixOf(name) ?? "", namespace, offset);
   const all = [...attributes, ...content.attributes];
-  const keys = all.map((a) => `{${a.name.namespace ?? ""}}${a.name.local}`);
+  const keys = all.map((a) => `{${uriOf(a.name) ?? ""}}${a.name.local}`);
   const named = all.map((a, i) => {
     if (keys.indexOf(keys[i] ?? "") !== i)
       raise("XQDY0025", `the attribute ${a.name.qualified} is given twice`, offset);
     const n = attributeName(a.name, bindings);
     return n === a.name ? a : Nodes.attribute(n, a.value);
   });
-  const children = content.children.map((child) =>
-    isElement(child) ? fixup(child, bindings, modes.inherit) : child,
+  const children = content.children.map((child, i) =>
+    isElement(child)
+      ? fixup(child, bindings, modes.inherit, content.direct.includes(i) ? explicit : undefined)
+      : child,
   );
   const element = Nodes.element(
     name,
@@ -456,27 +503,29 @@ const lookupPrefix = (scope: Scope, prefix: string): string | undefined =>
 
 /** `err:XQDY0096` for an element name no element may have. */
 const checkElementName = (name: QName, offset: number): QName => {
-  const ns = name.namespace;
+  const ns = uriOf(name);
   const bad =
     ns === Namespaces.xmlns ||
-    name.prefix === "xmlns" ||
-    (name.prefix === "xml" && ns !== Namespaces.xml) ||
-    (ns === Namespaces.xml && name.prefix !== "xml" && name.prefix !== null) ||
-    (ns === Namespaces.xml && name.prefix === null);
+    prefixOf(name) === "xmlns" ||
+    (prefixOf(name) === "xml" && ns !== Namespaces.xml) ||
+    (ns === Namespaces.xml && prefixOf(name) !== "xml" && prefixOf(name) !== null) ||
+    (ns === Namespaces.xml && prefixOf(name) === null);
   return bad ? raise("XQDY0096", `an element can't be named ${name.qualified}`, offset) : name;
 };
 
 /** `err:XQDY0044` for an attribute name no attribute may have. */
 const checkAttributeName = (name: QName, offset: number): QName => {
-  const ns = name.namespace;
+  const ns = uriOf(name);
   const bad =
     ns === Namespaces.xmlns ||
-    name.prefix === "xmlns" ||
-    (name.prefix === null && ns === null && name.local === "xmlns") ||
-    (name.prefix === "xml" && ns !== Namespaces.xml) ||
-    (ns === Namespaces.xml && name.prefix !== "xml" && name.prefix !== null);
+    prefixOf(name) === "xmlns" ||
+    (prefixOf(name) === null && ns === null && name.local === "xmlns") ||
+    (prefixOf(name) === "xml" && ns !== Namespaces.xml) ||
+    (ns === Namespaces.xml && prefixOf(name) !== "xml" && prefixOf(name) !== null);
   if (bad) return raise("XQDY0044", `an attribute can't be named ${name.qualified}`, offset);
-  return ns === Namespaces.xml && name.prefix === null ? Nodes.qname("xml", name.local, ns) : name;
+  return ns === Namespaces.xml && prefixOf(name) === null
+    ? Nodes.qname("xml", name.local, ns)
+    : name;
 };
 
 /** A computed constructor's name: written, resolved now, or computed each time. */
@@ -545,7 +594,7 @@ const ncnameCode = (
 const attributeNode = (name: QName, value: string): XmlAttribute =>
   Nodes.attribute(
     name,
-    name.namespace === Namespaces.xml && name.local === "id"
+    uriOf(name) === Namespaces.xml && name.local === "id"
       ? value.replace(/[ \t\r\n]+/g, " ").trim()
       : value,
   );
@@ -568,15 +617,17 @@ const attributeValue = (
   compileExpr: CompileExpr,
   offset: number,
 ): ((ctx: Ctx) => string) => {
-  const codes = parts.map((p): Part => (isDirText(p) ? p.value : compileExpr(p, scope)));
-  if (codes.every(Predicate.isString)) {
+  const codes = parts.map((p): string | Code => (isDirText(p) ? p.value : compileExpr(p, scope)));
+  if (codes.every(P.isString)) {
     const text = codes.join("");
     return () => text;
   }
-  return (ctx) => codes.map((c) => (Predicate.isString(c) ? c : joined(c(ctx), offset))).join("");
+  return (ctx) => codes.map((c) => (P.isString(c) ? c : joined(c(ctx), offset))).join("");
 };
 
 const isDirText = Expr.$is("DirText");
+
+const isDirElement = Expr.$is("DirElement");
 
 /** The content of a direct element: literal text (boundary whitespace dropped unless preserved) and expressions. */
 const contentParts = (
@@ -584,8 +635,10 @@ const contentParts = (
   scope: Scope,
   modes: Modes,
   compileExpr: CompileExpr,
+  explicit: Bindings,
 ): ReadonlyArray<Part> =>
   content.flatMap((p): ReadonlyArray<Part> => {
+    if (isDirElement(p)) return [new DirectContent(dirElement(p, scope, compileExpr, explicit))];
     if (!isDirText(p)) return [compileExpr(p, scope)];
     return p.boundary && modes.strip ? [] : [p.value];
   });
@@ -594,7 +647,12 @@ const declarations = (namespaces: ReadonlyArray<DirNamespace>): Bindings =>
   namespaces.map((n) => [Option.getOrElse(n.prefix, () => ""), n.uri] as const);
 
 /** A direct element constructor, `<name attr="…">content</name>`. */
-export const dirElement = (e: DirElementT, outer: Scope, compileExpr: CompileExpr): Code => {
+export const dirElement = (
+  e: DirElementT,
+  outer: Scope,
+  compileExpr: CompileExpr,
+  enclosing: Bindings = [],
+): Code => {
   const scope: Scope = { ...outer, statics: elementScope(outer.statics, e.namespaces) };
   const modes = modesOf(scope);
   const written = resolve(scope, e.name, "element");
@@ -607,11 +665,16 @@ export const dirElement = (e: DirElementT, outer: Scope, compileExpr: CompileExp
     };
   });
   const declared = declarations(e.namespaces);
-  const parts = contentParts(e.content, scope, modes, compileExpr);
+  // What the constructors around this one declare, this one's own declarations first.
+  const explicit: Bindings = [
+    ...declared,
+    ...enclosing.filter(([p]) => lookup(declared, p) === undefined),
+  ];
+  const parts = contentParts(e.content, scope, modes, compileExpr, explicit);
   return (ctx) => {
     const attrs = attributes.map((a) => attributeNode(a.name, a.value(ctx)));
     const content = gather(parts, ctx, modes, false, e.offset);
-    return [buildElement(name, declared, attrs, content, modes, e.offset)];
+    return [buildElement(name, declared, attrs, content, modes, e.offset, explicit)];
   };
 };
 
@@ -656,7 +719,12 @@ export const compDocument = (
   const body = compileExpr(e.body, scope);
   return (ctx) => {
     const content = gather([body], ctx, modes, true, e.offset);
-    return [XdmNode.fromDocument(Nodes.document(null, null, content.children), modes.options)];
+    return [
+      XdmNode.fromDocument(
+        Nodes.document(Option.none(), Option.none(), content.children),
+        modes.options,
+      ),
+    ];
   };
 };
 

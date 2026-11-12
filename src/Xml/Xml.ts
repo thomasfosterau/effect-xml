@@ -25,15 +25,15 @@ import type { Limits } from "../Limits.ts";
  */
 export interface ParseOptions extends BuildOptions {
   /** Named entity table override. */
-  readonly entities?: Record<string, string> | undefined;
+  readonly entities?: Record<string, string>;
   /** Whitespace handling for text nodes (default `"preserve"`). */
-  readonly whitespace?: "preserve" | "collapse" | undefined;
+  readonly whitespace?: "preserve" | "collapse";
   /** Drop whitespace-only text nodes (default `false`). */
-  readonly dropWhitespaceOnlyText?: boolean | undefined;
+  readonly dropWhitespaceOnlyText?: boolean;
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
-  readonly limits?: Partial<Limits> | undefined;
+  readonly limits?: Partial<Limits>;
   /** Interpret the DOCTYPE internal subset (see {@link Sax.SaxOptions.dtd}); default `"ignore"`. */
-  readonly dtd?: "ignore" | "internal" | undefined;
+  readonly dtd?: "ignore" | "internal";
   /**
    * `parse` and `parseBytes`: with `false`, build the tree from a lenient
    * reading, as `Sax.forEach` reads (see `Sax.ForEachOptions.strict`), for
@@ -43,16 +43,13 @@ export interface ParseOptions extends BuildOptions {
    *
    * @since 0.1.0
    */
-  readonly strict?: boolean | undefined;
+  readonly strict?: boolean;
 }
 
-const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
+const saxOptions = (options?: ParseOptions): Sax.SaxOptions => ({
+  ...options,
   mode: "xml",
-  entities: options?.entities,
-  whitespace: options?.whitespace,
-  dropWhitespaceOnlyText: options?.dropWhitespaceOnlyText,
-  limits: options?.limits,
-  dtd: options?.dtd,
+  recover: options?.recover === true,
 });
 
 /**
@@ -64,8 +61,20 @@ const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
  * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const doc = Effect.runSync(Xml.parse(`<order id="7"><item>Widget</item></order>`))
- * console.log(doc.root.attribute("id")) // "7"
+ * console.log(doc.root.attribute("id")) // Option.some("7")
  * console.log(doc.root.textContent) // "Widget"
+ * ```
+ *
+ * With `recover: true`, malformed XML is repaired rather than rejected: here
+ * an unescaped `&`, an unquoted attribute and an unclosed element.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import { Xml } from "@thomasfosterau/effect-xml"
+ *
+ * const doc = Effect.runSync(Xml.parse(`<p class=note>AT&T <b>bold`, { recover: true }))
+ * console.log(Xml.serializeDocument(doc)) // <p class="note">AT&amp;T <b>bold</b></p>
  * ```
  *
  * @since 0.1.0
@@ -100,12 +109,12 @@ export interface ParseBytesOptions extends ParseOptions {
    * An external encoding hint, such as the `charset` of a `Content-Type`. It
    * overrides the XML declaration, but not a byte order mark.
    */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
 }
 
-const bytesOptions = (options: ParseBytesOptions | undefined): Sax.SaxBytesOptions => ({
-  ...saxOptions(options),
-  encoding: options?.encoding,
+const bytesOptions = (options?: ParseBytesOptions): Sax.SaxBytesOptions => ({
+  ...options,
+  mode: "xml",
 });
 
 /**

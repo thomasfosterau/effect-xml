@@ -15,9 +15,9 @@ import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
-import { XmlAttribute, XmlElement } from "../../Xml/Node.ts";
+import type { XmlElement } from "../../Xml/Node.ts";
 import { compile, select, type Path, type XPathNode } from "../../Xml/XPath.ts";
 import type { IdentityConstraint } from "../../Xsd/Model.ts";
 import { identityKey, normalize, type SimpleChecker, type ValueContext } from "./datatypes.ts";
@@ -75,14 +75,11 @@ const compiled = (constraint: IdentityConstraint): Result.Result<Compiled, strin
   return out;
 };
 
-const valueOf = (node: XPathNode): string =>
-  node instanceof XmlAttribute
-    ? node.value
-    : node instanceof XmlElement
-      ? node.textContent
-      : Predicate.hasProperty(node, "data") && Predicate.isString(node.data)
-        ? node.data
-        : "";
+const valueOf = (node: XPathNode): string => {
+  if ("value" in node) return node.value;
+  if (P.isTagged(node, "XmlElement")) return node.textContent;
+  return P.hasProperty(node, "data") && P.isString(node.data) ? node.data : "";
+};
 
 const fieldValue = (node: XPathNode, typeOf: TypeOf): FieldValue => {
   const raw = valueOf(node);
@@ -124,7 +121,7 @@ const show = (values: ReadonlyArray<FieldValue>): string =>
 
 const selected = (c: Compiled, scope: XmlElement): ReadonlyArray<XmlElement> =>
   Arr.flatMap(c.selectors, (s) =>
-    Arr.filter(select(s, scope), (n): n is XmlElement => n instanceof XmlElement),
+    Arr.filter(select(s, scope), (n): n is XmlElement => P.isTagged(n, "XmlElement")),
   );
 
 /**
@@ -164,7 +161,7 @@ const table = (
     scope,
     typeOf,
     () =>
-      Predicate.isTagged(c.constraint, "Key")
+      P.isTagged(c.constraint, "Key")
         ? Result.fail(`a field of the key ${c.constraint.name} is missing`)
         : ok,
     (values) => {
@@ -214,8 +211,8 @@ export const evaluateConstraints = (
   typeOf: TypeOf,
 ): Result.Result<void, string> =>
   Result.flatMap(Result.all(Arr.map(constraints, compiled)), (all) => {
-    const refs = Arr.filter(all, (c) => Predicate.isTagged(c.constraint, "KeyRef"));
-    const keys = Arr.filter(all, (c) => !Predicate.isTagged(c.constraint, "KeyRef"));
+    const refs = Arr.filter(all, (c) => P.isTagged(c.constraint, "KeyRef"));
+    const keys = Arr.filter(all, (c) => !P.isTagged(c.constraint, "KeyRef"));
     return Result.flatMap(
       Arr.reduce(keys, ok, (acc, c) =>
         Result.flatMap(acc, () =>

@@ -8,23 +8,21 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Match from "effect/Match";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import { Xml } from "../src/index.ts";
 import { documents } from "./support/documents.ts";
 
 /** A DOM element as the plain tree has it. */
 const plain = (element: Xml.XmlElement): Xml.PlainElement => ({
   name: element.name.qualified,
-  attributes: Record.fromEntries(element.attributes.map((a) => [a.name.qualified, a.value])),
+  attributes: R.fromEntries(element.attributes.map((a) => [a.name.qualified, a.value])),
   children: Arr.reduce(element.children, Arr.empty<Xml.PlainNode>(), (out, node) =>
     Match.value(node).pipe(
       Match.tag("XmlElement", (child) => [...out, plain(child)]),
       Match.tag("XmlText", "XmlCData", (text) => {
         const last = out.at(-1);
-        return Predicate.isString(last)
-          ? [...out.slice(0, -1), last + text.data]
-          : [...out, text.data];
+        return P.isString(last) ? [...out.slice(0, -1), last + text.data] : [...out, text.data];
       }),
       Match.orElse(() => out),
     ),
@@ -58,7 +56,7 @@ describe("Xml.parsePlain", () => {
   test("an attribute named __proto__ is an attribute", () => {
     const root = Effect.runSync(Xml.parsePlain(`<r __proto__="p" b="2"/>`));
     expect(Object.getPrototypeOf(root.attributes)).toBe(Object.prototype);
-    expect(Record.toEntries(root.attributes)).toStrictEqual([
+    expect(R.toEntries(root.attributes)).toStrictEqual([
       ["__proto__", "p"],
       ["b", "2"],
     ]);

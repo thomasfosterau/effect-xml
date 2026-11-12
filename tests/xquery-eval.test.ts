@@ -5,6 +5,7 @@
  * codes and offsets. The W3C suite (`tests/qt3.test.ts`) covers the
  * semantics at large; these pin the behaviour the design depends on.
  */
+import * as Option from "effect/Option";
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -363,7 +364,7 @@ describe("functions", () => {
 
   test("a function the core library doesn't implement yet fails as not implemented", () => {
     const e = error("transform(map {})");
-    expect(e.code.namespace).toBe(XQuery.ImplementationNamespace);
+    expect(e.code.namespace).toEqual(Option.some(XQuery.ImplementationNamespace));
     expect(e.code.local).toBe("NotImplemented");
   });
 
@@ -493,7 +494,8 @@ describe("review findings (#94)", () => {
 
   test("9: an array called as a function converts its argument to xs:integer", () => {
     expect(values("[42](xs:untypedAtomic('1'))")).toEqual(["42"]);
-    expect(code("[42]?(xs:untypedAtomic('1'))")).toBe("XPTY0004");
+    expect(values("[42]?(xs:untypedAtomic('1'))")).toEqual(["42"]);
+    expect(code("[42]?(xs:double('1'))")).toBe("XPTY0004");
   });
 
   test("10: without a resolver, the default collection is FODC0002", () => {

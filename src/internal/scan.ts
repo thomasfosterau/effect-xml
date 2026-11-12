@@ -17,6 +17,8 @@
  */
 import { origin, type Span } from "../Position.ts";
 import { isXmlChar } from "./entities.ts";
+import * as Brand from "effect/Brand";
+import type { AttrName, TagName } from "../Name.ts";
 import { invalidNameAt } from "./names.ts";
 import type { LexEvent } from "./lexer.ts";
 
@@ -31,6 +33,12 @@ export type ScanResult = LexEvent | typeof Incomplete | typeof Fallback;
 export interface Context {
   /** The named entities (the predefined ones, or a replacement table). */
   readonly entities: Record<string, string>;
+  /**
+   * Whether the grammars it stands in for recover (`recover: true`): then a
+   * `<` that opens no markup is text, so text is read only up to a `<` that
+   * does (see {@link text}).
+   */
+  readonly recover: boolean;
   /** The span of buffer indices `[from, to)` (the lexer's lazy spans). */
   readonly span: (from: number, to: number) => Span;
   /** Whether events have positions (without, every span is {@link NO_SPAN}). */
@@ -53,7 +61,7 @@ export interface Context {
    */
   inside: boolean;
   /** Names read recently (see {@link nameAt}). */
-  readonly names: Array<string | undefined>;
+  readonly names: Array<ScannedName | undefined>;
   /**
    * For each of {@link NEEDLES}, where it next occurs in the buffer from
    * where it was last looked for (the buffer's length when it does not):
@@ -98,12 +106,19 @@ type Attribute = Writable<Event<"StartElement">["attributes"][number]>;
 const spanOf = (ctx: Context, from: number, to: number): Span =>
   ctx.positions ? ctx.span(from, to) : NO_SPAN;
 
+/**
+ * A name the scanner read: one the tag grammars accept, so it is both a
+ * {@link TagName} and an {@link AttrName} (the same name productions).
+ */
+type ScannedName = TagName & AttrName;
+const scannedName = Brand.nominal<ScannedName>();
+
 /** The events of a {@link Context.reuse} scanner, rewritten for each token. */
 export class Reused {
   readonly text: Event<"Text"> = { data: "", span: NO_SPAN, _tag: "Text" };
-  readonly end: Event<"EndElement"> = { name: "", span: NO_SPAN, _tag: "EndElement" };
+  readonly end: Event<"EndElement"> = { name: scannedName(""), span: NO_SPAN, _tag: "EndElement" };
   readonly start: Event<"StartElement"> = {
-    name: "",
+    name: scannedName(""),
     attributes: [],
     selfClosing: false,
     span: NO_SPAN,
@@ -126,13 +141,13 @@ export const NAME_SLOTS = 256;
  * a repeated one costs no slice, and hashes (in a `Map` of names) as fast as
  * a string can.
  */
-const nameAt = (buf: string, from: number, to: number, ctx: Context): string => {
+const nameAt = (buf: string, from: number, to: number, ctx: Context): ScannedName => {
   const slot =
     ((to - from) * 31 + buf.charCodeAt(from) + buf.charCodeAt(to - 1) * 7) & (NAME_SLOTS - 1);
   const known = ctx.names[slot];
   if (known !== undefined && known.length === to - from && buf.startsWith(known, from))
     return known;
-  const name = buf.slice(from, to);
+  const name = scannedName(buf.slice(from, to));
   ctx.names[slot] = name;
   return name;
 };
@@ -260,6 +275,10 @@ const skipName = (buf: string, i: number, end: number): number => {
 /** Can `c` start a name as the tag grammars read one (any non-ASCII character can)? */
 const startsName = (c: number): boolean => c >= 128 || is(c, NAME_START);
 
+/** Does a `<` followed by `c` open markup: a name, `/`, `!` or `?`? */
+const opensMarkup = (c: number): boolean =>
+  startsName(c) || c === SLASH || c === BANG || c === QUESTION;
+
 /**
  * The end of a name whose first character is at `i`, taking non-ASCII
  * characters in too. With `check`, -1 when one of those makes it no XML
@@ -305,6 +324,28 @@ export const scanXml = (buf: string, pos: number, partial: boolean, ctx: Context
 const text = (buf: string, pos: number, partial: boolean, ctx: Context): ScanResult => {
   const to = mark(buf, ctx, M_LT, pos);
   if (to === buf.length && partial) return Incomplete;
+  return ctx.recover && to < buf.length
+    ? recoveringText(buf, pos, to, partial, ctx)
+    : textTo(buf, pos, to, ctx);
+};
+
+/**
+ * Recovering, text up to a `<` at `to`: the text goes on past a `<` that
+ * opens no markup, which the grammar reads.
+ */
+const recoveringText = (
+  buf: string,
+  pos: number,
+  to: number,
+  partial: boolean,
+  ctx: Context,
+): ScanResult => {
+  if (to + 1 >= buf.length) return partial ? Incomplete : Fallback;
+  return opensMarkup(buf.charCodeAt(to + 1)) ? textTo(buf, pos, to, ctx) : Fallback;
+};
+
+/** The text from `pos` to `to`, the next `<` (or the end of a complete input). */
+const textTo = (buf: string, pos: number, to: number, ctx: Context): ScanResult => {
   // A `]]>` in text is an error (§2.4); the grammar reports it.
   if (mark(buf, ctx, M_CDATA_END, pos) + 3 <= to) return Fallback;
   let data = buf.slice(pos, to);
@@ -380,7 +421,20 @@ const declaration = (buf: string, pos: number, ctx: Context): ScanResult => {
 const isS = (c: number): boolean => c === 32 || c === TAB || c === LF || c === 13;
 
 /**
- * `<?target data?>` (§2.6), with an ASCII `Name` for a target other than
+ * Is the ASCII name `name` a `QName` (`NCName (':' NCName)?`), as the
+ * grammar reads a processing instruction's target: no colon first or last,
+ * and at most one?
+ */
+const isAsciiQName = (name: string): boolean => {
+  const colon = name.indexOf(":");
+  return (
+    colon === -1 ||
+    (colon > 0 && colon === name.lastIndexOf(":") && is(name.charCodeAt(colon + 1), NAME_START))
+  );
+};
+
+/**
+ * `<?target data?>` (§2.6), with an ASCII `QName` for a target other than
  * `xml` in any case (`xml` itself starts the XML declaration, the grammar's).
  */
 const processingInstruction = (buf: string, pos: number, ctx: Context): ScanResult => {
@@ -390,6 +444,7 @@ const processingInstruction = (buf: string, pos: number, ctx: Context): ScanResu
   if (targetEnd >= end) return Fallback;
   const target = buf.slice(pos + 2, targetEnd);
   if (target.length === 3 && target.toLowerCase() === "xml") return Fallback;
+  if (!isAsciiQName(target)) return Fallback;
   let from = targetEnd;
   while (from < end && isS(buf.charCodeAt(from))) from++;
   // Data only after whitespace; `?>` straight after the target ends it empty.
@@ -429,7 +484,7 @@ const closeStart = (
   buf: string,
   i: number,
   ctx: Context,
-  name: string,
+  name: ScannedName,
   pos: number,
   partial: boolean,
 ): ScanResult => {

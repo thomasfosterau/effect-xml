@@ -9,6 +9,7 @@ import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import {
@@ -74,12 +75,12 @@ export class Match {
 }
 
 /** How a selector decides predicates, and what it keeps. */
-export interface SelectorOptions<P, V> {
-  readonly steps: ReadonlyArray<MatchStep<P>>;
+export interface SelectorOptions<Pr, V> {
+  readonly steps: ReadonlyArray<MatchStep<Pr>>;
   /** The view of an element (name and attributes, no content) that predicates read; made at most once per element. */
   readonly view: (element: XmlElement) => V;
   /** Decide a predicate for an element, given its position among the siblings counted for it. */
-  readonly passes: (predicate: P, view: V, position: number) => boolean;
+  readonly passes: (predicate: Pr, view: V, position: number) => boolean;
   /** Whether to look for matches inside a match (otherwise they are part of it, not matched again). */
   readonly nested: boolean;
   /** Whether to keep each open element's name and attributes, for {@link Match.ancestors}. */
@@ -92,7 +93,7 @@ const none: ReadonlyArray<ReadonlyArray<number>> = [];
 const matchSaxEvent = /*#__PURE__*/ Data.taggedEnum<SaxEvent>().$match;
 
 /** Selects the subtrees matching a selection's steps from SAX events, one event at a time. */
-export class Selector<P, V> {
+export class Selector<Pr, V> {
   private readonly levels: Array<Level> = [];
   /** The open elements' names and attributes, when the selector keeps ancestors. */
   private readonly open: Array<Shallow> = [];
@@ -111,9 +112,9 @@ export class Selector<P, V> {
   /** The span of the last event (its end is where an unclosed element is reported). */
   last: Span = { start: origin, end: origin };
 
-  private readonly options: SelectorOptions<P, V>;
+  private readonly options: SelectorOptions<Pr, V>;
 
-  constructor(options: SelectorOptions<P, V>) {
+  constructor(options: SelectorOptions<Pr, V>) {
     this.options = options;
     this.fresh = options.steps.some((s) => s.positional);
   }
@@ -123,7 +124,7 @@ export class Selector<P, V> {
     isAttribute: boolean,
     bindings: HashMap.HashMap<string, string>,
     at: Span,
-  ): QName | SaxError {
+  ): QName | UnboundNamespacePrefix {
     const parsed = this.names.entry(raw);
     if (parsed.prefix === "xml") return this.names.name(parsed, Namespaces.xml);
     if (parsed.prefix === "xmlns") return this.names.name(parsed, Namespaces.xmlns);
@@ -137,7 +138,11 @@ export class Selector<P, V> {
     // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
     if (ns === undefined || (ns === "" && parsed.prefix !== null)) {
       if (parsed.prefix === null) return this.names.name(parsed, null);
-      return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position: at.start });
+      return new UnboundNamespacePrefix({
+        prefix: parsed.prefix,
+        qualifiedName: raw,
+        position: at.start,
+      });
     }
     // `xmlns=""` undeclares the default namespace.
     return this.names.name(parsed, ns === "" ? null : ns);
@@ -161,7 +166,7 @@ export class Selector<P, V> {
         this.append(Nodes.processingInstruction(ev.target, ev.data)),
       ),
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>) =>
-      ev.internalSubset === null ? null : Option.getOrNull(checkSubset(ev.internalSubset, ev.span)),
+      Option.getOrNull(Option.flatMap(ev.internalSubset, (subset) => checkSubset(subset, ev.span))),
     XmlDeclaration: (ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>) => {
       // Only an XML 1.1 document may undeclare a prefix with `xmlns:p=""`.
       this.unbinding = ev.version === "1.1";
@@ -180,7 +185,7 @@ export class Selector<P, V> {
   private currentView: { readonly view: V } | undefined;
 
   /** Decide a predicate for the current element (made once, so matching allocates no closure per element). */
-  private readonly decide = (predicate: P, position: number): boolean => {
+  private readonly decide = (predicate: Pr, position: number): boolean => {
     if (this.currentView === undefined && this.currentName !== undefined)
       this.currentView = {
         view: this.options.view(Nodes.element(this.currentName, this.currentAttributes, [])),
@@ -217,11 +222,13 @@ export class Selector<P, V> {
           : acc,
     );
     const name = this.resolve(ev.name, false, bindings, ev.span);
-    if (!(name instanceof QName)) return name;
+    if (P.isTagged(name, "UnboundNamespacePrefix")) return name;
     // In document order; the first duplicate or unbound prefix ends the element.
     const resolved = resolveAttributes(ev.name, ev.attributes, (attribute, at) => {
       const qname = this.resolve(attribute, true, bindings, at);
-      return qname instanceof QName ? Result.succeed(qname) : Result.fail(qname);
+      return P.isTagged(qname, "UnboundNamespacePrefix")
+        ? Result.fail(qname)
+        : Result.succeed(qname);
     });
     if (Result.isFailure(resolved)) return resolved.failure;
     const attributes = resolved.success;
@@ -250,7 +257,7 @@ export class Selector<P, V> {
 
   private end(rawName: string, at: Span): Match | SaxError | null {
     const level = this.levels.pop();
-    if (level === undefined) return new UnexpectedEndTag({ name: rawName, position: at.start });
+    if (level === undefined) return new UnexpectedEndTag({ tagName: rawName, position: at.start });
     if (level.rawName !== rawName)
       return new MismatchedEndTag({ expected: level.rawName, actual: rawName, position: at.start });
     if (this.options.ancestors) this.open.pop();
@@ -303,9 +310,9 @@ const frame = (
  * error if it has one, and at the end the check that nothing is left open.
  * `guard` runs the fold, turning anything the predicates throw into an error.
  */
-export const selectFrom = <P, V, O, F, E, R>(
+export const selectFrom = <Pr, V, O, F, E, R>(
   events: Stream.Stream<SaxEvent, E, R>,
-  selector: Selector<P, V>,
+  selector: Selector<Pr, V>,
   emit: (matches: ReadonlyArray<Match>) => Stream.Stream<O, F>,
   guard: (fold: () => SaxError | undefined) => SaxError | F | undefined = (fold) => fold(),
 ): Stream.Stream<O, E | F | SaxError, R> => {

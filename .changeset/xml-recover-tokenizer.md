@@ -1,0 +1,5 @@
+---
+"@thomasfosterau/effect-xml": minor
+---
+
+`recover: true` now recovers in the tokenizer too, so `Xml.parse` and the other `Xml` parsers read XML from the wild (feeds with `AT&T` in a title, `&nbsp;`, unquoted attributes) instead of failing on it. A `<` that opens no markup is text. An `&` that starts no well-formed reference, or one to an undeclared entity, stays as written (HTML's named references are not expanded). An unquoted attribute value runs to whitespace or `>`, and a valueless attribute has the value `""`. `</` without a name and an unknown `<!…>` are bogus comments, as in XML5. References and CDATA sections outside the root go into the recovered tree, and a late XML declaration or DOCTYPE is dropped. `Sax.tokenize`, `Sax.forEach` and `Sax.collect` take the new `recover` option for the recovered events. Characters XML does not allow, resource limits and encoding errors still fail, and a document strict XML reads is read the same. Without `recover`, events, spans and errors are unchanged.

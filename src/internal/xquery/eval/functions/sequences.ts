@@ -11,17 +11,18 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
+import { isReference, resolveReference } from "../../../uri.ts";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { isNode, type Sequence } from "../../item.ts";
 import type { NodeKind, XdmNode } from "../../node.ts";
-import { AtomicTypes, isNumericType } from "../../types.ts";
+import { AtomicTypes } from "../../types.ts";
 import { axisNodes, documentOrder } from "../axes.ts";
-import { isStringLike, toNumber } from "../cast.ts";
-import { atomicDeepEqual, deepEqual } from "../compare.ts";
+import { atomicDeepEqual, deepEqual, equalityBucket } from "../compare.ts";
 import { raise } from "../raise.ts";
-import { collate, collationArg, type Collation } from "./collation.ts";
+import { collationArg, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import {
   arg,
@@ -37,23 +38,19 @@ import {
   str,
   text,
 } from "./values.ts";
+import { uriOf } from "../../../qnames.ts";
 
-/** How strings compare under a collation, as the comparison helpers take it. */
-const order =
-  (c: Collation) =>
-  (a: string, b: string): number =>
-    collate(c, a, b);
+const isQName = Schema.is(QName);
 
 // -----------------------------------------------------------------------------
 // Sequences
 // -----------------------------------------------------------------------------
 
-const isNaNValue = (a: AtomicValue): boolean =>
-  Predicate.isNumber(a.value) && Number.isNaN(a.value);
+const isNaNValue = (a: AtomicValue): boolean => P.isNumber(a.value) && Number.isNaN(a.value);
 
 /** Whether two values are equal as `index-of` takes it: `eq`, with incomparable values unequal. */
 const equalForIndex = (a: AtomicValue, b: AtomicValue, tz: number, c: Collation): boolean =>
-  !isNaNValue(a) && !isNaNValue(b) && atomicDeepEqual(a, b, tz, order(c));
+  !isNaNValue(a) && !isNaNValue(b) && atomicDeepEqual(a, b, tz, c.compare);
 
 const indexOf = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const c = collationArg(args, 2, call);
@@ -64,27 +61,15 @@ const indexOf = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   );
 };
 
-/**
- * A key that values equal under `eq` (with NaN equal to NaN) share: numbers
- * by their value as a float, strings by their collation fold, and other values
- * by primitive type; values with one key are then compared one by one.
- */
-const bucketKey = (a: AtomicValue, c: Collation): string => {
-  // Equal numbers of any types round to the same float.
-  if (isNumericType(a.type)) return `n:${String(Math.fround(toNumber(a)))}`;
-  if (isStringLike(a.type) || a.type.primitive === "anyURI") return `s:${c.fold(String(a.value))}`;
-  return `t:${a.type.primitive}`;
-};
-
 const distinctValues = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const c = collationArg(args, 1, call);
   const tz = call.ctx.dyn.implicitTimezone;
-  const strings = order(c);
+  const strings = c.compare;
   const [, kept] = Arr.mapAccum(
     atomsOf(arg(args, 0)),
     HashMap.empty<string, ReadonlyArray<AtomicValue>>(),
     (seen, a) => {
-      const key = bucketKey(a, c);
+      const key = equalityBucket(a, c.bucket);
       const bucket = Option.getOrElse(HashMap.get(seen, key), () => []);
       return bucket.some((b) => atomicDeepEqual(a, b, tz, strings))
         ? [seen, []]
@@ -156,7 +141,7 @@ const sequenceFunctions: ReadonlyArray<BuiltinSpec> = [
           arg(args, 0),
           arg(args, 1),
           call.ctx.dyn.implicitTimezone,
-          order(collationArg(args, 2, call)),
+          collationArg(args, 2, call).compare,
         ),
       ),
   },
@@ -207,20 +192,25 @@ const outermost = (s: Sequence): Sequence => {
 
 const fnNamespace = "http://www.w3.org/2005/xpath-functions";
 
-const eqName = (q: QName): string => `Q{${q.namespace ?? ""}}${q.local}`;
+const eqName = (q: QName): string => `Q{${uriOf(q) ?? ""}}${q.local}`;
 
 /** Whether two nodes have the same kind and name, as `fn:path` counts siblings. */
 const sameKindAndName = (a: XdmNode, b: XdmNode): boolean =>
   a.kind === b.kind &&
-  Option.makeEquivalence(
-    (x: QName, y: QName) => x.namespace === y.namespace && x.local === y.local,
-  )(a.name, b.name);
+  Option.makeEquivalence((x: QName, y: QName) => uriOf(x) === uriOf(y) && x.local === y.local)(
+    a.name,
+    b.name,
+  );
 
 /** How each kind of node is written as a step of `fn:path`, given its name and its position among its like siblings. */
 const pathSteps: Readonly<Record<NodeKind, (name: QName | undefined, nth: number) => string>> = {
   element: (name, nth) => `${name === undefined ? "" : eqName(name)}[${nth}]`,
   attribute: (name) =>
-    name === undefined ? "@" : name.namespace === null ? `@${name.local}` : `@${eqName(name)}`,
+    name === undefined
+      ? "@"
+      : Option.isNone(name.namespace)
+        ? `@${name.local}`
+        : `@${eqName(name)}`,
   text: (_, nth) => `text()[${nth}]`,
   comment: (_, nth) => `comment()[${nth}]`,
   "processing-instruction": (name, nth) => `processing-instruction(${name?.local ?? ""})[${nth}]`,
@@ -320,7 +310,7 @@ const generateIdEmpty: BuiltinSpec = {
 
 const qnameArg = (s: Sequence): QName | undefined => {
   const a = optionalAtom(s);
-  return a !== undefined && a.value instanceof QName ? a.value : undefined;
+  return a !== undefined && isQName(a.value) ? a.value : undefined;
 };
 
 /** The namespace bindings in scope on an element, by prefix (`""` for the default namespace). */
@@ -342,9 +332,9 @@ const resolveQName = (lexical: string, element: XdmNode, call: Call): Sequence =
   return [
     AtomicValue.qname(
       new QName({
-        prefix: prefix === "" ? null : prefix,
+        prefix: prefix === "" ? Option.none() : Option.some(prefix),
         local,
-        namespace: uri === undefined || uri === "" ? null : uri,
+        namespace: uri === undefined || uri === "" ? Option.none() : Option.some(uri),
       }),
     ),
   ];
@@ -368,9 +358,9 @@ const qnameFunctions: ReadonlyArray<BuiltinSpec> = [
     result: "xs:NCName?",
     impl: (args) => {
       const q = qnameArg(arg(args, 0));
-      return q === undefined || q.prefix === null
+      return q === undefined || Option.isNone(q.prefix)
         ? []
-        : [new AtomicValue(AtomicTypes.NCName, q.prefix)];
+        : [new AtomicValue(AtomicTypes.NCName, q.prefix.value)];
     },
   },
   {
@@ -388,7 +378,7 @@ const qnameFunctions: ReadonlyArray<BuiltinSpec> = [
     result: "xs:anyURI?",
     impl: (args) => {
       const q = qnameArg(arg(args, 0));
-      return q === undefined ? [] : [AtomicValue.anyURI(q.namespace ?? "")];
+      return q === undefined ? [] : [AtomicValue.anyURI(uriOf(q) ?? "")];
     },
   },
   {
@@ -424,15 +414,17 @@ const isAbsolute = (uri: string): boolean => /^[A-Za-z][A-Za-z0-9+.-]*:/.test(ur
 const resolveUri = (relative: string, base: string | undefined, call: Call): Sequence => {
   if (/[\s<>"{}|\\^`]/.test(relative.trim()) || relative.includes("%%"))
     return raise("FORG0002", `${relative} is not a valid URI reference`, call.offset);
+  if (!isReference(relative.trim()))
+    return raise("FORG0002", `${relative} is not a valid URI reference`, call.offset);
   if (isAbsolute(relative)) return [AtomicValue.anyURI(relative)];
   if (base === undefined)
     return raise("FONS0005", "there is no base URI to resolve against", call.offset);
   if (!isAbsolute(base) || base.includes("#"))
     return raise("FORG0002", `${base} is not an absolute URI`, call.offset);
-  const resolved = URL.parse(relative, base);
-  return resolved === null
-    ? raise("FORG0002", `${relative} cannot be resolved against ${base}`, call.offset)
-    : [AtomicValue.anyURI(resolved.href)];
+  return Option.match(resolveReference(relative.trim(), base), {
+    onNone: () => raise("FORG0002", `${relative} cannot be resolved against ${base}`, call.offset),
+    onSome: (resolved) => [AtomicValue.anyURI(resolved)],
+  });
 };
 
 const uriFunctions: ReadonlyArray<BuiltinSpec> = [
@@ -467,11 +459,20 @@ const uriFunctions: ReadonlyArray<BuiltinSpec> = [
   },
 ];
 
+/** The default language of the dynamic context (F&O 3.1 §16.2.5). */
+const defaultLanguage: BuiltinSpec = {
+  name: "fn:default-language",
+  params: [],
+  result: "xs:language",
+  impl: (_, call) => [new AtomicValue(AtomicTypes.language, call.ctx.dyn.defaultLanguage)],
+};
+
 /** The sequence, node, QName and URI functions. */
 export const sequences: ReadonlyArray<BuiltinSpec> = [
   ...sequenceFunctions,
   ...nodeFunctions.filter((b) => !(b.name === "fn:generate-id" && b.params.length === 1)),
   generateIdEmpty,
+  defaultLanguage,
   ...qnameFunctions,
   ...uriFunctions,
 ];

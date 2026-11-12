@@ -10,13 +10,22 @@
  * form back as the target (so a derived type's facets are checked once, by
  * the XSD datatypes).
  */
+import { maybe } from "../../optional.ts";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { AtomicValue, atomicString, fromLexical } from "../atomic.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../types.ts";
 import { raise, unwrap } from "./raise.ts";
-import { durationOf, durationValue, formatParts, isTemporal, partsOf } from "./temporal.ts";
+import {
+  checkDateRange,
+  durationInRange,
+  durationOf,
+  durationValue,
+  formatParts,
+  isTemporal,
+  partsOf,
+} from "./temporal.ts";
 
 /** Resolves a namespace prefix for a cast to `xs:QName` (`""` for the default namespace). */
 export type PrefixResolver = (prefix: string) => string | undefined;
@@ -31,28 +40,49 @@ const cannotCast = (from: AtomicType, to: AtomicType, offset: number | undefined
 /** A numeric value as a JavaScript number. */
 export const toNumber = (value: AtomicValue): number => {
   const v = value.value;
-  if (Predicate.isNumber(v)) return v;
-  if (Predicate.isBigInt(v)) return Number(v);
+  if (P.isNumber(v)) return v;
+  if (P.isBigInt(v)) return Number(v);
   if (BigDecimal.isBigDecimal(v)) return BigDecimal.toNumberUnsafe(v);
-  return Predicate.isBoolean(v) ? (v ? 1 : 0) : Number.NaN;
+  return P.isBoolean(v) ? (v ? 1 : 0) : Number.NaN;
 };
 
 /** A numeric (or boolean) value as an exact decimal; `err:FOCA0002` for NaN and the infinities. */
 export const toDecimal = (value: AtomicValue, offset?: number): BigDecimal.BigDecimal => {
   const v = value.value;
   if (BigDecimal.isBigDecimal(v)) return v;
-  if (Predicate.isBigInt(v)) return BigDecimal.fromBigInt(v);
-  if (Predicate.isBoolean(v)) return BigDecimal.fromBigInt(v ? 1n : 0n);
+  if (P.isBigInt(v)) return BigDecimal.fromBigInt(v);
+  if (P.isBoolean(v)) return BigDecimal.fromBigInt(v ? 1n : 0n);
   const n = toNumber(value);
   if (!Number.isFinite(n))
     return raise("FOCA0002", `${atomicString(value)} cannot be cast to xs:decimal`, offset);
   return Option.getOrElse(BigDecimal.fromString(String(n)), () => BigDecimal.fromBigInt(0n));
 };
 
+/**
+ * The exact value of a finite double (a float is one), as a decimal: the
+ * binary fraction written out in full, so `0.1e0` is not `0.1`.
+ */
+export const exactDecimal = (n: number): BigDecimal.BigDecimal => {
+  if (Number.isInteger(n) && Math.abs(n) < 2 ** 53) return BigDecimal.fromBigInt(BigInt(n));
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, n);
+  const bits = view.getBigUint64(0);
+  const exponent = Number((bits >> 52n) & 0x7ffn);
+  const fraction = bits & ((1n << 52n) - 1n);
+  const mantissa = exponent === 0 ? fraction : fraction | (1n << 52n);
+  const power = (exponent === 0 ? 1 : exponent) - 1075;
+  const magnitude =
+    power >= 0
+      ? BigDecimal.fromBigInt(mantissa << BigInt(power))
+      : // m × 2^-k = m × 5^k / 10^k, exactly.
+        BigDecimal.make(mantissa * 5n ** BigInt(-power), -power);
+  return bits >> 63n === 1n ? BigDecimal.negate(magnitude) : magnitude;
+};
+
 /** A numeric (or boolean) value truncated to an integer; `err:FOCA0002` for NaN and the infinities. */
 const toInteger = (value: AtomicValue, offset?: number): bigint => {
   const v = value.value;
-  if (Predicate.isBigInt(v)) return v;
+  if (P.isBigInt(v)) return v;
   const d = BigDecimal.truncate(toDecimal(value, offset));
   return d.scale >= 0 ? d.value / 10n ** BigInt(d.scale) : d.value * 10n ** BigInt(-d.scale);
 };
@@ -66,6 +96,11 @@ const numericTarget = (value: AtomicValue, target: AtomicType, offset?: number):
   }
   if (derivesFrom(target, AtomicTypes.integer))
     return AtomicValue.integer(toInteger(value, offset));
+  // F&O 3.1 §19.1 casting a float or double keeps its exact value (the
+  // arbitrary-precision decimals of this implementation can), so the decimal
+  // is the same map key (§17.1.1) as the float or double it came from.
+  const v = value.value;
+  if (P.isNumber(v) && Number.isFinite(v)) return AtomicValue.decimal(exactDecimal(v));
   return AtomicValue.decimal(toDecimal(value, offset));
 };
 
@@ -107,13 +142,75 @@ const castPrimitive = (value: AtomicValue, target: AtomicType, offset?: number):
   return cannotCast(from, target, offset);
 };
 
+/** Whether a string is a valid `xs:anyURI` under XML Schema 1.0: escapes are well formed and a scheme, if any, is a scheme. */
+const isAnyUri = (text: string): boolean => {
+  const scheme = /^([^/?#:]*):/.exec(text)?.[1];
+  return (
+    !/%(?![0-9A-Fa-f]{2})/.test(text) &&
+    (scheme === undefined || /^[A-Za-z][A-Za-z0-9+.-]*$/.test(scheme))
+  );
+};
+
+/** `err:FODT0001` / `err:FODT0002` when a date or duration is beyond the range this implementation supports. */
+const checkRange = (value: AtomicValue, offset?: number): void => {
+  const type = value.type;
+  if (type.primitive === "duration") {
+    if (!durationInRange(durationOf(value)))
+      raise(
+        "FODT0002",
+        `the duration ${String(value.value)} is beyond the supported range`,
+        offset,
+      );
+  } else if (
+    type.primitive === "dateTime" ||
+    type.primitive === "date" ||
+    type.primitive === "gYearMonth" ||
+    type.primitive === "gYear"
+  ) {
+    const parts = partsOf(value);
+    if (Option.isSome(parts)) checkDateRange(parts.value, offset);
+  }
+};
+
+/** A dateTime or time with the end of the day (`24:00:00`) written as the start of the next (XSD 1.1 §3.3.7). */
+const canonicalMidnight = (value: AtomicValue, text: string): AtomicValue => {
+  const type = value.type;
+  if ((type.primitive !== "dateTime" && type.primitive !== "time") || !text.includes("24:"))
+    return value;
+  return Option.match(partsOf(value), {
+    onNone: () => value,
+    onSome: (parts) => new AtomicValue(type, formatParts(type, parts)),
+  });
+};
+
+/**
+ * A value read from a lexical form in its canonical form, or `err:FODT0001` /
+ * `err:FODT0002` when it is a date or duration beyond the range this
+ * implementation supports, or `err:FORG0001` for an `xs:anyURI` that is not a
+ * URI reference.
+ */
+const checked = (value: AtomicValue, offset?: number): AtomicValue => {
+  const text = value.value;
+  if (!P.isString(text)) return value;
+  if (derivesFrom(value.type, AtomicTypes.anyURI)) {
+    if (!isAnyUri(text))
+      raise("FORG0001", `"${text}" is not a valid xs:${value.type.name}`, offset);
+    return value;
+  }
+  const canonical = canonicalMidnight(value, text);
+  // A shorter form cannot hold a year or an amount beyond the range.
+  if (text.length >= 10) checkRange(canonical, offset);
+  return canonical;
+};
+
 /** The lexical form `lexical` read as `target`. */
 const read = (
   target: AtomicType,
   lexical: string,
   resolve: PrefixResolver | undefined,
   offset?: number,
-): AtomicValue => unwrap(fromLexical(target, lexical, { resolve }), offset);
+): AtomicValue =>
+  checked(unwrap(fromLexical(target, lexical, maybe("resolve", resolve)), offset), offset);
 
 /** The primitive type a cast goes through before restricting to `target`. */
 const via = (target: AtomicType): AtomicType =>

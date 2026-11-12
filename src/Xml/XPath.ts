@@ -63,8 +63,8 @@ import * as Clock from "effect/Clock";
 import * as HashMap from "effect/HashMap";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { document as makeDocument } from "../internal/nodes.ts";
@@ -109,6 +109,11 @@ import {
   type XmlProcessingInstruction,
   type XmlText,
 } from "./Node.ts";
+import { maybe } from "../internal/optional.ts";
+
+const isXmlElement = Schema.is(XmlElement);
+const isXmlDocument = Schema.is(XmlDocument);
+const isXmlAttribute = Schema.is(XmlAttribute);
 
 // -----------------------------------------------------------------------------
 // Syntax
@@ -145,9 +150,14 @@ export type Axis =
  * @category syntax
  */
 export type NodeTest =
-  | { readonly _tag: "Name"; readonly namespace: string | null; readonly local: string }
-  /** `*` (namespace `undefined`) or `prefix:*`. */
-  | { readonly _tag: "Any"; readonly namespace: string | null | undefined }
+  | {
+      readonly _tag: "Name";
+      /** The namespace URI (`Option.none()` for no namespace). */
+      readonly namespace: Option.Option<string>;
+      readonly local: string;
+    }
+  /** `*` (`namespace` left out) or `prefix:*` (`Option.none()` for no namespace). */
+  | { readonly _tag: "Any"; readonly namespace?: Option.Option<string> }
   | { readonly _tag: "Text" }
   | { readonly _tag: "Node" };
 
@@ -227,11 +237,14 @@ export type Expr =
  * @since 0.1.0
  * @category errors
  */
-export class XPathError extends Schema.TaggedError<XPathError>()("XPathError", {
-  expression: Schema.String,
-  offset: Schema.Number,
-  reason: Schema.String,
-}) {
+export class XPathError extends Schema.TaggedError<XPathError, { readonly brand: unique symbol }>()(
+  "XPathError",
+  {
+    expression: Schema.String,
+    offset: Schema.Int,
+    reason: Schema.String,
+  },
+) {
   override get message(): string {
     return `Invalid XPath ${quote(this.expression)} at offset ${this.offset}: ${this.reason}`;
   }
@@ -245,14 +258,14 @@ export class XPathError extends Schema.TaggedError<XPathError>()("XPathError", {
  */
 export interface CompileOptions {
   /** Prefix → namespace URI bindings for the name tests. `xml` is always bound. */
-  readonly namespaces?: Readonly<Record<string, string>> | undefined;
+  readonly namespaces?: Readonly<Record<string, string>>;
   /** The namespace of unprefixed element names (default: none, as in XPath 1.0). */
-  readonly defaultNamespace?: string | undefined;
+  readonly defaultNamespace?: string;
   /**
    * The variables the expression may read (`$name`), whose values
    * evaluation is given: names in no namespace, or Clark names (`{uri}local`).
    */
-  readonly variables?: ReadonlyArray<string> | undefined;
+  readonly variables?: ReadonlyArray<string>;
 }
 
 /**
@@ -309,17 +322,17 @@ const dynamicError = (expression: string, e: XQueryError): XPathError =>
     reason: `${e.description} (${e.code.qualified})`,
   });
 
-const staticOptions = (options: CompileOptions | undefined) => ({
-  namespaces: options?.namespaces,
-  defaultElementNamespace: options?.defaultNamespace,
-  variables: options?.variables,
+const staticOptions = (options?: CompileOptions) => ({
+  ...maybe("namespaces", options?.namespaces),
+  ...maybe("defaultElementNamespace", options?.defaultNamespace),
+  ...maybe("variables", options?.variables),
   xpath1Compatibility: true,
 });
 
 /** Compile an expression's text to a program and its tree. */
 const build = (
   expression: string,
-  options: CompileOptions | undefined,
+  options?: CompileOptions,
 ): Result.Result<
   { readonly program: Program; readonly expr: XExpr; readonly context: StaticContext },
   XPathError
@@ -389,7 +402,12 @@ const anyNode: Step = { axis: "descendant-or-self", test: { _tag: "Node" }, pred
 /** What a predicate outside the view's subset shows as. */
 const outside: Expr = { _tag: "Call", fn: "position", args: [] };
 
-const viewFunctions: Readonly<Record<string, readonly [number, number]>> = {
+/** The arity range of each function the view supports, by name. */
+interface ViewFunctions {
+  readonly [key: string]: readonly [min: number, max: number];
+}
+
+const viewFunctions: ViewFunctions = {
   not: [1, 1],
   position: [0, 0],
   last: [0, 0],
@@ -401,9 +419,15 @@ const viewFunctions: Readonly<Record<string, readonly [number, number]>> = {
   "normalize-space": [0, 1],
 };
 
-const isViewFunction = (local: string): local is Fn => Record.has(viewFunctions, local);
+const isViewFunction = (local: string): local is Fn =>
+  R.has<string, readonly [min: number, max: number]>(viewFunctions, local);
 
-const viewOps: Readonly<Record<string, true>> = {
+/** The operators the view supports. */
+interface ViewOps {
+  readonly [key: string]: true;
+}
+
+const viewOps: ViewOps = {
   or: true,
   and: true,
   "=": true,
@@ -414,79 +438,91 @@ const viewOps: Readonly<Record<string, true>> = {
   ">=": true,
 };
 
-const isViewOp = (op: string): op is Op => Record.has(viewOps, op);
+const isViewOp = (op: string): op is Op => R.has<string, true>(viewOps, op);
 
 /** The namespace a prefix is bound to; the analysis checked it is bound. */
 const prefixUri = (context: StaticContext, prefix: string): string =>
   Option.getOrElse(HashMap.get(context.namespaces, prefix), () => "");
 
-const nullable = (namespace: string): string | null => (namespace === "" ? null : namespace);
+/** A namespace URI as the view has it: `""` is no namespace. */
+const namespaceOf = (namespace: string): Option.Option<string> =>
+  namespace === "" ? Option.none() : Option.some(namespace);
 
-/** A node test in the view's terms; `undefined` for one outside them. */
-const viewTest = (test: XNodeTest, axis: Axis, context: StaticContext): NodeTest | undefined =>
+/** A node test in the view's terms; none for one outside them. */
+const viewTest = (test: XNodeTest, axis: Axis, context: StaticContext): Option.Option<NodeTest> =>
   XNodeTestE.$match(test, {
-    Name: ({ name: { prefix, uri, local } }): NodeTest => ({
-      _tag: "Name",
-      namespace: nullable(
-        Option.isSome(uri)
-          ? uri.value
-          : Option.isSome(prefix)
-            ? prefixUri(context, prefix.value)
-            : axis === "attribute"
-              ? ""
-              : context.defaultElementNamespace,
-      ),
-      local,
-    }),
-    Wildcard: ({ wildcard: { prefix, uri, local } }): NodeTest | undefined =>
+    Name: ({ name: { prefix, uri, local } }): Option.Option<NodeTest> =>
+      Option.some({
+        _tag: "Name",
+        namespace: namespaceOf(
+          Option.isSome(uri)
+            ? uri.value
+            : Option.isSome(prefix)
+              ? prefixUri(context, prefix.value)
+              : axis === "attribute"
+                ? ""
+                : context.defaultElementNamespace,
+        ),
+        local,
+      }),
+    Wildcard: ({ wildcard: { prefix, uri, local } }): Option.Option<NodeTest> =>
       Option.isSome(local)
-        ? undefined
-        : {
+        ? Option.none()
+        : Option.some({
             _tag: "Any",
-            namespace: Option.isSome(uri)
-              ? nullable(uri.value)
-              : Option.isSome(prefix)
-                ? nullable(prefixUri(context, prefix.value))
-                : undefined,
-          },
-    Kind: ({ test: kind }): NodeTest | undefined =>
-      Predicate.isTagged(kind, "Text")
-        ? { _tag: "Text" }
-        : Predicate.isTagged(kind, "AnyKind")
-          ? { _tag: "Node" }
-          : undefined,
+            ...maybe(
+              "namespace",
+              Option.isSome(uri)
+                ? namespaceOf(uri.value)
+                : Option.isSome(prefix)
+                  ? namespaceOf(prefixUri(context, prefix.value))
+                  : undefined,
+            ),
+          }),
+    Kind: ({ test: kind }): Option.Option<NodeTest> =>
+      P.isTagged(kind, "Text")
+        ? Option.some({ _tag: "Text" })
+        : P.isTagged(kind, "AnyKind")
+          ? Option.some({ _tag: "Node" })
+          : Option.none(),
   });
 
 const isAnyKind = (test: XNodeTest): boolean =>
-  XNodeTestE.$is("Kind")(test) && Predicate.isTagged(test.test, "AnyKind");
+  XNodeTestE.$is("Kind")(test) && P.isTagged(test.test, "AnyKind");
 
-const viewStep = (e: XExpr, context: StaticContext, source: string): Step | undefined => {
-  if (XExprE.$is("ContextItem")(e)) return selfStep;
-  if (!XExprE.$is("AxisStep")(e)) return undefined;
+const viewStep = (e: XExpr, context: StaticContext, source: string): Option.Option<Step> => {
+  if (XExprE.$is("ContextItem")(e)) return Option.some(selfStep);
+  if (!XExprE.$is("AxisStep")(e)) return Option.none();
   if (e.axis === "parent" && isAnyKind(e.test) && Arr.isReadonlyArrayEmpty(e.predicates))
-    return parentStep;
-  const test = viewTest(e.test, e.axis, context);
+    return Option.some(parentStep);
+  const axis = e.axis;
   const predicates = e.predicates.map((p) => viewExpr(p, context, source));
-  return test === undefined
-    ? { axis: e.axis, test: { _tag: "Node" }, predicates: [outside, ...predicates] }
-    : { axis: e.axis, test, predicates };
+  return Option.some(
+    Option.match(viewTest(e.test, axis, context), {
+      onNone: (): Step => ({ axis, test: { _tag: "Node" }, predicates: [outside, ...predicates] }),
+      onSome: (test): Step => ({ axis, test, predicates }),
+    }),
+  );
 };
 
 const viewLocationPath = (
   e: XExpr,
   context: StaticContext,
   source: string,
-): LocationPath | undefined => {
-  if (!XExprE.$is("Path")(e)) {
-    const only = viewStep(e, context, source);
-    return only === undefined ? undefined : { absolute: false, steps: [only] };
-  }
-  const steps = e.steps.map((s) => viewStep(s, context, source));
-  if (!steps.every(Predicate.isNotUndefined)) return undefined;
-  return {
-    absolute: e.root !== "relative",
-    steps: e.root === "descendants" ? [anyNode, ...steps] : steps,
-  };
+): Option.Option<LocationPath> => {
+  if (!XExprE.$is("Path")(e))
+    return Option.map(viewStep(e, context, source), (only) => ({
+      absolute: false,
+      steps: [only],
+    }));
+  const root = e.root;
+  return Option.map(
+    Option.all(e.steps.map((s) => viewStep(s, context, source))),
+    (steps): LocationPath => ({
+      absolute: root !== "relative",
+      steps: root === "descendants" ? [anyNode, ...steps] : steps,
+    }),
+  );
 };
 
 /** A call in the view's terms: one of its functions, in `fn:`, at an arity it has; `outside` for any other. */
@@ -524,22 +560,25 @@ const viewExpr = (e: XExpr, context: StaticContext, source: string): Expr => {
       right: viewExpr(e.right, context, source),
     };
   if (XExprE.$is("FunctionCall")(e)) return viewCall(e, context, source);
-  const path = viewLocationPath(e, context, source);
-  return path === undefined ? outside : { _tag: "Path", path };
+  return Option.match(viewLocationPath(e, context, source), {
+    onNone: () => outside,
+    onSome: (path): Expr => ({ _tag: "Path", path }),
+  });
 };
 
 /** The syntax view of an expression: its location path, or `child::node()[position()]` when it is not one. */
 const viewOf = (e: XExpr, context: StaticContext, source: string): LocationPath =>
-  viewLocationPath(e, context, source) ?? {
+  Option.getOrElse(viewLocationPath(e, context, source), () => ({
     absolute: false,
     steps: [{ axis: "child", test: { _tag: "Node" }, predicates: [outside] }],
-  };
+  }));
 
 // -----------------------------------------------------------------------------
 // Printing the syntax view, for paths and predicates built by hand
 // -----------------------------------------------------------------------------
 
-const braced = (namespace: string | null): string => `Q{${namespace ?? ""}}`;
+const braced = (namespace: Option.Option<string>): string =>
+  `Q{${Option.getOrElse(namespace, () => "")}}`;
 
 const printTest = (t: NodeTest): string =>
   Match.valueTags(t, {
@@ -628,7 +667,7 @@ export interface EvaluateOptions {
    * declared: a value or a sequence of values (a node-set). A number is an
    * `xs:double`, as XPath 1.0's numbers are.
    */
-  readonly variables?: Readonly<Record<string, Value | ReadonlyArray<Value>>> | undefined;
+  readonly variables?: Readonly<Record<string, Value | ReadonlyArray<Value>>>;
 }
 
 /** The XDM trees of one evaluation, by the DOM element at their top: one tree per DOM tree. */
@@ -650,7 +689,9 @@ class Trees {
   top(element: XmlElement): XdmNode {
     const known = this.tops.get(element);
     if (known !== undefined) return known;
-    const [node] = XdmNode.fromDocument(makeDocument(null, null, [element])).children;
+    const [node] = XdmNode.fromDocument(
+      makeDocument(Option.none(), Option.none(), [element]),
+    ).children;
     // The document's one child is the element.
     const top = node ?? XdmNode.fromElement(element);
     this.tops.set(element, top);
@@ -664,7 +705,7 @@ class Trees {
       const [top, ...below] = chain;
       return Arr.reduce(below, this.top((top ?? context).element), (at, c) => childAt(at, c.index));
     }
-    if (context instanceof XmlElement) return this.top(context);
+    if (isXmlElement(context)) return this.top(context);
     return this.document(context);
   }
 }
@@ -678,15 +719,13 @@ const childAt = (node: XdmNode, index: number): XdmNode =>
 
 /** An item for a variable's value; an attribute, text, comment or PI on its own is a parentless node. */
 const itemOf = (trees: Trees, v: Value): Item => {
-  if (Predicate.isString(v)) return AtomicValue.string(v);
-  if (Predicate.isNumber(v)) return AtomicValue.double(v);
-  if (Predicate.isBoolean(v)) return AtomicValue.boolean(v);
-  if (v instanceof Cursor || v instanceof XmlElement || v instanceof XmlDocument)
-    return trees.node(v);
-  if (v instanceof XmlAttribute) return XdmNode.fromAttribute(v);
-  if (Predicate.isTagged(v, "XmlComment")) return XdmNode.fromComment(v);
-  if (Predicate.isTagged(v, "XmlProcessingInstruction"))
-    return XdmNode.fromProcessingInstruction(v);
+  if (P.isString(v)) return AtomicValue.string(v);
+  if (P.isNumber(v)) return AtomicValue.double(v);
+  if (P.isBoolean(v)) return AtomicValue.boolean(v);
+  if (v instanceof Cursor || isXmlElement(v) || isXmlDocument(v)) return trees.node(v);
+  if (isXmlAttribute(v)) return XdmNode.fromAttribute(v);
+  if (P.isTagged(v, "XmlComment")) return XdmNode.fromComment(v);
+  if (P.isTagged(v, "XmlProcessingInstruction")) return XdmNode.fromProcessingInstruction(v);
   return XdmNode.fromText(v.data);
 };
 
@@ -699,6 +738,7 @@ class XPathDynamic implements Dynamic {
   readonly globals: Array<Sequence | undefined> = [];
   readonly resources = new Resources(false);
   readonly implicitTimezone = 0;
+  readonly defaultLanguage = "en";
   readonly environment: Readonly<Record<string, string>> = {};
   readonly initialContext: Item;
   readonly externals: HashMap.HashMap<string, Sequence>;
@@ -724,7 +764,7 @@ const isValues = (v: Value | ReadonlyArray<Value>): v is ReadonlyArray<Value> =>
 const run = (
   path: Path,
   context: Context,
-  options: EvaluateOptions | undefined,
+  options?: EvaluateOptions,
 ): Result.Result<Sequence, XPathError> =>
   Result.flatMap(programOf(path), ({ compiled }) => {
     const trees = new Trees();
@@ -733,7 +773,7 @@ const run = (
       variables === undefined
         ? noExternals
         : HashMap.fromIterable(
-            Record.toEntries(variables).map(([k, v]): readonly [string, Sequence] => [
+            R.toEntries(variables).map(([k, v]): readonly [string, Sequence] => [
               clarkKey(k),
               isValues(v) ? v.map((x) => itemOf(trees, x)) : [itemOf(trees, v)],
             ]),
@@ -749,13 +789,13 @@ const itemsOf = (path: Path, context: Context, options?: EvaluateOptions): Seque
   Result.getOrElse(run(path, context, options), () => []);
 
 const isTextLike = (n: XmlNode): n is XmlText | XmlCData =>
-  Predicate.isTagged(n, "XmlText") || Predicate.isTagged(n, "XmlCData");
+  P.isTagged(n, "XmlText") || P.isTagged(n, "XmlCData");
 
 const isXPathNode = (dom: XdmNode["dom"]): dom is Extract<XdmNode["dom"], XPathNode> =>
-  dom instanceof XmlAttribute ||
-  Predicate.isTagged(dom, "XmlElement") ||
-  Predicate.isTagged(dom, "XmlComment") ||
-  Predicate.isTagged(dom, "XmlProcessingInstruction");
+  isXmlAttribute(dom) ||
+  P.isTagged(dom, "XmlElement") ||
+  P.isTagged(dom, "XmlComment") ||
+  P.isTagged(dom, "XmlProcessingInstruction");
 
 /** The DOM nodes an XDM node stands for (a text node's are the text and CDATA nodes it merges); none for a document or namespace node. */
 const domNodes = (n: XdmNode): ReadonlyArray<XPathNode> => {
@@ -766,7 +806,7 @@ const domNodes = (n: XdmNode): ReadonlyArray<XPathNode> => {
   }
   const parent = Option.getOrUndefined(n.parent);
   const dom = parent?.dom;
-  if (dom === undefined || !(dom instanceof XmlElement || dom instanceof XmlDocument)) return [];
+  if (dom === undefined || !(isXmlElement(dom) || isXmlDocument(dom))) return [];
   return dom.children.slice(n.domStart, n.domEnd).filter(isTextLike);
 };
 
@@ -809,7 +849,7 @@ const cursorAt = (node: XdmNode, element: XmlElement, context: Context): Cursor 
   return chain
     .slice(0, -1)
     .toReversed()
-    .reduce((c, below) => c.at(below.node.domStart), base);
+    .reduce((c, below) => c.at(below.element, below.node.domStart), base);
 };
 
 /**
@@ -900,7 +940,7 @@ const valuesOf = (item: Item): Result.Result<ReadonlyArray<Value>, string> => {
   if (isNode(item)) return Result.succeed(domNodes(item));
   if (!isAtomic(item)) return Result.fail("a function, map or array, which has no XPath 1.0 value");
   if (isNumericType(item.type)) return Result.succeed([toNumber(item)]);
-  if (Predicate.isBoolean(item.value)) return Result.succeed([item.value]);
+  if (P.isBoolean(item.value)) return Result.succeed([item.value]);
   return Result.succeed([atomicString(item)]);
 };
 

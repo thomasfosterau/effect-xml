@@ -11,22 +11,23 @@
  */
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Iterable from "effect/Iterable";
 import * as Schema from "effect/Schema";
 import { isEnter, preorder } from "../internal/tree.ts";
+import { sameNamespace } from "../internal/optional.ts";
 import { Namespaces, QName } from "../Name.ts";
 
 /**
- * A name to look elements and attributes up by: a namespace URI (`null` for
- * none) and a local name. A {@link QName} is one; so is what an `Ns` handle
+ * A name to look elements and attributes up by: a namespace URI
+ * (`Option.none()` for none) and a local name. A {@link QName} is one; so is what an `Ns` handle
  * returns. Matching ignores prefixes, which producers are free to choose.
  *
  * @since 0.1.0
  * @category names
  */
 export interface NameLike {
-  readonly namespace: string | null;
+  readonly namespace: Option.Option<string>;
   readonly local: string;
 }
 
@@ -38,7 +39,7 @@ export interface NameLike {
  */
 export type NameArgs =
   | readonly [name: NameLike]
-  | readonly [namespace: string | null, local: string];
+  | readonly [namespace: Option.Option<string>, local: string];
 
 /** @internal */
 export const nameOf = (args: NameArgs): NameLike =>
@@ -46,7 +47,7 @@ export const nameOf = (args: NameArgs): NameLike =>
 
 /** @internal Whether a resolved name is `name`. */
 export const isNamed = (qname: QName, name: NameLike): boolean =>
-  qname.local === name.local && qname.namespace === name.namespace;
+  qname.local === name.local && sameNamespace(qname.namespace, name.namespace);
 
 /**
  * An attribute on an element.
@@ -54,7 +55,9 @@ export const isNamed = (qname: QName, name: NameLike): boolean =>
  * @since 0.1.0
  * @category models
  */
-export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
+export class XmlAttribute extends Schema.Class<XmlAttribute, { readonly brand: unique symbol }>(
+  "XmlAttribute",
+)({
   name: QName,
   value: Schema.String,
 }) {}
@@ -65,9 +68,12 @@ export class XmlAttribute extends Schema.Class<XmlAttribute>("XmlAttribute")({
  * @since 0.1.0
  * @category models
  */
-export class XmlText extends Schema.TaggedClass<XmlText>()("XmlText", {
-  data: Schema.String,
-}) {}
+export class XmlText extends Schema.TaggedClass<XmlText, { readonly brand: unique symbol }>()(
+  "XmlText",
+  {
+    data: Schema.String,
+  },
+) {}
 
 /**
  * A CDATA section. Distinct from {@link XmlText} so round-tripping is faithful.
@@ -75,9 +81,12 @@ export class XmlText extends Schema.TaggedClass<XmlText>()("XmlText", {
  * @since 0.1.0
  * @category models
  */
-export class XmlCData extends Schema.TaggedClass<XmlCData>()("XmlCData", {
-  data: Schema.String,
-}) {}
+export class XmlCData extends Schema.TaggedClass<XmlCData, { readonly brand: unique symbol }>()(
+  "XmlCData",
+  {
+    data: Schema.String,
+  },
+) {}
 
 /**
  * A comment node.
@@ -85,9 +94,12 @@ export class XmlCData extends Schema.TaggedClass<XmlCData>()("XmlCData", {
  * @since 0.1.0
  * @category models
  */
-export class XmlComment extends Schema.TaggedClass<XmlComment>()("XmlComment", {
-  data: Schema.String,
-}) {}
+export class XmlComment extends Schema.TaggedClass<XmlComment, { readonly brand: unique symbol }>()(
+  "XmlComment",
+  {
+    data: Schema.String,
+  },
+) {}
 
 /**
  * A processing instruction.
@@ -95,10 +107,10 @@ export class XmlComment extends Schema.TaggedClass<XmlComment>()("XmlComment", {
  * @since 0.1.0
  * @category models
  */
-export class XmlProcessingInstruction extends Schema.TaggedClass<XmlProcessingInstruction>()(
-  "XmlProcessingInstruction",
-  { target: Schema.String, data: Schema.String },
-) {}
+export class XmlProcessingInstruction extends Schema.TaggedClass<
+  XmlProcessingInstruction,
+  { readonly brand: unique symbol }
+>()("XmlProcessingInstruction", { target: Schema.String, data: Schema.String }) {}
 
 // The "Encoded" (plain data) shape of the recursive node tree. `Schema.suspend`
 // for self-referential classes needs both the decoded and encoded types spelled
@@ -131,14 +143,20 @@ type XmlNodeEncoded =
  * @since 0.1.0
  * @category models
  */
-export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
-  name: QName,
-  attributes: Schema.Array(XmlAttribute),
-  children: Schema.Array(Schema.suspend((): Schema.Codec<XmlNode, XmlNodeEncoded> => XmlNode)),
-}) {
-  /** First attribute value matching `name` (by qualified name). */
-  attribute(name: string): string | undefined {
-    return this.attributes.find((a) => a.name.qualified === name)?.value;
+export class XmlElement extends Schema.TaggedClass<XmlElement, { readonly brand: unique symbol }>()(
+  "XmlElement",
+  {
+    name: QName,
+    attributes: Schema.Array(XmlAttribute),
+    children: Schema.Array(Schema.suspend((): Schema.Codec<XmlNode, XmlNodeEncoded> => XmlNode)),
+  },
+) {
+  /** The value of the first attribute matching `name` (by qualified name). */
+  attribute(name: string): Option.Option<string> {
+    return Option.map(
+      Arr.findFirst(this.attributes, (a) => a.name.qualified === name),
+      (a) => a.value,
+    );
   }
 
   /** Direct child elements. */
@@ -148,8 +166,8 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
 
   /**
    * The value of the attribute with this namespace and local name. Attributes
-   * without a prefix are in no namespace (`null`), whatever the default
-   * namespace is.
+   * without a prefix are in no namespace (`Option.none()`), whatever the
+   * default namespace is.
    */
   attributeNS(...args: NameArgs): Option.Option<string> {
     const name = nameOf(args);
@@ -157,8 +175,8 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
       (a) =>
         isNamed(a.name, name) ||
         // `xml:` attributes in a document parsed without namespace resolution.
-        (name.namespace === Namespaces.xml &&
-          a.name.prefix === "xml" &&
+        (Option.contains(name.namespace, Namespaces.xml) &&
+          Option.contains(a.name.prefix, "xml") &&
           a.name.local === name.local),
     );
     return found === undefined ? Option.none() : Option.some(found.value);
@@ -203,9 +221,9 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
 }
 
 /** Is this node an element? */
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
-const isText = (node: XmlNode): node is XmlText => Predicate.isTagged(node, "XmlText");
-const isCData = (node: XmlNode): node is XmlCData => Predicate.isTagged(node, "XmlCData");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
+const isText = (node: XmlNode): node is XmlText => P.isTagged(node, "XmlText");
+const isCData = (node: XmlNode): node is XmlCData => P.isTagged(node, "XmlCData");
 
 /** Every node under `nodes`, in document order, without recursion (any depth is fine). */
 const walk = (nodes: ReadonlyArray<XmlNode>) =>
@@ -239,10 +257,14 @@ export const XmlNode = Schema.Union([
  * @since 0.1.0
  * @category models
  */
-export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration")({
+export class XmlDeclaration extends Schema.Class<XmlDeclaration, { readonly brand: unique symbol }>(
+  "XmlDeclaration",
+)({
   version: Schema.String,
-  encoding: Schema.NullOr(Schema.String),
-  standalone: Schema.NullOr(Schema.Boolean),
+  /** The declared encoding, if any (encoded as `null` when absent). */
+  encoding: Schema.OptionFromNullOr(Schema.String),
+  /** The declared standalone flag, if any (encoded as `null` when absent). */
+  standalone: Schema.OptionFromNullOr(Schema.Boolean),
 }) {}
 
 /**
@@ -251,11 +273,16 @@ export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration
  * @since 0.1.0
  * @category models
  */
-export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
+export class XmlDoctype extends Schema.Class<XmlDoctype, { readonly brand: unique symbol }>(
+  "XmlDoctype",
+)({
   name: Schema.String,
-  publicId: Schema.NullOr(Schema.String),
-  systemId: Schema.NullOr(Schema.String),
-  internalSubset: Schema.NullOr(Schema.String),
+  /** The public identifier, if any (encoded as `null` when absent). */
+  publicId: Schema.OptionFromNullOr(Schema.String),
+  /** The system identifier, if any (encoded as `null` when absent). */
+  systemId: Schema.OptionFromNullOr(Schema.String),
+  /** The internal subset's text, if any (encoded as `null` when absent). */
+  internalSubset: Schema.OptionFromNullOr(Schema.String),
 }) {}
 
 /**
@@ -264,9 +291,13 @@ export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
  * @since 0.1.0
  * @category models
  */
-export class XmlDocument extends Schema.Class<XmlDocument>("XmlDocument")({
-  declaration: Schema.NullOr(XmlDeclaration),
-  doctype: Schema.NullOr(XmlDoctype),
+export class XmlDocument extends Schema.Class<XmlDocument, { readonly brand: unique symbol }>(
+  "XmlDocument",
+)({
+  /** The XML declaration, if any (encoded as `null` when absent). */
+  declaration: Schema.OptionFromNullOr(XmlDeclaration),
+  /** The document type declaration, if any (encoded as `null` when absent). */
+  doctype: Schema.OptionFromNullOr(XmlDoctype),
   /** Top-level nodes in order (comments / PIs around the root element). */
   children: Schema.Array(XmlNode),
 }) {
@@ -285,10 +316,10 @@ export class XmlDocument extends Schema.Class<XmlDocument>("XmlDocument")({
  * @since 0.1.0
  * @category errors
  */
-export class MissingRootElement extends Schema.TaggedError<MissingRootElement>()(
-  "MissingRootElement",
-  {},
-) {
+export class MissingRootElement extends Schema.TaggedError<
+  MissingRootElement,
+  { readonly brand: unique symbol }
+>()("MissingRootElement", {}) {
   override get message(): string {
     return "document has no root element";
   }
@@ -310,7 +341,7 @@ export const element = (
   children: ReadonlyArray<XmlNode> = [],
 ): XmlElement =>
   new XmlElement({
-    name: Predicate.isString(name) ? QName.fromRaw(name) : name,
+    name: P.isString(name) ? QName.fromRaw(name) : name,
     attributes,
     children,
   });
@@ -331,6 +362,6 @@ export const text = (data: string): XmlText => new XmlText({ data });
  */
 export const attr = (name: string | QName, value: string): XmlAttribute =>
   new XmlAttribute({
-    name: Predicate.isString(name) ? QName.fromRaw(name) : name,
+    name: P.isString(name) ? QName.fromRaw(name) : name,
     value,
   });

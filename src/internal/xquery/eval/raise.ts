@@ -16,9 +16,13 @@
  * it cached. Evaluation is deterministic, so the rerun reaches the same
  * point and finds the resource.
  */
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { QName } from "../../../Name.ts";
 import { ImplementationNamespace, XQueryError, xqueryError } from "../../../XQuery/Error.ts";
+
+const isXQueryError = Schema.is(XQueryError);
 
 /** A resource evaluation needs from the host before it can go on. */
 export interface ResourceRequest {
@@ -33,7 +37,7 @@ export interface ResourceRequest {
   /** The encoding asked for, for a text. */
   readonly encoding: string | undefined;
   /** The base URI a parsed document gets. */
-  readonly base?: string | undefined;
+  readonly base?: string;
 }
 
 /** Thrown to stop evaluation until the host has fetched a resource. */
@@ -69,7 +73,11 @@ export const raiseError = (error: XQueryError, offset?: number): never => {
 /** Fail evaluation because the evaluator does not implement `what` yet. */
 export const notImplemented = (what: string, offset?: number): never => {
   throw new XQueryError({
-    code: new QName({ prefix: null, local: "NotImplemented", namespace: ImplementationNamespace }),
+    code: new QName({
+      prefix: Option.none(),
+      local: "NotImplemented",
+      namespace: Option.some(ImplementationNamespace),
+    }),
     description: `${what} is not implemented yet`,
     offset,
   });
@@ -89,7 +97,7 @@ export const attempt = <A>(run: () => A): Result.Result<A, XQueryError | Suspend
   try {
     return Result.succeed(run());
   } catch (e) {
-    if (e instanceof XQueryError || e instanceof Suspend) return Result.fail(e);
+    if (isXQueryError(e) || e instanceof Suspend) return Result.fail(e);
     // The engine's own call stack ran out.
     if (e instanceof RangeError && e.message.includes("call stack"))
       return Result.fail(xqueryError("XPDY0130", "the query recursed too deeply"));
@@ -110,7 +118,7 @@ export const catching = <A>(run: () => A, handle: (error: XQueryError) => A): A 
   try {
     return run();
   } catch (e) {
-    if (e instanceof XQueryError) return handle(e);
+    if (isXQueryError(e)) return handle(e);
     throw e;
   }
 };

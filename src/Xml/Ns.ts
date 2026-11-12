@@ -20,6 +20,7 @@
  * // [Option.some("1"), Option.some("2")]
  * ```
  */
+import * as Option from "effect/Option";
 import { Namespaces, QName } from "../Name.ts";
 
 /**
@@ -30,18 +31,22 @@ import { Namespaces, QName } from "../Name.ts";
  */
 export interface Namespace {
   (local: string): QName;
-  /** The namespace URI, or `null` for no namespace. */
-  readonly uri: string | null;
+  /** The namespace URI, or `Option.none()` for no namespace ({@link none}). */
+  readonly uri: Option.Option<string>;
 }
 
+const handle = (uri: Option.Option<string>): Namespace =>
+  Object.assign((local: string) => new QName({ prefix: Option.none(), local, namespace: uri }), {
+    uri,
+  });
+
 /**
- * A handle for the namespace `uri` (`null` for names in no namespace).
+ * A handle for the namespace `uri`. Names in no namespace use {@link none}.
  *
  * @since 0.1.0
  * @category constructors
  */
-export const make = (uri: string | null): Namespace =>
-  Object.assign((local: string) => new QName({ prefix: null, local, namespace: uri }), { uri });
+export const make = (uri: string): Namespace => handle(Option.some(uri));
 
 /**
  * Names in no namespace (unprefixed attributes, and elements outside any default namespace).
@@ -49,7 +54,7 @@ export const make = (uri: string | null): Namespace =>
  * @since 0.1.0
  * @category namespaces
  */
-export const none: Namespace = make(null);
+export const none: Namespace = handle(Option.none());
 
 /**
  * The `xml:` namespace (`xml:lang`, `xml:space`, `xml:base`, `xml:id`).
