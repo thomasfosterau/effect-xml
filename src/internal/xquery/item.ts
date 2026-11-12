@@ -259,7 +259,7 @@ export const sameKey = (atomic: AtomicValue): string => {
     derivesFrom(type, AtomicTypes.anyURI)
   )
     return `s:${atomicString(atomic)}`;
-  if (isQName(v)) return `q:{${v.namespace ?? ""}}${v.local}`;
+  if (isQName(v)) return `q:{${Option.getOrElse(v.namespace, () => "")}}${v.local}`;
   // Dates and times by the instant they denote (24:00:00 is the next day's
   // midnight): with a timezone on the timeline, without one as local time.
   const parts = partsOf(atomic);

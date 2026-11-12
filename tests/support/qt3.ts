@@ -236,10 +236,10 @@ export interface TestSet {
 // -----------------------------------------------------------------------------
 
 const attribute = (element: Xml.XmlElement, name: string): Option.Option<string> =>
-  Option.fromUndefinedOr(element.attribute(name));
+  element.attribute(name);
 
 const children = (element: Xml.XmlElement, local: string): ReadonlyArray<Xml.XmlElement> =>
-  element.childElements(NS, local);
+  element.childElements(Option.some(NS), local);
 
 const required = (element: Xml.XmlElement, name: string): string =>
   Option.getOrElse(attribute(element, name), () => "");
@@ -257,7 +257,7 @@ const paramName = (element: Xml.XmlElement): string => {
   return Option.match(
     Arr.findFirst(
       element.attributes,
-      (a) => a.name.namespace === Namespaces.xmlns && a.name.local === prefix,
+      (a) => Option.contains(a.name.namespace, Namespaces.xmlns) && a.name.local === prefix,
     ),
     { onNone: () => name, onSome: (a) => `{${a.value}}${name.slice(colon + 1)}` },
   );
@@ -290,7 +290,9 @@ const readDecimalFormat = (element: Xml.XmlElement): DecimalFormat => ({
   }),
   properties: R.fromEntries(
     element.attributes
-      .filter((a) => a.name.prefix === null && a.name.local !== "name" && a.name.local !== "xmlns")
+      .filter(
+        (a) => Option.isNone(a.name.prefix) && a.name.local !== "name" && a.name.local !== "xmlns",
+      )
       .map((a) => [a.name.local, a.value]),
   ),
 });
@@ -761,13 +763,13 @@ const charsetOf = (mediaType: string): Option.Option<string> =>
  * for, else a byte order mark or an XML declaration, else UTF-8. Bytes that
  * are invalid in it, or an unknown encoding, are `err:FOUT1190`.
  */
-const decodeResource = (resource: LoadedResource, asked: string | undefined) =>
+const decodeResource = (resource: LoadedResource, asked: Option.Option<string>) =>
   Encoding.decodeBytes(resource.bytes, {
     ...maybe(
       "encoding",
       Option.getOrUndefined(
         Option.orElse(resource.encoding, () => Option.flatMap(resource.mediaType, charsetOf)),
-      ) ?? asked,
+      ) ?? Option.getOrUndefined(asked),
     ),
   }).pipe(Effect.mapError((e) => XQuery.xqueryError("FOUT1190", e.message)));
 
@@ -812,7 +814,8 @@ const resolverOf = (request: Request): XQuery.ResourceResolver => {
 };
 
 const isNotImplementedCode = (e: XQuery.XQueryError): boolean =>
-  e.code.namespace === XQuery.ImplementationNamespace && e.code.local === "NotImplemented";
+  Option.contains(e.code.namespace, XQuery.ImplementationNamespace) &&
+  e.code.local === "NotImplemented";
 
 /**
  * Compiled queries by language, text and static context: assertions repeat
@@ -1172,13 +1175,15 @@ export const codeMatches = (expected: string, code: QNameLike): boolean => {
   if (expected === "*") return true;
   const eqname = /^Q\{(.*)\}(.+)$/.exec(expected);
   if (eqname !== null)
-    return (code.namespace ?? "") === (eqname[1] ?? "") && code.local === eqname[2];
+    return (
+      Option.getOrElse(code.namespace, () => "") === (eqname[1] ?? "") && code.local === eqname[2]
+    );
   const local = expected.includes(":") ? expected.slice(expected.indexOf(":") + 1) : expected;
-  return code.namespace === ERR && code.local === local;
+  return Option.contains(code.namespace, ERR) && code.local === local;
 };
 
 interface QNameLike {
-  readonly namespace: string | null;
+  readonly namespace: Option.Option<string>;
   readonly local: string;
 }
 
@@ -1283,15 +1288,17 @@ const mergeText = (nodes: ReadonlyArray<Xml.XmlNode>): ReadonlyArray<Xml.XmlNode
   }, []);
 
 const isNamespaceDeclaration = (a: Xml.XmlAttribute): boolean =>
-  a.name.prefix === "xmlns" || (a.name.prefix === null && a.name.local === "xmlns");
+  Option.contains(a.name.prefix, "xmlns") ||
+  (Option.isNone(a.name.prefix) && a.name.local === "xmlns");
 
 /** A canonical rendering of DOM nodes: names by namespace URI, attributes sorted, adjacent text merged. */
 const canonicalNodes = (nodes: ReadonlyArray<Xml.XmlNode>, prefixes: boolean): string => {
   const name = (q: {
-    readonly prefix: string | null;
-    readonly namespace: string | null;
+    readonly prefix: Option.Option<string>;
+    readonly namespace: Option.Option<string>;
     readonly local: string;
-  }) => `${prefixes && q.prefix !== null ? `${q.prefix}=` : ""}{${q.namespace ?? ""}}${q.local}`;
+  }) =>
+    `${prefixes && Option.isSome(q.prefix) ? `${q.prefix.value}=` : ""}{${Option.getOrElse(q.namespace, () => "")}}${q.local}`;
   // Recursive: expected results are small.
   return mergeText(nodes)
     .map((node) =>

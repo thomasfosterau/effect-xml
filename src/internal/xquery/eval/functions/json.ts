@@ -447,7 +447,7 @@ const jsonToXml = (input: Sequence, options: Options, call: Call): Sequence => {
     [attribute(qname(null, "xmlns", null), Namespaces.fn), ...root.attributes],
     root.children,
   );
-  return [XdmNode.fromDocument(document(null, null, [withNamespace]))];
+  return [XdmNode.fromDocument(document(Option.none(), Option.none(), [withNamespace]))];
 };
 
 // -----------------------------------------------------------------------------
@@ -458,7 +458,10 @@ const invalidXml = (what: string, call: Call): never =>
   raise("FOJS0006", `the XML is not a JSON representation: ${what}`, call.offset);
 
 const isFn = (n: XdmNode): boolean =>
-  Option.match(n.name, { onNone: () => false, onSome: (q) => q.namespace === Namespaces.fn });
+  Option.match(n.name, {
+    onNone: () => false,
+    onSome: (q) => Option.contains(q.namespace, Namespaces.fn),
+  });
 
 const localName = (n: XdmNode): string =>
   Option.match(n.name, { onNone: () => "", onSome: (q) => q.local });
@@ -491,7 +494,7 @@ const attributeValue = (n: XdmNode, local: string): string | undefined =>
   n.attributes.find((a) =>
     Option.match(a.name, {
       onNone: () => false,
-      onSome: (q) => q.local === local && q.namespace === null,
+      onSome: (q) => q.local === local && Option.isNone(q.namespace),
     }),
   )?.stringValue;
 
@@ -526,7 +529,7 @@ const writeJson = (n: XdmNode, call: Call, inMap: boolean): string => {
     Option.match(a.name, {
       onNone: () => false,
       onSome: (q) =>
-        q.namespace === null &&
+        Option.isNone(q.namespace) &&
         !(["key", "escaped-key"].includes(q.local) && inMap) &&
         !(q.local === "escaped" && kind === "string"),
     }),

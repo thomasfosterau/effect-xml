@@ -16,6 +16,7 @@
  * it cached. Evaluation is deterministic, so the rerun reaches the same
  * point and finds the resource.
  */
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { QName } from "../../../Name.ts";
 import { ImplementationNamespace, XQueryError, xqueryError } from "../../../XQuery/Error.ts";
@@ -69,7 +70,11 @@ export const raiseError = (error: XQueryError, offset?: number): never => {
 /** Fail evaluation because the evaluator does not implement `what` yet. */
 export const notImplemented = (what: string, offset?: number): never => {
   throw new XQueryError({
-    code: new QName({ prefix: null, local: "NotImplemented", namespace: ImplementationNamespace }),
+    code: new QName({
+      prefix: Option.none(),
+      local: "NotImplemented",
+      namespace: Option.some(ImplementationNamespace),
+    }),
     description: `${what} is not implemented yet`,
     offset,
   });

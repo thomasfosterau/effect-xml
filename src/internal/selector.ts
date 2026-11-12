@@ -161,7 +161,7 @@ export class Selector<P, V> {
         this.append(Nodes.processingInstruction(ev.target, ev.data)),
       ),
     Doctype: (ev: Extract<SaxEvent, { _tag: "Doctype" }>) =>
-      ev.internalSubset === null ? null : Option.getOrNull(checkSubset(ev.internalSubset, ev.span)),
+      Option.getOrNull(Option.flatMap(ev.internalSubset, (subset) => checkSubset(subset, ev.span))),
     XmlDeclaration: (ev: Extract<SaxEvent, { _tag: "XmlDeclaration" }>) => {
       // Only an XML 1.1 document may undeclare a prefix with `xmlns:p=""`.
       this.unbinding = ev.version === "1.1";

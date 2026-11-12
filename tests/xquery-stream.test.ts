@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as P from "effect/Predicate";
@@ -82,7 +83,7 @@ const notStreamable = (query: string) => {
     `expected ${query} not to be streamable`,
   );
   expect(error.code).toEqual(XQuery.NotStreamableCode);
-  expect(error.code.namespace).toBe(XQuery.ImplementationNamespace);
+  expect(error.code.namespace).toEqual(Option.some(XQuery.ImplementationNamespace));
   return error;
 };
 

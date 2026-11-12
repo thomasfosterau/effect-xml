@@ -45,6 +45,7 @@ import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../typ
 import { castAtomic } from "./cast.ts";
 import { raise, unwrap } from "./raise.ts";
 import { maybe } from "../../optional.ts";
+import { uriOf } from "../../qnames.ts";
 
 /** The serialization namespace, of the parameter elements. */
 const OUTPUT_NAMESPACE = "http://www.w3.org/2010/xslt-xquery-serialization";
@@ -115,7 +116,7 @@ type Value =
   | { readonly _tag: "qnames"; readonly value: ReadonlyArray<string> }
   | { readonly _tag: "map"; readonly value: HashMap.HashMap<string, string> };
 
-const clark = (q: QName): string => `{${q.namespace ?? ""}}${q.local}`;
+const clark = (q: QName): string => `{${uriOf(q) ?? ""}}${q.local}`;
 
 const boolOf = (v: Value): boolean | undefined =>
   Match.valueTags(v, {
@@ -339,12 +340,15 @@ const characterMapElements = (element: XdmNode, offset: number): Value => {
       const q = qnameOf(c);
       const attrs = attributesOf(c);
       const attr = (local: string) =>
-        attrs.find((a) => qnameOf(a)?.local === local && qnameOf(a)?.namespace === null)
-          ?.stringValue;
+        attrs.find(
+          (a) =>
+            qnameOf(a)?.local === local && Option.isNone(qnameOf(a)?.namespace ?? Option.none()),
+        )?.stringValue;
       const character = attr("character");
       const mapped = attr("map-string");
       if (
-        q?.namespace !== OUTPUT_NAMESPACE ||
+        q === undefined ||
+        !Option.contains(q.namespace, OUTPUT_NAMESPACE) ||
         q.local !== "character-map" ||
         attrs.length !== 2 ||
         character === undefined ||
@@ -363,9 +367,9 @@ const characterMapElements = (element: XdmNode, offset: number): Value => {
 /** One child of the parameters element: its parameter's name and value, or `undefined` for a vendor one. */
 const elementParam = (child: XdmNode, offset: number): readonly [string, Value] | undefined => {
   const q = qnameOf(child);
-  if (q === undefined || q.namespace === null)
+  if (q === undefined || Option.isNone(q.namespace))
     return structureError("a parameter element in no namespace", offset);
-  if (q.namespace !== OUTPUT_NAMESPACE) return undefined;
+  if (!Option.contains(q.namespace, OUTPUT_NAMESPACE)) return undefined;
   const kind = Option.getOrUndefined(HashMap.get(KINDS, q.local));
   if (kind === undefined) return structureError(`unknown parameter ${q.local}`, offset);
   if (kind === "map") return [q.local, characterMapElements(child, offset)];
@@ -375,7 +379,7 @@ const elementParam = (child: XdmNode, offset: number): readonly [string, Value] 
     attrs.length !== 1 ||
     value === undefined ||
     qnameOf(value)?.local !== "value" ||
-    qnameOf(value)?.namespace !== null
+    Option.isSome(qnameOf(value)?.namespace ?? Option.none())
   )
     return structureError(`the parameter ${q.local} must have one value attribute`, offset);
   return [q.local, elementValue(kind, value.stringValue, child, offset)];
@@ -386,7 +390,8 @@ export const paramsFromElement = (element: XdmNode, offset: number): Params => {
   const q = qnameOf(element);
   if (
     element.kind !== "element" ||
-    q?.namespace !== OUTPUT_NAMESPACE ||
+    q === undefined ||
+    !Option.contains(q.namespace, OUTPUT_NAMESPACE) ||
     q.local !== "serialization-parameters"
   )
     return raise(
@@ -621,7 +626,7 @@ const adaptiveAtomic = (a: AtomicValue): string => {
   )
     return `"${s.replace(/"/g, '""')}"`;
   if (a.type === AtomicTypes.boolean) return `${s}()`;
-  if (a.value instanceof QName) return `Q{${a.value.namespace ?? ""}}${a.value.local}`;
+  if (a.value instanceof QName) return `Q{${uriOf(a.value) ?? ""}}${a.value.local}`;
   if (
     a.type === AtomicTypes.integer ||
     a.type === AtomicTypes.decimal ||
@@ -650,7 +655,7 @@ const adaptiveItem = (item: Item, params: Params, offset: number): string => {
       .map(([k, v]) => `${adaptiveAtomic(k)}:${adaptiveSequence(v, params, offset)}`)
       .join(",")}}`;
   return item instanceof FunctionItem
-    ? `${Option.match(item.name, { onNone: () => "(anonymous-function)", onSome: (q) => `Q{${q.namespace ?? ""}}${q.local}` })}#${item.arity}`
+    ? `${Option.match(item.name, { onNone: () => "(anonymous-function)", onSome: (q) => `Q{${uriOf(q) ?? ""}}${q.local}` })}#${item.arity}`
     : "";
 };
 
