@@ -4,8 +4,8 @@ name: CI
 # which runs every gate in order (format and lint, types, unit tests and the
 # conformance gates, build, bundle size, docs examples, dependency audit), so
 # CI and a local `vp run ci` are the same thing. It runs on the latest LTS and
-# the latest Current release of Node.js; the `ci` job gathers the matrix into
-# the single check rulesets require.
+# the latest Current release of Node.js, one check per line (`ci (node lts)`,
+# `ci (node latest)`), each of which rulesets require by name.
 #
 # Nothing here needs a credential, so every PR runs the whole gate,
 # Dependabot's included: the jobs hold a read-only token, no secrets and no
@@ -27,7 +27,7 @@ concurrency:
 permissions: {}
 
 jobs:
-  test:
+  ci:
     name: ci (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -65,17 +65,3 @@ jobs:
             vp-task-v1-${{ runner.os }}-node-${{ matrix.node }}-
       - name: Every gate (vp run ci)
         run: vp run ci
-
-  # The one check rulesets require: green only when every Node.js line is.
-  ci:
-    name: ci
-    needs: [test]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions: {}
-    steps:
-      - name: Every matrix job passed
-        env:
-          RESULT: ${{ needs.test.result }}
-        run: test "$RESULT" = success

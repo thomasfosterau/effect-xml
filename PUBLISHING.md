@@ -25,6 +25,6 @@ Releases are automated with [Changesets](https://github.com/changesets/changeset
    Then remove any classic automation tokens for the package.
 
 4. **Protect the `release` environment.** **Settings → Environments → `release`** → enable **Required reviewers** (yourself) and restrict deployment to the `trunk` branch, so publishing pauses for manual approval.
-5. **Protect `trunk`.** Require pull requests and the `ci` check before merge, and disallow direct pushes, so a release can only be triggered by merging the reviewed version PR.
+5. **Protect `trunk`.** Require pull requests and the `ci (node lts)` and `ci (node latest)` checks before merge, and disallow direct pushes, so a release can only be triggered by merging the reviewed version PR.
 
 **On the name:** the package publishes as `@thomasfosterau/effect-xml`, under the scope the rest of the family uses (the unscoped `effect-xml` is taken by an unrelated package). It was developed as `effect-sax` and renamed before its first publish, so no `effect-sax` release exists to deprecate.
