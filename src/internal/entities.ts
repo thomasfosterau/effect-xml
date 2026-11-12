@@ -43,6 +43,23 @@ export const htmlEntities: EntityTable = {
 /** The legacy subset of names that may appear without a trailing semicolon. */
 export { htmlLegacyEntities };
 
+const asciiNames = new WeakMap<EntityTable, boolean>();
+
+/**
+ * Whether every name in `table` is ASCII letters and digits, as the grammars
+ * without a DTD read an entity name. Then an empty DTD changes nothing about
+ * how a reference decodes: with one, a name is read further (up to a
+ * delimiter), but only a name the table holds, followed by `;`, decodes, and
+ * such a name is read the same either way (see `namedReference`).
+ */
+export const hasAsciiNames = (table: EntityTable): boolean => {
+  const known = asciiNames.get(table);
+  if (known !== undefined) return known;
+  const ascii = Object.getOwnPropertyNames(table).every((name) => /^[0-9A-Za-z]+$/.test(name));
+  asciiNames.set(table, ascii);
+  return ascii;
+};
+
 /** Options governing how references are resolved. */
 export interface EntityOptions {
   /** Semicolon-terminated named-entity table (e.g. {@link xmlEntities}). */

@@ -441,6 +441,20 @@ export class Dtd implements EntityResolver {
     return bad ? { reason: "invalid reference" } : value;
   }
 
+  /**
+   * Whether any general entity is declared (internal or external). Until
+   * one is, no reference resolves through the DTD, so the lexer reads with
+   * the grammars without one (see `Lexer`).
+   */
+  get declaresEntities(): boolean {
+    return MutableHashMap.size(this.entities) > 0 || MutableHashSet.size(this.external) > 0;
+  }
+
+  /** Whether any `<!ATTLIST>` is declared: until one is, no start tag takes a default. */
+  get declaresAttributes(): boolean {
+    return MutableHashMap.size(this.attlists) > 0;
+  }
+
   // EntityResolver ------------------------------------------------------------
 
   declares(name: string): boolean {

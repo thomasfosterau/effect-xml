@@ -6,6 +6,8 @@
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
  * stream (whole string and 64 KiB chunks), as bytes, as a DOM (strictly and
  * with `recover: true`, which reads it with the lexer, not directly), with
+ * `dtd: "internal"` (as SAX and DOM, and as a DOM with a DOCTYPE that
+ * declares entities the worksheet references), with
  * streaming selection of rows, and validated against a schema for the
  * worksheet (as events, and as typed values), queried with XPath
  * (`XQuery.evaluate` over the parsed DOM), and queried with `XQuery.stream`
@@ -120,7 +122,25 @@ await time("effect-xml SAX (64 KiB chunks)", () =>
 await time("effect-xml SAX (bytes)", () =>
   Effect.runPromise(Stream.make(bytes).pipe(Sax.tokenizeBytes(), Stream.runDrain)),
 );
+await time("effect-xml SAX (dtd internal)", () =>
+  Effect.runPromise(Sax.tokenizeString(input, { dtd: "internal" }).pipe(Stream.runDrain)),
+);
 await time("effect-xml DOM (Xml.parse)", () => Effect.runPromise(Effect.asVoid(Xml.parse(input))));
+await time("effect-xml DOM (dtd internal)", () =>
+  Effect.runPromise(Effect.asVoid(Xml.parse(input, { dtd: "internal" }))),
+);
+// The worksheet with a DOCTYPE that declares entities, and references to
+// them: the DTD-aware grammars, which a document without one doesn't pay.
+const declared = input
+  .replaceAll('s="1"', 's="&s;"')
+  .replaceAll("<v>0</v>", "&sd;")
+  .replace(
+    "<worksheet",
+    '<!DOCTYPE worksheet [<!ENTITY s "1"><!ENTITY sd "<v>0</v>">]>\n<worksheet',
+  );
+await time("effect-xml DOM (DOCTYPE + entities)", () =>
+  Effect.runPromise(Effect.asVoid(Xml.parse(declared, { dtd: "internal" }))),
+);
 await time("effect-xml DOM (Xml.parse, recover)", () =>
   Effect.runPromise(Effect.asVoid(Xml.parse(input, { recover: true }))),
 );

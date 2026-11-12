@@ -76,6 +76,11 @@ const pieces = [
   "<?xml version='1.0'?>",
   "<?XmL x?>",
   "<?é x?>",
+  // Targets that are `Name`s but not `QName`s, which the grammar rejects.
+  "<?p: x?>",
+  "<?a:b:c?>",
+  "<?:p?>",
+  "<?p:x y?>",
   "<?",
   "?>",
   "<![CDATA[x]]>",

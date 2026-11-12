@@ -25,6 +25,7 @@ import {
   type LexOutput,
 } from "./lexer.ts";
 import { readDirectly } from "./direct.ts";
+import { hasAsciiNames } from "./entities.ts";
 import { quote } from "./quote.ts";
 
 /**
@@ -42,11 +43,17 @@ export class Tokenizer {
   private readonly opts: ResolvedOptions;
   private readonly dtd: Dtd | undefined;
   private readonly expander: Expander | undefined;
+  /** Whether the DTD declares attributes, whose defaults start tags take (see `applyDefaults`). */
+  private defaults = false;
   /** The callback {@link run} hands events to. */
   private sink: (ev: SaxEvent) => boolean = () => true;
 
-  /** `reuse`: reuse events where the lexer can (see `LexerOptions.reuse`). */
-  constructor(opts: ResolvedOptions, reuse = false) {
+  /**
+   * `reuse`: reuse events where the lexer can (see `LexerOptions.reuse`).
+   * `eagerDtd` (tests only): with `dtd: "internal"`, read with the DTD-aware
+   * grammars from the start (see `LexerOptions.eagerDtd`).
+   */
+  constructor(opts: ResolvedOptions, reuse = false, eagerDtd = false) {
     this.opts = opts;
     const dtd = opts.mode === "xml" && opts.dtd === "internal" ? new Dtd(opts.limits) : undefined;
     this.dtd = dtd;
@@ -59,6 +66,7 @@ export class Tokenizer {
       positions: opts.positions,
       reuse,
       recover: opts.recover,
+      eagerDtd,
     });
     this.expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
     this.guard = new Guard(opts.limits, opts.mode === "xml");
@@ -125,6 +133,7 @@ export class Tokenizer {
     if (isDoctypeEvent(o)) {
       const subset = o.internalSubset;
       const error = subset === null ? null : dtd.declare(subset);
+      this.defaults = dtd.declaresAttributes;
       if (subset === null || error === null) return [o];
       const found = subset.slice(error.offset, error.offset + 1);
       const fault = new MalformedDeclaration({
@@ -146,7 +155,7 @@ export class Tokenizer {
     if (dtd === undefined) return this.accept(raw);
     return isDoctypeEvent(raw) || isEntityReferenceEvent(raw)
       ? this.interpret(raw).every(this.accept)
-      : this.accept(isStartElementEvent(raw) ? applyDefaults(dtd, raw) : raw);
+      : this.accept(this.defaults && isStartElementEvent(raw) ? applyDefaults(dtd, raw) : raw);
   };
 }
 
@@ -163,11 +172,18 @@ export const runChunks = (
   f: (ev: SaxEvent, position: () => Position) => SaxError | null,
   reuse = false,
 ): SaxError | null => {
-  // XML without a DTD, all of it here: read it directly, and with the lexer
-  // only from where that stops (the events up to there are the same). Not
-  // when recovering: the direct read's checks are strict XML's.
+  // XML, all of it here: read it directly, and with the lexer only from
+  // where that stops (the events up to there are the same). Not when
+  // recovering: the direct read's checks are strict XML's. With `dtd:
+  // "internal"`, as the lexer reads it until a DOCTYPE declares something
+  // (see `Lexer.afterDoctype`): the direct read stops at an internal subset.
   let skip = 0;
-  if (last === undefined && opts.mode === "xml" && opts.dtd === "ignore" && !opts.recover) {
+  if (
+    last === undefined &&
+    opts.mode === "xml" &&
+    !opts.recover &&
+    (opts.dtd === "ignore" || hasAsciiNames(opts.entities))
+  ) {
     const direct = readDirectly(chunks.join(""), opts, f, reuse);
     if (direct === null || !P.hasProperty(direct, "stoppedAfter")) return direct;
     skip = direct.stoppedAfter;

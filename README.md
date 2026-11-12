@@ -386,6 +386,7 @@ Xml.parse(input, { dtd: "internal" });
 - `<!ATTLIST>` defaults and `#FIXED` values are added to elements that lack them, and values of tokenized types (`NMTOKEN`, `ID`, …) are normalized.
 - Recursion is an `InvalidEntity`. The total replacement text and the nesting depth are bounded by `limits.maxEntityExpansion` and `limits.maxEntityDepth`.
 - External and parameter entities are never fetched: referring to one is an `InvalidEntity` (in content) or a `MalformedDeclaration` (in the subset).
+- A document with no DOCTYPE, or one whose DOCTYPE declares no general entity, is read as fast as with the default `"ignore"`, so passing `dtd: "internal"` costs nothing where nothing is declared.
 
 ## Writing XML
 
