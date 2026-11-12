@@ -84,7 +84,6 @@ export default defineConfig({
           varsIgnorePattern: "^_",
         },
       ],
-      "eslint/prefer-const": "warn",
       // The `Buffer` global is typed `any` wherever a consumer loads
       // @cloudflare/workers-types next to @types/node, so every call on it is
       // unchecked there. Use Uint8Array / TextEncoder / DataView instead.
@@ -114,6 +113,7 @@ export default defineConfig({
       "effect/prefer-option-over-null": "warn",
       "vite-plus/prefer-vite-plus-imports": "error",
       // On explicitly: no preset this config extends turns them on.
+      "eslint/prefer-const": "error",
       "unicorn/no-empty-file": "error",
       "typescript/ban-ts-comment": "error",
       "typescript/no-empty-object-type": "error",
