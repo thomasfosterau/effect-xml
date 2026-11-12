@@ -21,6 +21,7 @@ import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import { sameNamespace } from "../internal/optional.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
 import { MissingRootElement } from "../Xml/Node.ts";
 
@@ -80,7 +81,8 @@ export type HtmlDocumentMode = typeof HtmlDocumentMode.Type;
  * An attribute on an element. Only the foreign attributes the parser adjusts
  * (`xlink:*`, `xml:lang`, `xml:space`, `xmlns`, `xmlns:xlink` on SVG and
  * MathML elements) have a `namespace`; their `name` is then the local name
- * and `prefix` the prefix (`null` for `xmlns` itself).
+ * and `prefix` the prefix (`Option.none()` for `xmlns` itself). Both are
+ * encoded as `null` when absent.
  *
  * @since 0.1.0
  * @category models
@@ -88,12 +90,12 @@ export type HtmlDocumentMode = typeof HtmlDocumentMode.Type;
 export class HtmlAttribute extends Schema.Class<HtmlAttribute>("HtmlAttribute")({
   name: Schema.String,
   value: Schema.String,
-  namespace: Schema.NullOr(HtmlAttributeNamespace),
-  prefix: Schema.NullOr(Schema.String),
+  namespace: Schema.OptionFromNullOr(HtmlAttributeNamespace),
+  prefix: Schema.OptionFromNullOr(Schema.String),
 }) {
   /** The name as written: `prefix:name` when there is a prefix, otherwise `name`. */
   get qualifiedName(): string {
-    return this.prefix === null ? this.name : `${this.prefix}:${this.name}`;
+    return Option.isNone(this.prefix) ? this.name : `${this.prefix.value}:${this.name}`;
   }
 }
 
@@ -161,7 +163,8 @@ export class HtmlTemplateContent extends Schema.TaggedClass<HtmlTemplateContent>
  * An element: its namespace, local name (lowercase for HTML, case-adjusted
  * for SVG and MathML, as in `foreignObject`), attributes and children. A
  * `<template>` in the HTML namespace has no children; what it contains is in
- * `content`, which is `null` on every other element.
+ * `content`, which is `Option.none()` on every other element (encoded as
+ * `null`).
  *
  * @example
  * ```ts
@@ -171,7 +174,7 @@ export class HtmlTemplateContent extends Schema.TaggedClass<HtmlTemplateContent>
  *
  * const [ul] = Effect.runSync(Html.parseDocumentFragment(`<ul id=a><li>1<li>2</ul>`))
  * if (ul?._tag === "HtmlElement") {
- *   console.log(ul.attribute("id")) // "a"
+ *   console.log(Option.getOrNull(ul.attribute("id"))) // "a"
  *   console.log(ul.childElements("li").length) // 2
  *   console.log(ul.textContent) // "12"
  *   console.log(Option.getOrNull(ul.text("li"))) // "1"
@@ -186,17 +189,28 @@ export class HtmlElement extends Schema.TaggedClass<HtmlElement>()("HtmlElement"
   name: Schema.String,
   attributes: Schema.Array(HtmlAttribute),
   children: Schema.Array(suspendedNode),
-  content: Schema.NullOr(HtmlTemplateContent),
+  content: Schema.OptionFromNullOr(HtmlTemplateContent),
 }) {
   /** The value of the first attribute with this qualified name (`class`, `xlink:href`). */
-  attribute(name: string): string | undefined {
-    return this.attributes.find((a) => a.qualifiedName === name)?.value;
+  attribute(name: string): Option.Option<string> {
+    return Option.map(
+      Arr.findFirst(this.attributes, (a) => a.qualifiedName === name),
+      (a) => a.value,
+    );
   }
 
-  /** The value of the attribute with this namespace (`null` for none) and local name. */
-  attributeNS(namespace: HtmlAttributeNamespace | null, name: string): Option.Option<string> {
-    const found = this.attributes.find((a) => a.namespace === namespace && a.name === name);
-    return found === undefined ? Option.none() : Option.some(found.value);
+  /** The value of the attribute with this namespace (`Option.none()` for none) and local name. */
+  attributeNS(
+    namespace: Option.Option<HtmlAttributeNamespace>,
+    name: string,
+  ): Option.Option<string> {
+    return Option.map(
+      Arr.findFirst(
+        this.attributes,
+        (a) => a.name === name && sameNamespace(a.namespace, namespace),
+      ),
+      (a) => a.value,
+    );
   }
 
   /** The child elements, in order. */
@@ -333,7 +347,8 @@ export class HtmlDoctype extends Schema.Class<HtmlDoctype>("HtmlDoctype")({
  */
 export class HtmlDocument extends Schema.TaggedClass<HtmlDocument>()("HtmlDocument", {
   mode: HtmlDocumentMode,
-  doctype: Schema.NullOr(HtmlDoctype),
+  /** The DOCTYPE, if the document had one (encoded as `null` when absent). */
+  doctype: Schema.OptionFromNullOr(HtmlDoctype),
   children: Schema.Array(HtmlNode),
 }) {
   /**

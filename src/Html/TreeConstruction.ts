@@ -70,6 +70,7 @@ interface MElement {
   readonly flags: number;
   attrs: Array<HtmlAttribute>;
   children: Array<MNode>;
+  /** Per-node working state, `null` at the top, as `current` (see there). */
   parent: MElement | null;
 }
 
@@ -385,18 +386,22 @@ const QUIRKY_PUBLIC_PREFIXES = [
 const HTML401_FRAMESET = "-//w3c//dtd html 4.01 frameset//";
 const HTML401_TRANSITIONAL = "-//w3c//dtd html 4.01 transitional//";
 
+/** A DOCTYPE identifier as a lexer event (`null` when absent) or a SAX event has it. */
+const identifier = (id: Option.Option<string> | string | null): Option.Option<string> =>
+  Option.isOption(id) ? id : Option.fromNullOr(id);
+
 /**
  * The document mode a DOCTYPE sets (WHATWG "the initial insertion mode").
  */
 const documentModeOf = (
   forceQuirks: boolean,
   name: string,
-  publicId: string | null,
-  systemId: string | null,
+  publicId: Option.Option<string>,
+  systemId: Option.Option<string>,
 ): HtmlDocumentMode => {
   if (forceQuirks || name.toLowerCase() !== "html") return "quirks";
-  const p = publicId === null ? null : publicId.toLowerCase();
-  const s = systemId === null ? null : systemId.toLowerCase();
+  const p = Option.getOrNull(Option.map(publicId, Str.toLowerCase));
+  const s = Option.getOrNull(Option.map(systemId, Str.toLowerCase));
   if (
     p === "-//w3o//dtd w3 html strict 3.0//en//" ||
     p === "-/w3c/dtd html 4.0 transitional/en" ||
@@ -765,10 +770,10 @@ class HtmlTreeBuilder {
   /** The stack of template insertion modes (one entry per open <template>). */
   private readonly templateModes: Array<Mode> = [];
   private readonly topLevel: Array<MNode> = [];
-  private doctype: HtmlDoctype | null = null;
-  private htmlEl: MElement | null = null;
-  private headEl: MElement | null = null;
-  private bodyEl: MElement | null = null;
+  private doctype: Option.Option<HtmlDoctype> = Option.none();
+  private htmlEl: Option.Option<MElement> = Option.none();
+  private headEl: Option.Option<MElement> = Option.none();
+  private bodyEl: Option.Option<MElement> = Option.none();
   /** When set, insertions are foster-parented out of an open table. */
   private foster = false;
   /** Self-closing flag of the start tag currently being processed. */
@@ -778,7 +783,7 @@ class HtmlTreeBuilder {
   /** Set after <pre>/<listing>/<textarea>: a single leading newline is dropped. */
   private ignoreLeadingNewline = false;
   /** The form element pointer (at most one open form outside templates). */
-  private formEl: MElement | null = null;
+  private formEl: Option.Option<MElement> = Option.none();
   /**
    * The document mode: quirks with no DOCTYPE (or a legacy one), which
    * affects e.g. whether `<table>` closes a `<p>`.
@@ -794,15 +799,15 @@ class HtmlTreeBuilder {
   private span: Span = { start: origin, end: origin };
   private readonly limits: Limits;
   private readonly scripting: boolean;
-  /** The fragment case's context element (never inserted); `null` for a document. */
-  private readonly context: MElement | null;
+  /** The fragment case's context element (never inserted); none for a document. */
+  private readonly context: Option.Option<MElement>;
 
   /** `context` is the fragment parsing context element; absent for a whole document. */
   constructor(options: BuilderOptions = {}, context?: FragmentContext) {
     this.limits = options.limits ?? defaultLimits;
     this.scripting = options.scripting ?? false;
-    this.context = context === undefined ? null : mkElement(context.name, [], context.ns);
-    if (this.context !== null) this.startFragment(this.context);
+    this.context = Option.map(Option.fromUndefinedOr(context), (c) => mkElement(c.name, [], c.ns));
+    if (Option.isSome(this.context)) this.startFragment(this.context.value);
   }
 
   /**
@@ -817,16 +822,20 @@ class HtmlTreeBuilder {
     const root = mkElement("html", []);
     this.topLevel.push(root);
     this.pushStack(root);
-    this.htmlEl = root;
+    this.htmlEl = Option.some(root);
     this.documentMode = "no-quirks";
     if (isHtmlTemplate(context)) this.templateModes.push("inTemplate");
     this.resetInsertionMode();
-    if (this.mode !== "beforeHead") this.bodyEl = root;
+    if (this.mode !== "beforeHead") this.bodyEl = Option.some(root);
   }
 
   /** Whether `el` is the fragment root standing in for the body. */
   private isFragmentBody(el: MElement): boolean {
-    return this.context !== null && el === this.htmlEl && el === this.bodyEl;
+    return (
+      Option.isSome(this.context) &&
+      Option.getOrNull(this.htmlEl) === el &&
+      Option.getOrNull(this.bodyEl) === el
+    );
   }
 
   /** Whether an element of this name holds raw text (or rcdata) content. */
@@ -836,6 +845,9 @@ class HtmlTreeBuilder {
 
   // --- stack helpers -------------------------------------------------------
 
+  // `current` and `adjustedCurrent` stay `MElement | null`: they are read
+  // several times per token, and as `Option`s (an `Option.some` per read)
+  // `Html.parseDocument` measured about a tenth slower (`vp run bench`, #68).
   private get current(): MElement | null {
     return this.open.at(-1) ?? null;
   }
@@ -845,7 +857,9 @@ class HtmlTreeBuilder {
    * alone on the stack, otherwise the current node.
    */
   private get adjustedCurrent(): MElement | null {
-    return this.context !== null && this.open.length === 1 ? this.context : this.current;
+    return Option.isSome(this.context) && this.open.length === 1
+      ? this.context.value
+      : this.current;
   }
 
   /** Whether a template is open (one template insertion mode per open <template>). */
@@ -923,11 +937,11 @@ class HtmlTreeBuilder {
    * a foreign context selects nothing, a `frameset` one "in frameset".
    */
   private resetModeAt(el: MElement, index: number): Option.Option<Mode> {
-    const context = index === 0 ? this.context : null;
-    if (context === null) return this.resetModeFor(el.name, index);
-    if (context.ns !== HTML_NS) return Option.none();
-    if (context.name === "frameset") return Option.some("inFrameset");
-    return this.resetModeFor(context.name, index);
+    const context = index === 0 ? this.context : Option.none();
+    if (Option.isNone(context)) return this.resetModeFor(el.name, index);
+    if (context.value.ns !== HTML_NS) return Option.none();
+    if (context.value.name === "frameset") return Option.some("inFrameset");
+    return this.resetModeFor(context.value.name, index);
   }
 
   /** The mode the "reset the insertion mode" walk selects at stack entry `index`, if any. */
@@ -946,7 +960,8 @@ class HtmlTreeBuilder {
     }
     if ((name === "td" || name === "th" || name === "head") && last) return Option.none();
     if (name === "template") return Option.some(this.templateModes.at(-1) ?? "inBody");
-    if (name === "html") return Option.some(this.headEl ? "afterHead" : "beforeHead");
+    if (name === "html")
+      return Option.some(Option.isSome(this.headEl) ? "afterHead" : "beforeHead");
     return Option.fromNullishOr(RESET_MODES[name]);
   }
 
@@ -1160,12 +1175,17 @@ class HtmlTreeBuilder {
 
   private acceptDoctype(ev: Extract<TreeEvent, { _tag: "Doctype" }>): void {
     if (this.mode !== "initial") return;
-    this.documentMode = documentModeOf(ev.forceQuirks, ev.name, ev.publicId, ev.systemId);
-    this.doctype = Nodes.htmlDoctype(
-      // The HTML parser lowercases the DOCTYPE name.
-      ev.name.toLowerCase(),
-      ev.publicId ?? "",
-      ev.systemId ?? "",
+    // A lexer event (`Html.parseDocument`) has `null` identifiers, a SAX event `Option`s.
+    const publicId = identifier(ev.publicId);
+    const systemId = identifier(ev.systemId);
+    this.documentMode = documentModeOf(ev.forceQuirks, ev.name, publicId, systemId);
+    this.doctype = Option.some(
+      Nodes.htmlDoctype(
+        // The HTML parser lowercases the DOCTYPE name.
+        ev.name.toLowerCase(),
+        Option.getOrElse(publicId, () => ""),
+        Option.getOrElse(systemId, () => ""),
+      ),
     );
     this.mode = "beforeHtml";
   }
@@ -1176,10 +1196,10 @@ class HtmlTreeBuilder {
       this.topLevel.push(Nodes.htmlComment(ev.data));
     } else if (
       (this.mode === "afterBody" || this.mode === "afterFrameset") &&
-      this.htmlEl !== null
+      Option.isSome(this.htmlEl)
     ) {
       // After </body>/frameset: a comment is the html element's last child.
-      appendChild(this.htmlEl, Nodes.htmlComment(ev.data));
+      appendChild(this.htmlEl.value, Nodes.htmlComment(ev.data));
     } else {
       this.insert(Nodes.htmlComment(ev.data));
     }
@@ -1357,29 +1377,29 @@ class HtmlTreeBuilder {
   // --- structural bootstrapping -------------------------------------------
 
   private ensureHtml(): void {
-    if (this.htmlEl === null) {
-      this.htmlEl = this.insertElement("html", []);
+    if (Option.isNone(this.htmlEl)) {
+      this.htmlEl = Option.some(this.insertElement("html", []));
       this.mode = "beforeHead";
     }
   }
 
   private ensureHead(): void {
     this.ensureHtml();
-    if (this.headEl === null) {
-      this.headEl = this.insertElement("head", []);
+    if (Option.isNone(this.headEl)) {
+      this.headEl = Option.some(this.insertElement("head", []));
       this.mode = "inHead";
     }
   }
 
   private ensureBody(): void {
     // (A fragment root standing in for the body is already in place.)
-    if (this.bodyEl !== null) return;
+    if (Option.isSome(this.bodyEl)) return;
     this.ensureHtml();
-    if (this.headEl === null) this.ensureHead();
-    if (this.bodyEl === null) {
+    if (Option.isNone(this.headEl)) this.ensureHead();
+    if (Option.isNone(this.bodyEl)) {
       // Pop head if still open.
       if (this.current?.name === "head") this.popOpen();
-      this.bodyEl = this.insertElement("body", []);
+      this.bodyEl = Option.some(this.insertElement("body", []));
       this.mode = "inBody";
     }
   }
@@ -1484,10 +1504,10 @@ class HtmlTreeBuilder {
       // In <head>, or inter-section whitespace after </head> (kept in <html>).
       this.insert(Nodes.htmlText(data));
     } else if (
-      this.bodyEl !== null &&
+      Option.isSome(this.bodyEl) &&
       (this.mode === "afterBody" || this.mode === "afterAfterBody")
     ) {
-      appendChild(this.bodyEl, Nodes.htmlText(data));
+      appendChild(this.bodyEl.value, Nodes.htmlText(data));
     }
   }
 
@@ -1566,7 +1586,7 @@ class HtmlTreeBuilder {
     if (name === "html") {
       this.ensureHtml();
       // With a template open the attributes are ignored; otherwise merge.
-      if (this.htmlEl && !this.templateOpen) mergeAttrs(this.htmlEl, attrs);
+      if (Option.isSome(this.htmlEl) && !this.templateOpen) mergeAttrs(this.htmlEl.value, attrs);
       return;
     }
     if (name === "head") {
@@ -1577,7 +1597,7 @@ class HtmlTreeBuilder {
       // Inside an open template a stray <body> start tag is ignored.
       if (this.templateOpen) return;
       this.ensureBody();
-      if (this.bodyEl) mergeAttrs(this.bodyEl, attrs);
+      if (Option.isSome(this.bodyEl)) mergeAttrs(this.bodyEl.value, attrs);
       // An explicit <body> tag makes the document no longer frameset-ok.
       this.framesetOk = false;
       return;
@@ -1590,7 +1610,7 @@ class HtmlTreeBuilder {
       this.mode !== "afterAfterFrameset"
     ) {
       // Handled identically in every insertion mode (via the "in head" rules).
-      if (this.bodyEl === null) this.ensureHead();
+      if (Option.isNone(this.bodyEl)) this.ensureHead();
       // After </head>, the template still belongs in <head>.
       this.insertInHead("template", attrs, false);
       this.afe.push(MARKER);
@@ -1604,7 +1624,7 @@ class HtmlTreeBuilder {
     }
     if (name === "noscript") {
       // In head (scripting disabled), <noscript> opens "in head noscript".
-      if (this.bodyEl === null && this.mode !== "afterHead") this.ensureHead();
+      if (Option.isNone(this.bodyEl) && this.mode !== "afterHead") this.ensureHead();
       if (this.mode === "inHead") {
         // With scripting enabled it is a raw text element instead.
         this.insertElement("noscript", attrs);
@@ -1623,7 +1643,7 @@ class HtmlTreeBuilder {
       )
     ) {
       // Head content. If we're still before/around the head, route it there.
-      if (this.bodyEl === null) {
+      if (Option.isNone(this.bodyEl)) {
         this.ensureHead();
       }
       // After </head>, a stray head element is processed in <head> (which is
@@ -1665,7 +1685,7 @@ class HtmlTreeBuilder {
    * (void) element immediately.
    */
   private insertInHead(name: string, attrs: Array<HtmlAttribute>, popAfter: boolean): void {
-    const head = this.headEl;
+    const head = Option.getOrNull(this.headEl);
     const reopenHead = this.mode === "afterHead" && head !== null && !this.open.includes(head);
     if (reopenHead) this.pushStack(head);
     this.insertElement(name, attrs);
@@ -1756,7 +1776,7 @@ class HtmlTreeBuilder {
   private startFrameset(attrs: Array<HtmlAttribute>): void {
     // Before/after head with no body yet: this is a frameset document.
     if (
-      this.bodyEl === null &&
+      Option.isNone(this.bodyEl) &&
       (this.mode === "initial" ||
         this.mode === "beforeHtml" ||
         this.mode === "beforeHead" ||
@@ -1779,7 +1799,7 @@ class HtmlTreeBuilder {
     if (this.framesetOk && body !== undefined && body.name === "body") {
       detach(body);
       this.truncateOpen(1);
-      this.bodyEl = null;
+      this.bodyEl = Option.none();
       this.insertElement("frameset", attrs);
       this.mode = "inFrameset";
     }
@@ -1933,8 +1953,8 @@ class HtmlTreeBuilder {
     }
     if (name === "form") {
       // In table: insert the form, set the pointer, and pop it immediately.
-      if (this.formEl !== null || this.templateOpen) return;
-      this.formEl = this.insertElement("form", attrs);
+      if (Option.isSome(this.formEl) || this.templateOpen) return;
+      this.formEl = Option.some(this.insertElement("form", attrs));
       this.popOpen();
       return;
     }
@@ -2098,10 +2118,10 @@ class HtmlTreeBuilder {
 
     if (name === "form") {
       // Only one open form outside templates (the form element pointer).
-      if (this.formEl !== null && !this.templateOpen) return;
+      if (Option.isSome(this.formEl) && !this.templateOpen) return;
       if (this.hasInScope("p", BUTTON_SCOPE)) this.closeP();
       const el = this.insertElement("form", attrs);
-      if (!this.templateOpen) this.formEl = el;
+      if (!this.templateOpen) this.formEl = Option.some(el);
       return;
     }
 
@@ -2326,7 +2346,7 @@ class HtmlTreeBuilder {
       return;
     }
     if (name === "head") {
-      if (this.bodyEl !== null) return; // ignored once in the body
+      if (Option.isSome(this.bodyEl)) return; // ignored once in the body
       // Cascade: ensure a head, pop it, and move to "after head".
       this.ensureHead();
       if (this.current?.name === "head") this.popOpen();
@@ -2338,7 +2358,7 @@ class HtmlTreeBuilder {
     if (this.endHandlers[this.mode](name)) return;
 
     // Before a body exists these end tags don't open one — they're ignored.
-    const noBodyYet = this.bodyEl === null && !this.templateOpen;
+    const noBodyYet = Option.isNone(this.bodyEl) && !this.templateOpen;
 
     if (name === "p") {
       if (noBodyYet) return;
@@ -2363,8 +2383,8 @@ class HtmlTreeBuilder {
 
     if (name === "form" && !this.templateOpen) {
       const node = this.formEl;
-      this.formEl = null;
-      const i = node ? this.open.indexOf(node) : -1;
+      this.formEl = Option.none();
+      const i = Option.isSome(node) ? this.open.indexOf(node.value) : -1;
       if (i === -1) return;
       this.generateImpliedEndTags();
       this.removeOpen(i);
@@ -2878,8 +2898,8 @@ class HtmlTreeBuilder {
     this.closeAtEof();
     this.populateSelectedContent();
     const root = this.htmlEl;
-    if (root === null) return [];
-    const built = freeze(root);
+    if (Option.isNone(root)) return [];
+    const built = freeze(root.value);
     return isHtmlElement(built) ? built.children : [];
   }
 
@@ -2889,12 +2909,12 @@ class HtmlTreeBuilder {
     // Ensure a minimal valid document exists (but never add a <body> to a
     // frameset document).
     this.ensureHtml();
-    if (this.headEl === null) this.ensureHead();
+    if (Option.isNone(this.headEl)) this.ensureHead();
     const isFrameset =
       this.mode === "inFrameset" ||
       this.mode === "afterFrameset" ||
       this.mode === "afterAfterFrameset";
-    if (this.bodyEl === null && !isFrameset) this.ensureBody();
+    if (Option.isNone(this.bodyEl) && !isFrameset) this.ensureBody();
 
     this.populateSelectedContent();
 
@@ -2942,8 +2962,14 @@ const namespaceOf = (ns: string): HtmlNamespace =>
  */
 const freezeElement = (el: MElement, children: ReadonlyArray<HtmlNode>): HtmlElement =>
   isHtmlTemplate(el)
-    ? Nodes.htmlElement("html", el.name, el.attrs, [], Nodes.htmlTemplateContent(children))
-    : Nodes.htmlElement(namespaceOf(el.ns), el.name, el.attrs, children, null);
+    ? Nodes.htmlElement(
+        "html",
+        el.name,
+        el.attrs,
+        [],
+        Option.some(Nodes.htmlTemplateContent(children)),
+      )
+    : Nodes.htmlElement(namespaceOf(el.ns), el.name, el.attrs, children, Option.none());
 
 /**
  * The final node for a working-tree node: leaves are final already; an

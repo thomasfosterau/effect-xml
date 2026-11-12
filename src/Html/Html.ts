@@ -150,7 +150,7 @@ export interface HtmlBytesOptions extends HtmlOptions {
   readonly encoding?: string;
 }
 
-const htmlDecodeOptions = (options: HtmlBytesOptions | undefined) =>
+const htmlDecodeOptions = (options?: HtmlBytesOptions) =>
   decodeOptions({ ...options, mode: "html" });
 
 /**

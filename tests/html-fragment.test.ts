@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -67,7 +68,11 @@ describe("Html.parseDocumentFragment", () => {
   test("a template's contents are its content fragment", () => {
     const t = narrowAt(fragment("<template><td>x</td></template>"), 0, isHtmlElement);
     expect(t.children).toEqual([]);
-    expect(Html.serializeFragment(t.content?.children ?? [])).toBe("<td>x</td>");
+    expect(
+      Html.serializeFragment(
+        Option.match(t.content, { onNone: () => [], onSome: (c) => c.children }),
+      ),
+    ).toBe("<td>x</td>");
     expect(Html.serialize(t)).toBe("<template><td>x</td></template>");
   });
 });
