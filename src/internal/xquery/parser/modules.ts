@@ -11,7 +11,7 @@
 import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import type { Module as ModuleT } from "./ast.ts";
 import { Decl, Module } from "./ast.ts";
@@ -24,6 +24,7 @@ import {
 import type { StaticError } from "./errors.ts";
 import { parseXQuery } from "./parse.ts";
 import { analyzeModule, exportsOf } from "./prolog-check.ts";
+import { maybe } from "../../optional.ts";
 
 /** A library module, analysed: its tree, target namespace and static context. */
 export interface LibraryModule {
@@ -97,7 +98,7 @@ const load = (
               return Result.succeed(undefined);
             const base: StaticOptions = {
               ...options,
-              baseUri: source.location ?? options?.baseUri,
+              ...maybe("baseUri", source.location ?? options?.baseUri),
             };
             return Result.flatMap(load(parsed, base, loaded), (exports) => {
               // Imports of modules still loading (a cycle) are opaque to this one.
@@ -117,7 +118,7 @@ const load = (
         ),
       );
       return Result.map(libraries, (all) => {
-        const ms = all.filter(Predicate.isNotUndefined);
+        const ms = all.filter(P.isNotUndefined);
         loaded.modules = HashMap.set(loaded.modules, imp.uri, ms);
         return Arr.isReadonlyArrayEmpty(ms)
           ? visible

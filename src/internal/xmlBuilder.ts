@@ -20,6 +20,7 @@ import {
 } from "../Error.ts";
 import { exactly } from "./exact.ts";
 import { QNames } from "./qnames.ts";
+import { sameNamespace } from "./optional.ts";
 import { checkNoColon, checkStartTag, checkSubset } from "./namespaces.ts";
 import * as Nodes from "./nodes.ts";
 import { Namespaces, type QName, type TagName } from "../Name.ts";
@@ -101,7 +102,12 @@ const repeats = (attributes: ReadonlyArray<Attribute>, i: number): boolean => {
 const expands = (list: ReadonlyArray<XmlAttribute>, n: number, name: QName): boolean => {
   for (let j = 0; j < n; j++) {
     const a = list[j];
-    if (a?.name.namespace === name.namespace && a?.name.local === name.local) return true;
+    if (
+      a !== undefined &&
+      a.name.local === name.local &&
+      sameNamespace(a.name.namespace, name.namespace)
+    )
+      return true;
   }
   return false;
 };
@@ -122,8 +128,8 @@ export class Builder {
   /** The bindings of the open elements that declare namespaces, so lookups don't walk the whole stack. */
   private readonly scopes: Array<Bindings> = [];
   private readonly top: Array<XmlNode> = [];
-  private declaration: XmlDeclaration | null = null;
-  private doctype: XmlDoctype | null = null;
+  private declaration: Option.Option<XmlDeclaration> = Option.none();
+  private doctype: Option.Option<XmlDoctype> = Option.none();
   /** Recovery: whether the root's end tag has been seen (the root stays open). */
   private rootEnded = false;
   /** Recovery: comments and PIs after the root's end tag, which stay after the root. */
@@ -210,7 +216,7 @@ export class Builder {
 
   /** Whether `xmlns:p=""` may undeclare a prefix: an XML 1.1 document (Namespaces in XML 1.1 §5). */
   private get unbinding(): boolean {
-    return this.declaration?.version === "1.1";
+    return Option.exists(this.declaration, (d) => d.version === "1.1");
   }
 
   /** The name `raw` stands for, or `undefined` with {@link failure} set. */
@@ -225,7 +231,7 @@ export class Builder {
     if (ns !== null || this.recover) return this.names.name(parsed, ns);
     this.failure = new UnboundNamespacePrefix({
       prefix: parsed.prefix,
-      name: raw,
+      qualifiedName: raw,
       position: at.start,
     });
     return undefined;
@@ -338,15 +344,16 @@ export class Builder {
         return this.appendChild(Nodes.processingInstruction(ev.target, ev.data), ev.span);
       }
       case "XmlDeclaration":
-        this.declaration = Nodes.declaration(ev.version, ev.encoding, ev.standalone);
+        this.declaration = Option.some(Nodes.declaration(ev.version, ev.encoding, ev.standalone));
         return null;
       case "Doctype": {
-        const error =
-          this.checks && ev.internalSubset !== null
-            ? checkSubset(ev.internalSubset, ev.span)
-            : Option.none();
+        const error = this.checks
+          ? Option.flatMap(ev.internalSubset, (subset) => checkSubset(subset, ev.span))
+          : Option.none();
         if (Option.isSome(error)) return error.value;
-        this.doctype = Nodes.doctype(ev.name, ev.publicId, ev.systemId, ev.internalSubset);
+        this.doctype = Option.some(
+          Nodes.doctype(ev.name, ev.publicId, ev.systemId, ev.internalSubset),
+        );
         return null;
       }
       default:
@@ -410,10 +417,13 @@ export class Builder {
     const name = this.resolve(a.name, true, a.span, bindings);
     if (name === undefined) return undefined;
     // Only a prefixed name can share its expanded name with an earlier one spelt differently.
+    const namespace = name.namespace;
     const expanded =
-      name.prefix !== null &&
-      name.namespace !== null &&
-      (set === undefined ? expands(list, i, name) : !added(set, `${name.namespace} ${name.local}`));
+      Option.isSome(name.prefix) &&
+      Option.isSome(namespace) &&
+      (set === undefined
+        ? expands(list, i, name)
+        : !added(set, `${namespace.value} ${name.local}`));
     if (expanded) {
       this.failure = duplicateAttribute(element, a);
       return undefined;
@@ -471,7 +481,7 @@ export class Builder {
       return null;
     }
     const frame = this.stack.pop();
-    if (frame === undefined) return new UnexpectedEndTag({ name: rawName, position: at.start });
+    if (frame === undefined) return new UnexpectedEndTag({ tagName: rawName, position: at.start });
     if (frame.bindings.size > 0) this.popScope();
     if (frame.rawName !== rawName) {
       return new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position: at.start });
@@ -564,7 +574,8 @@ const recoverAttributes = (
   for (const a of attributes) {
     const name = resolve(a.name, a.span);
     // An expanded-name key has a space, which no raw name has, so the two never collide.
-    const keys = name.namespace === null ? [a.name] : [a.name, `${name.namespace} ${name.local}`];
+    const namespace = name.namespace;
+    const keys = Option.isNone(namespace) ? [a.name] : [a.name, `${namespace.value} ${name.local}`];
     if (keys.some((key) => seen.has(key))) continue;
     for (const key of keys) seen.add(key);
     list.push(Nodes.attribute(name, a.value));
@@ -590,9 +601,16 @@ export const buildChunks = (
   Effect.suspend(() => {
     const chunks = input();
     // `strict: false`: build from a lenient pass; if it fails at all, the
-    // strict passes below report the failure exactly.
+    // strict passes below report the failure exactly. Not when recovering,
+    // which the lenient reader does not.
     const opts = resolveSaxOptions(saxOptions);
-    if (!strict && opts.mode === "xml" && opts.dtd === "ignore" && chunks.failure === undefined) {
+    if (
+      !strict &&
+      !opts.recover &&
+      opts.mode === "xml" &&
+      opts.dtd === "ignore" &&
+      chunks.failure === undefined
+    ) {
       const lenient = lenientPass(chunks.chunks.join(""), opts, options);
       if (Result.isSuccess(lenient)) return Effect.succeed(lenient.success);
     }

@@ -11,7 +11,7 @@
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import type { Arity } from "./builtins.ts";
 import { Namespaces } from "./builtins.ts";
 import type { ItemType } from "./ast.ts";
@@ -23,7 +23,7 @@ export const normalizeUri = (uri: string): string => uri.replace(/[ \t\r\n]+/g, 
 export interface ModuleSource {
   readonly text: string;
   /** The module's location, the base URI its relative URIs resolve against. */
-  readonly location?: string | undefined;
+  readonly location?: string;
 }
 
 /** What an imported library module makes visible: its public functions (Clark name and arity) and variables (Clark names). */
@@ -34,45 +34,52 @@ export interface ModuleExports {
 
 /** The host's part of the static context: what a caller may set before compiling. */
 export interface StaticOptions {
-  /** Prefix → namespace URI bindings, added to (and overriding) the predeclared ones. */
-  readonly namespaces?: Readonly<Record<string, string>> | undefined;
+  /**
+   * Prefix → namespace URI bindings, added to (and overriding) the predeclared
+   * ones. The empty prefix binds the default element namespace, unless
+   * `defaultElementNamespace` is given.
+   */
+  readonly namespaces?: Readonly<Record<string, string>>;
   /** The default namespace of element and type names (default: none). */
-  readonly defaultElementNamespace?: string | undefined;
+  readonly defaultElementNamespace?: string;
   /** The default namespace of function names (default: `fn`). */
-  readonly defaultFunctionNamespace?: string | undefined;
+  readonly defaultFunctionNamespace?: string;
   /** External variables in scope, as Clark names (`{uri}local`, or `local` for no namespace). */
-  readonly variables?: ReadonlyArray<string> | undefined;
+  readonly variables?: ReadonlyArray<string>;
   /** Functions the host provides, beyond the built-in library: Clark name → arities. */
-  readonly functions?: Readonly<Record<string, ReadonlyArray<number>>> | undefined;
-  /** Collation URIs the host supports, beyond the codepoint, HTML case-insensitive and UCA collations. */
-  readonly collations?: ReadonlyArray<string> | undefined;
+  readonly functions?: Readonly<Record<string, ReadonlyArray<number>>>;
+  /**
+   * Collation URIs the host supports, beyond the codepoint, HTML
+   * case-insensitive and UCA collations (the ones `XQuery.evaluate` lists).
+   */
+  readonly collations?: ReadonlyArray<string>;
   /** The static base URI. */
-  readonly baseUri?: string | undefined;
+  readonly baseUri?: string;
   /**
    * Namespaces whose functions, variables and types the analysis cannot see
    * and so does not check: schemas and modules the host imports on the
    * query's behalf.
    */
-  readonly opaqueNamespaces?: ReadonlyArray<string> | undefined;
+  readonly opaqueNamespaces?: ReadonlyArray<string>;
   /**
    * Library modules' sources, by target namespace URI, for `import module`.
    * When given, importing a namespace with no source here is `XQST0059`;
    * when not, imported namespaces are opaque (their names are not checked).
    */
-  readonly modules?: Readonly<Record<string, ReadonlyArray<ModuleSource>>> | undefined;
+  readonly modules?: Readonly<Record<string, ReadonlyArray<ModuleSource>>>;
   /**
    * Decimal formats for `fn:format-number`, by Clark name (`""` for the
    * unnamed one): each a record of the properties it sets (`decimal-separator`,
    * `grouping-separator`, …), the others keeping their defaults.
    */
-  readonly decimalFormats?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined;
+  readonly decimalFormats?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /**
    * XPath 1.0 compatibility mode (XPath 3.1 §2.1.1), for XPath only (XQuery
    * has no such mode, and `XQuery.compile` ignores it): general comparisons,
    * arithmetic and function arguments convert their operands as XPath 1.0
    * did, so an XPath 1.0 expression gives XPath 1.0's result.
    */
-  readonly xpath1Compatibility?: boolean | undefined;
+  readonly xpath1Compatibility?: boolean;
 }
 
 /** The static context a query is compiled in. */
@@ -133,15 +140,17 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
   xpath1Compatibility: !xquery && options.xpath1Compatibility === true,
   namespaces: HashMap.fromIterable([
     ...predeclared(xquery),
-    ...Record.toEntries(options.namespaces ?? {}).filter(([prefix]) => prefix !== "xml"),
+    ...R.toEntries(options.namespaces ?? {}).filter(
+      ([prefix]) => prefix !== "xml" && prefix !== "",
+    ),
   ]),
-  defaultElementNamespace: options.defaultElementNamespace ?? "",
+  defaultElementNamespace: options.defaultElementNamespace ?? options.namespaces?.[""] ?? "",
   defaultFunctionNamespace: options.defaultFunctionNamespace ?? Namespaces.fn,
   variables: HashSet.fromIterable(
     (options.variables ?? []).map((v) => (v.startsWith("{") ? v : `{}${v}`)),
   ),
   functions: HashMap.fromIterable(
-    Record.toEntries(options.functions ?? {}).map(([k, v]) => [k, toArities(v)] as const),
+    R.toEntries(options.functions ?? {}).map(([k, v]) => [k, toArities(v)] as const),
   ),
   opaqueNamespaces: HashSet.fromIterable(options.opaqueNamespaces ?? []),
   baseUri: Option.fromNullishOr(options.baseUri),
@@ -155,7 +164,7 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
   contextItemType: Option.none(),
   options: HashMap.empty(),
   decimalFormats: HashMap.fromIterable(
-    Record.toEntries(options.decimalFormats ?? {}).map(
+    R.toEntries(options.decimalFormats ?? {}).map(
       ([k, v]) => [k === "" || k.startsWith("{") ? k : `{}${k}`, v] as const,
     ),
   ),

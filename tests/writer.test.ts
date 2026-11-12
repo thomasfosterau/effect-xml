@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
@@ -19,7 +20,11 @@ const err = (node: Xml.XmlNode | Xml.XmlDocument, options?: Xml.Writer.WriterOpt
 };
 
 const q = (namespace: string | null, local: string, prefix: string | null = null) =>
-  new QName({ prefix, local, namespace });
+  new QName({
+    prefix: Option.fromNullOr(prefix),
+    local,
+    namespace: Option.fromNullOr(namespace),
+  });
 const el = (
   name: QName | string,
   attrs: ReadonlyArray<Xml.XmlAttribute> = [],
@@ -29,7 +34,7 @@ const el = (
 const parse = (s: string) => Effect.runSync(Xml.parse(s));
 
 /** OOXML's `_xHHHH_` escape for a code point. */
-const ooxml = (cp: number) => `_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`;
+const ooxml = (cp: number) => Option.some(`_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`);
 
 /** The children of a document's root element. */
 const content = (input: string) => parse(input).root.children;
@@ -50,7 +55,7 @@ describe("escaping and well-formedness", () => {
   test("attribute values survive a round trip, tabs and newlines included", () => {
     const value = "a\tb\nc\r d";
     const doc = parse(ok(el("a", [Xml.attr("v", value)])));
-    expect(doc.root.attribute("v")).toBe(value);
+    expect(doc.root.attribute("v")).toEqual(Option.some(value));
   });
 
   test("a CDATA section containing ]]> is split", () => {
@@ -105,8 +110,8 @@ describe("namespace management", () => {
     const out = ok(body);
     expect(out).toBe(`<w:body xmlns:w="${W}"><w:p w:val="1"/></w:body>`);
     const reparsed = parse(out);
-    expect(reparsed.root.name.namespace).toBe(W);
-    expect(at(at(reparsed.root.elements, 0).attributes, 0).name.namespace).toBe(W);
+    expect(reparsed.root.name.namespace).toEqual(Option.some(W));
+    expect(at(at(reparsed.root.elements, 0).attributes, 0).name.namespace).toEqual(Option.some(W));
   });
 
   test("unprefixed names use the default namespace, and undeclare it when needed", () => {
@@ -159,8 +164,10 @@ describe("namespace management", () => {
     const tree = el(q("urn:a", "x", "p"), [Xml.attr(q("urn:b", "y", "p"), "1")]);
     const out = ok(tree);
     const doc = parse(out);
-    expect(doc.root.name.namespace).toBe("urn:a");
-    expect(doc.root.attributes.find((a) => a.name.local === "y")?.name.namespace).toBe("urn:b");
+    expect(doc.root.name.namespace).toEqual(Option.some("urn:a"));
+    expect(doc.root.attributes.find((a) => a.name.local === "y")?.name.namespace).toEqual(
+      Option.some("urn:b"),
+    );
   });
 
   test("two attributes with the same expanded name", () => {

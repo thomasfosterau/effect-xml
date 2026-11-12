@@ -1,18 +1,24 @@
 /**
  * The hand-written XML scanner (`src/internal/scan.ts`) against the token
- * grammars it stands in for. With `dtd: "internal"` the lexer reads every
- * token with the grammars, so on a document without a DOCTYPE the two must
- * agree exactly: the same events with the same spans, and the same failure.
+ * grammars it stands in for. Read with the DTD-aware grammars from the first
+ * token (`tokenizeEagerly`, `dtd: "internal"` as before #99), the lexer reads
+ * every token with the grammars, so on a document without a DOCTYPE the two
+ * must agree exactly: the same events with the same spans, and the same
+ * failure.
  * `Xml.parse` builds without positions first (rerunning with them to report
  * a failure); it must agree with `Xml.parseStream`, which never does.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as P from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import { origin, Sax, Xml } from "../src/index.ts";
+import { splitEvery } from "./support/chunks.ts";
 import { documents } from "./support/documents.ts";
+import { tokenizeEagerly } from "./support/eager.ts";
+import { some } from "./support/narrow.ts";
 import { plain } from "./support/plain.ts";
 
 /** The events of `doc` (or its failure), whole or in chunks of `size`. */
@@ -24,6 +30,10 @@ const tokenize = (doc: string, options: Sax.SaxOptions, size: number) =>
       ).pipe(Sax.tokenize(options), Stream.runCollect),
     ),
   );
+
+/** The events of `doc` (or its failure) read with the grammars alone, whole or in chunks of `size`. */
+const grammars = (doc: string, options: Sax.SaxOptions, size: number) =>
+  tokenizeEagerly(splitEvery(doc, size), { ...options, dtd: "internal" });
 
 /** An exit's events as plain data: lazy spans resolved, so a comparison sees every position. */
 const located = <E>(exit: Exit.Exit<Iterable<Sax.SaxEvent>, E>) =>
@@ -72,7 +82,7 @@ describe("the XML scanner", () => {
   test("agrees with the token grammars: events, spans and failures", () => {
     Arr.forEach(docs, (doc) =>
       expect(located(tokenize(doc, {}, doc.length)), doc).toStrictEqual(
-        located(tokenize(doc, { dtd: "internal" }, doc.length)),
+        located(grammars(doc, {}, doc.length)),
       ),
     );
   });
@@ -81,8 +91,19 @@ describe("the XML scanner", () => {
     Arr.forEach(docs.slice(0, 300), (doc) =>
       Arr.forEach([1, 2, 3, 7], (size) =>
         expect(located(tokenize(doc, {}, size)), `${doc} in chunks of ${size}`).toStrictEqual(
-          located(tokenize(doc, { dtd: "internal" }, size)),
+          located(grammars(doc, {}, size)),
         ),
+      ),
+    );
+  });
+
+  test("agrees with the recovering grammars (`recover: true`), whole and chunked", () => {
+    Arr.forEach(docs.slice(0, 1500), (doc) =>
+      Arr.forEach([doc.length, 1, 3], (size) =>
+        expect(
+          located(tokenize(doc, { recover: true }, size)),
+          `${doc} in chunks of ${size}`,
+        ).toStrictEqual(located(grammars(doc, { recover: true }, size))),
       ),
     );
   });
@@ -91,6 +112,9 @@ describe("the XML scanner", () => {
     const exits = docs.map((doc) => tokenize(doc, {}, doc.length));
     expect(exits.filter(Exit.isSuccess).length).toBeGreaterThan(600);
     expect(exits.filter(Exit.isFailure).length).toBeGreaterThan(750);
+    // Recovery reads most of the ones strict reading fails on.
+    const recovering = docs.map((doc) => tokenize(doc, { recover: true }, doc.length));
+    expect(recovering.filter(Exit.isSuccess).length).toBeGreaterThan(1800);
   });
 
   test("without positions: the same events at the origin, and the same failures", () => {
@@ -107,14 +131,13 @@ describe("the XML scanner", () => {
     const doc = `<root>\n  <a x="1" y="${"z".repeat(40)}"/></root>`;
     const failure = (positions: boolean) =>
       Effect.runSync(Effect.flip(Sax.collect(doc, { positions, limits: { maxTextLength: 10 } })));
-    expect(failure(true)).toMatchObject({
-      _tag: "LimitExceeded",
-      position: { line: 2, column: 12 },
-    });
-    expect(failure(false)).toMatchObject({
-      _tag: "LimitExceeded",
-      position: { line: 2, column: 3 },
-    });
+    const at = (positions: boolean) => {
+      const e = failure(positions);
+      assert(P.isTagged(e, "LimitExceeded"), "expected a limit failure");
+      return some(e.position);
+    };
+    expect(at(true)).toMatchObject({ line: 2, column: 12 });
+    expect(at(false)).toMatchObject({ line: 2, column: 3 });
   });
 
   test("Sax.forEach hands over the events Sax.tokenize streams, and its failure", () => {

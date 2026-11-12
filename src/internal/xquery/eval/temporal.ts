@@ -12,6 +12,7 @@ import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
 import { AtomicValue, atomicString } from "../atomic.ts";
 import { AtomicTypes, type AtomicType, type AtomicTypeName } from "../types.ts";
+import { raise } from "./raise.ts";
 
 /** The parts of a date or time; the parts its type doesn't have are the reference date's. */
 export interface DateTimeParts {
@@ -145,8 +146,42 @@ const formatSeconds = (s: BigDecimal.BigDecimal): string => {
   return text.startsWith(".") || /^\d(?:\.|$)/.test(text) ? `0${text}` : text;
 };
 
-/** The lexical form of parts as a value of `type` (a temporal primitive type). */
+/** The number of days the supported dates span either side of 0001-01-01: what fits a signed 64-bit count. */
+const DAY_LIMIT = /*#__PURE__*/ 1n << 63n;
+
+/** The days from 0001-01-01 to 1970-01-01. */
+const EPOCH_DAYS = 719162n;
+
+/** The years below which every date is within range, whatever its month and day. */
+const SAFE_YEAR = 1_000_000_000n;
+
+/**
+ * Whether the date of `p` is one this implementation represents: the days
+ * since 0001-01-01 fit a signed 64-bit integer, a limit F&O 3.1 leaves to
+ * the implementation (§10.1) and whose crossing is `err:FODT0001`. The
+ * timezone is not counted: the limit is on the local date.
+ */
+const inDateRange = (p: DateTimeParts): boolean => {
+  if (p.year > -SAFE_YEAR && p.year < SAFE_YEAR) return true;
+  const days = daysFromCivil(p.year, p.month, p.day) + EPOCH_DAYS;
+  return days >= -DAY_LIMIT && days < DAY_LIMIT;
+};
+
+const hasYear = (type: AtomicType): boolean =>
+  type.primitive === "dateTime" ||
+  type.primitive === "date" ||
+  type.primitive === "gYearMonth" ||
+  type.primitive === "gYear";
+
+/** `err:FODT0001` when a date or dateTime is beyond the supported years. */
+export const checkDateRange = (p: DateTimeParts, offset?: number): void => {
+  if (!inDateRange(p))
+    raise("FODT0001", `the year ${p.year} is beyond the supported range of dates`, offset);
+};
+
+/** The lexical form of parts as a value of `type` (a temporal primitive type); `err:FODT0001` beyond the supported years. */
 export const formatParts = (type: AtomicType, p: DateTimeParts): string => {
+  if (hasYear(type)) checkDateRange(p);
   const date = `${pad(p.year, 4)}-${pad(p.month, 2)}-${pad(p.day, 2)}`;
   const time = `${pad(p.hour, 2)}:${pad(p.minute, 2)}:${formatSeconds(p.second)}`;
   const tz = formatTz(p.tz);
@@ -215,8 +250,24 @@ export const durationOf = (value: AtomicValue): DurationParts => {
   return { months, seconds: sign < 0n ? BigDecimal.negate(seconds) : seconds };
 };
 
-/** A duration value of `type` (`xs:duration`, `xs:yearMonthDuration` or `xs:dayTimeDuration`) from its amounts. */
+/** The seconds in a day. */
+const DAY_SECONDS = /*#__PURE__*/ BigDecimal.fromBigInt(86400n);
+
+/**
+ * Whether a duration is within range: its months, and its days, fit a signed
+ * 64-bit integer (a limit F&O 3.1 §10.1 leaves to the implementation).
+ */
+export const durationInRange = (parts: DurationParts): boolean => {
+  if (parts.months >= DAY_LIMIT || parts.months < -DAY_LIMIT) return false;
+  return BigDecimal.isLessThan(
+    BigDecimal.abs(parts.seconds),
+    BigDecimal.multiply(DAY_SECONDS, BigDecimal.fromBigInt(DAY_LIMIT)),
+  );
+};
+
+/** A duration value of `type` (`xs:duration`, `xs:yearMonthDuration` or `xs:dayTimeDuration`) from its amounts; `err:FODT0002` beyond the supported range. */
 export const durationValue = (type: AtomicType, parts: DurationParts): AtomicValue => {
+  if (!durationInRange(parts)) raise("FODT0002", "a duration is beyond the supported range");
   const negative = parts.months < 0n || BigDecimal.isNegative(parts.seconds);
   const months = parts.months < 0n ? -parts.months : parts.months;
   const seconds = BigDecimal.abs(parts.seconds);

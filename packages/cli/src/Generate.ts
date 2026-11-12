@@ -15,6 +15,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import { Xsd } from "@thomasfosterau/effect-xml";
 
 /**
@@ -30,13 +31,13 @@ export interface GenerateOptions {
   /** The path of the TypeScript module to write (or, with `check`, to compare against). */
   readonly out: string;
   /** The module the generated code imports the library from (default `"@thomasfosterau/effect-xml"`). */
-  readonly importFrom?: string | undefined;
+  readonly importFrom?: string;
   /** The global elements (expanded names, `{namespace}local`) to write parsers for; all of them when empty. */
-  readonly roots?: ReadonlyArray<string> | undefined;
+  readonly roots?: ReadonlyArray<string>;
   /** Fetch `include` / `import` locations that are `http:` or `https:` URLs; refused by default. */
-  readonly remote?: boolean | undefined;
+  readonly remote?: boolean;
   /** Compare the module with the file at `out` instead of writing it, failing when they differ. */
-  readonly check?: boolean | undefined;
+  readonly check?: boolean;
 }
 
 /**
@@ -46,10 +47,10 @@ export interface GenerateOptions {
  * @since 0.1.0
  * @category errors
  */
-export class RemoteLocationRefused extends Schema.TaggedError<RemoteLocationRefused>()(
-  "RemoteLocationRefused",
-  { location: Schema.String },
-) {
+export class RemoteLocationRefused extends Schema.TaggedError<
+  RemoteLocationRefused,
+  { readonly brand: unique symbol }
+>()("RemoteLocationRefused", { location: Schema.String }) {
   override get message(): string {
     return `the schema document ${this.location} is remote; pass --remote to fetch it`;
   }
@@ -62,7 +63,10 @@ export class RemoteLocationRefused extends Schema.TaggedError<RemoteLocationRefu
  * @since 0.1.0
  * @category errors
  */
-export class StaleOutput extends Schema.TaggedError<StaleOutput>()("StaleOutput", {
+export class StaleOutput extends Schema.TaggedError<
+  StaleOutput,
+  { readonly brand: unique symbol }
+>()("StaleOutput", {
   path: Schema.String,
 }) {
   override get message(): string {
@@ -113,9 +117,12 @@ export const generate = Effect.fn("generate")(function* (options: GenerateOption
   const out = path.resolve(options.out);
   const model = yield* Xsd.compile(yield* read(location), { location, resolve: read });
   const source = yield* Xsd.generate(model, {
-    importFrom: options.importFrom,
+    ...Struct.pick(options, ["importFrom"]),
     // No `--root` means every global element, as `Xsd.generate` does without `roots`.
-    roots: Arr.match(options.roots ?? [], { onEmpty: () => undefined, onNonEmpty: (r) => r }),
+    ...Arr.match(options.roots ?? [], {
+      onEmpty: () => ({}),
+      onNonEmpty: (roots) => ({ roots }),
+    }),
     source: path.relative(path.dirname(out), location),
   });
   if (options.check !== true) {

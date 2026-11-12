@@ -2,6 +2,7 @@
  * Compiling XQuery 3.1 and XPath 3.1: parsing a query and checking it
  * statically, to a {@link Query} or the first static error.
  */
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import type { Expr, Module } from "../internal/xquery/parser/ast.ts";
 import type {
@@ -25,7 +26,7 @@ import { type XQueryError, xqueryError } from "./Error.ts";
  * @since 0.1.0
  * @category compiling
  */
-export interface CompileOptions extends StaticOptions {}
+export type CompileOptions = StaticOptions;
 
 /**
  * A library module's source text and location, as `CompileOptions.modules`
@@ -34,7 +35,7 @@ export interface CompileOptions extends StaticOptions {}
  * @since 0.1.0
  * @category compiling
  */
-export interface ModuleSource extends ModuleSourceT {}
+export type ModuleSource = ModuleSourceT;
 
 /**
  * A compiled query: its text, its language, and what the compiler made of
@@ -55,8 +56,8 @@ export type Query =
       readonly libraries: ReadonlyArray<LibraryModule>;
       /** Its module imports that `options.modules` was not given for; `evaluate` loads them through the `Resolver`. */
       readonly unresolvedImports: ReadonlyArray<UnresolvedImport>;
-      /** The options it was compiled with. */
-      readonly options: CompileOptions | undefined;
+      /** The options it was compiled with, if any. */
+      readonly options: Option.Option<CompileOptions>;
     }
   | {
       readonly language: "XPath";
@@ -104,7 +105,7 @@ export const compile = (
       context,
       libraries,
       unresolvedImports: unresolved,
-      options,
+      options: Option.fromUndefinedOr(options),
     }),
   });
 

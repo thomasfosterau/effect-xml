@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`CLAUDE.md` is a symlink to this file. Project conventions live here; personal style preferences live in user memory.
+This is the general guide for any coding agent: architecture, invariants and conventions. Claude Code reads [.claude/CLAUDE.md](.claude/CLAUDE.md), which imports this file, CONTRIBUTING.md and README.md and adds the Claude-specific parts (hooks, settings, worktrees). Personal style preferences live in user memory.
 
 This repo publishes `@thomasfosterau/effect-xml` from the repository root: type-safe, streaming XML and HTML parsing for Effect. A second workspace package, `@thomasfosterau/effect-xml-cli` (`packages/cli`, `"private": true` until its npm setup is done, see [PUBLISHING.md](PUBLISHING.md)), ships the `effect-xml-xsd` command (`generate`, built on `effect/cli` and `@effect/platform-node`), so the library itself stays platform-neutral and side-effect free. It has three layers, each usable on its own and each a thin composition of the one below, plus XML Schema validation (`Xsd`) on top of the SAX stream:
 
@@ -24,7 +24,8 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 
 - **Never edit a version in `package.json`.** Versions live in the `pnpm-workspace.yaml` catalog (`catalogMode: strict` rejects anything else). After editing it, run `pnpm install` and commit `pnpm-lock.yaml`, or CI fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`. `@effect/tsgo`, `@typescript/native` and `vite-plus` move together (the tsgo patch hard-errors at install on an unsupported `tsc` or `oxlint`); read their catalog comments first. Dependabot groups only the lockstep sets (`toolchain`: vite-plus, vitest, `@vitest/*`, `@effect/tsgo`; `effect`: `effect` + `@effect/*`; `.github/dependabot.yml`), everything else arriving as its own PR, but the npm aliases (`vite`, `typescript`, `@typescript/native`) and the `overrides` are moved by hand in the toolchain PR, as that file's header lists.
 - **Chunk boundaries must never change the output.** The lexer buffers unconsumed input and runs the grammar for its current state in effect-parse _partial_ mode: a grammar that runs out of input reports Incomplete and is retried once the pending input has grown by half (so a token split across many chunks still lexes in linear time). `tests/streaming.test.ts` asserts identical events and spans for every chunk size; a change to the lexer or a grammar keeps it green.
-- **The scanner is an optimisation of the grammars, never a second semantics.** In XML mode without a DTD, `scan.ts` reads text, tags, comments, CDATA sections and PIs; anything else, and every error, it hands to the grammars, which report it. `tests/scan.test.ts` compares the two on generated documents (with `dtd: "internal"`, which turns the scanner off), whole and chunked, events, spans and failures; extend its generator with any case a change to either touches. `Xml.parse` / `parseBytes` build in a lean pass without positions (the scanner reuses its events) and rerun with them only to report a failure.
+- **The scanner is an optimisation of the grammars, never a second semantics.** In XML mode, until a DOCTYPE declares a general entity, `scan.ts` reads text, tags, comments, CDATA sections and PIs; anything else, and every error, it hands to the grammars, which report it. `tests/scan.test.ts` compares the two on generated documents (with `Sax.tokenizeEagerly`, internal: `dtd: "internal"` with the DTD-aware grammars from the first token, which turns the scanner off), whole and chunked, events, spans and failures; extend its generator with any case a change to either touches.
+- **`dtd: "internal"` costs nothing until something is declared** (#99). The lexer reads with the grammars without a DTD, the scanner and (for complete input) the direct read until a DOCTYPE declares a general entity, then switches to the DTD-aware grammars (`Lexer.afterDoctype`); an entity table with a name other than ASCII letters and digits keeps them from the start. `tests/dtd-internal.test.ts` holds this to the DTD-aware grammars from the first token over xmlconf, `tests/fixtures` and the generated documents, whole and chunked. `Xml.parse` / `parseBytes` build in a lean pass without positions (the scanner reuses its events) and rerun with them only to report a failure.
 - **Positions count raw UTF-16 units.** CR and CRLF are normalized to LF before lexing; the lexer records where each CRLF was so `offset` still counts the raw input. Lines and columns are resolved on read: the lexer emits `LazySpan`s (`src/internal/position.ts`) whose positions carry only `offset` and look up `line` / `column` in a per-input, append-only line index recorded in `Lexer.push`, before any text is discarded. Compare spans by value (`Equal.equals`, or `JSON` round-trips), never with structural matchers, which see only `offset`.
 - **The lexer is mutable for throughput, never observably.** `Sax.tokenize` builds it inside `Stream.suspend`, so each materialization gets a fresh one. Faults are data (`LexOutput.Fault`), lifted into the stream's error channel by `Sax.ts`; nothing in the pipeline throws.
 - **`Html.parseDocument` drives the lexer and the tree builder in lockstep** (`Lexer.pull`, one token at a time) so it can set `suppressRawText` inside foreign content before the next token is read. Don't reintroduce a decoupled event stream there.
@@ -40,49 +41,23 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 ## Conventions
 
 - **Effect-first.** Domain failures are `Schema.TaggedError` classes unified under `SaxError` (`src/Error.ts`); work that can fail returns `Effect` / `Stream`; event and node unions are tagged and matched with `$match` / `Match.valueTags`, never `switch` on `_tag`. Pure total functions stay plain functions.
-- **Public `null` is deliberate.** `SaxEvent.Doctype` / `XmlDeclaration`, `XmlDoctype`, `XmlDeclaration` and `QName.prefix` / `.namespace` use `string | null`: the XML infoset's "no value", encoded through `Schema.NullOr`. That is why `effect/prefer-option-over-null` is a `warn`. Internal code uses `Option` where it composes.
+- **Absence is `Option` in the public API.** A value that may be absent is an `Option.Option<T>` (`QName.prefix` / `.namespace`, `SaxEvent.Doctype` / `XmlDeclaration`, `XmlElement.attribute()`), never `T | null` or `T | undefined`. An optional `Option`-valued property is `x?: Option.Option<T>`, with no `| undefined`; an options-object member is `readonly x?: T`; an optional function parameter is `x?: T`. Schema classes keep their encoded (JSON) form: a field that may be absent is `Schema.OptionFromNullOr(X)`, so encoded documents carry `null`, and the hand-written `*Encoded` interfaces (wire shapes) keep `T | null`. `src/internal/**` still uses `null` where its per-token code is faster for it, converting where it builds or reads the public values; that is why `effect/prefer-option-over-null` is a `warn`.
 - **Branded names.** A validated name is a `TagName` / `AttrName`, not a `string`. Parser-internal code that has already validated a name uses `unsafeTagName` / `unsafeAttrName` (with a `SAFETY:` comment) to skip re-validation on the hot path.
 - **The DOM is Schema classes.** Nodes are `Schema.TaggedClass`es (classes with equality, runtime validators and serializable encodings at once); the recursive `children` relation uses `Schema.suspend` with an explicit encoded type. Namespaces are resolved into `QName.namespace` by a scoped binding stack in the XML tree builder.
-- **Optional members are declared `?: T | undefined`.** The repo compiles with `exactOptionalPropertyTypes`.
-- **Imports:** Effect modules by path (`import * as Effect from "effect/Effect"`); relative imports carry `.ts`. Tests import from `vite-plus/test`, never `vitest`, and narrow with `assert` (see `tests/support/narrow.ts`) so a wrong shape fails instead of skipping.
+- **Optional members are declared `?: T`, never `?: T | undefined`.** The repo compiles with `exactOptionalPropertyTypes`, so a caller holding `undefined` omits the key: options-object members are `readonly x?: T`, optional parameters `x?: T`. Spread `maybe(key, value)` (`src/internal/optional.ts`) to set a member from a value that may be `undefined`. Wire-shape schemas keep native optionals (`Schema.optionalKey`).
+- **Imports:** Effect modules by path, as namespaces (`import * as Effect from "effect/Effect"`), under the canonical aliases `effect/prefer-namespace-imports` enforces where it has one (`P` for `effect/Predicate`, `R` for `effect/Record`, `Eq` for `effect/Equal`, `Arr` for `effect/Array`, `Str` for `effect/String`, …) and the module name otherwise; relative imports carry `.ts`. Tests import from `vite-plus/test`, never `vitest`, and narrow with `assert` (see `tests/support/narrow.ts`) so a wrong shape fails instead of skipping.
 - **Lint findings are fixed, not suppressed.** No `oxlint-disable` comments; a rule is relaxed only in `vite.config.ts`, with a comment giving the reason.
 - **Every export has a doc comment** whose first sentence stands alone in a hover, plus `@since` and `@category`; the main entry points carry a runnable `@example`.
 
-## Commands
+## Commands and gates
 
-- `pnpm install` — dependencies plus the Vite+ git hooks (pre-commit runs `vp staged`: format + lint on staged files) and the `prepare` step that patches the native `tsc` / `oxlint` with `@effect/tsgo`. No pre-push hook: run the gates yourself.
-- `vp check` — format + lint (Oxfmt + Oxlint with `@effect/tsgo`'s preset, `@enfect/oxlint`'s `recommended` Effect rules and oxlint's `import` / `promise` / `vitest` / `jsdoc` plugins at the `correctness`, `suspicious` and `perf` categories). Lint is type-aware through oxlint-tsgolint (`typeAware` + `typeCheck`, which also runs `@effect/tsgo`'s `effecttsgo/*` rules); tsgolint reads each file's nearest `tsconfig.json`, which is why `tests/`, `examples/` and `bench/` carry one extending `tsconfig.test.json`. `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`, plus `packages/cli`'s. They are different commands.
-- `vp run test:unit` — the unit suite, including the html5lib conformance gate, and `packages/cli`'s.
-- `vp run build` — `vp pack` → `dist/` (one ESM module + `.d.ts` per source module, `unbundle`), and `packages/cli/dist/main.js` (the `effect-xml-xsd` executable).
-- `vp run size` — builds, then bundles a consumer's `Sax.forEach` and `Xml.parse` from `dist/` with esbuild against their size budgets (`bench/size.ts`); fails over a budget or when XQuery / XSD code is pulled in.
-- `vp run docgen` — compiles and runs every `@example` against `dist/`, writes the (git-ignored) API reference to `docs/`.
-- `vp run test:coverage` — the suite under an Istanbul map at `coverage/coverage-final.json`, which `fallow audit` reads.
-- `vp run example` — the tour in `examples/usage.ts`.
-- `vp run bench` — the parsing benchmarks (`bench/parse.ts`; `vpx bench/parse.ts 32` for a 32 MB input).
-- `pnpm changeset` — add a changeset.
+The commands, the gate list and what CI runs are in [CONTRIBUTING.md](CONTRIBUTING.md#commands); they are not repeated here. Invoke everything through `vp` (`vp exec` instead of `npx`). The sanctioned non-`vp` invocations: `pnpm install` (`--frozen-lockfile` in CI), `pnpm changeset`, and `pnpm publish` on the release path. Tools run through Vite+: `vp exec fallow …` for fallow, `vpx <file>.ts` for TypeScript scripts (`tsx` stays installed only because `@effect/docgen` spawns it); nothing else is put on PATH.
 
-Invoke everything through `vp` (`vp exec` instead of `npx`). The sanctioned non-`vp` invocations: `pnpm install` (`--frozen-lockfile` in CI), `pnpm changeset`, and `pnpm publish` on the release path. Single-check variants are in [CONTRIBUTING.md](CONTRIBUTING.md#running-individual-checks).
-
-## Verification
-
-Before you report work as done, run the gates below in order and quote each command with its final pass/fail. If a gate can't run here, say which and why; never imply it ran.
-
-1. From a clean install, which is what CI sees: `rm -rf node_modules dist && pnpm install --frozen-lockfile`.
-2. `vp check`
-3. `vp run check`
-4. `vp run test:unit`
-5. `vp run build`
-6. `vp run size`
-7. `vp run docgen`
-8. `pnpm audit --audit-level high` (network)
-9. `vp run test:coverage`, then `vp exec fallow audit --format json --quiet --explain --gate-marker agent --base origin/trunk` (the fallow gate below; not a CI step).
-
-Steps 2–8 are CI's required `ci` job, in its order ([ci.yml](.github/workflows/ci.yml)). CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA, never persists checkout credentials and never sets `node-version: latest` (it can resolve to a pre-release; the setup action uses `"*"` with `check-latest`, Release the engines major); the release job alone holds `id-token: write` and never runs for Dependabot. `uvx zizmor .github` audits the workflows (config in `.github/zizmor.yml`).
+Before you report work as done, run the [gates](CONTRIBUTING.md#verification) in order and quote each command with its final pass/fail. If a gate can't run here, say which and why; never imply it ran.
 
 ## Branches and pull requests
 
 - The default branch is `trunk`. Branch off `trunk`; PR against `trunk`; squash-merge with a conventional prefix (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`). Rebase onto `origin/trunk` before opening or updating a PR; never merge `trunk` into your branch.
-- Agent work uses git worktrees under `.claude/worktrees/`, one per branch. A worktree needs its own `pnpm install`.
 - Open a pull request only when the owner asks for one; otherwise push the branch and report it. There is no standing approval to open PRs in this repo.
 - Every change to the published package's behaviour or its emitted `.d.ts` carries a changeset (`pnpm changeset`); doc-comment changes that reach the `.d.ts` take a `patch`. README, guidance, CI and tooling changes need none. Never publish or version by hand: the Release workflow opens the version PR (`chore: version packages`) and the owner merges it. Publishing is npm trusted publishing (OIDC) from the protected `release` environment; there is no `NPM_TOKEN` ([PUBLISHING.md](PUBLISHING.md)).
 - GitHub writes go to `thomasfosterau/effect-xml` only. If another repo (effect-parse, say) needs a change, say so in the PR body or an issue here.
@@ -101,15 +76,9 @@ Never guess at an Effect API: read the installed package — `node_modules/effec
 - Tagged errors are `Schema.TaggedError<Self>()(tag, fields)`; tagged unions that are plain data (`SaxEvent`, the lexer's tokens) are `Data.taggedEnum`s.
 - The grammars are `@thomasfosterau/effect-parse` parsers; its README is the reference for `Parser` / `Token` / `Input`.
 
-## Agent sessions
-
-- The SessionStart hook (`.claude/hooks/session-start.sh`) installs the global Vite+ CLI at the catalog's `vite-plus` pin with the official installer (npm-provenance and SHA-512 checked; it needs `vite.plus` and `viteplus.dev` on the environment's network allowlist), links `vp` and `vpx` into `~/.local/bin` (the CLI lives under `$VP_HOME` when set, as in the Vite+ container image, else `~/.local/share/vite-plus`), and runs `vp install --frozen-lockfile`. Everything else goes through Vite+: `vp exec fallow …` for fallow, `vpx <file>.ts` for TypeScript scripts (`tsx` stays installed only because `@effect/docgen` spawns it). Nothing else is put on PATH. If the installer can't run, `vp` falls back to this checkout's `node_modules` copy. It hydrates no secrets; none are needed, and nothing here can publish.
-- A PreToolUse hook (`.claude/hooks/fallow-gate.sh`) blocks `git commit` / `git push` when `fallow audit --base origin/trunk` (run as `vp exec fallow`) fails; it audits only this checkout and its `.claude/worktrees/*`, skipping any other tree with a notice. It reads the coverage map on disk, and runs `vp run test:coverage` first when the map is missing or older than any file under `src/`, `tests/`, `bench/` or `examples/` (blocking if that fails), so a commit in a fresh worktree is still audited. A PostToolUse hook runs `vp fmt` on every source, JSON, CSS or Markdown file you write or edit.
-- Every gate in [Verification](#verification) runs in an agent session; `pnpm audit` needs the network.
-
 ## Documentation surfaces
 
-`README.md` is the landing page and the npm-facing API reference (it is what npm shows); `CONTRIBUTING.md` carries human setup, hooks and single-check commands; `PUBLISHING.md` the release pipeline and its one-time owner setup; `SECURITY.md` the reporting channel and supply-chain posture; this file the architecture, invariants and conventions. No `docs/` tree is committed (`docs/` is docgen output); decisions go in issue comments.
+`README.md` is the landing page and the npm-facing API reference (it is what npm shows); `CONTRIBUTING.md` carries setup, hooks, commands, the gate list and what CI runs; `.claude/CLAUDE.md` the Claude Code specifics (hooks, settings, worktrees) and the imports of this file, CONTRIBUTING.md and README.md; `PUBLISHING.md` the release pipeline and its one-time owner setup; `SECURITY.md` the reporting channel and supply-chain posture; this file the architecture, invariants and conventions. No `docs/` tree is committed (`docs/` is docgen output); decisions go in issue comments.
 
 ---
 

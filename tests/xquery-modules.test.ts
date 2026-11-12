@@ -31,6 +31,13 @@ const sourcesOf = (uri: string): ReadonlyArray<XQuery.ModuleSource> =>
 
 const modules = { [a]: sourcesOf(a), [b]: sourcesOf(b) };
 
+const contextLibrary = (declaration: string): XQuery.CompileOptions["modules"] => ({
+  "urn:ctx": [{ text: `module namespace c = "urn:ctx"; ${declaration}` }],
+});
+
+const contextCode = (declaration: string): string | undefined =>
+  compileCode(`import module namespace c = "urn:ctx"; 1`, contextLibrary(declaration));
+
 const compileCode = (
   query: string,
   given: XQuery.CompileOptions["modules"] = modules,
@@ -90,6 +97,18 @@ describe("import module", () => {
     expect(strings(evaluate(`import module namespace a = "${a}"; a:reveal()`, fetching))).toEqual([
       "secret",
     ]);
+  });
+
+  test("a library module can't give the context item a value", () => {
+    expect(contextCode("declare context item as xs:integer := 17;")).toBe("XQST0113");
+    expect(contextCode("declare context item external := 17;")).toBe("XQST0113");
+    expect(contextCode("declare context item as xs:integer external;")).toBeUndefined();
+  });
+
+  test("whitespace in a namespace URI literal is normalized", () => {
+    const lib = `module namespace t = "  urn:a  b "; declare function t:ok() { "ok" };`;
+    const given = { "urn:a b": [{ text: lib }] };
+    expect(compileCode(`import module namespace t = "urn:a   b"; t:ok()`, given)).toBeUndefined();
   });
 
   test("the static errors of imports", () => {

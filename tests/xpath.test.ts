@@ -2,8 +2,11 @@ import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { Sax, Xml } from "../src/index.ts";
 import { at, failure, success } from "./support/narrow.ts";
+
+const isXmlAttribute = Schema.is(Xml.XmlAttribute);
 
 const parse = (s: string) => Effect.runSync(Xml.parse(s));
 
@@ -175,7 +178,7 @@ describe("XPath 1.0 expressions", () => {
     expect(str("string(/a/text()[1])", mixed)).toBe("xy");
     expect(num("count(/a/text())", mixed)).toBe(2);
     const texts = Xml.XPath.select(compile("/a/text()"), mixed);
-    expect(texts.map((t) => (t instanceof Xml.XmlAttribute ? "" : t._tag))).toEqual([
+    expect(texts.map((t) => (isXmlAttribute(t) ? "" : t._tag))).toEqual([
       "XmlText",
       "XmlCData",
       "XmlText",
@@ -214,7 +217,7 @@ const streamSelect = (path: string) =>
         Sax.tokenize(),
         Sax.select(path),
         Stream.runCollect,
-        Effect.map((c) => Array.from(c, (b) => b.attribute("n"))),
+        Effect.map((c) => Array.from(c, (b) => Option.getOrUndefined(b.attribute("n")))),
       ),
     ),
   );

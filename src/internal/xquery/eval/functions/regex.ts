@@ -12,7 +12,7 @@
 import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import type { XmlNode } from "../../../../Xml/Node.ts";
 import { attribute, element, qname, text as textNode } from "../../../nodes.ts";
@@ -44,10 +44,11 @@ const build = (pattern: string, flags: string, offset: number): Regex => {
       dotAll: flags.includes("s"),
       multiline: flags.includes("m"),
       literal,
+      caseless: flags.includes("i"),
     }),
     (reason) => raise("FORX0002", reason, offset),
   );
-  const caseless = flags.includes("i") ? "i" : "";
+  const caseless = flags.includes("i") && !info.spelledCaseless ? "i" : "";
   const make = (jsFlags: string) =>
     Result.getOrElse(
       Result.try(() => new RegExp(info.source, jsFlags)),
@@ -127,7 +128,7 @@ export const replace = (
     ? [replacement]
     : replacementParts(replacement, regex.info.groups, offset);
   const expand = (m: RegExpExecArray): string =>
-    parts.map((p) => (Predicate.isString(p) ? p : p === 0 ? m[0] : (m[p] ?? ""))).join("");
+    parts.map((p) => (P.isString(p) ? p : p === 0 ? m[0] : (m[p] ?? ""))).join("");
   const initial: readonly [string, number] = ["", 0];
   const [out, last] = Arr.reduce(matchesIn(regex, input), initial, ([acc, from], m) => [
     acc + input.slice(from, m.index) + expand(m),

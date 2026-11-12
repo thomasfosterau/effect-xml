@@ -13,7 +13,7 @@ import { Compiler, Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { htmlLegacyEntities, htmlNamedEntities } from "./htmlEntities.generated.ts";
 
@@ -43,6 +43,23 @@ export const htmlEntities: EntityTable = {
 /** The legacy subset of names that may appear without a trailing semicolon. */
 export { htmlLegacyEntities };
 
+const asciiNames = new WeakMap<EntityTable, boolean>();
+
+/**
+ * Whether every name in `table` is ASCII letters and digits, as the grammars
+ * without a DTD read an entity name. Then an empty DTD changes nothing about
+ * how a reference decodes: with one, a name is read further (up to a
+ * delimiter), but only a name the table holds, followed by `;`, decodes, and
+ * such a name is read the same either way (see `namedReference`).
+ */
+export const hasAsciiNames = (table: EntityTable): boolean => {
+  const known = asciiNames.get(table);
+  if (known !== undefined) return known;
+  const ascii = Object.getOwnPropertyNames(table).every((name) => /^[0-9A-Za-z]+$/.test(name));
+  asciiNames.set(table, ascii);
+  return ascii;
+};
+
 /** Options governing how references are resolved. */
 export interface EntityOptions {
   /** Semicolon-terminated named-entity table (e.g. {@link xmlEntities}). */
@@ -52,13 +69,19 @@ export interface EntityOptions {
    * When present, decoding switches to lenient WHATWG behaviour: maximal-munch,
    * the ambiguous-ampersand rule, and semicolon-less numeric references.
    */
-  readonly legacy?: EntityTable | undefined;
+  readonly legacy?: EntityTable;
   /** When true, an unknown/unterminated reference is a hard error; when false it is left verbatim. */
   readonly strict: boolean;
+  /**
+   * XML with `recover: true` (with `strict`): a malformed reference, or one to
+   * an entity nobody declared, is left verbatim; a well-formed character
+   * reference to a character XML does not allow is still an error.
+   */
+  readonly recover?: boolean;
   /** Apply the ambiguous-ampersand rule (the value is an attribute value). */
-  readonly inAttribute?: boolean | undefined;
+  readonly inAttribute?: boolean;
   /** Entities declared in a DTD, resolved when referenced (XML only; see `dtd.ts`). */
-  readonly dtd?: EntityResolver | undefined;
+  readonly dtd?: EntityResolver;
 }
 
 /** A failure encountered while decoding, with the offset *within the raw value*. */
@@ -67,7 +90,7 @@ export interface EntityError {
   readonly reason: string;
   readonly relativeOffset: number;
   /** Set when the failure is a resource limit rather than a malformed reference. */
-  readonly limit?: EntityLimit | undefined;
+  readonly limit?: EntityLimit;
 }
 
 /** A resource limit an entity expansion ran into. */
@@ -79,7 +102,7 @@ export interface EntityLimit {
 /** Why a declared entity could not be expanded. */
 export interface ExpansionFailure {
   readonly reason: string;
-  readonly limit?: EntityLimit | undefined;
+  readonly limit?: EntityLimit;
 }
 
 /** Entities declared in a DTD, which a reference resolves through. */
@@ -178,9 +201,14 @@ const bad = (
  * lower case and the code point must be a `Char` (§4.1); with it, WHATWG
  * rules apply: `X` is allowed, the `;` is optional and 0x80–0x9F map as
  * Windows-1252. An unrepresentable code point is an error in strict mode,
- * U+FFFD otherwise.
+ * U+FFFD otherwise; a malformed reference is an error where `malformed` is
+ * set, literal text otherwise.
  */
-const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part> => {
+const numericReference = (
+  strict: boolean,
+  lenient: boolean,
+  malformed: boolean,
+): Parser.Parser<Part> => {
   const value = Parser.preceded(
     Token.literal("&#"),
     Parser.alt(
@@ -205,7 +233,7 @@ const numericReference = (strict: boolean, lenient: boolean): Parser.Parser<Part
         ? { reference: taken, reason: "code point out of range", relativeOffset }
         : "\uFFFD";
     }),
-    bad(strict, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const)),
+    bad(malformed, Parser.as(Token.literal("&#"), ["&#", "invalid numeric reference"] as const)),
   );
 };
 
@@ -218,8 +246,8 @@ const has = (table: EntityTable, name: string) => Object.prototype.hasOwnPropert
  * value one followed by `=` or a letter or digit is left alone. The tables
  * decide how long the reference is; the grammar then takes that much.
  */
-const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
-  const { entities, legacy, strict, dtd } = options;
+const namedReference = (options: EntityOptions, malformed: boolean): Parser.Parser<Part> => {
+  const { entities, legacy, dtd } = options;
   const inAttribute = options.inAttribute ?? false;
   /** The length of the reference at `&name` + `next`, or 0 if none decodes. */
   const lengthOf = ([name, next]: readonly [string, string]): number => {
@@ -247,7 +275,7 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
     if (has(entities, name)) return entities[name] ?? reference;
     if (dtd === undefined) return reference;
     const out = dtd.resolve(name, inAttribute);
-    if (Predicate.isString(out)) return out;
+    if (P.isString(out)) return out;
     const error: EntityError = { reference, reason: out.reason, relativeOffset };
     return out.limit === undefined ? error : { ...error, limit: out.limit };
   };
@@ -264,7 +292,7 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
   );
   const takes: Array<Parser.Parser<Part>> = [];
   const unknown = bad(
-    strict,
+    malformed,
     Parser.alt(
       Parser.map(
         Parser.taken(Parser.seq(Token.takeUntil(";"), semicolon)),
@@ -287,8 +315,10 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
 
 const grammarFor = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> => {
   const text = Token.takeTill("&", { min: 1 });
-  const numeric = numericReference(options.strict, options.legacy !== undefined);
-  const named = namedReference(options);
+  // Whether a malformed or unknown reference is an error (strict, not recovering).
+  const malformed = options.strict && options.recover !== true;
+  const numeric = numericReference(options.strict, options.legacy !== undefined, malformed);
+  const named = namedReference(options, malformed);
   // `&#` starts a numeric reference, any other `&` a named one.
   const afterAmpersand = Parser.peek(
     Parser.preceded(ampersand, Parser.alt(Token.any, Parser.succeed(""))),
@@ -317,7 +347,7 @@ const grammar = (options: EntityOptions): Parser.Parser<ReadonlyArray<Part>> => 
   }
   let byKey = byEntities.get(options.entities);
   if (byKey === undefined) byEntities.set(options.entities, (byKey = MutableHashMap.empty()));
-  const key = `${options.strict}:${options.inAttribute ?? false}:${options.legacy === undefined ? "" : "legacy"}`;
+  const key = `${options.strict}:${options.recover ?? false}:${options.inAttribute ?? false}:${options.legacy === undefined ? "" : "legacy"}`;
   const built = Option.getOrElse(MutableHashMap.get(byKey, key), () => {
     const fresh = grammarFor(options);
     MutableHashMap.set(byKey, key, fresh);
@@ -337,9 +367,9 @@ export const decode = (raw: string, options: EntityOptions): Result.Result<strin
   // In strict mode an error part, if any, ends the parts (it takes the rest).
   const parts = Parser.parseSync(grammar(options), raw);
   return Option.match(
-    Arr.findFirst(parts, (part): part is EntityError => !Predicate.isString(part)),
+    Arr.findFirst(parts, (part): part is EntityError => !P.isString(part)),
     {
-      onNone: () => Result.succeed(Arr.filter(parts, Predicate.isString).join("")),
+      onNone: () => Result.succeed(Arr.filter(parts, P.isString).join("")),
       onSome: Result.fail,
     },
   );

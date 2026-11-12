@@ -10,16 +10,17 @@
  * the count. Set `HTML5LIB_REPORT=1` to list the failing tests.
  */
 /// <reference types="vite-plus/client" />
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
+import * as Eq from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as Match from "effect/Match";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Schema from "effect/Schema";
 import { Sax } from "../src/index.ts";
 import { reportRequested } from "./support/report.ts";
@@ -64,15 +65,15 @@ const unescape = (s: string): string =>
   s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
 
 const isJsonArray = (v: Schema.Json): v is Schema.JsonArray => Arr.isArray(v);
-const isJsonObject = (v: Schema.Json): v is Schema.JsonObject => Predicate.isObject(v);
+const isJsonObject = (v: Schema.Json): v is Schema.JsonObject => P.isObject(v);
 
 const unescapeJson = (v: Schema.Json): Schema.Json =>
-  Predicate.isString(v)
+  P.isString(v)
     ? unescape(v)
     : isJsonArray(v)
       ? v.map(unescapeJson)
       : isJsonObject(v)
-        ? Record.fromEntries(Record.toEntries(v).map(([k, x]) => [unescape(k), unescapeJson(x)]))
+        ? R.fromEntries(R.toEntries(v).map(([k, x]) => [unescape(k), unescapeJson(x)]))
         : v;
 
 /** A `doubleEscaped` test with its `\uXXXX` escapes decoded. */
@@ -84,7 +85,7 @@ const unescapeTest = (t: TokenizerTest): TokenizerTest => ({
 });
 
 const isCharacter = (t: Token | undefined): t is readonly ["Character", string] =>
-  t?.[0] === "Character" && Predicate.isString(t[1]);
+  t?.[0] === "Character" && P.isString(t[1]);
 
 /** Merge adjacent character tokens. */
 const mergeCharacters = (ts: ReadonlyArray<Token>): Array<Token> =>
@@ -97,7 +98,7 @@ const mergeCharacters = (ts: ReadonlyArray<Token>): Array<Token> =>
 
 /** The first value of each attribute name (html5lib drops repeats). */
 const attributesOf = (attributes: ReadonlyArray<Sax.Attribute>): Record<string, string> =>
-  Record.fromEntries(attributes.toReversed().map((a) => [a.name, a.value] as const));
+  R.fromEntries(attributes.toReversed().map((a) => [a.name, a.value] as const));
 
 /** Our events in html5lib's token format, with adjacent character tokens merged. */
 const tokens = (input: string): Array<Token> =>
@@ -114,7 +115,13 @@ const tokens = (input: string): Array<Token> =>
         CData: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
         Comment: (ev): ReadonlyArray<Token> => [["Comment", ev.data]],
         Doctype: (ev): ReadonlyArray<Token> => [
-          ["DOCTYPE", ev.name, ev.publicId, ev.systemId, !ev.forceQuirks],
+          [
+            "DOCTYPE",
+            ev.name,
+            Option.getOrNull(ev.publicId),
+            Option.getOrNull(ev.systemId),
+            !ev.forceQuirks,
+          ],
         ],
         ProcessingInstruction: (): ReadonlyArray<Token> => [],
         XmlDeclaration: (): ReadonlyArray<Token> => [],
@@ -127,7 +134,7 @@ const expected = (output: ReadonlyArray<Token>): Array<Token> => mergeCharacters
 
 /** The tests of each fixture file, in file-name order, that start in the data state. */
 const runnable: ReadonlyArray<readonly [file: string, test: TokenizerTest]> = Arr.sort(
-  Record.toEntries(SOURCES),
+  R.toEntries(SOURCES),
   Order.mapInput(Order.String, ([path]: readonly [string, string]) => path),
 ).flatMap(([path, content]) => {
   const file = path.slice(path.lastIndexOf("/") + 1);
@@ -142,7 +149,7 @@ const failure = (file: string, t: TokenizerTest): string | null => {
   const want = expected(t.output);
   const got = Effect.runSync(Effect.exit(Effect.sync(() => tokens(t.input))));
   if (Exit.isFailure(got)) return `${file}: ${t.description}: threw ${String(got.cause)}`;
-  return Equal.equals(got.value, want)
+  return Eq.equals(got.value, want)
     ? null
     : `${file}: ${t.description}: ${encodeTokens(got.value)} ≠ ${encodeTokens(want)}`;
 };

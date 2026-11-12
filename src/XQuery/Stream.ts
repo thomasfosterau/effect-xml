@@ -11,8 +11,8 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
@@ -37,7 +37,6 @@ import {
   checkFunctionBody,
   checkInitializer,
   failed,
-  fine,
   notStreamable,
   type NotStreamable,
   type Operation,
@@ -55,12 +54,12 @@ import { Resolver, type EvaluateOptions, type ResourceResolver } from "./Evaluat
  * @category streaming
  */
 export const NotStreamableCode: QName = /*#__PURE__*/ new QName({
-  prefix: null,
+  prefix: /*#__PURE__*/ Option.none(),
   local: "NotStreamable",
-  namespace: ImplementationNamespace,
+  namespace: /*#__PURE__*/ Option.some(ImplementationNamespace),
 });
 
-const notStreamableError = (reason: string, offset: number | undefined): XQueryError =>
+const notStreamableError = (reason: string, offset?: number): XQueryError =>
   new XQueryError({ code: NotStreamableCode, description: reason, offset });
 
 /** A selection predicate, compiled. */
@@ -99,55 +98,55 @@ interface Plan {
 const plans = /*#__PURE__*/ new WeakMap<StreamQuery, Plan>();
 
 /** Why a query's prolog can't be streamed, if it can't. */
-const prologProblem = (query: Query, resolve: Resolve): NotStreamable | undefined => {
-  if (query.language === "XPath") return undefined;
+const prologProblem = (query: Query, resolve: Resolve): Option.Option<NotStreamable> => {
+  if (query.language === "XPath") return Option.none();
   if (
     Arr.isReadonlyArrayNonEmpty(query.libraries) ||
     Arr.isReadonlyArrayNonEmpty(query.unresolvedImports)
   )
-    return notStreamable("a query that imports modules can't be streamed yet", 0);
+    return Option.some(notStreamable("a query that imports modules can't be streamed yet", 0));
   if (Module.$is("Library")(query.module))
-    return notStreamable("a library module can't be evaluated", query.module.offset);
-  return Arr.reduce(
-    query.module.prolog,
-    fine(),
-    (found, d) => found ?? declarationProblem(d, resolve),
+    return Option.some(notStreamable("a library module can't be evaluated", query.module.offset));
+  return Arr.reduce(query.module.prolog, Option.none<NotStreamable>(), (found, d) =>
+    Option.orElse(found, () => declarationProblem(d, resolve)),
   );
 };
 
 /** Why a prolog declaration can't be streamed, if it can't. */
-const declarationProblem = (d: DeclT, resolve: Resolve): NotStreamable | undefined => {
+const declarationProblem = (d: DeclT, resolve: Resolve): Option.Option<NotStreamable> => {
   if (Decl.$is("ContextItem")(d))
-    return notStreamable(
-      "a streamed query has no context item to declare: each match is the focus",
-      d.offset,
+    return Option.some(
+      notStreamable(
+        "a streamed query has no context item to declare: each match is the focus",
+        d.offset,
+      ),
     );
   if (Decl.$is("Function")(d))
-    return Option.getOrUndefined(Option.map(d.body, (b) => checkFunctionBody(b, resolve)));
+    return Option.flatMap(d.body, (b) => Option.fromUndefinedOr(checkFunctionBody(b, resolve)));
   if (Decl.$is("Variable")(d))
-    return Option.getOrUndefined(Option.map(d.value, (v) => checkInitializer(v, resolve)));
-  return undefined;
+    return Option.flatMap(d.value, (v) => Option.fromUndefinedOr(checkInitializer(v, resolve)));
+  return Option.none();
 };
 
-const bodyOf = (query: Query): Expr | undefined =>
+const bodyOf = (query: Query): Option.Option<Expr> =>
   query.language === "XPath"
-    ? query.expr
+    ? Option.some(query.expr)
     : Module.$is("Main")(query.module)
-      ? query.module.body
-      : undefined;
+      ? Option.some(query.module.body)
+      : Option.none();
 
 /** The plan of a compiled query, or why it has none. */
 const planOf = (query: Query): Result.Result<StreamQuery, XQueryError> => {
   const scope = scopeOf(query.context);
   const resolve: Resolve = (name, kind) =>
     Result.getOrElse(resolveName(scope, name, kind), () => ({ uri: "", local: name.local }));
-  const body = bodyOf(query);
+  const found = bodyOf(query);
   const problem = prologProblem(query, resolve);
-  if (problem !== undefined || body === undefined)
-    return Result.fail(
-      notStreamableError(problem?.reason ?? "a library module can't be evaluated", problem?.offset),
-    );
-  const plan = analyze(body, resolve);
+  if (Option.isSome(problem))
+    return Result.fail(notStreamableError(problem.value.reason, problem.value.offset));
+  if (Option.isNone(found))
+    return Result.fail(notStreamableError("a library module can't be evaluated"));
+  const plan = analyze(found.value, resolve);
   if (failed(plan)) return Result.fail(notStreamableError(plan.reason, plan.offset));
   const predicates = plan.steps.flatMap((s) => s.predicates.map((p) => p.expr));
   const parts = [...predicates, ...plan.operations.map((o) => o.expr)];
@@ -227,10 +226,7 @@ export const compileStream = (
   query: Query | string,
   options?: CompileOptions,
 ): Result.Result<StreamQuery, XQueryError> =>
-  Result.flatMap(
-    Predicate.isString(query) ? compile(query, options) : Result.succeed(query),
-    planOf,
-  );
+  Result.flatMap(P.isString(query) ? compile(query, options) : Result.succeed(query), planOf);
 
 /**
  * Options for {@link stream}: those of `evaluate` but the context item, which
@@ -239,7 +235,7 @@ export const compileStream = (
  * @since 0.1.0
  * @category streaming
  */
-export interface StreamOptions extends Omit<EvaluateOptions, "context"> {}
+export type StreamOptions = Omit<EvaluateOptions, "context">;
 
 /** A match as an XDM node, under copies of its ancestors that keep only their names and attributes. */
 const nodeOf = (match: Match): XdmNode => {
@@ -318,15 +314,15 @@ export const stream =
     Stream.unwrap(
       Effect.gen(function* () {
         const compiled = Result.flatMap(
-          Predicate.isString(query)
+          P.isString(query)
             ? compileStream(query, {
                 ...options.compile,
                 variables: [
                   ...(options.compile?.variables ?? []),
-                  ...Record.keys(options.variables ?? {}),
+                  ...R.keys(options.variables ?? {}),
                 ],
               })
-            : Predicate.isTagged(query, "StreamQuery")
+            : P.isTagged(query, "StreamQuery")
               ? Result.succeed(query)
               : compileStream(query),
           planFor,
@@ -417,7 +413,6 @@ const over = <E, R>(
         return fed.failure instanceof Suspend
           ? notStreamableError(
               "a selection predicate needed a resource, which can't be fetched while streaming",
-              undefined,
             )
           : fed.failure;
       },

@@ -16,7 +16,8 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
 import { forEachLeniently } from "./internal/lenient.ts";
@@ -26,6 +27,7 @@ import type { AttrName, TagName } from "./Name.ts";
 import type { Position, Span } from "./Position.ts";
 import { resolveLimits, type Limits } from "./Limits.ts";
 import * as Encoding from "./Encoding.ts";
+import { maybe } from "./internal/optional.ts";
 
 // -----------------------------------------------------------------------------
 // Public event model
@@ -68,9 +70,9 @@ export type SaxEvent = Data.TaggedEnum<{
   };
   Doctype: {
     readonly name: string;
-    readonly publicId: string | null;
-    readonly systemId: string | null;
-    readonly internalSubset: string | null;
+    readonly publicId: Option.Option<string>;
+    readonly systemId: Option.Option<string>;
+    readonly internalSubset: Option.Option<string>;
     /**
      * The WHATWG tokenizer's force-quirks flag (HTML mode): set by a DOCTYPE
      * without a name, a bogus one, a missing or unterminated identifier, or
@@ -81,8 +83,8 @@ export type SaxEvent = Data.TaggedEnum<{
   };
   XmlDeclaration: {
     readonly version: string;
-    readonly encoding: string | null;
-    readonly standalone: boolean | null;
+    readonly encoding: Option.Option<string>;
+    readonly standalone: Option.Option<boolean>;
     readonly span: Span;
   };
 }>;
@@ -178,29 +180,30 @@ export interface SaxOptions {
    * into raw-text mode inside `<script>`/`<style>` and rcdata inside
    * `<title>`/`<textarea>`.
    */
-  readonly mode?: "xml" | "html" | undefined;
+  readonly mode?: "xml" | "html";
   /** Named entity table. Defaults to the XML predefined set (or the HTML subset in html mode). */
-  readonly entities?: Record<string, string> | undefined;
+  readonly entities?: Record<string, string>;
   /** How to treat whitespace in text nodes. */
-  readonly whitespace?: "preserve" | "collapse" | undefined;
+  readonly whitespace?: "preserve" | "collapse";
   /** Drop `Text` events that contain only whitespace (after the whitespace policy). */
-  readonly dropWhitespaceOnlyText?: boolean | undefined;
+  readonly dropWhitespaceOnlyText?: boolean;
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
-  readonly limits?: Partial<Limits> | undefined;
+  readonly limits?: Partial<Limits>;
   /**
    * What to do with a DOCTYPE internal subset (XML only). `"ignore"` (the
    * default) reads past it. `"internal"` interprets it: internal general
    * entities are expanded (markup included), within `limits.maxEntityExpansion`
    * and `limits.maxEntityDepth`, and `<!ATTLIST>` defaults are applied.
    * External and parameter entities are never fetched; referring to one is
-   * an error.
+   * an error. Until a DOCTYPE declares a general entity, `"internal"` reads
+   * as fast as `"ignore"`: a document without one costs nothing more.
    */
-  readonly dtd?: "ignore" | "internal" | undefined;
+  readonly dtd?: "ignore" | "internal";
   /**
    * HTML only: the scripting flag (default `false`). When set, `<noscript>`
    * content is raw text, as a browser with scripting enabled reads it.
    */
-  readonly scripting?: boolean | undefined;
+  readonly scripting?: boolean;
   /**
    * Whether events carry their positions (default `true`). With `false`,
    * every event's (and attribute's) `span` is the origin, and tokenizing is
@@ -210,7 +213,45 @@ export interface SaxOptions {
    *
    * @since 0.1.0
    */
-  readonly positions?: boolean | undefined;
+  readonly positions?: boolean;
+  /**
+   * Read malformed XML the way XML5 does instead of failing on it (default
+   * `false`).
+   *
+   * In XML mode, where the strict reading fails:
+   *
+   * - a `<` that opens no markup (one not followed by a name, `/`, `!` or
+   *   `?`, as in `a < b`) is text;
+   * - an `&` that starts no well-formed reference (`AT&T`, `&#xZZ;`, `&;`),
+   *   or a reference to an entity nobody declared (`&nbsp;`), is text, as
+   *   written: HTML's named references are not expanded;
+   * - in a start tag, an unquoted attribute value runs to whitespace or `>`
+   *   (`<a href=x.html>`), a valueless attribute has the value `""`, `<` and
+   *   `&` in a value are as in text, attributes need no whitespace between
+   *   them, a stray `/` is ignored, and an attribute whose name is not an XML
+   *   `Name` is dropped;
+   * - in an end tag, anything between the name and the `>` is ignored; `</`
+   *   followed by anything but a name is a comment up to the next `>` (a
+   *   bogus comment, as in XML5 and HTML), `</>` is dropped, and a `</` that
+   *   ends the input is text;
+   * - `<!` that starts no comment, CDATA section or DOCTYPE is a comment up
+   *   to the next `>`;
+   * - `]]>` in text is text;
+   * - references and CDATA sections outside the root element are read (the
+   *   tree builder, with its own `recover`, puts them in the root); an XML
+   *   declaration anywhere but at the very start, and a second DOCTYPE or
+   *   one after the root element's start, are dropped.
+   *
+   * A document strict XML reads is read the same. Characters XML does not
+   * allow still fail, as written or as a well-formed character reference
+   * (`&#0;`), and so do resource limits, encoding errors, markup cut off by
+   * the end of the input, comments with `--` in them and malformed
+   * declarations. A recovery is silent: nothing reports it. Ignored in HTML
+   * mode, which always recovers.
+   *
+   * @since 0.2.0
+   */
+  readonly recover?: boolean;
 }
 
 /** @internal */
@@ -223,10 +264,11 @@ export interface ResolvedOptions {
   readonly dtd: "ignore" | "internal";
   readonly scripting: boolean;
   readonly positions: boolean;
+  readonly recover: boolean;
 }
 
 /** @internal */
-export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOptions => {
+export const resolveSaxOptions = (options?: SaxOptions): ResolvedOptions => {
   const mode = options?.mode ?? "xml";
   return {
     mode,
@@ -237,6 +279,7 @@ export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOpti
     dtd: options?.dtd ?? "ignore",
     scripting: options?.scripting ?? false,
     positions: options?.positions ?? true,
+    recover: mode === "xml" && options?.recover === true,
   };
 };
 
@@ -318,6 +361,35 @@ export const tokenize =
   };
 
 /**
+ * @internal The events of `chunks` (or the failure), as {@link tokenize}
+ * streams them, but with `dtd: "internal"` read by the DTD-aware grammars
+ * from the first token, whatever the DOCTYPE declares, as before #99. The
+ * reference the differential tests hold the faster reading to; not for use
+ * outside them.
+ */
+export const tokenizeEagerly = (
+  chunks: ReadonlyArray<string>,
+  options?: SaxOptions,
+): Result.Result<ReadonlyArray<SaxEvent>, SaxError> => {
+  const tokenizer = new Tokenizer(resolveSaxOptions(options), false, true);
+  const events: Array<SaxEvent> = [];
+  const keep = (ev: SaxEvent): boolean => {
+    events.push(ev);
+    return true;
+  };
+  const early = Arr.findFirst(chunks, (chunk): Option.Option<SaxError> => {
+    const over = tokenizer.write(chunk);
+    if (over !== undefined) return Option.some(over);
+    tokenizer.run(keep);
+    return Option.fromUndefinedOr(tokenizer.fault);
+  });
+  if (Option.isSome(early)) return Result.fail(early.value);
+  tokenizer.close();
+  tokenizer.run(keep);
+  return tokenizer.fault === undefined ? Result.succeed(events) : Result.fail(tokenizer.fault);
+};
+
+/**
  * Options for byte input: the SAX options plus an external encoding hint.
  *
  * @since 0.1.0
@@ -329,14 +401,14 @@ export interface SaxBytesOptions extends SaxOptions {
    * overrides the document's own declaration (or `<meta charset>`), but not a
    * byte order mark.
    */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
 }
 
 /** @internal The decoding options that match a set of SAX options. */
-export const decodeOptions = (options: SaxBytesOptions | undefined): Encoding.DecodeOptions => ({
+export const decodeOptions = (options?: SaxBytesOptions): Encoding.DecodeOptions => ({
   mode: options?.mode ?? "xml",
   maxTotalBytes: resolveLimits(options?.limits).maxTotalBytes,
-  encoding: options?.encoding,
+  ...maybe("encoding", options?.encoding),
 });
 
 /**
@@ -365,11 +437,11 @@ export const tokenizeByteArray = (
   Stream.suspend(() => {
     const decoder = new Encoding.ByteDecoder(decodeOptions(options));
     const first = decoder.write(input);
-    if (!Predicate.isString(first)) return Stream.fail(first);
+    if (!P.isString(first)) return Stream.fail(first);
     const rest = decoder.end();
     // `decode` drops empty chunks; the end of the input may fail after the text.
     const text = Stream.fromIterable(first === "" ? [] : [first]);
-    const chunks = Predicate.isString(rest)
+    const chunks = P.isString(rest)
       ? Stream.concat(text, Stream.fromIterable(rest === "" ? [] : [rest]))
       : Stream.concat(text, Stream.fail(rest));
     return chunks.pipe(tokenize(options));
@@ -424,11 +496,12 @@ export const forEach = (
   options?: ForEachOptions,
 ): Effect.Effect<void, SaxError> =>
   Effect.suspend(() => {
-    const chunks = Predicate.isString(input)
+    const chunks = P.isString(input)
       ? { chunks: [input] }
       : decodeChunks(input, decodeOptions(options));
     const opts = resolveSaxOptions(options);
-    const lenient = options?.strict === false && opts.mode === "xml" && opts.dtd === "ignore";
+    const lenient =
+      options?.strict === false && opts.mode === "xml" && opts.dtd === "ignore" && !opts.recover;
     const failure = lenient
       ? (chunks.failure ?? forEachLeniently(chunks.chunks.join(""), f, opts))
       : runChunks(chunks, opts, (ev, position) => {
@@ -454,10 +527,10 @@ export interface ForEachOptions extends SaxBytesOptions {
    * forbids; an unknown or malformed reference is left as written; of the
    * resource limits only `maxTotalBytes` and `maxDepth` apply; markup that
    * cannot be read at all (a tag without its `>`) still fails. Applies to
-   * XML without `dtd: "internal"`; otherwise reading is strict. Default
-   * `true`.
+   * XML without `dtd: "internal"` or `recover`; otherwise reading is strict
+   * (or recovering). Default `true`.
    */
-  readonly strict?: boolean | undefined;
+  readonly strict?: boolean;
 }
 
 /**

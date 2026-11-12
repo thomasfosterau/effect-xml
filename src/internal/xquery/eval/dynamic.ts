@@ -1,13 +1,13 @@
 /**
  * The dynamic context of an evaluation, from the host's options: the
  * external variables' values, the current dateTime (from the `Clock` unless
- * given), the implicit timezone and the environment variables.
+ * given), the implicit timezone, the default language and the environment variables.
  */
 import * as BigDecimal from "effect/BigDecimal";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as HashMap from "effect/HashMap";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import type { Item, Sequence } from "../item.ts";
 import { AtomicTypes } from "../types.ts";
 import { Resources, type Dynamic } from "./runtime.ts";
@@ -15,10 +15,11 @@ import { formatParts, partsAt } from "./temporal.ts";
 
 /** What the host sets of the dynamic context (`XQuery.EvaluateOptions` but the context item and compile options). */
 export interface DynamicOptions {
-  readonly variables?: Readonly<Record<string, Sequence | Item>> | undefined;
-  readonly implicitTimezone?: number | undefined;
-  readonly environment?: Readonly<Record<string, string>> | undefined;
-  readonly currentDateTime?: Date | undefined;
+  readonly variables?: Readonly<Record<string, Sequence | Item>>;
+  readonly implicitTimezone?: number;
+  readonly environment?: Readonly<Record<string, string>>;
+  readonly currentDateTime?: Date;
+  readonly defaultLanguage?: string;
 }
 
 const clarkKey = (name: string): string => (name.startsWith("{") ? name : `{}${name}`);
@@ -46,7 +47,7 @@ export const dynamicContext = (
       const tz = options.implicitTimezone ?? 0;
       return {
         externals: HashMap.fromIterable(
-          Record.toEntries(options.variables ?? {}).map(([k, v]): readonly [string, Sequence] => [
+          R.toEntries(options.variables ?? {}).map(([k, v]): readonly [string, Sequence] => [
             clarkKey(k),
             isSequence(v) ? v : [v],
           ]),
@@ -55,6 +56,7 @@ export const dynamicContext = (
         resources: new Resources(canFetch),
         currentDateTime: nowIn(millis, tz),
         implicitTimezone: tz,
+        defaultLanguage: options.defaultLanguage ?? "en",
         environment: options.environment ?? {},
       };
     },

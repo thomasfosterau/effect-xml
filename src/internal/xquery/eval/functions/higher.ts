@@ -10,8 +10,9 @@
 import * as Arr from "effect/Array";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
+import * as Schema from "effect/Schema";
 import { QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import {
@@ -26,9 +27,11 @@ import {
 import { orderAtomic } from "../compare.ts";
 import { raise, unwrap } from "../raise.ts";
 import { callFunction, isCallable } from "../runtime.ts";
-import { collate, collationArg, collationNamed, type Collation } from "./collation.ts";
+import { collationArg, collationNamed, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, arrayOf, atomOf, isEmpty, mapOf, text } from "./values.ts";
+
+const isQName = Schema.is(QName);
 
 /** The function of a `function(…)` argument. */
 const functionOf = (s: Sequence): FunctionItem | MapItem | ArrayItem => {
@@ -51,8 +54,7 @@ const truth = (s: Sequence, call: Call): boolean => unwrap(effectiveBooleanValue
 // Sorting
 // -----------------------------------------------------------------------------
 
-const isNaNValue = (a: AtomicValue): boolean =>
-  Predicate.isNumber(a.value) && Number.isNaN(a.value);
+const isNaNValue = (a: AtomicValue): boolean => P.isNumber(a.value) && Number.isNaN(a.value);
 
 /** Compare two sort keys item by item: NaN first, a shorter key before a longer one it starts. */
 const compareKeys = (
@@ -63,15 +65,7 @@ const compareKeys = (
 ): number => {
   const differing = Arr.findFirst(Arr.zip(x, y), ([a, b]) => {
     if (isNaNValue(a) || isNaNValue(b)) return isNaNValue(a) !== isNaNValue(b);
-    return (
-      orderAtomic(
-        a,
-        b,
-        call.ctx.dyn.implicitTimezone,
-        (s, t) => collate(collation, s, t),
-        call.offset,
-      ) !== 0
-    );
+    return orderAtomic(a, b, call.ctx.dyn.implicitTimezone, collation.compare, call.offset) !== 0;
   });
   return Option.match(differing, {
     onNone: () => x.length - y.length,
@@ -80,13 +74,7 @@ const compareKeys = (
         ? -1
         : isNaNValue(b)
           ? 1
-          : orderAtomic(
-              a,
-              b,
-              call.ctx.dyn.implicitTimezone,
-              (s, t) => collate(collation, s, t),
-              call.offset,
-            ),
+          : orderAtomic(a, b, call.ctx.dyn.implicitTimezone, collation.compare, call.offset),
   });
 };
 
@@ -177,7 +165,7 @@ const fnHigherOrder: ReadonlyArray<BuiltinSpec> = [
       const name = atomOf(arg(args, 0)).value;
       const arity = Number(atomOf(arg(args, 1)).value);
       const lookup = call.statics.lookup;
-      return lookup === undefined || !(name instanceof QName)
+      return lookup === undefined || !isQName(name)
         ? []
         : Arr.fromOption(lookup(name, arity, call.ctx, call.offset));
     },
@@ -274,7 +262,7 @@ const merge = (maps: ReadonlyArray<MapItem>, duplicates: Duplicates, call: Call)
   // A later entry replaces an earlier one with the same key.
   if (duplicates === "use-last" || duplicates === "use-any") return MapItem.fromEntries(entries);
   if (duplicates === "use-first") return MapItem.fromEntries(Arr.reverse(entries));
-  const groups = Record.values(Arr.groupBy(entries, ([k]) => sameKey(k)));
+  const groups = R.values(Arr.groupBy(entries, ([k]) => sameKey(k)));
   if (duplicates === "reject" && groups.some((g) => g.length > 1))
     return raise("FOJS0003", "map:merge was given duplicate keys", call.offset);
   return MapItem.fromEntries(groups.map((g) => [g[0][0], g.flatMap(([, v]) => v)] as const));
@@ -355,7 +343,7 @@ const outOfBounds = (position: bigint | number, size: number, call: Call): never
 /** A 1-based position argument, checked to be within `1` to `max`. */
 const positionIn = (s: Sequence, max: number, size: number, call: Call): number => {
   const v = atomOf(s).value;
-  const n = Predicate.isBigInt(v) ? v : 0n;
+  const n = P.isBigInt(v) ? v : 0n;
   return n >= 1n && n <= BigInt(max) ? Number(n) : outOfBounds(n, size, call);
 };
 

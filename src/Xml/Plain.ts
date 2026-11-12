@@ -15,8 +15,10 @@
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as Option from "effect/Option";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import {
   DuplicateAttribute,
   InvalidDocumentStructure,
@@ -42,6 +44,8 @@ import {
   resolveSaxOptions,
   type SaxEvent,
 } from "../Sax.ts";
+
+const isDuplicateAttribute = Schema.is(DuplicateAttribute);
 
 /**
  * An element of a plain tree: its name as written (`prefix:local`), its
@@ -73,24 +77,24 @@ export type PlainNode = PlainElement | string;
  */
 export interface PlainOptions {
   /** Named entity table override. */
-  readonly entities?: Record<string, string> | undefined;
+  readonly entities?: Record<string, string>;
   /** Whitespace handling for text (default `"preserve"`). */
-  readonly whitespace?: "preserve" | "collapse" | undefined;
+  readonly whitespace?: "preserve" | "collapse";
   /** Drop whitespace-only text (default `false`). */
-  readonly dropWhitespaceOnlyText?: boolean | undefined;
+  readonly dropWhitespaceOnlyText?: boolean;
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
-  readonly limits?: Partial<Limits> | undefined;
+  readonly limits?: Partial<Limits>;
   /** Interpret the DOCTYPE internal subset (see `Sax.SaxOptions.dtd`); default `"ignore"`. */
-  readonly dtd?: "ignore" | "internal" | undefined;
+  readonly dtd?: "ignore" | "internal";
   /** Bytes only: an external encoding hint (see `Sax.SaxBytesOptions.encoding`). */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
   /**
    * With `false`, read leniently, as `Sax.forEach` does (see
    * `Sax.ForEachOptions.strict`): about twice as fast again, for documents
    * known to be well-formed. A well-formed document gives the same tree;
    * tags must still balance and there must be one root. Default `true`.
    */
-  readonly strict?: boolean | undefined;
+  readonly strict?: boolean;
 }
 
 /** The children, or attributes, of the (many) elements with none: shared (never written to). */
@@ -113,14 +117,14 @@ class PlainBuilder implements Visitor {
   /** The children of the open elements, each element's after its parent's. */
   private readonly nodes: Array<PlainNode> = [];
   private count = 0;
-  private root: PlainElement | undefined = undefined;
+  private root: Option.Option<PlainElement> = Option.none();
   /** Lenient reading: the input offsets are into, and the whitespace policy. */
   private readonly input: string;
-  private readonly opts: ResolvedOptions | undefined;
+  private readonly opts: Option.Option<ResolvedOptions>;
 
   constructor(input = "", opts?: ResolvedOptions) {
     this.input = input;
-    this.opts = opts;
+    this.opts = Option.fromUndefinedOr(opts);
   }
 
   // A `switch`, not a `$match` table: this runs once per event (see `vite.config.ts`).
@@ -130,7 +134,7 @@ class PlainBuilder implements Visitor {
         const attributes = Arr.isReadonlyArrayEmpty(ev.attributes)
           ? NO_ATTRIBUTES
           : record(ev.name, ev.attributes);
-        if (attributes instanceof DuplicateAttribute) return attributes;
+        if (isDuplicateAttribute(attributes)) return attributes;
         return this.open(ev.name, attributes, ev.selfClosing, ev.span.start);
       }
       case "EndElement":
@@ -163,8 +167,9 @@ class PlainBuilder implements Visitor {
 
   text(data: string, at: number): SaxError | null {
     const opts = this.opts;
-    const kept =
-      opts === undefined ? data : policy(data, opts.whitespace, opts.dropWhitespaceOnlyText);
+    const kept = Option.isNone(opts)
+      ? data
+      : policy(data, opts.value.whitespace, opts.value.dropWhitespaceOnlyText);
     return kept === null ? null : this.addText(kept, at);
   }
 
@@ -186,7 +191,7 @@ class PlainBuilder implements Visitor {
 
   /** The position of a step's `at`. */
   private where(at: Position | number): Position {
-    return Predicate.isNumber(at) ? positionAt(this.input, at) : at;
+    return P.isNumber(at) ? positionAt(this.input, at) : at;
   }
 
   private open(
@@ -207,7 +212,7 @@ class PlainBuilder implements Visitor {
     const attributes = this.attributes.pop();
     const from = this.froms.pop();
     if (open === undefined || attributes === undefined || from === undefined) {
-      return new UnexpectedEndTag({ name, position: this.where(at) });
+      return new UnexpectedEndTag({ tagName: name, position: this.where(at) });
     }
     if (open !== name) {
       return new MismatchedEndTag({ expected: open, actual: name, position: this.where(at) });
@@ -229,7 +234,7 @@ class PlainBuilder implements Visitor {
     }
     const last = this.count - 1;
     const prev = this.nodes[last];
-    if (last >= (this.froms.at(-1) ?? 0) && Predicate.isString(prev)) {
+    if (last >= (this.froms.at(-1) ?? 0) && P.isString(prev)) {
       this.nodes[last] = prev + data;
     } else {
       this.nodes[this.count++] = data;
@@ -242,13 +247,13 @@ class PlainBuilder implements Visitor {
       this.nodes[this.count++] = element;
       return null;
     }
-    if (this.root !== undefined) {
+    if (Option.isSome(this.root)) {
       return new InvalidDocumentStructure({
         position: this.where(at),
         reason: "multiple root elements",
       });
     }
-    this.root = element;
+    this.root = Option.some(element);
     return null;
   }
 
@@ -262,14 +267,14 @@ class PlainBuilder implements Visitor {
         }),
       );
     }
-    return this.root === undefined
-      ? Result.fail(
-          new InvalidDocumentStructure({
-            position: this.where(at),
-            reason: "document has no root element",
-          }),
-        )
-      : Result.succeed(this.root);
+    return Result.fromOption(
+      this.root,
+      () =>
+        new InvalidDocumentStructure({
+          position: this.where(at),
+          reason: "document has no root element",
+        }),
+    );
   }
 }
 
@@ -310,8 +315,8 @@ const record = (
 /** One pass over `chunks`, with or without positions (see {@link parsePlain}). */
 const plainPass = (
   chunks: Chunks,
-  options: PlainOptions | undefined,
   positions: boolean,
+  options?: PlainOptions,
 ): Result.Result<PlainElement, SaxError> => {
   const builder = new PlainBuilder();
   let last: Position = origin;
@@ -350,7 +355,7 @@ export const parsePlain = (
   options?: PlainOptions,
 ): Effect.Effect<PlainElement, SaxError> =>
   Effect.suspend(() => {
-    const chunks: Chunks = Predicate.isString(input)
+    const chunks: Chunks = P.isString(input)
       ? { chunks: [input] }
       : decodeChunks(input, decodeOptions({ ...options, mode: "xml" }));
     const opts = resolveSaxOptions({ ...options, mode: "xml" });
@@ -365,8 +370,8 @@ export const parsePlain = (
     }
     // The builder reads positions only to report a failure: build without,
     // and report one from a second pass with them, which fails the same way.
-    const lean = plainPass(chunks, options, false);
+    const lean = plainPass(chunks, false, options);
     return Result.isSuccess(lean)
       ? Effect.succeed(lean.success)
-      : Effect.fromResult(plainPass(chunks, options, true));
+      : Effect.fromResult(plainPass(chunks, true, options));
   });

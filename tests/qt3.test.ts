@@ -15,13 +15,14 @@
  * Constructs it does not implement yet count as failures, never as errors a
  * test may expect.
  */
-import { assert, describe, expect, test } from "vite-plus/test";
+import { afterAll, assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { Xml, XQuery } from "../src/index.ts";
@@ -50,7 +51,7 @@ import { reportRequested } from "./support/report.ts";
 /** The engine under test. */
 const ENGINE: Engine = xqueryEngine;
 
-const Counts = Schema.Struct({ runnable: Schema.Number, passing: Schema.Number });
+const Counts = Schema.Struct({ runnable: Schema.Int, passing: Schema.Int });
 const Baseline = Schema.fromJsonString(
   Schema.Struct({
     XQ31: Schema.Record(Schema.String, Counts),
@@ -85,7 +86,7 @@ const countsBySet = (
   sets: ReadonlyArray<TestSet>,
   verdicts: ReadonlyArray<Verdict>,
 ): Record<string, Counts> => {
-  const counts = Record.fromEntries(
+  const counts = R.fromEntries(
     sets.map((s): readonly [string, Counts] => [s.name, { runnable: 0, passing: 0 }]),
   );
   verdicts.forEach((v) => {
@@ -99,11 +100,15 @@ const countsBySet = (
   return counts;
 };
 
+/** One runtime for the file's fixture services (the file system), provided once. */
+const runtime = ManagedRuntime.make(Fixtures.layer);
+afterAll(() => runtime.dispose());
+
 /** The catalog, read once for every test in this file. */
-const catalog = Effect.runPromise(readCatalog().pipe(Effect.provide(Fixtures.layer)));
+const catalog = runtime.runPromise(readCatalog());
 
 const total = (counts: Record<string, Counts>): Counts =>
-  Arr.reduce(Record.values(counts), { runnable: 0, passing: 0 }, (a, c) => ({
+  Arr.reduce(R.values(counts), { runnable: 0, passing: 0 }, (a, c) => ({
     runnable: a.runnable + c.runnable,
     passing: a.passing + c.passing,
   }));
@@ -114,7 +119,7 @@ const shortfalls = (
   baseline: Readonly<Record<string, Counts>>,
   counts: Readonly<Record<string, Counts>>,
 ): ReadonlyArray<string> =>
-  Record.toEntries(baseline).flatMap(([set, want]) => {
+  R.toEntries(baseline).flatMap(([set, want]) => {
     const got = counts[set] ?? { runnable: 0, passing: 0 };
     const runnable = `${spec} ${set}: ${got.runnable} runnable, baseline ${want.runnable}`;
     const passing = `${spec} ${set}: ${got.passing} passing, baseline ${want.passing}`;
@@ -127,7 +132,7 @@ const shortfalls = (
 describe("W3C QT3 conformance", () => {
   test("meets the per-test-set baselines", async () => {
     const started = performance.now();
-    const { baseline, sets, results } = await Effect.runPromise(
+    const { baseline, sets, results } = await runtime.runPromise(
       Effect.gen(function* () {
         const expected = yield* readBaseline;
         const read = yield* Effect.tryPromise(() => catalog);
@@ -139,10 +144,10 @@ describe("W3C QT3 conformance", () => {
           { concurrency: 1 },
         );
         return { baseline: expected, sets: read, results: verdicts };
-      }).pipe(Effect.provide(Fixtures.layer)),
+      }),
     );
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    const counts = Record.fromEntries(
+    const counts = R.fromEntries(
       results.map(([spec, verdicts]) => [spec, countsBySet(sets, verdicts)] as const),
     );
     const report = Effect.runSync(reportRequested("QT3_REPORT"));
@@ -225,10 +230,9 @@ const tableEngine = (
 ): Engine => ({
   evaluate: (request) => {
     asked.push(request);
-    return Option.match(Option.fromUndefinedOr(table[request.query]), {
-      onNone: () => Effect.fail(XQuery.xqueryError("XPST0003", `unknown query ${request.query}`)),
-      onSome: Effect.succeed,
-    });
+    return Effect.fromOption(Option.fromUndefinedOr(table[request.query]), () =>
+      XQuery.xqueryError("XPST0003", `unknown query ${request.query}`),
+    );
   },
   serialize: (_, result) =>
     Effect.succeed(
@@ -299,11 +303,11 @@ describe("QT3 harness", () => {
     fails(verdict(Assertion.Error({ code: "*" }), value()));
     expect(
       codeMatches("Q{http://www.example.com/}EXER3141", {
-        namespace: "http://www.example.com/",
+        namespace: Option.some("http://www.example.com/"),
         local: "EXER3141",
       }),
     ).toBe(true);
-    expect(codeMatches("Q{}USER9999", { namespace: null, local: "USER9999" })).toBe(true);
+    expect(codeMatches("Q{}USER9999", { namespace: Option.none(), local: "USER9999" })).toBe(true);
   });
 
   test("combinators", () => {

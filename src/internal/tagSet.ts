@@ -7,21 +7,19 @@
  * internal tables are `Record`s keyed by tag name.
  */
 import * as Arr from "effect/Array";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 
 /** A set of tag names. */
-export type TagSet = Record.ReadonlyRecord<string, true>;
+export type TagSet = R.ReadonlyRecord<string, true>;
 
 /** A tag set from its members. */
 export const tagSet = (...tags: ReadonlyArray<string>): TagSet =>
-  Record.fromEntries(Arr.map(tags, (tag) => [tag, true] as const));
+  R.fromEntries(Arr.map(tags, (tag) => [tag, true] as const));
 
 /** A tag set holding the members of every given set. */
 export const union = (...sets: ReadonlyArray<TagSet | Iterable<string>>): TagSet =>
   tagSet(
-    ...Arr.flatMap(sets, (set) =>
-      Symbol.iterator in set ? Arr.fromIterable(set) : Record.keys(set),
-    ),
+    ...Arr.flatMap(sets, (set) => (Symbol.iterator in set ? Arr.fromIterable(set) : R.keys(set))),
   );
 
 /** Is `tag` in `set`? */
@@ -43,7 +41,7 @@ export const tagFlags = (
   categories: ReadonlyArray<readonly [bit: number, members: TagSet]>,
 ): TagFlags =>
   new Map(
-    Arr.map(Arr.dedupe(Arr.flatMap(categories, ([, members]) => Record.keys(members))), (tag) => [
+    Arr.map(Arr.dedupe(Arr.flatMap(categories, ([, members]) => R.keys(members))), (tag) => [
       tag,
       Arr.reduce(categories, 0, (flags, [bit, members]) =>
         isIn(members, tag) ? flags | bit : flags,

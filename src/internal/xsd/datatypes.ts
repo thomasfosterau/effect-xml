@@ -14,8 +14,8 @@ import { Parser } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import { isValidName, isValidNCName } from "../../Name.ts";
 import { builtin, clark, type Facets } from "../../Xsd/Model.ts";
@@ -23,6 +23,7 @@ import { Name as NameGrammar, Nmtoken } from "../names.ts";
 import { quote } from "../quote.ts";
 import { translate } from "./regex.ts";
 import type { SimpleValue } from "../../Xsd/Value.ts";
+import { maybe } from "../optional.ts";
 
 export type { SimpleValue };
 
@@ -62,10 +63,10 @@ export interface SimpleChecker {
    */
   readonly primitive: string;
   /** For a list, its item type; for a union, its member types. */
-  readonly item?: SimpleChecker | undefined;
-  readonly members?: ReadonlyArray<SimpleChecker> | undefined;
+  readonly item?: SimpleChecker;
+  readonly members?: ReadonlyArray<SimpleChecker>;
   /** The most derived enumeration, as lexical forms. */
-  readonly enumeration?: ReadonlyArray<string> | undefined;
+  readonly enumeration?: ReadonlyArray<string>;
   /** Check an already whitespace-normalized lexical form. */
   readonly check: (normalized: string, context: ValueContext) => Result.Result<SimpleValue, string>;
   /** Compare two values of this type: `None` when they are incomparable. */
@@ -106,21 +107,20 @@ const sign = (n: number): -1 | 0 | 1 => (n < 0 ? -1 : n > 0 ? 1 : 0);
 const incomparable = (): Option.Option<-1 | 0 | 1> => Option.none();
 
 const compareNumbers = (a: SimpleValue, b: SimpleValue): Option.Option<-1 | 0 | 1> =>
-  Predicate.isNumber(a) && Predicate.isNumber(b) && !Number.isNaN(a) && !Number.isNaN(b)
+  P.isNumber(a) && P.isNumber(b) && !Number.isNaN(a) && !Number.isNaN(b)
     ? Option.some(sign(a - b))
     : Option.none();
 
 const compareBigints = (a: SimpleValue, b: SimpleValue): Option.Option<-1 | 0 | 1> =>
-  Predicate.isBigInt(a) && Predicate.isBigInt(b)
-    ? Option.some(a < b ? -1 : a > b ? 1 : 0)
-    : Option.none();
+  P.isBigInt(a) && P.isBigInt(b) ? Option.some(a < b ? -1 : a > b ? 1 : 0) : Option.none();
 
 const compareDecimals = (a: SimpleValue, b: SimpleValue): Option.Option<-1 | 0 | 1> =>
   BigDecimal.isBigDecimal(a) && BigDecimal.isBigDecimal(b)
     ? Option.some(BigDecimal.Order(a, b))
     : Option.none();
 
-const isList = (v: SimpleValue): v is ReadonlyArray<SimpleValue> => Arr.isArray(v);
+/** Is this value a list (`xs:list`) value? */
+export const isList = (v: SimpleValue): v is ReadonlyArray<SimpleValue> => Arr.isArray(v);
 
 /** Equality of typed values (lists item by item, bytes byte by byte). */
 export const equalValues = (a: SimpleValue, b: SimpleValue): boolean => {
@@ -129,10 +129,7 @@ export const equalValues = (a: SimpleValue, b: SimpleValue): boolean => {
     return a.length === b.length && a.every((byte, i) => byte === b[i]);
   if (isList(a) && isList(b))
     return a.length === b.length && a.every((x, i) => equalValues(x, b[i] ?? ""));
-  return (
-    a === b ||
-    (Predicate.isNumber(a) && Predicate.isNumber(b) && Number.isNaN(a) && Number.isNaN(b))
-  );
+  return a === b || (P.isNumber(a) && P.isNumber(b) && Number.isNaN(a) && Number.isNaN(b));
 };
 
 // -----------------------------------------------------------------------------
@@ -143,7 +140,12 @@ const tz = "(?<tz>Z|[+-]\\d\\d:\\d\\d)?";
 const year = "(?<y>-?(?:[1-9]\\d{4,}|\\d{4}))";
 const time = "(?<h>\\d\\d):(?<mi>\\d\\d):(?<s>\\d\\d(?:\\.\\d+)?)";
 
-const temporalPatterns: Readonly<Record<string, RegExp>> = {
+/** The lexical pattern of each temporal type, by local name. */
+interface TemporalPatterns {
+  readonly [local: string]: RegExp;
+}
+
+const temporalPatterns: TemporalPatterns = {
   dateTime: new RegExp(`^${year}-(?<m>\\d\\d)-(?<d>\\d\\d)T${time}${tz}$`),
   time: new RegExp(`^${time}${tz}$`),
   date: new RegExp(`^${year}-(?<m>\\d\\d)-(?<d>\\d\\d)${tz}$`),
@@ -151,7 +153,7 @@ const temporalPatterns: Readonly<Record<string, RegExp>> = {
   gYear: new RegExp(`^${year}${tz}$`),
   gMonthDay: new RegExp(`^--(?<m>\\d\\d)-(?<d>\\d\\d)${tz}$`),
   gDay: new RegExp(`^---(?<d>\\d\\d)${tz}$`),
-  gMonth: new RegExp(`^--(?<m>\\d\\d)(?:--)?${tz}$`),
+  gMonth: new RegExp(`^--(?<m>\\d\\d)${tz}$`),
 };
 
 interface Moment {
@@ -245,7 +247,7 @@ const compareMoments = (a: Moment, b: Moment): Option.Option<-1 | 0 | 1> => {
 const temporal = (type: string): Pick<SimpleChecker, "check" | "compare"> => ({
   check: (s) => Result.map(parseTemporal(type, s), () => s),
   compare: (a, b) =>
-    Predicate.isString(a) && Predicate.isString(b)
+    P.isString(a) && P.isString(b)
       ? Result.match(Result.all([parseTemporal(type, a), parseTemporal(type, b)]), {
           onFailure: incomparable,
           onSuccess: ([x, y]) => compareMoments(x, y),
@@ -273,7 +275,7 @@ const duration: Pick<SimpleChecker, "check" | "compare"> = {
       ? Result.succeed(s)
       : Result.fail(`${quote(s)} is not a valid duration`),
   compare: (a, b) => {
-    if (!Predicate.isString(a) || !Predicate.isString(b)) return Option.none();
+    if (!P.isString(a) || !P.isString(b)) return Option.none();
     return Option.flatMap(
       Option.all([durationParts(a), durationParts(b)]),
       ([[am, as], [bm, bs]]) => {
@@ -357,11 +359,15 @@ const parseHex = (s: string): Result.Result<SimpleValue, string> =>
 const base64Pattern =
   /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})?$/;
 
+/** The unused bits before padding are zero: `==` follows one of `AQgw`, and `=` one of `AEIMQUYcgkosw048`. */
+const base64Padding = /^(?:[^=]*[AQgw]==|[^=]*[AEIMQUYcgkosw048]=|[^=]*)$/;
+
 const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 const parseBase64 = (s: string): Result.Result<SimpleValue, string> => {
   const compact = s.replace(/ /g, "");
-  if (!base64Pattern.test(compact)) return invalid(s, "base64Binary");
+  if (!base64Pattern.test(compact) || !base64Padding.test(compact))
+    return invalid(s, "base64Binary");
   const sextets = Arr.map(Arr.fromIterable(compact.replace(/=+$/, "")), (c) =>
     base64Alphabet.indexOf(c),
   );
@@ -420,11 +426,11 @@ interface Builtin {
   readonly base: string;
   readonly kind: Kind;
   readonly whiteSpace: WhiteSpace;
-  readonly identity?: Identity | undefined;
+  readonly identity?: Identity;
   readonly check: SimpleChecker["check"];
   readonly compare: SimpleChecker["compare"];
   /** A list of `item` (a built-in name), at least one long. */
-  readonly listOf?: string | undefined;
+  readonly listOf?: string;
 }
 
 const stringLike = (
@@ -463,7 +469,11 @@ const temporalType = (name: string): Builtin => ({
 const two = (bits: bigint) => 2n ** bits;
 
 /** Every built-in simple type, by local name in the XSD namespace. */
-const builtins: Readonly<Record<string, Builtin>> = {
+interface Builtins {
+  readonly [key: string]: Builtin;
+}
+
+const builtins: Builtins = {
   anySimpleType: stringLike("anyType", "preserve"),
   string: stringLike("anySimpleType", "preserve"),
   normalizedString: stringLike("string", "replace"),
@@ -538,7 +548,7 @@ const builtinOf = (key: string): Option.Option<readonly [string, Builtin]> => {
   const prefix = builtin("");
   if (!key.startsWith(prefix)) return Option.none();
   const local = key.slice(prefix.length);
-  return Option.map(Record.get(builtins, local), (b) => [local, b] as const);
+  return Option.map(R.get<string, Builtin>(builtins, local), (b) => [local, b] as const);
 };
 
 /** Is `key` a built-in simple type? */
@@ -752,7 +762,7 @@ export const restrict = (
       return {
         ...base,
         whiteSpace: facets.whiteSpace ?? base.whiteSpace,
-        enumeration: facets.enumeration ?? base.enumeration,
+        ...maybe("enumeration", facets.enumeration ?? base.enumeration),
         check: (normalized, context) => {
           const checked = base.check(normalized, context);
           return Result.isFailure(checked)

@@ -1,11 +1,15 @@
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { Sax, Xml, XQuery } from "../src/index.ts";
 import { splitEvery } from "./support/chunks.ts";
 import { failure, success } from "./support/narrow.ts";
+
+const isXQueryError = Schema.is(XQuery.XQueryError);
 
 const X = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const namespaces = { x: X };
@@ -37,7 +41,7 @@ const canonical = (item: XQuery.Item): string => {
 
 /** The `err:` local name of an error from a stream, which must be an `XQueryError`. */
 const codeOf = (error: { readonly _tag: string }): string =>
-  Predicate.isTagged(error, "XQueryError") && error instanceof XQuery.XQueryError
+  P.isTagged(error, "XQueryError") && isXQueryError(error)
     ? error.code.local
     : "not an XQueryError";
 
@@ -82,7 +86,7 @@ const notStreamable = (query: string) => {
     `expected ${query} not to be streamable`,
   );
   expect(error.code).toEqual(XQuery.NotStreamableCode);
-  expect(error.code.namespace).toBe(XQuery.ImplementationNamespace);
+  expect(error.code.namespace).toEqual(Option.some(XQuery.ImplementationNamespace));
   return error;
 };
 
@@ -261,7 +265,7 @@ describe("XQuery.stream", () => {
         XQuery.stream("//row ! xs:integer(v)"),
         Stream.runForEach((item) =>
           Effect.sync(() => {
-            if (XQuery.isAtomic(item) && Predicate.isBigInt(item.value)) total += item.value;
+            if (XQuery.isAtomic(item) && P.isBigInt(item.value)) total += item.value;
           }),
         ),
       ),

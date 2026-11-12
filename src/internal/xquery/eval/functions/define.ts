@@ -29,9 +29,12 @@ export interface Statics {
    * function item made in `ctx` (`fn:function-lookup`); `None` when there is
    * none.
    */
-  readonly lookup?:
-    | ((name: QName, arity: number, ctx: Ctx, offset: number) => Option.Option<FunctionItem>)
-    | undefined;
+  readonly lookup?: (
+    name: QName,
+    arity: number,
+    ctx: Ctx,
+    offset: number,
+  ) => Option.Option<FunctionItem>;
 }
 
 /** What a built-in is called with besides its arguments. */
@@ -52,11 +55,11 @@ export interface BuiltinSpec {
   /** The result type. */
   readonly result: string;
   /** The last parameter repeats (`fn:concat`): any arity from `params.length` up is accepted. */
-  readonly variadic?: boolean | undefined;
+  readonly variadic?: boolean;
   /**
    * The function reads the focus (`fn:position`, the zero-argument forms):
    * a reference to it (`fn:position#0`) captures the focus it was made in.
    */
-  readonly focus?: boolean | undefined;
+  readonly focus?: boolean;
   readonly impl: (args: ReadonlyArray<Sequence>, call: Call) => Sequence;
 }

@@ -14,8 +14,8 @@ import * as Data from "effect/Data";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import {
   DuplicateAttribute,
@@ -117,7 +117,7 @@ class Frame {
     this.nil = nil;
     this.props = props;
     this.state =
-      type !== undefined && Predicate.isTagged(type, "Complex") && Option.isSome(type.automaton)
+      type !== undefined && P.isTagged(type, "Complex") && Option.isSome(type.automaton)
         ? type.automaton.value.start
         : undefined;
     this.dom = dom ? [] : undefined;
@@ -125,6 +125,9 @@ class Frame {
     this.tables = tables ? MutableHashMap.empty() : undefined;
   }
 }
+
+/** The value of an element that is not nillable (a nillable one's is an `Option` of it). */
+type Content = Exclude<XsdValue, Option.Option<unknown>>;
 
 /** The attributes of an element that isn't built as a DOM element: none, never written to. */
 const noAttributes: ReadonlyArray<XmlAttribute> = [];
@@ -198,13 +201,13 @@ type Event<Tag extends SaxEvent["_tag"]> = Extract<SaxEvent, { readonly _tag: Ta
 
 export interface ValidatorOptions {
   /** The expanded name the document element must have. */
-  readonly root?: string | undefined;
+  readonly root?: string;
   /**
    * The elements to stream out: each one matching these steps is emitted
    * (see {@link Validator.drain}) once it is complete, instead of becoming
    * part of its parent's value.
    */
-  readonly select?: ReadonlyArray<StreamStep> | undefined;
+  readonly select?: ReadonlyArray<StreamStep>;
 }
 
 export class Validator {
@@ -329,7 +332,7 @@ export class Validator {
     if (prefix === null && isAttribute) return expanded(prefix, local, null);
     const ns = bindings[prefix ?? ""];
     if (ns === undefined && prefix !== null)
-      return new UnboundNamespacePrefix({ prefix, name: raw, position });
+      return new UnboundNamespacePrefix({ prefix, qualifiedName: raw, position });
     return expanded(prefix, local, ns === undefined || ns === "" ? null : ns);
   }
 
@@ -349,7 +352,7 @@ export class Validator {
     const known = names?.get(raw);
     if (known !== undefined) return known;
     const name = this.resolve(raw, isAttribute, bindings, position);
-    if (names !== undefined && !(name instanceof UnboundNamespacePrefix)) names.set(raw, name);
+    if (names !== undefined && !P.isTagged(name, "UnboundNamespacePrefix")) names.set(raw, name);
     return name;
   }
 
@@ -367,14 +370,14 @@ export class Validator {
     const decoded = decode(checker, raw, this.contextOf(bindings));
     if (Result.isFailure(decoded) || checker.identity === "none") return decoded;
     const v = decoded.success;
-    if (checker.identity === "ID" && Predicate.isString(v)) {
+    if (checker.identity === "ID" && P.isString(v)) {
       if (MutableHashSet.has(this.ids, v)) return Result.fail(`the ID "${v}" is used twice`);
       MutableHashSet.add(this.ids, v);
     }
-    if (checker.identity === "IDREF" && Predicate.isString(v))
+    if (checker.identity === "IDREF" && P.isString(v))
       this.refs.push({ id: v, position, path: this.path() });
     if (checker.identity === "IDREFS" && Arr.isArray(v))
-      Arr.forEach(Arr.filter(v, Predicate.isString), (id) =>
+      Arr.forEach(Arr.filter(v, P.isString), (id) =>
         this.refs.push({ id, position, path: this.path() }),
       );
     return decoded;
@@ -413,7 +416,7 @@ export class Validator {
       bindings,
       ev.span.start,
     );
-    if (name instanceof UnboundNamespacePrefix) return name;
+    if (P.isTagged(name, "UnboundNamespacePrefix")) return name;
     const index = parent === undefined ? 1 : count(parent, ev.name);
     const opening: Opening = {
       ev,
@@ -444,7 +447,7 @@ export class Validator {
     const level = advance(
       this.steps,
       Option.flatMap(Option.fromUndefinedOr(parent), (p) => p.level),
-      opening.name,
+      { local: opening.name.local, namespace: Option.fromNullOr(opening.name.namespace) },
       () =>
         Nodes.element(
           toQName(opening.name),
@@ -516,7 +519,7 @@ export class Validator {
         ev.span.start,
       );
     const state = parent.state;
-    if (Predicate.isTagged(type, "Simple") || Option.isNone(type.automaton) || state === undefined)
+    if (P.isTagged(type, "Simple") || Option.isNone(type.automaton) || state === undefined)
       return this.invalid(
         "UnexpectedElement",
         `<${parent.raw}> can't contain elements, but contains <${ev.name}>`,
@@ -576,7 +579,7 @@ export class Validator {
     }
     const type = this.runtime.type(key);
     if (Result.isFailure(type)) return type;
-    return Predicate.isTagged(type.success, "Complex") && type.success.def.abstract === true
+    return P.isTagged(type.success, "Complex") && type.success.def.abstract === true
       ? Result.fail(this.invalid("InvalidType", `the type ${key} is abstract`, ev.span.start))
       : type;
   }
@@ -609,7 +612,7 @@ export class Validator {
           ...(decl.block ?? []),
           ...Option.match(declared, {
             onNone: () => [],
-            onSome: (t) => (Predicate.isTagged(t, "ComplexType") ? (t.block ?? []) : []),
+            onSome: (t) => (P.isTagged(t, "ComplexType") ? (t.block ?? []) : []),
           }),
         );
         return Option.map(
@@ -700,7 +703,7 @@ export class Validator {
     if (Result.isFailure(typed)) return typed.failure;
     const type = typed.success;
     const nil = this.nilOf(opening, decl);
-    if (!Predicate.isBoolean(nil)) return nil;
+    if (!P.isBoolean(nil)) return nil;
     const props: Props = {};
     const failure = this.attributes(opening, type, props);
     if (failure !== null) return failure;
@@ -733,7 +736,7 @@ export class Validator {
             : a.name.startsWith("xmlns:")
               ? expanded("xmlns", a.name.slice(6), Namespaces.xmlns)
               : this.resolve(a.name, true, bindings, a.span.start);
-        return name instanceof UnboundNamespacePrefix
+        return P.isTagged(name, "UnboundNamespacePrefix")
           ? Result.fail(name)
           : Result.succeed(Nodes.attribute(toQName(name), a.value));
       }),
@@ -753,7 +756,7 @@ export class Validator {
       const failure = this.attribute(a, opening, type, props, seen);
       if (failure !== null) return failure;
     }
-    if (!Predicate.isTagged(type, "Complex")) return null;
+    if (!P.isTagged(type, "Complex")) return null;
     const failure = this.implied(type, props, seen, ev.span.start, bindings);
     if (failure !== null) return failure;
     startLists(type, props);
@@ -769,7 +772,7 @@ export class Validator {
   ): Failure | null {
     const { ev, bindings } = opening;
     const qname = this.resolveIn(opening.attributeNames, a.name, true, bindings, a.span.start);
-    if (qname instanceof UnboundNamespacePrefix) return qname;
+    if (P.isTagged(qname, "UnboundNamespacePrefix")) return qname;
     const key = qname.clark;
     if (seen.includes(key))
       return new DuplicateAttribute({
@@ -779,13 +782,13 @@ export class Validator {
       });
     seen.push(key);
     if (qname.namespace === XSI && isIn(xsiAttributes, qname.local)) return null;
-    if (Predicate.isTagged(type, "Simple"))
+    if (P.isTagged(type, "Simple"))
       return this.invalid(
         "UnexpectedAttribute",
         `<${ev.name}> has a simple type, so it can't have the attribute ${a.name}`,
         a.span.start,
       );
-    const found = Record.get(type.attributes, key);
+    const found = R.get(type.attributes, key);
     if (Option.isNone(found)) return this.wildcardAttribute(a, qname, type, bindings, props);
     const rule = found.value;
     const v = this.value(rule.checker, a.value, bindings, a.span.start);
@@ -818,8 +821,7 @@ export class Validator {
     if (Option.isNone(type.wildcard) || !allowsName(type.wildcard.value, qname))
       return unexpected();
     const process = type.wildcard.value.process;
-    const declared =
-      process === "skip" ? Option.none() : Record.get(this.runtime.model.attributes, key);
+    const declared = process === "skip" ? Option.none() : R.get(this.runtime.model.attributes, key);
     if (process === "strict" && Option.isNone(declared)) return unexpected();
     if (Option.isSome(declared)) {
       const checker = this.runtime.checker(declared.value.type);
@@ -872,7 +874,7 @@ export class Validator {
         rule.checker.kind !== "qname" &&
         rule.checker.kind !== "list" &&
         rule.checker.kind !== "union" &&
-        !Predicate.isObject(v.success)
+        !P.isObject(v.success)
       )
         this.defaults.set(rule, v.success);
     }
@@ -894,15 +896,11 @@ export class Validator {
     if (type === undefined) return null;
     if (frame.nil)
       return this.invalid("Nil", `<${frame.raw}> is nil, so it can't contain text`, position);
-    if (
-      Predicate.isTagged(type, "Simple") ||
-      Option.isSome(type.simple) ||
-      type.def.mixed === true
-    ) {
+    if (P.isTagged(type, "Simple") || Option.isSome(type.simple) || type.def.mixed === true) {
       frame.text += data;
       return null;
     }
-    if (Predicate.isTagged(type.def.content, "Empty"))
+    if (P.isTagged(type.def.content, "Empty"))
       return this.invalid(
         "UnexpectedText",
         `<${frame.raw}> must be empty, but contains text`,
@@ -923,10 +921,11 @@ export class Validator {
 
   private end(raw: string, position: Position): Failure | null {
     const frame = this.frames.at(-1);
-    if (frame === undefined) return new UnexpectedEndTag({ name: raw, position });
+    if (frame === undefined) return new UnexpectedEndTag({ tagName: raw, position });
     if (frame.raw !== raw)
       return new MismatchedEndTag({ expected: frame.raw, actual: raw, position });
-    let value: XsdValue = null;
+    // A skipped element's DOM is kept instead (see `close`).
+    let value: XsdValue = Option.none();
     if (frame.type !== undefined) {
       const completed = this.complete(frame, position);
       if (Result.isFailure(completed)) return completed.failure;
@@ -949,18 +948,21 @@ export class Validator {
     const type = frame.type;
     if (type === undefined) return;
     const context = this.contextOf(frame.bindings);
-    const content = Predicate.isTagged(type, "Simple") ? Option.some(type.checker) : type.simple;
+    const content = P.isTagged(type, "Simple") ? Option.some(type.checker) : type.simple;
     if (!frame.nil) Option.map(content, (checker) => this.types.set(element, { checker, context }));
-    if (Predicate.isTagged(type, "Simple")) return;
+    if (P.isTagged(type, "Simple")) return;
     Arr.forEach(element.attributes, (attribute) => {
-      const key = clark(attribute.name.namespace ?? "", attribute.name.local);
+      const key = clark(
+        Option.getOrElse(attribute.name.namespace, () => ""),
+        attribute.name.local,
+      );
       const checker = Option.orElse(
-        Option.map(Record.get(type.attributes, key), (rule) => rule.checker),
+        Option.map(R.get(type.attributes, key), (rule) => rule.checker),
         () =>
           Option.flatMap(
             Option.filter(type.wildcard, (w) => w.process !== "skip"),
             () =>
-              Option.flatMap(Record.get(this.runtime.model.attributes, key), (decl) =>
+              Option.flatMap(R.get(this.runtime.model.attributes, key), (decl) =>
                 Result.getSuccess(this.runtime.checker(decl.type)),
               ),
           ),
@@ -1005,12 +1007,28 @@ export class Validator {
     else deliver(parent, frame, kept);
   }
 
-  /** Check that an element's content is complete, and build its value. */
+  /**
+   * Check that an element's content is complete, and build its value: a
+   * nillable element's is an `Option`, none when it is nil.
+   */
   private complete(frame: Frame, position: Position): Result.Result<XsdValue, Failure> {
-    const type = frame.type;
     const decl = frame.decl;
-    if (type === undefined || decl === undefined) return Result.succeed(null);
-    if (Predicate.isTagged(type, "Complex")) {
+    // Skipped content has no value: `close` keeps its DOM element instead.
+    if (frame.type === undefined || decl === undefined) return Result.succeed(Option.none());
+    if (decl.nillable !== true) return this.contentValue(frame, frame.type, decl, position);
+    return frame.nil
+      ? Result.succeed(Option.none())
+      : Result.map(this.contentValue(frame, frame.type, decl, position), Option.some);
+  }
+
+  /** The value of a complete element that is not nil. */
+  private contentValue(
+    frame: Frame,
+    type: TypeRuntime,
+    decl: ElementDeclaration,
+    position: Position,
+  ): Result.Result<Content, Failure> {
+    if (P.isTagged(type, "Complex")) {
       const state = frame.state;
       if (Option.isSome(type.automaton) && state !== undefined && !state.nullable)
         return Result.fail(
@@ -1021,9 +1039,7 @@ export class Validator {
           ),
         );
     }
-    if (frame.nil) return Result.succeed(null);
-    if (Predicate.isTagged(type, "Simple"))
-      return this.simpleContent(frame, decl, type.checker, position);
+    if (P.isTagged(type, "Simple")) return this.simpleContent(frame, decl, type.checker, position);
     const props = frame.props;
     if (frame.xsiType !== undefined) props["$type"] = frame.xsiType;
     if (type.layout.text === "mixed") props["$text"] = frame.text;
@@ -1039,7 +1055,7 @@ export class Validator {
     decl: ElementDeclaration,
     checker: SimpleChecker,
     position: Position,
-  ): Result.Result<XsdValue, Failure> {
+  ): Result.Result<SimpleValue, Failure> {
     const text = frame.text === "" ? (decl.fixed ?? decl.default ?? "") : frame.text;
     const v = this.value(checker, text, frame.bindings, position);
     if (Result.isFailure(v)) return Result.fail(this.invalid("InvalidValue", v.failure, position));
@@ -1116,16 +1132,13 @@ const count = (parent: Frame, raw: string): number => {
 const isBag = (
   v: XsdValue | Array<XsdValue> | Record<string, string>,
 ): v is Record<string, string> =>
-  Predicate.isObject(v) &&
-  !Arr.isArray(v) &&
-  !(v instanceof XmlElement) &&
-  !(v instanceof Uint8Array);
+  P.isObject(v) && !Arr.isArray(v) && !P.isTagged(v, "XmlElement") && !(v instanceof Uint8Array);
 
 const allowsName = (wildcard: Wildcard, name: Expanded): boolean =>
-  Predicate.isTagged(wildcard.namespaces, "Any") ||
-  (Predicate.isTagged(wildcard.namespaces, "Only")
+  P.isTagged(wildcard.namespaces, "Any") ||
+  (P.isTagged(wildcard.namespaces, "Only")
     ? wildcard.namespaces.namespaces.includes(name.namespace ?? "")
-    : Predicate.isTagged(wildcard.namespaces, "Not") &&
+    : P.isTagged(wildcard.namespaces, "Not") &&
       !wildcard.namespaces.namespaces.includes(name.namespace ?? ""));
 
 /**
@@ -1144,7 +1157,7 @@ const merge = (into: Tables, from: Tables): void =>
 /** Put a child's value where its parent's layout says it goes. */
 const deliver = (parent: Frame, child: Frame, value: XsdValue): void => {
   const type = parent.type;
-  if (type === undefined || Predicate.isTagged(type, "Simple")) return;
+  if (type === undefined || P.isTagged(type, "Simple")) return;
   const slot = child.via === "wildcard" ? undefined : type.layout.byName[child.key];
   const property = slot?.property ?? "$any";
   if (slot !== undefined && slot.cardinality !== "many") {

@@ -4,14 +4,15 @@
  * `new` would have produced from the same fields. If an `effect` upgrade
  * changes what a `Schema` class instance holds, this fails.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
+import * as Eq from "effect/Equal";
 import * as Hash from "effect/Hash";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Html, Sax, Xml } from "../src/index.ts";
@@ -60,11 +61,13 @@ type Instance =
 /** A class the parsers build, constructed (and validated) from its own fields. */
 type InstanceClass = new (fields: Instance) => Instance;
 
+const isInstanceClass = (c: unknown): c is InstanceClass => P.isFunction(c);
+
 /** The same instance built with `new` (and so by the class's own schema). */
 const rebuild = (node: Instance): Instance => {
-  // SAFETY: each instance's constructor is its Schema class, which takes the
-  // instance as its fields.
-  const Class = node.constructor as InstanceClass;
+  // Each instance's constructor is its Schema class, which takes the instance as its fields.
+  const Class = node.constructor;
+  assert(isInstanceClass(Class), "an instance's constructor is its class");
   return new Class(node);
 };
 
@@ -81,16 +84,22 @@ const ownSchemas = [
   HtmlDocument,
 ] as const;
 
+/** Each own schema with its type guard, built once. */
+const ownSchemaGuards = Arr.map(ownSchemas, (Class) => ({ Class, is: Schema.is(Class) }));
+
 /** The schema that encodes `node`. */
 const schemaOf = (node: Instance): Schema.Codec<unknown, unknown> =>
   Option.getOrElse(
-    Arr.findFirst(ownSchemas, (Class): boolean => node instanceof Class),
+    Option.map(
+      Arr.findFirst(ownSchemaGuards, ({ is }): boolean => is(node)),
+      ({ Class }) => Class,
+    ),
     (): Schema.Codec<unknown, unknown> =>
       node.constructor.name.startsWith("Html") ? Html.HtmlNode : Xml.XmlNode,
   );
 
 /** The present one of an optional part. */
-const optional = <A>(part: A | null): ReadonlyArray<A> => (part === null ? [] : [part]);
+const optional = <A>(part: Option.Option<A>): ReadonlyArray<A> => Option.toArray(part);
 
 /** The nodes directly inside `node`: names, attributes, children, declarations. */
 const parts: (node: Instance) => ReadonlyArray<Instance> = Match.type<Instance>().pipe(
@@ -136,8 +145,8 @@ const expectAsConstructed = (roots: ReadonlyArray<Instance>): Array<string> => {
     expect(own(actual)).toEqual(own(expected));
     expect(Object.isFrozen(actual)).toBe(Object.isFrozen(expected));
     expect(Object.isExtensible(actual)).toBe(Object.isExtensible(expected));
-    expect(Equal.equals(actual, expected)).toBe(true);
-    expect(Equal.equals(expected, actual)).toBe(true);
+    expect(Eq.equals(actual, expected)).toBe(true);
+    expect(Eq.equals(expected, actual)).toBe(true);
     expect(Hash.hash(actual)).toBe(Hash.hash(expected));
     expect(textOf(actual)).toBe(textOf(expected));
     const schema = schemaOf(actual);

@@ -7,8 +7,8 @@ import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
@@ -46,18 +46,19 @@ export interface ResourceResolver {
    * the import's location hints); optional: without it, a query that imports
    * a module it was not compiled with fails with `err:XQST0059`.
    */
-  readonly module?:
-    | ((
-        uri: string,
-        locations: ReadonlyArray<string>,
-      ) => Effect.Effect<ReadonlyArray<ModuleSource>, XQueryError>)
-    | undefined;
+  readonly module?: (
+    uri: string,
+    locations: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<ModuleSource>, XQueryError>;
   /** The document node of the document at `uri`. */
   readonly document: (uri: string) => Effect.Effect<XdmNode, XQueryError>;
   /** The collection at `uri`; `""` is the default collection. */
   readonly collection: (uri: string) => Effect.Effect<Sequence, XQueryError>;
   /** The text of the resource at `uri`, decoded with `encoding` if one is given. */
-  readonly text: (uri: string, encoding: string | undefined) => Effect.Effect<string, XQueryError>;
+  readonly text: (
+    uri: string,
+    encoding: Option.Option<string>,
+  ) => Effect.Effect<string, XQueryError>;
 }
 
 /**
@@ -89,13 +90,13 @@ export class Resolver extends Context.Service<Resolver, ResourceResolver>()(
  * @category resolving
  */
 export interface StaticResources {
-  readonly documents?: Readonly<Record<string, XdmNode>> | undefined;
+  readonly documents?: Readonly<Record<string, XdmNode>>;
   /** Collections by URI; `""` is the default collection. */
-  readonly collections?: Readonly<Record<string, Sequence>> | undefined;
-  readonly texts?: Readonly<Record<string, string>> | undefined;
+  readonly collections?: Readonly<Record<string, Sequence>>;
+  readonly texts?: Readonly<Record<string, string>>;
 }
 
-const find = <A>(table: Readonly<Record<string, A>> | undefined, uri: string, code: string) =>
+const find = <A>(uri: string, code: string, table?: Readonly<Record<string, A>>) =>
   Effect.fromOption(Option.fromUndefinedOr(table?.[uri])).pipe(
     Effect.mapError(() =>
       xqueryError(code, `${uri === "" ? "the default collection" : uri} is not available`),
@@ -109,9 +110,9 @@ const find = <A>(table: Readonly<Record<string, A>> | undefined, uri: string, co
  * @category resolving
  */
 export const staticResolver = (resources: StaticResources): ResourceResolver => ({
-  document: (uri) => find(resources.documents, uri, "FODC0002"),
-  collection: (uri) => find(resources.collections, uri, "FODC0002"),
-  text: (uri) => find(resources.texts, uri, "FOUT1170"),
+  document: (uri) => find(uri, "FODC0002", resources.documents),
+  collection: (uri) => find(uri, "FODC0002", resources.collections),
+  text: (uri) => find(uri, "FOUT1170", resources.texts),
 });
 
 /**
@@ -122,26 +123,34 @@ export const staticResolver = (resources: StaticResources): ResourceResolver => 
  */
 export interface EvaluateOptions {
   /** The context item: an item, or a parsed document or element (made a node). */
-  readonly context?: Item | XmlDocument | XmlElement | undefined;
+  readonly context?: Item | XmlDocument | XmlElement;
   /**
    * External variables' values, by Clark name (`{uri}local`, or a bare
    * `local` for a name in no namespace). A single item stands for a sequence
    * of one. Compiling query text declares these names; a compiled
    * {@link Query} must have been compiled with them in `variables`.
    */
-  readonly variables?: Readonly<Record<string, Sequence | Item>> | undefined;
+  readonly variables?: Readonly<Record<string, Sequence | Item>>;
   /** The implicit timezone, in minutes east of UTC (default 0). */
-  readonly implicitTimezone?: number | undefined;
+  readonly implicitTimezone?: number;
   /**
    * The environment variables `fn:environment-variable` and
    * `fn:available-environment-variables` see, by name (default: none; the
    * process environment is never read).
    */
-  readonly environment?: Readonly<Record<string, string>> | undefined;
+  readonly environment?: Readonly<Record<string, string>>;
   /** The current dateTime (default: now, from the `Clock`). */
-  readonly currentDateTime?: Date | undefined;
+  readonly currentDateTime?: Date;
+  /**
+   * The default language of the dynamic context, an `xs:language` value such
+   * as `en` or `fr-CA`, which `fn:default-language` returns (default `en`).
+   *
+   * @since 0.2.0
+   * @category evaluating
+   */
+  readonly defaultLanguage?: string;
   /** How to compile query text: the static context's options. */
-  readonly compile?: CompileOptions | undefined;
+  readonly compile?: CompileOptions;
 }
 
 const isDocument = /*#__PURE__*/ Schema.is(XmlDocumentSchema);
@@ -191,6 +200,37 @@ const run = (
  * Constructs the evaluator does not implement yet fail with the code
  * `NotImplemented` in {@link ImplementationNamespace}.
  *
+ * Collations are the Unicode codepoint collation (the default), the HTML ASCII
+ * case-insensitive collation and the UCA collations
+ * `http://www.w3.org/2013/collation/UCA?…` of Functions and Operators 3.1
+ * §5.3.3, which run on `Intl.Collator` (so their order follows the runtime's
+ * ICU data, which varies a little between Node versions). The URI's
+ * parameters, separated by `;`, map as follows:
+ *
+ * - `lang`: the locale (default `en`); one the runtime has no data for is unsupported.
+ * - `strength`: `primary`, `secondary`, `tertiary` (the default) and `identical`
+ *   (tertiary, then the code points of the NFD forms); `quaternary` is
+ *   tertiary, except with `alternate=shifted`, where it is unsupported.
+ * - `caseLevel`: `yes` with `strength=primary`; `no`.
+ * - `alternate`: `non-ignorable` (the default), `blanked` and `shifted` (with
+ *   `maxVariable=punct`, the only one the runtime has).
+ * - `caseFirst` (`upper`, `lower`, `no`), `numeric` (`yes`, `no`) and
+ *   `normalization` (`yes`, `no`; the runtime always normalizes).
+ * - `backwards`: `no`. `reorder` and `version` are unsupported.
+ * - `fallback`: `yes` (the default) ignores a parameter or value that is
+ *   unsupported or unknown; `no` fails with `err:FOCH0002` (`err:XQST0038` in
+ *   a `default collation` declaration, `err:XQST0076` in a clause).
+ *
+ * Every function and clause that takes a collation, and value comparisons,
+ * `switch` and `fn:deep-equal` under a `default collation`, compare with it.
+ * `Intl.Collator` has no sort keys and no collation units, so `fn:collation-key`
+ * fails with `err:FOCH0004` for a UCA collation, and `fn:contains`,
+ * `fn:starts-with`, `fn:ends-with`, `fn:substring-before` and
+ * `fn:substring-after` compare the substrings of the string, cut between
+ * grapheme clusters (and between digit runs under `numeric=yes`), with the
+ * substring: the first minimal match wins, and characters the collation
+ * ignores neither start nor end it.
+ *
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
@@ -213,8 +253,8 @@ export const evaluate = (
 ): Effect.Effect<Sequence, XQueryError> =>
   Effect.gen(function* () {
     const variables = options.variables ?? {};
-    const compiled: Query = Predicate.isString(query)
-      ? yield* compileText(query, options.compile, Record.keys(variables))
+    const compiled: Query = P.isString(query)
+      ? yield* compileText(query, R.keys(variables), options.compile)
       : query;
     const resolver = yield* Effect.serviceOption(Resolver);
     const withModules = yield* loadModules(compiled, resolver);
@@ -269,16 +309,14 @@ const loadModules = (
     load === undefined ? Effect.succeed({}) : fetchModules(load, query.unresolvedImports, {})
   ).pipe(
     Effect.flatMap((modules) =>
-      Effect.fromResult(compile(query.source, { ...query.options, modules })),
+      Effect.fromResult(
+        compile(query.source, { ...Option.getOrUndefined(query.options), modules }),
+      ),
     ),
   );
 };
 
-const compileText = (
-  text: string,
-  options: CompileOptions | undefined,
-  names: ReadonlyArray<string>,
-) =>
+const compileText = (text: string, names: ReadonlyArray<string>, options?: CompileOptions) =>
   Effect.fromResult(
     compile(text, { ...options, variables: [...(options?.variables ?? []), ...names] }),
   );

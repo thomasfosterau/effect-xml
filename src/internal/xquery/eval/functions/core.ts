@@ -8,7 +8,8 @@
  */
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { XQueryError, errorCode } from "../../../../XQuery/Error.ts";
 import { canonicalEncoding } from "../../../../Encoding.ts";
@@ -29,8 +30,11 @@ import { castAtomic, toNumber } from "../cast.ts";
 import { deepEqual } from "../compare.ts";
 import { orElse, raise, succeeds, unwrap } from "../raise.ts";
 import { arrayMember, contextItem, fetchResource } from "../runtime.ts";
+import { collationOf } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, arrayOf, atomOf, bool, int, isEmpty, mapOf, ofNode, str, text } from "./values.ts";
+
+const isQName = Schema.is(QName);
 
 /** How many characters (code points, not UTF-16 units) a string has. */
 const codepoints = (s: string): number => Arr.fromIterable(s).length;
@@ -162,7 +166,14 @@ const sequences: ReadonlyArray<BuiltinSpec> = [
     params: ["item()*", "item()*"],
     result: "xs:boolean",
     impl: (args, call) =>
-      bool(deepEqual(arg(args, 0), arg(args, 1), call.ctx.dyn.implicitTimezone)),
+      bool(
+        deepEqual(
+          arg(args, 0),
+          arg(args, 1),
+          call.ctx.dyn.implicitTimezone,
+          collationOf(undefined, call).compare,
+        ),
+      ),
   },
 ];
 
@@ -279,7 +290,10 @@ const names: ReadonlyArray<BuiltinSpec> = [
   ...ofNode("fn:namespace-uri", "xs:anyURI", (n) => [
     AtomicValue.anyURI(
       n?.kind === "element" || n?.kind === "attribute"
-        ? Option.match(nodeName(n), { onNone: () => "", onSome: (q) => q.namespace ?? "" })
+        ? Option.match(nodeName(n), {
+            onNone: () => "",
+            onSome: (q) => Option.getOrElse(q.namespace, () => ""),
+          })
         : "",
     ),
   ]),
@@ -307,7 +321,7 @@ const fetchDocument = (uri: string, call: Call): Sequence => {
     { kind: "document", uri: absolute(uri, call), encoding: undefined },
     call.offset,
   );
-  return Predicate.isString(got) ? [] : got;
+  return P.isString(got) ? [] : got;
 };
 
 const resources: ReadonlyArray<BuiltinSpec> = [
@@ -400,7 +414,7 @@ const collection = (uri: string, call: Call): Sequence => {
     { kind: "collection", uri, encoding: undefined },
     call.offset,
   );
-  return Predicate.isString(got) ? [] : got;
+  return P.isString(got) ? [] : got;
 };
 
 /**
@@ -429,7 +443,7 @@ const NON_XML = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
 const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   if (isEmpty(arg(args, 0))) return [];
   const encoding = args.length > 1 ? text(arg(args, 1)) : undefined;
-  if (encoding !== undefined && canonicalEncoding(encoding) === null)
+  if (encoding !== undefined && Option.isNone(canonicalEncoding(encoding)))
     return raise("FOUT1190", `the encoding "${encoding}" is not supported`, call.offset);
   const got = fetchResource(
     call.ctx.dyn,
@@ -437,7 +451,7 @@ const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
     { kind: "text", uri: absolute(text(arg(args, 0)), call, "FOUT1170", "FOUT1170"), encoding },
     call.offset,
   );
-  if (!Predicate.isString(got)) return [];
+  if (!P.isString(got)) return [];
   return NON_XML.test(got)
     ? raise("FOUT1190", "the resource contains a character that is not allowed in XML", call.offset)
     : str(got);
@@ -445,7 +459,7 @@ const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
 
 const errorQName = (s: Sequence, call: Call): QName => {
   const [q] = s;
-  return q !== undefined && q instanceof AtomicValue && q.value instanceof QName
+  return q !== undefined && q instanceof AtomicValue && isQName(q.value)
     ? q.value
     : raise("XPTY0004", "fn:error's code must be an xs:QName", call.offset);
 };
@@ -468,7 +482,15 @@ const makeQName = (uri: string, lexical: string, call: Call): Sequence => {
   if (!valid) return raise("FOCA0002", `${lexical} is not a lexical QName`, call.offset);
   if (prefix !== null && uri === "")
     return raise("FOCA0002", `${lexical} has a prefix but no namespace`, call.offset);
-  return [AtomicValue.qname(new QName({ prefix, local, namespace: uri === "" ? null : uri }))];
+  return [
+    AtomicValue.qname(
+      new QName({
+        prefix: Option.fromNullOr(prefix),
+        local,
+        namespace: uri === "" ? Option.none() : Option.some(uri),
+      }),
+    ),
+  ];
 };
 
 /** `fn:error` with a code, and optionally a description and an error value. */

@@ -15,7 +15,7 @@ import * as Arr from "effect/Array";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import type { QName } from "../Name.ts";
 import { Cursor } from "../Xml/Cursor.ts";
@@ -63,7 +63,7 @@ export interface StepLevel {
    * For each positional step, how many of this element's children have
    * passed its test and each of its predicates so far.
    */
-  counts?: Array<Array<number> | undefined> | undefined;
+  counts?: Array<Array<number> | undefined>;
 }
 
 /** No steps: shared by every level that matches none, so most elements allocate nothing. */
@@ -77,9 +77,9 @@ export type ExpandedName = Pick<QName, "local" | "namespace">;
 
 /** Whether `name` passes an element test. */
 const namePasses = (t: ElementTest, name: ExpandedName): boolean =>
-  Predicate.isTagged(t, "Name")
-    ? name.local === t.local && name.namespace === t.namespace
-    : (t.namespace === undefined || name.namespace === t.namespace) &&
+  P.isTagged(t, "Name")
+    ? name.local === t.local && Option.getOrNull(name.namespace) === t.namespace
+    : (t.namespace === undefined || Option.getOrNull(name.namespace) === t.namespace) &&
       (t.local === undefined || name.local === t.local);
 
 /** `a ∪ b`, both ascending; `a` itself when `b` adds nothing. */
@@ -177,10 +177,10 @@ export const matchesAll = <P>(steps: ReadonlyArray<MatchStep<P>>, level: StepLev
 // -----------------------------------------------------------------------------
 
 /** A name already resolved: `Q{uri}local`. */
-const resolvedName = (namespace: string | null, local: string): EQName => ({
+const resolvedName = (namespace: Option.Option<string>, local: string): EQName => ({
   prefix: Option.none(),
   local,
-  uri: Option.some(namespace ?? ""),
+  uri: Option.orElseSome(namespace, () => ""),
   offset: 0,
 });
 
@@ -207,7 +207,7 @@ const nodeTest = (t: XPathNodeTest): NodeTestT =>
       NodeTest.Wildcard({
         wildcard: {
           prefix: Option.none(),
-          uri: n.namespace === undefined ? Option.none() : Option.some(n.namespace ?? ""),
+          uri: n.namespace === undefined ? Option.none() : Option.orElseSome(n.namespace, () => ""),
           local: Option.none(),
           offset: 0,
         },
@@ -307,12 +307,9 @@ export const compileStreamable = (
   path: string | Path,
   options: CompileOptions | undefined,
 ): Result.Result<ReadonlyArray<StreamStep>, XPathError> =>
-  Result.flatMap(
-    Predicate.isString(path) ? compile(path, options) : Result.succeed(path),
-    (compiled) => {
-      const steps = toStreamSteps(compiled);
-      return Predicate.isString(steps)
-        ? Result.fail(new XPathError({ expression: compiled.expression, offset: 0, reason: steps }))
-        : Result.succeed(steps);
-    },
-  );
+  Result.flatMap(P.isString(path) ? compile(path, options) : Result.succeed(path), (compiled) => {
+    const steps = toStreamSteps(compiled);
+    return P.isString(steps)
+      ? Result.fail(new XPathError({ expression: compiled.expression, offset: 0, reason: steps }))
+      : Result.succeed(steps);
+  });

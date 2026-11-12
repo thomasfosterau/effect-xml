@@ -6,7 +6,8 @@
  * tagged, callers can exhaustively narrow with `Effect.catchTag` /
  * `Effect.catchTags` and the type system guarantees every case is handled.
  */
-import * as Predicate from "effect/Predicate";
+import * as Option from "effect/Option";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { showPosition } from "./Position.ts";
 import { quote } from "./internal/quote.ts";
@@ -14,9 +15,9 @@ import { isIn, tagSet } from "./internal/tagSet.ts";
 
 /** The `Position` every error carries, as a schema (the `Position` interface's shape). */
 const ErrorPosition = Schema.Struct({
-  offset: Schema.Number,
-  line: Schema.Number,
-  column: Schema.Number,
+  offset: Schema.Int,
+  line: Schema.Int,
+  column: Schema.Int,
 });
 
 /**
@@ -25,14 +26,14 @@ const ErrorPosition = Schema.Struct({
  * @since 0.1.0
  * @category errors
  */
-export class UnexpectedCharacter extends Schema.TaggedError<UnexpectedCharacter>()(
-  "UnexpectedCharacter",
-  {
-    char: Schema.String,
-    position: ErrorPosition,
-    context: Schema.String,
-  },
-) {
+export class UnexpectedCharacter extends Schema.TaggedError<
+  UnexpectedCharacter,
+  { readonly brand: unique symbol }
+>()("UnexpectedCharacter", {
+  char: Schema.String,
+  position: ErrorPosition,
+  context: Schema.String,
+}) {
   override get message(): string {
     return `Unexpected character ${quote(this.char)} at ${showPosition(
       this.position,
@@ -46,13 +47,13 @@ export class UnexpectedCharacter extends Schema.TaggedError<UnexpectedCharacter>
  * @since 0.1.0
  * @category errors
  */
-export class UnexpectedEndOfInput extends Schema.TaggedError<UnexpectedEndOfInput>()(
-  "UnexpectedEndOfInput",
-  {
-    position: ErrorPosition,
-    context: Schema.String,
-  },
-) {
+export class UnexpectedEndOfInput extends Schema.TaggedError<
+  UnexpectedEndOfInput,
+  { readonly brand: unique symbol }
+>()("UnexpectedEndOfInput", {
+  position: ErrorPosition,
+  context: Schema.String,
+}) {
   override get message(): string {
     return `Unexpected end of input at ${showPosition(this.position)} while ${this.context}`;
   }
@@ -64,7 +65,10 @@ export class UnexpectedEndOfInput extends Schema.TaggedError<UnexpectedEndOfInpu
  * @since 0.1.0
  * @category errors
  */
-export class MismatchedEndTag extends Schema.TaggedError<MismatchedEndTag>()("MismatchedEndTag", {
+export class MismatchedEndTag extends Schema.TaggedError<
+  MismatchedEndTag,
+  { readonly brand: unique symbol }
+>()("MismatchedEndTag", {
   expected: Schema.String,
   actual: Schema.String,
   position: ErrorPosition,
@@ -82,12 +86,15 @@ export class MismatchedEndTag extends Schema.TaggedError<MismatchedEndTag>()("Mi
  * @since 0.1.0
  * @category errors
  */
-export class UnexpectedEndTag extends Schema.TaggedError<UnexpectedEndTag>()("UnexpectedEndTag", {
-  name: Schema.String,
+export class UnexpectedEndTag extends Schema.TaggedError<
+  UnexpectedEndTag,
+  { readonly brand: unique symbol }
+>()("UnexpectedEndTag", {
+  tagName: Schema.String,
   position: ErrorPosition,
 }) {
   override get message(): string {
-    return `Unexpected end tag </${this.name}> at ${showPosition(this.position)}`;
+    return `Unexpected end tag </${this.tagName}> at ${showPosition(this.position)}`;
   }
 }
 
@@ -97,7 +104,10 @@ export class UnexpectedEndTag extends Schema.TaggedError<UnexpectedEndTag>()("Un
  * @since 0.1.0
  * @category errors
  */
-export class InvalidEntity extends Schema.TaggedError<InvalidEntity>()("InvalidEntity", {
+export class InvalidEntity extends Schema.TaggedError<
+  InvalidEntity,
+  { readonly brand: unique symbol }
+>()("InvalidEntity", {
   reference: Schema.String,
   position: ErrorPosition,
   reason: Schema.String,
@@ -116,15 +126,15 @@ export class InvalidEntity extends Schema.TaggedError<InvalidEntity>()("InvalidE
  * @since 0.1.0
  * @category errors
  */
-export class MalformedDeclaration extends Schema.TaggedError<MalformedDeclaration>()(
-  "MalformedDeclaration",
-  {
-    construct: Schema.String,
-    expected: Schema.String,
-    found: Schema.String,
-    position: ErrorPosition,
-  },
-) {
+export class MalformedDeclaration extends Schema.TaggedError<
+  MalformedDeclaration,
+  { readonly brand: unique symbol }
+>()("MalformedDeclaration", {
+  construct: Schema.String,
+  expected: Schema.String,
+  found: Schema.String,
+  position: ErrorPosition,
+}) {
   override get message(): string {
     return `Malformed ${this.construct} at ${showPosition(this.position)}: expected ${
       this.expected
@@ -138,14 +148,14 @@ export class MalformedDeclaration extends Schema.TaggedError<MalformedDeclaratio
  * @since 0.1.0
  * @category errors
  */
-export class DuplicateAttribute extends Schema.TaggedError<DuplicateAttribute>()(
-  "DuplicateAttribute",
-  {
-    element: Schema.String,
-    attribute: Schema.String,
-    position: ErrorPosition,
-  },
-) {
+export class DuplicateAttribute extends Schema.TaggedError<
+  DuplicateAttribute,
+  { readonly brand: unique symbol }
+>()("DuplicateAttribute", {
+  element: Schema.String,
+  attribute: Schema.String,
+  position: ErrorPosition,
+}) {
   override get message(): string {
     return `Duplicate attribute "${this.attribute}" on <${this.element}> at ${showPosition(
       this.position,
@@ -159,13 +169,13 @@ export class DuplicateAttribute extends Schema.TaggedError<DuplicateAttribute>()
  * @since 0.1.0
  * @category errors
  */
-export class InvalidDocumentStructure extends Schema.TaggedError<InvalidDocumentStructure>()(
-  "InvalidDocumentStructure",
-  {
-    position: ErrorPosition,
-    reason: Schema.String,
-  },
-) {
+export class InvalidDocumentStructure extends Schema.TaggedError<
+  InvalidDocumentStructure,
+  { readonly brand: unique symbol }
+>()("InvalidDocumentStructure", {
+  position: ErrorPosition,
+  reason: Schema.String,
+}) {
   override get message(): string {
     return `Invalid document structure at ${showPosition(this.position)}: ${this.reason}`;
   }
@@ -177,16 +187,16 @@ export class InvalidDocumentStructure extends Schema.TaggedError<InvalidDocument
  * @since 0.1.0
  * @category errors
  */
-export class UnboundNamespacePrefix extends Schema.TaggedError<UnboundNamespacePrefix>()(
-  "UnboundNamespacePrefix",
-  {
-    prefix: Schema.String,
-    name: Schema.String,
-    position: ErrorPosition,
-  },
-) {
+export class UnboundNamespacePrefix extends Schema.TaggedError<
+  UnboundNamespacePrefix,
+  { readonly brand: unique symbol }
+>()("UnboundNamespacePrefix", {
+  prefix: Schema.String,
+  qualifiedName: Schema.String,
+  position: ErrorPosition,
+}) {
   override get message(): string {
-    return `Unbound namespace prefix "${this.prefix}" in "${this.name}" at ${showPosition(
+    return `Unbound namespace prefix "${this.prefix}" in "${this.qualifiedName}" at ${showPosition(
       this.position,
     )}`;
   }
@@ -197,18 +207,21 @@ export class UnboundNamespacePrefix extends Schema.TaggedError<UnboundNamespaceP
  * (with namespace processing on): a name that is not a `QName`, a colon in
  * a processing instruction target or notation name, an empty prefixed
  * declaration (`xmlns:p=""`, XML 1.1 only), or a misuse of the reserved
- * `xml` / `xmlns` prefixes and namespaces. `name` is the offending name.
+ * `xml` / `xmlns` prefixes and namespaces. `invalidName` is the offending name.
  *
  * @since 0.1.0
  * @category errors
  */
-export class InvalidNamespace extends Schema.TaggedError<InvalidNamespace>()("InvalidNamespace", {
-  name: Schema.String,
+export class InvalidNamespace extends Schema.TaggedError<
+  InvalidNamespace,
+  { readonly brand: unique symbol }
+>()("InvalidNamespace", {
+  invalidName: Schema.String,
   reason: Schema.String,
   position: ErrorPosition,
 }) {
   override get message(): string {
-    return `Namespace error in "${this.name}" at ${showPosition(this.position)}: ${this.reason}`;
+    return `Namespace error in "${this.invalidName}" at ${showPosition(this.position)}: ${this.reason}`;
   }
 }
 
@@ -229,13 +242,17 @@ export type LimitName =
 
 /**
  * The input exceeded one of the configured resource limits. `position` is where
- * the offending construct starts, or `null` when the limit was hit while
- * decoding bytes (before there are any positions).
+ * the offending construct starts, or `Option.none()` when the limit was hit
+ * while decoding bytes (before there are any positions); it is encoded as
+ * `null` then.
  *
  * @since 0.1.0
  * @category errors
  */
-export class LimitExceeded extends Schema.TaggedError<LimitExceeded>()("LimitExceeded", {
+export class LimitExceeded extends Schema.TaggedError<
+  LimitExceeded,
+  { readonly brand: unique symbol }
+>()("LimitExceeded", {
   limit: Schema.Literals([
     "maxDepth",
     "maxAttributes",
@@ -245,11 +262,14 @@ export class LimitExceeded extends Schema.TaggedError<LimitExceeded>()("LimitExc
     "maxEntityExpansion",
     "maxEntityDepth",
   ]),
-  max: Schema.Number,
-  position: Schema.NullOr(ErrorPosition),
+  max: Schema.Finite,
+  position: Schema.OptionFromNullOr(ErrorPosition),
 }) {
   override get message(): string {
-    const at = this.position === null ? "" : ` at ${showPosition(this.position)}`;
+    const at = Option.match(this.position, {
+      onNone: () => "",
+      onSome: (position) => ` at ${showPosition(position)}`,
+    });
     return `Resource limit ${this.limit} (${this.max}) exceeded${at}`;
   }
 }
@@ -260,10 +280,10 @@ export class LimitExceeded extends Schema.TaggedError<LimitExceeded>()("LimitExc
  * @since 0.1.0
  * @category errors
  */
-export class UnsupportedEncoding extends Schema.TaggedError<UnsupportedEncoding>()(
-  "UnsupportedEncoding",
-  { encoding: Schema.String, reason: Schema.String },
-) {
+export class UnsupportedEncoding extends Schema.TaggedError<
+  UnsupportedEncoding,
+  { readonly brand: unique symbol }
+>()("UnsupportedEncoding", { encoding: Schema.String, reason: Schema.String }) {
   override get message(): string {
     return `Unsupported encoding ${quote(this.encoding)}: ${this.reason}`;
   }
@@ -277,10 +297,10 @@ export class UnsupportedEncoding extends Schema.TaggedError<UnsupportedEncoding>
  * @since 0.1.0
  * @category errors
  */
-export class InvalidByteSequence extends Schema.TaggedError<InvalidByteSequence>()(
-  "InvalidByteSequence",
-  { encoding: Schema.String, offset: Schema.Number },
-) {
+export class InvalidByteSequence extends Schema.TaggedError<
+  InvalidByteSequence,
+  { readonly brand: unique symbol }
+>()("InvalidByteSequence", { encoding: Schema.String, offset: Schema.Int }) {
   override get message(): string {
     return `Invalid ${this.encoding} byte sequence in the input from byte ${this.offset}`;
   }
@@ -330,7 +350,7 @@ export type SaxError =
  * @category guards
  */
 export const isSaxError = (u: unknown): u is SaxError =>
-  Predicate.hasProperty(u, "_tag") && Predicate.isString(u._tag) && isIn(saxErrorTags, u._tag);
+  P.hasProperty(u, "_tag") && P.isString(u._tag) && isIn(saxErrorTags, u._tag);
 
 const saxErrorTags = tagSet(
   "UnexpectedCharacter",

@@ -8,6 +8,7 @@
  * lexed once and its events reused, so a document with many references costs
  * linear time, while each use still counts against the expansion budget.
  */
+import { unsafeAttrName } from "../Name.ts";
 import { InvalidEntity, LimitExceeded, type LexError } from "../Error.ts";
 import type { Span } from "../Position.ts";
 import { collapse, type Dtd } from "./dtd.ts";
@@ -15,7 +16,7 @@ import type { ExpansionFailure } from "./entities.ts";
 import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import {
   isDoctypeEvent,
   isEndElementEvent,
@@ -64,7 +65,7 @@ export class Expander {
       ? new LimitExceeded({
           limit: failure.limit.name,
           max: failure.limit.max,
-          position: span.start,
+          position: Option.some(span.start),
         })
       : new InvalidEntity({ reference: `&${name};`, position: span.start, reason: failure.reason });
   }
@@ -77,7 +78,7 @@ export class Expander {
     }
     const before = this.dtd.spent;
     const value = this.dtd.replacement(name, stack);
-    if (!Predicate.isString(value)) return this.fail(name, span, value);
+    if (!P.isString(value)) return this.fail(name, span, value);
     const lexer = new Lexer({
       mode: "xml",
       entities: this.entities,
@@ -94,8 +95,12 @@ export class Expander {
     const take = (o: LexOutput): Failure | null => {
       if (isFault(o)) {
         // Positions inside replacement text mean little; report the reference.
-        return Predicate.isTagged(o.error, "LimitExceeded")
-          ? new LimitExceeded({ limit: o.error.limit, max: o.error.max, position: span.start })
+        return P.isTagged(o.error, "LimitExceeded")
+          ? new LimitExceeded({
+              limit: o.error.limit,
+              max: o.error.max,
+              position: Option.some(span.start),
+            })
           : new InvalidEntity({
               reference: `&${name};`,
               position: span.start,
@@ -151,7 +156,7 @@ export const applyDefaults = (
   const withDefaults = Arr.reduce(decls, attributes, (present, d) =>
     d.value === null || present.some((a) => a.name === d.name)
       ? present
-      : [...present, { name: d.name, value: d.value, span: ev.span }],
+      : [...present, { name: unsafeAttrName(d.name), value: d.value, span: ev.span }],
   );
   return { ...ev, attributes: withDefaults };
 };

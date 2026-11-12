@@ -12,7 +12,10 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { LimitExceeded } from "../Error.ts";
+
+const isLimitExceeded = Schema.is(LimitExceeded);
 
 /**
  * Run a tree builder's whole drive loop inside one boundary: the loop's own
@@ -23,7 +26,7 @@ export const tryDrive = <A>(drive: () => A): A | LimitExceeded => {
   try {
     return drive();
   } catch (e) {
-    if (e instanceof LimitExceeded) return e;
+    if (isLimitExceeded(e)) return e;
     throw e;
   }
 };

@@ -1,10 +1,11 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Html, Limits, Sax, Xml, type LimitExceeded, type SaxError } from "../src/index.ts";
 import { splitEvery } from "./support/chunks.ts";
+import { some } from "./support/narrow.ts";
 
 /** Run an effect that must fail with LimitExceeded, within a time budget, and return the error. */
 const limitFailure = async (
@@ -16,7 +17,7 @@ const limitFailure = async (
   expect(performance.now() - start).toBeLessThan(budgetMs);
   assert(Result.isFailure(r), "expected failure");
   expect(r.failure._tag).toBe("LimitExceeded");
-  assert(Predicate.isTagged(r.failure, "LimitExceeded"));
+  assert(P.isTagged(r.failure, "LimitExceeded"));
   return r.failure;
 };
 
@@ -27,7 +28,7 @@ describe("resource limits", () => {
     const e = await limitFailure(Xml.parse(deep(100_000)));
     expect(e.limit).toBe("maxDepth");
     expect(e.max).toBe(Limits.defaultLimits.maxDepth);
-    expect(e.position).toEqual({ offset: 3072, line: 1, column: 3073 });
+    expect(some(e.position)).toEqual({ offset: 3072, line: 1, column: 3073 });
   });
 
   test("100,000 levels while streaming", async () => {

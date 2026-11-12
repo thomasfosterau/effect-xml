@@ -90,7 +90,7 @@ export interface HtmlFragmentOptions extends HtmlOptions {
    * `"textarea"`), or `"svg <name>"` / `"math <name>"` for a foreign one.
    * Defaults to `"body"`.
    */
-  readonly context?: string | undefined;
+  readonly context?: string;
 }
 
 /**
@@ -147,10 +147,10 @@ export const parseDocumentStream =
  */
 export interface HtmlBytesOptions extends HtmlOptions {
   /** The transport layer's encoding (e.g. a `Content-Type` charset). A byte order mark still wins. */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
 }
 
-const htmlDecodeOptions = (options: HtmlBytesOptions | undefined) =>
+const htmlDecodeOptions = (options?: HtmlBytesOptions) =>
   decodeOptions({ ...options, mode: "html" });
 
 /**

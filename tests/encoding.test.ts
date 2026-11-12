@@ -1,7 +1,7 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Encoding, Html, Sax, Xml } from "../src/index.ts";
@@ -132,7 +132,7 @@ describe("XML encoding detection (Appendix F)", () => {
     const e = await failure(
       Xml.parseBytes(latin1(`<?xml version="1.0" encoding="US-ASCII"?><a>\xe9</a>`)),
     );
-    assert(Predicate.isTagged(e, "InvalidByteSequence"), "expected InvalidByteSequence");
+    assert(P.isTagged(e, "InvalidByteSequence"), "expected InvalidByteSequence");
     expect(e.offset).toBe(44);
   });
 

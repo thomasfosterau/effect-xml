@@ -52,9 +52,11 @@ import {
   scanXml,
 } from "./scan.ts";
 import { declarationContexts } from "./declarations.ts";
+import { type AttrName, type TagName, unsafeAttrName, unsafeTagName } from "../Name.ts";
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
 import type { Dtd } from "./dtd.ts";
+import { hasAsciiNames } from "./entities.ts";
 import { grammars, type Grammars, Issue, type RawKind, type Tok } from "./tokens.ts";
 
 // -----------------------------------------------------------------------------
@@ -62,7 +64,7 @@ import { grammars, type Grammars, Issue, type RawKind, type Tok } from "./tokens
 // -----------------------------------------------------------------------------
 
 interface LexAttribute {
-  readonly name: string;
+  readonly name: AttrName;
   readonly value: string;
   readonly span: Span;
 }
@@ -70,12 +72,12 @@ interface LexAttribute {
 export type LexEvent =
   | {
       readonly _tag: "StartElement";
-      readonly name: string;
+      readonly name: TagName;
       readonly attributes: ReadonlyArray<LexAttribute>;
       readonly selfClosing: boolean;
       readonly span: Span;
     }
-  | { readonly _tag: "EndElement"; readonly name: string; readonly span: Span }
+  | { readonly _tag: "EndElement"; readonly name: TagName; readonly span: Span }
   | { readonly _tag: "Text"; readonly data: string; readonly span: Span }
   | { readonly _tag: "CData"; readonly data: string; readonly span: Span }
   | { readonly _tag: "Comment"; readonly data: string; readonly span: Span }
@@ -143,6 +145,7 @@ const isEndTag = (t: Tok): t is Extract<Tok, { readonly _tag: "EndElement" }> =>
 const isStartTag = (t: Tok): t is Extract<Tok, { readonly _tag: "StartElement" }> =>
   t._tag === "StartElement";
 const isEntityIssue = Issue.$is("Entity");
+const isCharIssue = Issue.$is("Char");
 
 // -----------------------------------------------------------------------------
 // Options
@@ -153,8 +156,18 @@ export interface LexerOptions {
   readonly mode: "xml" | "html";
   /** Named entity table. */
   readonly entities: Record<string, string>;
-  /** Declared entities, for XML with `dtd: "internal"`. */
-  readonly dtd?: Dtd | undefined;
+  /**
+   * Declared entities, for XML with `dtd: "internal"`. The lexer reads with
+   * the grammars without a DTD (and the scanner) until one declares a
+   * general entity (see {@link Lexer.afterDoctype}).
+   */
+  readonly dtd?: Dtd;
+  /**
+   * With {@link dtd}: read with the DTD-aware grammars from the first token,
+   * whatever the DTD declares, as before #99. Only the tests set it, to
+   * check that reading without them until a declaration changes nothing.
+   */
+  readonly eagerDtd?: boolean;
   /**
    * XML: the input is content (an entity's replacement text), not a
    * document, so references and CDATA sections may appear at its top level.
@@ -164,18 +177,25 @@ export interface LexerOptions {
    * HTML: the scripting flag. When set, `<noscript>` content is raw text, as
    * a browser with scripting enabled reads it.
    */
-  readonly scripting?: boolean | undefined;
+  readonly scripting?: boolean;
   /**
    * Whether events have positions (default `true`); without, every span is
    * the origin. Faults keep theirs (see {@link Lexer.tokenPosition}).
    */
-  readonly positions?: boolean | undefined;
+  readonly positions?: boolean;
   /**
    * Reuse the scanner's events (see `Context.reuse`; only without
    * positions): for a caller that is done with each event before it reads
    * the next.
    */
-  readonly reuse?: boolean | undefined;
+  readonly reuse?: boolean;
+  /**
+   * XML: recover where the strict grammars fail at a `<` or `&` that starts
+   * nothing, an unquoted or valueless attribute, or markup out of place at
+   * the top level (see `tokens.ts` and {@link Lexer.placed}). What strict XML
+   * reads is read the same; characters XML does not allow still fail.
+   */
+  readonly recover?: boolean;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -332,7 +352,14 @@ export class Lexer {
   private prologEnded = false;
   /** XML: why the last token {@link misplaced} looked at is not well-formed. */
   private misplacement: Option.Option<InvalidDocumentStructure> = Option.none();
-  private readonly grammars: Grammars;
+  private grammars: Grammars;
+  /**
+   * XML with a DTD: whether the DTD-aware grammars are on. They are off
+   * while nothing is declared (see {@link afterDoctype}).
+   */
+  private dtdOn: boolean;
+  /** XML with a DTD, its grammars off: a DOCTYPE has just been read, so look at the DTD before the next token. */
+  private doctypeRead = false;
   private readonly positions: Positions = new Positions();
 
   /**
@@ -362,25 +389,54 @@ export class Lexer {
 
   private readonly options: LexerOptions;
 
-  /** Whether {@link scanXml} reads the data state's tokens (XML without a DTD). */
-  private readonly scans: boolean;
+  /** Whether {@link scanXml} reads the data state's tokens (XML, the DTD-aware grammars off). */
+  private scans: boolean;
+
+  /** XML: whether to recover (see {@link LexerOptions.recover}). */
+  private readonly recover: boolean;
 
   constructor(options: LexerOptions) {
     this.options = options;
-    this.scans = options.mode === "xml" && options.dtd === undefined;
+    const dtd = options.dtd;
+    // An empty DTD reads as none, unless the entity table has a name the
+    // grammars without a DTD don't read (see `hasAsciiNames`).
+    this.dtdOn =
+      dtd !== undefined &&
+      (options.eagerDtd === true || dtd.declaresEntities || !hasAsciiNames(options.entities));
+    this.scans = options.mode === "xml" && !this.dtdOn;
+    this.recover = options.mode === "xml" && options.recover === true;
     this.scanner = {
       entities: options.entities,
+      recover: this.recover,
       span: (from, to) => this.positions.span(this.base + from, this.base + to),
       positions: options.positions ?? true,
       reuse: options.reuse === true && options.positions === false,
       end: 0,
       count: 0,
       inside: false,
-      names: Arr.allocate<string>(NAME_SLOTS),
+      names: Arr.allocate<Context["names"][number]>(NAME_SLOTS),
       reused: new Reused(),
       marks: freshMarks(),
     };
-    this.grammars = grammars(options.mode, options.entities, options.dtd !== undefined);
+    this.grammars = grammars(options.mode, options.entities, this.dtdOn, this.recover);
+  }
+
+  /**
+   * XML with a DTD, read so far without its grammars: after a DOCTYPE (once
+   * the SAX layer has read its internal subset, before the next token),
+   * switch them on if it declares a general entity. Until then the DTD
+   * changes nothing the grammars read: no name is declared, so no reference
+   * resolves through it and none has markup in it, and the entity table's
+   * names read the same either way. Nothing but a DOCTYPE declares anything,
+   * and there is at most one, before the root element.
+   */
+  private afterDoctype(): void {
+    this.doctypeRead = false;
+    const dtd = this.options.dtd;
+    if (dtd === undefined || !dtd.declaresEntities) return;
+    this.dtdOn = true;
+    this.scans = false;
+    this.grammars = grammars(this.options.mode, this.options.entities, true, this.recover);
   }
 
   /** Signal end of input and flush any pending output. */
@@ -436,14 +492,22 @@ export class Lexer {
    * no token can be read until more input arrives (or ever, after the end).
    */
   pull(): ReadonlyArray<LexOutput> | null {
+    const ev = this.scanned();
+    if (ev === null) return null;
+    return ev === undefined ? this.parse() : [ev];
+  }
+
+  /**
+   * The next token as the scanner reads it: its event, `null` when no token
+   * can be read yet (or ever, after the end), or `undefined` when the
+   * grammar reads it (see {@link scan}; always, with the scanner off).
+   */
+  private scanned(): LexEvent | null | undefined {
     if (this.failed || this.cursor >= this.buf.length) return null;
     if (!this.ended && this.buf.length < this.retryAt) return null;
-    if (this.scans) {
-      const ev = this.scan();
-      if (ev === null) return null;
-      if (ev !== undefined) return [ev];
-    }
-    return this.parse();
+    if (this.doctypeRead) this.afterDoctype();
+    // (A DOCTYPE may have switched the scanner off.)
+    return this.scans ? this.scan() : undefined;
   }
 
   /** Lex the next token with the grammar (see {@link pull}). */
@@ -453,7 +517,7 @@ export class Lexer {
     const state = this.parseState(start);
     // The `dtd: "internal"` grammars are shared: point them at this document's DTD.
     const dtd = this.options.dtd;
-    if (dtd !== undefined) this.grammars.dtd.current = dtd;
+    if (dtd !== undefined && this.dtdOn) this.grammars.dtd.current = dtd;
     // The compiled grammar runs on the reused state; on a failure `Parser.run`
     // re-runs the interpreter, so `mode` and the reported failure are its.
     const step = Parser.run(this.grammar(), state);
@@ -470,6 +534,7 @@ export class Lexer {
       this.failed = true;
       return [{ _tag: "Fault", error: this.forbiddenCharacter() }];
     }
+    if (this.recover) return this.accept(state.pos, step.filter(this.placed));
     if (this.options.mode === "xml" && step.some(this.misplaced)) {
       this.failed = true;
       // `misplaced` recorded why.
@@ -477,7 +542,12 @@ export class Lexer {
         Option.map(this.misplacement, (error): LexFault => ({ _tag: "Fault", error })),
       );
     }
-    this.cursor = state.pos;
+    return this.accept(state.pos, step);
+  }
+
+  /** Take in the tokens of a step that ends at buffer index `end`: their events. */
+  private accept(end: number, step: ReadonlyArray<Tok>): ReadonlyArray<LexOutput> {
+    this.cursor = end;
     this.retryAt = 0;
     const out = step.map((t) => this.event(t));
     this.compact();
@@ -522,9 +592,7 @@ export class Lexer {
    * `null` when no token can be read yet.
    */
   private next(f: (output: LexOutput) => boolean): boolean | null {
-    if (this.failed || this.cursor >= this.buf.length) return null;
-    if (!this.ended && this.buf.length < this.retryAt) return null;
-    const ev = this.scan();
+    const ev = this.scanned();
     if (ev === null) return null;
     if (ev !== undefined) return f(ev);
     // (The scanner has had its turn.)
@@ -616,7 +684,11 @@ export class Lexer {
 
   /** The tokenizer state after a token. */
   private transition(t: Tok): void {
-    if (isEndTag(t)) {
+    if (t._tag === "Doctype") {
+      // A DOCTYPE that is kept (one that is out of place is a fault, or
+      // dropped when recovering): see `afterDoctype`.
+      if (!this.dtdOn && this.options.dtd !== undefined) this.doctypeRead = true;
+    } else if (isEndTag(t)) {
       this.state = DATA;
     } else if (
       isStartTag(t) &&
@@ -688,6 +760,34 @@ export class Lexer {
     }
   };
 
+  /**
+   * XML, recovering: whether to keep `t`, as {@link misplaced} would accept
+   * it and further. References and CDATA sections outside the root element
+   * are kept, for the tree builder to place (it puts character data before
+   * the root in a synthesized one, and after it under the root). An XML
+   * declaration anywhere but at the very start, and a document type
+   * declaration after the first or after the root element's start, are
+   * dropped: XML5 reads a late `<?xml …?>` as a processing instruction, but
+   * the `xml` target is reserved (§2.6), and the first declaration is the
+   * document's.
+   */
+  // A `switch` and a method built once, as `misplaced`.
+  private readonly placed = (t: Tok): boolean => {
+    switch (t._tag) {
+      case "StartElement":
+      case "EndElement":
+        return !this.misplaced(t);
+      case "Doctype":
+        if (this.prologEnded) return false;
+        this.prologEnded = true;
+        return true;
+      case "XmlDeclaration":
+        return this.base + t.start === 0;
+      default:
+        return true;
+    }
+  };
+
   /** Is the lexer outside the root element of a document? */
   private outside(): boolean {
     return this.depth === 0 && !this.options.content;
@@ -736,12 +836,12 @@ export class Lexer {
         // The tag's start offset first: offsets are computed moving forward.
         const start = this.positions.offsetAt(this.base + t.start);
         const attributes = t.attributes.map((a): LexAttribute => ({
-          name: a.name,
+          name: unsafeAttrName(a.name),
           value: a.value,
           span: this.span(a),
         }));
         return {
-          name: t.name,
+          name: unsafeTagName(t.name),
           attributes,
           selfClosing: t.selfClosing,
           span: this.scanner.positions
@@ -757,7 +857,7 @@ export class Lexer {
         };
       }
       case "EndElement":
-        return { name: t.name, span: this.span(t), _tag: "EndElement" };
+        return { name: unsafeTagName(t.name), span: this.span(t), _tag: "EndElement" };
       case "Text":
         return { data: t.data, span: this.span(t), _tag: "Text" };
       case "CData":
@@ -818,17 +918,17 @@ export class Lexer {
     this.positions.anchor(this.base + this.cursor);
     // The grammar may have stumbled over the character itself.
     if (this.forbidden !== -1 && this.forbidden <= this.base + at) return this.forbiddenCharacter();
-    // SAFETY: every grammar here fails with an `Issue` (its error type `P<A>`);
-    // the parse state's failure record stores causes as `unknown`.
-    const issue = failure.hasCause ? (failure.cause as Issue) : undefined;
-    if (issue !== undefined && isEntityIssue(issue) && issue.limit !== undefined) {
+    // Every grammar here fails with an `Issue` (its error type `P<A>`); the
+    // parse state's failure record stores causes as `unknown`.
+    const issue: unknown = failure.hasCause ? failure.cause : undefined;
+    if (isEntityIssue(issue) && issue.limit !== undefined) {
       return new LimitExceeded({
         limit: issue.limit.name,
         max: issue.limit.max,
-        position: this.at(issue.offset),
+        position: Option.some(this.at(issue.offset)),
       });
     }
-    if (issue !== undefined && isEntityIssue(issue)) {
+    if (isEntityIssue(issue)) {
       return new InvalidEntity({
         reference: issue.reference,
         position: this.at(issue.offset),
@@ -841,7 +941,7 @@ export class Lexer {
         context: "parsing markup",
       });
     }
-    if (issue !== undefined) {
+    if (isCharIssue(issue)) {
       return new UnexpectedCharacter({
         char: charAt(this.buf, issue.offset),
         position: this.at(issue.offset),

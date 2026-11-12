@@ -9,7 +9,7 @@
  */
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { AtomicValue } from "../atomic.ts";
 import { atomize, type Sequence } from "../item.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../types.ts";
@@ -17,6 +17,7 @@ import { castAtomic, toDecimal, toNumber } from "./cast.ts";
 import { raise, unwrap } from "./raise.ts";
 import {
   daysInMonth,
+  durationInRange,
   durationOf,
   durationValue,
   formatParts,
@@ -141,7 +142,7 @@ const numericArith = (
   offset?: number,
 ): AtomicValue => {
   const kind = promoted(a.type, b.type);
-  if (kind === "integer" && Predicate.isBigInt(a.value) && Predicate.isBigInt(b.value))
+  if (kind === "integer" && P.isBigInt(a.value) && P.isBigInt(b.value))
     return integerArith(op, a.value, b.value, offset);
   if (kind === "integer" || kind === "decimal") return decimalArith(op, a, b, offset);
   return floatingArith(op, kind, a, b, offset);
@@ -258,13 +259,15 @@ const temporalMinus = (
     return noArith("-", a, b, offset);
   const [x, y] = [partsOf(a), partsOf(b)];
   if (Option.isNone(x) || Option.isNone(y)) return noArith("-", a, b, offset);
-  return durationValue(DT, {
-    months: 0n,
-    seconds: BigDecimal.subtract(
-      timelineSeconds(x.value, implicit),
-      timelineSeconds(y.value, implicit),
-    ),
-  });
+  const seconds = BigDecimal.subtract(
+    timelineSeconds(x.value, implicit),
+    timelineSeconds(y.value, implicit),
+  );
+  const difference = { months: 0n, seconds };
+  // A difference beyond the supported durations is a date and time overflow, not a duration one.
+  if (!durationInRange(difference))
+    return raise("FODT0001", "the difference of two dates is beyond the supported range", offset);
+  return durationValue(DT, difference);
 };
 
 const isScalable = (t: AtomicType): boolean => t === YM || t === DT;
@@ -330,7 +333,7 @@ export const unary = (op: "+" | "-", operandValue: Sequence, offset?: number): S
     return raise("XPTY0004", `unary ${op} needs a number, not xs:${a.type.name}`, offset);
   if (op === "+") return [a];
   const v = a.value;
-  if (Predicate.isBigInt(v)) return [AtomicValue.integer(-v)];
+  if (P.isBigInt(v)) return [AtomicValue.integer(-v)];
   if (BigDecimal.isBigDecimal(v)) return [AtomicValue.decimal(BigDecimal.negate(v))];
   return [
     a.type.primitive === "float"

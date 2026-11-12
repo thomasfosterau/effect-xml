@@ -47,7 +47,7 @@ const xmlDemo = Effect.fn("xmlDemo")(function* () {
     doc.root.elements,
     (product) =>
       Console.log(
-        `  ${product.name.qualified} (ns=${product.name.namespace}) sku=${product.attribute("sku")} -> ${product.textContent}`,
+        `  ${product.name.qualified} (ns=${Option.getOrElse(product.name.namespace, () => "")}) sku=${Option.getOrElse(product.attribute("sku"), () => "")} -> ${product.textContent}`,
       ),
     { concurrency: 1, discard: true },
   );

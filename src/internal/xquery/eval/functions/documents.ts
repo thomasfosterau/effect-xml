@@ -13,8 +13,8 @@
 import * as Arr from "effect/Array";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import { isValidNCName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { isNode, MapItem, stringValue, type Sequence } from "../../item.ts";
@@ -32,6 +32,7 @@ import {
 } from "../serialize.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, contextNode, isEmpty, optionalNode, str, text } from "./values.ts";
+import { maybe } from "../../../optional.ts";
 
 /** `fn:parse-xml` or `fn:parse-xml-fragment`: the text parsed, at the static base URI. */
 const parseXml =
@@ -44,11 +45,11 @@ const parseXml =
         kind,
         uri: text(arg(args, 0)),
         encoding: undefined,
-        base: Option.getOrUndefined(call.statics.baseUri),
+        ...maybe("base", Option.getOrUndefined(call.statics.baseUri)),
       },
       call.offset,
     );
-    return Predicate.isString(got) ? [] : got;
+    return P.isString(got) ? [] : got;
   };
 
 /** The tokens of `fn:id`'s first argument: whitespace-separated NCNames (any other token matches nothing). */
@@ -72,7 +73,7 @@ const xmlId = (element: XdmNode): string | undefined =>
     .find((a) =>
       Option.match(a.name, {
         onNone: () => false,
-        onSome: (q) => q.namespace === Namespaces.xml && q.local === "id",
+        onSome: (q) => Option.contains(q.namespace, Namespaces.xml) && q.local === "id",
       }),
     )
     ?.stringValue.trim()
@@ -174,7 +175,7 @@ export const documents: ReadonlyArray<BuiltinSpec> = [
     params: ["xs:string"],
     result: "xs:string?",
     impl: (args, call) => {
-      const value = Record.get(call.ctx.dyn.environment, text(arg(args, 0)));
+      const value = R.get(call.ctx.dyn.environment, text(arg(args, 0)));
       return Option.isSome(value) ? str(value.value) : [];
     },
   },
@@ -182,7 +183,6 @@ export const documents: ReadonlyArray<BuiltinSpec> = [
     name: "fn:available-environment-variables",
     params: [],
     result: "xs:string*",
-    impl: (_, call) =>
-      Record.keys(call.ctx.dyn.environment).map((name) => AtomicValue.string(name)),
+    impl: (_, call) => R.keys(call.ctx.dyn.environment).map((name) => AtomicValue.string(name)),
   },
 ];

@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -44,7 +45,7 @@ describe("Xml.parse({ recover: true })", () => {
 
   test("a repeated attribute keeps its first value", () => {
     const root = recover(`<a x="1" x="2" p:y="3" q:y="4" xmlns:p="urn:n" xmlns:q="urn:n"/>`).root;
-    expect(root.attribute("x")).toBe("1");
+    expect(root.attribute("x")).toEqual(Option.some("1"));
     expect(root.attributes.map((a) => a.name.qualified)).toStrictEqual([
       "x",
       "p:y",
@@ -56,14 +57,14 @@ describe("Xml.parse({ recover: true })", () => {
   test("an unbound prefix leaves the name without a namespace", () => {
     const root = recover(`<p:a q:b="1"/>`).root;
     expect(root.name.qualified).toBe("p:a");
-    expect(root.name.namespace).toBeNull();
-    expect(root.attributes[0]?.name.namespace).toBeNull();
+    expect(root.name.namespace).toEqual(Option.none());
+    expect(root.attributes[0]?.name.namespace).toEqual(Option.none());
   });
 
   test("namespaces still resolve where they are bound", () => {
     const root = recover(`<a xmlns="urn:d"><b>x</a>`).root;
-    expect(root.name.namespace).toBe("urn:d");
-    expect(root.elements[0]?.name.namespace).toBe("urn:d");
+    expect(root.name.namespace).toEqual(Option.some("urn:d"));
+    expect(root.elements[0]?.name.namespace).toEqual(Option.some("urn:d"));
   });
 
   test("without recover, the same inputs fail as before", () => {

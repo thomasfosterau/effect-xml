@@ -11,13 +11,13 @@
 import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { isValidName, isValidNCName, QName } from "../../Name.ts";
 import { XQueryError, xqueryError } from "../../XQuery/Error.ts";
 import { builtin } from "../../Xsd/Model.ts";
 import { quote } from "../quote.ts";
-import { builtinChecker, decode, type SimpleValue } from "../xsd/datatypes.ts";
+import { builtinChecker, decode, isList, type SimpleValue } from "../xsd/datatypes.ts";
 import { AtomicTypes, derivesFrom, type AtomicType } from "./types.ts";
 
 /**
@@ -126,7 +126,7 @@ export interface LexicalOptions {
    * `xs:QName` and `xs:NOTATION` values; without it only unprefixed names in
    * no namespace can be read.
    */
-  readonly resolve?: ((prefix: string) => string | undefined) | undefined;
+  readonly resolve?: (prefix: string) => string | undefined;
 }
 
 const invalidLexical = (lexical: string, type: AtomicType, reason: string): XQueryError =>
@@ -152,9 +152,10 @@ const qnameFrom = (
     new AtomicValue(
       type,
       new QName({
-        prefix: prefix === "" ? null : prefix,
+        prefix: prefix === "" ? Option.none() : Option.some(prefix),
         local: s.slice(colon + 1),
-        namespace: namespace === undefined || namespace === "" ? null : namespace,
+        namespace:
+          namespace === undefined || namespace === "" ? Option.none() : Option.some(namespace),
       }),
     ),
   );
@@ -191,10 +192,12 @@ const xdmRule = (type: AtomicType): Option.Option<XdmRule> => {
 };
 
 /** The JavaScript value of a decoded XML Schema value of the atomic type `type`. */
-const fromChecked = (type: AtomicType, value: SimpleValue): AtomicData => {
-  if (Predicate.isNumber(value) && derivesFrom(type, AtomicTypes.integer)) return BigInt(value);
-  // SAFETY: an atomic type's checker never returns a list, the one `SimpleValue` that isn't `AtomicData`.
-  return value as AtomicData;
+const fromChecked = (type: AtomicType, value: SimpleValue): Result.Result<AtomicData, string> => {
+  // An atomic type's checker never returns a list, the one `SimpleValue` that isn't `AtomicData`.
+  if (isList(value)) return Result.fail("it has a list value");
+  if (P.isNumber(value) && derivesFrom(type, AtomicTypes.integer))
+    return Result.succeed(BigInt(value));
+  return Result.succeed(value);
 };
 
 /**
@@ -238,8 +241,9 @@ export const fromLexical = (
     onSome: (checker) =>
       decode(checker, lexical, { resolve: () => undefined }).pipe(
         Result.flatMap(obeysRule),
+        Result.flatMap((value) => fromChecked(type, value)),
         Result.mapError((reason) => invalidLexical(lexical, type, reason)),
-        Result.map((value) => new AtomicValue(type, fromChecked(type, value))),
+        Result.map((value) => new AtomicValue(type, value)),
       ),
   });
 };
@@ -350,7 +354,7 @@ const formatDuration = (type: AtomicType, lexical: string): string => {
  */
 export const atomicString = (atomic: AtomicValue): string => {
   const { type, value } = atomic;
-  if (Predicate.isString(value)) {
+  if (P.isString(value)) {
     if (type.primitive === "duration") return formatDuration(type, value);
     if (
       ["dateTime", "time", "date", "gYearMonth", "gYear", "gMonthDay", "gDay", "gMonth"].includes(
@@ -360,9 +364,9 @@ export const atomicString = (atomic: AtomicValue): string => {
       return formatTemporal(value);
     return value;
   }
-  if (Predicate.isBoolean(value)) return value ? "true" : "false";
-  if (Predicate.isBigInt(value)) return value.toString();
-  if (Predicate.isNumber(value)) return formatFloating(value, type.primitive === "float");
+  if (P.isBoolean(value)) return value ? "true" : "false";
+  if (P.isBigInt(value)) return value.toString();
+  if (P.isNumber(value)) return formatFloating(value, type.primitive === "float");
   if (BigDecimal.isBigDecimal(value)) return formatDecimal(value);
   if (value instanceof Uint8Array)
     return type.primitive === "hexBinary" ? formatHex(value) : formatBase64(value);
