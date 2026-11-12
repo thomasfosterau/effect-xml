@@ -19,7 +19,7 @@ export interface DynamicOptions {
   readonly implicitTimezone?: number | undefined;
   readonly environment?: Readonly<Record<string, string>> | undefined;
   readonly currentDateTime?: Date | undefined;
-  readonly defaultLanguage?: string | undefined;
+  readonly defaultLanguage?: string;
 }
 
 const clarkKey = (name: string): string => (name.startsWith("{") ? name : `{}${name}`);

@@ -147,7 +147,7 @@ export interface EvaluateOptions {
    * @since 0.2.0
    * @category evaluating
    */
-  readonly defaultLanguage?: string | undefined;
+  readonly defaultLanguage?: string;
   /** How to compile query text: the static context's options. */
   readonly compile?: CompileOptions | undefined;
 }
