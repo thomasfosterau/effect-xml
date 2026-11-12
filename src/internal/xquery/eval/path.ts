@@ -26,6 +26,7 @@ import {
   type NodeMatcher,
 } from "./axes.ts";
 import { toNumber } from "./cast.ts";
+import { itemAt, Lazy, lazyCode, lazyOf, type LazyCode } from "./lazy.ts";
 import { raise, unwrap } from "./raise.ts";
 import { callsFocusFunction, isDescendantOrSelfNode } from "./walk.ts";
 import { contextItem, type Code, type Ctx } from "./runtime.ts";
@@ -327,5 +328,52 @@ export const filterCode = (
 ): Code => {
   const base = sub(e.base, scope);
   const pred = compilePredicate(e.predicate, scope, sub);
-  return (ctx) => applyPredicate(base(ctx), pred, ctx, e.offset);
+  return Option.getOrElse(
+    Option.flatMap(lazyOf(base), (lazy) => lazyFilter(lazy, e.predicate, pred, e.offset)),
+    (): Code => (ctx) => applyPredicate(base(ctx), pred, ctx, e.offset),
+  );
+};
+
+/**
+ * A filter of a sequence held lazily (`(1 to 10000000000)[5]`): a constant
+ * position, `last()`, or a variable (whose value doesn't depend on the focus,
+ * so it selects one position or all items or none) select without building
+ * the items; `None` for any other predicate, which needs them.
+ */
+const lazyFilter = (
+  lazy: LazyCode,
+  predicate: ExprT,
+  pred: Pred,
+  offset: number,
+): Option.Option<Code> => {
+  if (Expr.$is("IntegerLiteral")(predicate)) {
+    const index = BigInt(predicate.value) - 1n;
+    return Option.some((ctx) => Arr.fromOption(itemAt(lazy(ctx), index)));
+  }
+  if (pred.kind === "last")
+    return Option.some((ctx) => {
+      const s = lazy(ctx);
+      return Arr.fromOption(itemAt(s, s.size - 1n));
+    });
+  if (pred.kind !== "expr" || !Expr.$is("VarRef")(predicate)) return Option.none();
+  const code = pred.code;
+  return Option.some(
+    lazyCode((ctx) => {
+      const s = lazy(ctx);
+      // The predicate is evaluated only for an item, as it would be per item.
+      if (s.size === 0n) return s;
+      const value = code(ctx);
+      const [first] = value;
+      if (
+        value.length === 1 &&
+        first !== undefined &&
+        isAtomic(first) &&
+        isNumericType(first.type)
+      ) {
+        const n = toNumber(first);
+        return Lazy.of(Number.isInteger(n) ? [Arr.fromOption(itemAt(s, BigInt(n) - 1n))] : []);
+      }
+      return unwrap(effectiveBooleanValue(value), offset) ? s : Lazy.of([]);
+    }, offset),
+  );
 };

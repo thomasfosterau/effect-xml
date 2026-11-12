@@ -30,6 +30,7 @@ import { codepointCollation, type StaticContext } from "../parser/context.ts";
 import { collationFor, type Collation } from "./functions/collation.ts";
 import { AtomicTypes } from "../types.ts";
 import { atomicDeepEqual, equalityBucket, orderCompare } from "./compare.ts";
+import { iterate, lazyOf, type LazyCode } from "./lazy.ts";
 import { raise, unwrap } from "./raise.ts";
 import type { Code, Ctx, SeqType } from "./runtime.ts";
 import { bindLocal, clark, resolve, slotIn, type Scope } from "./scope.ts";
@@ -56,9 +57,11 @@ export const checkType = (t: SeqType | undefined, v: Sequence, offset: number): 
     ? v
     : raise("XPTY0004", `a value does not match ${t.text}`, offset);
 
-/** A binding of `for`, `some` or `every`: its sequence's code, its slot and its declared type. */
+/** A binding of `for`, `some` or `every`: its sequence's code (and its lazy form, `lazy.ts`), its slot and its declared type. */
 export interface Bound {
   readonly code: Code;
+  /** The sequence's lazy form, iterated one item at a time instead of built (`for $i in 1 to 100000000`). */
+  readonly lazy: Option.Option<LazyCode>;
   readonly slot: number;
   readonly position: number | undefined;
   readonly type: SeqType | undefined;
@@ -78,7 +81,7 @@ export const bindFor = (
     onNone: (): readonly [Scope, number | undefined] => [s1, undefined],
     onSome: (p) => bindLocal(s1, p),
   });
-  return [s2, { code, slot, position, type, allowingEmpty: b.allowingEmpty }];
+  return [s2, { code, lazy: lazyOf(code), slot, position, type, allowingEmpty: b.allowingEmpty }];
 };
 
 // -----------------------------------------------------------------------------
@@ -139,14 +142,28 @@ const forStage = (
     bound.slot,
     ...(bound.position === undefined ? [] : [bound.position]),
   ]);
+  // `allowing empty` over an empty sequence: one tuple, with the variable empty.
+  const emptyTuple = (ctx: Ctx, run: Run): void => {
+    ctx.frame[bound.slot] = checkType(bound.type, empty, offset);
+    if (bound.position !== undefined) ctx.frame[bound.position] = integerValue(0);
+    next.tuple(ctx, run);
+  };
+  if (Option.isSome(bound.lazy)) {
+    const lazy = bound.lazy.value;
+    return streaming(next, (ctx, run) => {
+      const items = lazy(ctx);
+      if (items.size === 0n && bound.allowingEmpty) return emptyTuple(ctx, run);
+      iterate(items, (item, i) => {
+        ctx.frame[bound.slot] = checkType(bound.type, [item], offset);
+        if (bound.position !== undefined) ctx.frame[bound.position] = integerValue(i + 1);
+        next.tuple(ctx, run);
+        return true;
+      });
+    });
+  }
   return streaming(next, (ctx, run) => {
     const items = bound.code(ctx);
-    if (Arr.isReadonlyArrayEmpty(items) && bound.allowingEmpty) {
-      ctx.frame[bound.slot] = checkType(bound.type, empty, offset);
-      if (bound.position !== undefined) ctx.frame[bound.position] = integerValue(0);
-      next.tuple(ctx, run);
-      return;
-    }
+    if (Arr.isReadonlyArrayEmpty(items) && bound.allowingEmpty) return emptyTuple(ctx, run);
     items.forEach((item, i) => {
       ctx.frame[bound.slot] = checkType(bound.type, [item], offset);
       if (bound.position !== undefined) ctx.frame[bound.position] = integerValue(i + 1);
