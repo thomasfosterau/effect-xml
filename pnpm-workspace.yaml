@@ -38,6 +38,12 @@ catalog:
   # `FileSystem` service (`NodeFileSystem.layer`). Released in lockstep with
   # `effect`, so it is pinned to the same version.
   "@effect/platform-node": 4.1.2
+  # Tests only: `it.effect` / `layer` run the Effect programs of the suite.
+  # Released in lockstep with `effect` (peers `effect ^4.1.2`, `vitest
+  # >=5.0.0 <6.0.0`), so it is pinned to the same version. It imports
+  # `vitest` by bare name, which the `vitest@*` override resolves to the
+  # catalog singleton that vite-plus bundles.
+  "@effect/vitest": 4.1.2
   # Effect Language Service as a native (TypeScript-Go) binary — the TS7 side
   # of the 6/7 split. `effect-tsgo patch` overwrites the native `tsc` binary
   # with an Effect-patched build matched by gitHead, so this pins in lockstep
