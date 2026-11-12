@@ -102,15 +102,13 @@ export default defineConfig({
       "effect/casting-awareness": "warn",
 
       // ---- Effect preset: rules this library's public surface cuts across --
-      // `prefer-option-over-null` fires on the `string | null` members of the
-      // published data types (`SaxEvent.Doctype` / `XmlDeclaration`,
-      // `XmlDoctype`, `QName.prefix` / `.namespace`). They are the XML
-      // infoset's "no value", encoded through `Schema.NullOr` as JSON-safe
-      // `null`, so turning them into `Option` would break every consumer and
-      // every encoded document. It also fires on `?: T | undefined`, the only
-      // spelling of an optional member `exactOptionalPropertyTypes` lets a
-      // caller forward an optional of its own into. A bare `null` in an
-      // internal return type is still a finding to read.
+      // `prefer-option-over-null`: the public API spells absence as `Option`
+      // (AGENTS.md, Conventions), but `src/internal/**` still returns and
+      // stores `null` / `undefined` on its per-token paths, where an
+      // `Option` per token measurably costs throughput, and the hand-written
+      // `*Encoded` wire shapes of the DOM keep `T | null` (their encoded
+      // JSON). It stays a warning so those sites stay visible; a new one in
+      // a public module is still a finding to read.
       "effect/prefer-option-over-null": "warn",
       "typescript/no-explicit-any": "off",
       "typescript/no-empty-object-type": "off",

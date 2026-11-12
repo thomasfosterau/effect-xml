@@ -42,8 +42,8 @@ const program = Effect.gen(function* () {
   const product = doc.root.elements[0];
   if (product === undefined) return;
   product.name.qualified; // "p:product"
-  product.name.namespace; // "urn:products" (resolved)
-  product.attribute("sku"); // "A1"
+  product.name.namespace; // Option.some("urn:products") (resolved)
+  product.attribute("sku"); // Option.some("A1")
   product.textContent; // "Widget"
   return Xml.serialize(product); // round-trips back to XML
 });
@@ -110,7 +110,7 @@ Spans are lazy, so events cost little when nobody reads them: an event's `span` 
 | `Xml.serialize(node)`, `Xml.serializeDocument(doc)` | `string` |
 | `Xml.element(name, attributes?, children?)`, `Xml.attr(name, value)`, `Xml.text(data)` | builders |
 
-`XmlDocument` has `declaration`, `doctype`, `children` and `root` (the single root element). An `XmlElement` has `name` (a `QName`), `attributes`, `children`, `elements` (child elements), `attribute(name)` and `textContent`. The node classes — `XmlDocument`, `XmlElement`, `XmlText`, `XmlCData`, `XmlComment`, `XmlProcessingInstruction`, `XmlAttribute`, `XmlDeclaration`, `XmlDoctype` and the `XmlNode` union — are `Schema` classes, so they double as runtime validators and encode to plain data:
+`XmlDocument` has `declaration` and `doctype` (each an `Option`), `children` and `root` (the single root element). An `XmlElement` has `name` (a `QName`), `attributes`, `children`, `elements` (child elements), `attribute(name)` (an `Option<string>`) and `textContent`. Absent values are `Option.none()` throughout the API, and encode as `null`. The node classes — `XmlDocument`, `XmlElement`, `XmlText`, `XmlCData`, `XmlComment`, `XmlProcessingInstruction`, `XmlAttribute`, `XmlDeclaration`, `XmlDoctype` and the `XmlNode` union — are `Schema` classes, so they double as runtime validators and encode to plain data:
 
 ```ts
 import * as Schema from "effect/Schema";
@@ -164,9 +164,9 @@ const program = Effect.gen(function* () {
 
 | API (on `XmlElement`) | Returns |
 | --- | --- |
-| `child(ns(local))` / `child(namespace, local)` | `Option<XmlElement>` — the first child element with the name |
+| `child(ns(local))` / `child(namespace, local)` | `Option<XmlElement>` — the first child element with the name (`namespace` is an `Option<string>`) |
 | `childElements(name?)`, `descendants(name?)` | `ReadonlyArray<XmlElement>` |
-| `attributeNS(ns(local))` / `attributeNS(namespace, local)` | `Option<string>` — `null` is no namespace (unprefixed attributes) |
+| `attributeNS(ns(local))` / `attributeNS(namespace, local)` | `Option<string>` — `Option.none()` (or `Xml.Ns.none`) is no namespace (unprefixed attributes) |
 | `text(name)` | `Option<string>` — the text of the first such child |
 
 A `Cursor` is an element plus the path that led to it, so it can resolve what an element inherits: `xml:lang`, `xml:space` and `xml:base` (resolved against the document's base URI):
@@ -293,11 +293,11 @@ The parsers build an HTML DOM of their own, shaped like the WHATWG DOM. Its clas
 
 | Class | Fields and methods |
 | --- | --- |
-| `HtmlDocument` | `mode` (`"no-quirks"`, `"quirks"` or `"limited-quirks"`, from the DOCTYPE), `doctype`, `children`, and `documentElement` (the `<html>` element) |
+| `HtmlDocument` | `mode` (`"no-quirks"`, `"quirks"` or `"limited-quirks"`, from the DOCTYPE), `doctype` (an `Option`), `children`, and `documentElement` (the `<html>` element) |
 | `HtmlDoctype` | `name` (lowercased), `publicId`, `systemId` (`""` when absent) |
-| `HtmlElement` | `namespace` (`"html"`, `"svg"` or `"mathml"`), `name` (the local name: lowercase for HTML, case-adjusted for SVG / MathML, as in `foreignObject`), `attributes`, `children`, `content`; `attribute(name)`, `attributeNS(namespace, name)`, `elements`, `child(name, namespace?)`, `childElements(name, namespace?)`, `descendants(name, namespace?)`, `text(name, namespace?)` and `textContent` (the namespace defaults to `"html"`) |
-| `HtmlTemplateContent` | `children`: a `<template>`'s contents, its `content` (every other element's is `null`; the template itself has no children, as in the DOM) |
-| `HtmlAttribute` | `name`, `value`, `namespace` (`"xlink"`, `"xml"`, `"xmlns"` or `null`) and `prefix`: only the foreign attributes the parser adjusts (`xlink:href`, `xml:lang`, …) have the last two; `qualifiedName` |
+| `HtmlElement` | `namespace` (`"html"`, `"svg"` or `"mathml"`), `name` (the local name: lowercase for HTML, case-adjusted for SVG / MathML, as in `foreignObject`), `attributes`, `children`, `content`; `attribute(name)` (an `Option<string>`), `attributeNS(namespace, name)` (`namespace` an `Option`), `elements`, `child(name, namespace?)`, `childElements(name, namespace?)`, `descendants(name, namespace?)`, `text(name, namespace?)` and `textContent` (the namespace defaults to `"html"`) |
+| `HtmlTemplateContent` | `children`: a `<template>`'s contents, its `content` (an `Option`, `Option.none()` on every other element; the template itself has no children, as in the DOM) |
+| `HtmlAttribute` | `name`, `value`, `namespace` (an `Option` of `"xlink"`, `"xml"` or `"xmlns"`) and `prefix` (an `Option`): only the foreign attributes the parser adjusts (`xlink:href`, `xml:lang`, …) have the last two; `qualifiedName` |
 | `HtmlText`, `HtmlComment` | `data` |
 | `HtmlNode` | the union `HtmlElement \| HtmlText \| HtmlComment`: there are no CDATA sections or processing instructions in HTML, which makes text or comments of them |
 
@@ -376,6 +376,7 @@ Xml.parse(input, { dtd: "internal" });
 `Xml.serialize(node)` writes a tree back as it was parsed, and is always well-formed. For new documents, `Xml.Writer` manages namespaces, checks what can't be escaped, and streams:
 
 ```ts
+import * as Option from "effect/Option";
 import { Xml } from "@thomasfosterau/effect-xml";
 
 // A DOM: the namespaces it uses are declared where they are first needed.
@@ -384,7 +385,7 @@ const xml = Xml.Writer.serialize(body, {
   prefixes: { w: WORDML }, // preferred prefixes, declared on the root
   indent: 2, // never inside mixed content or xml:space="preserve"
   invalid: "fail", // or "strip" / "replace" for characters XML 1.0 forbids
-  escape: (cp) => `_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`, // e.g. OOXML
+  escape: (cp) => Option.some(`_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`), // e.g. OOXML
 }); // Effect<string, SerializationError>
 ```
 
@@ -470,7 +471,7 @@ Options for parsing are the SAX ones that apply to XML (`entities`, `limits`, `d
 | an element that may occur more than once / may be absent | an array (empty when there are none) / an optional property |
 | simple content, mixed content's text | `$value`, `$text` |
 | elements matched by `xs:any`, attributes by `xs:anyAttribute` | `$any` (as `Xml.XmlElement`s), `$attributes` (by expanded name) |
-| `xsi:type` naming a derived type, `xsi:nil="true"` | `$type` (its expanded name), `null` |
+| `xsi:type` naming a derived type, a `nillable` element | `$type` (its expanded name); an `Option` of the value, `Option.none()` when `xsi:nil="true"` |
 
 When names collide, later elements get `$2`, `$3`, … suffixes and attributes an `@` prefix; generated enumerations of strings, numbers and booleans are unions of literals.
 
@@ -642,7 +643,7 @@ const program = Xml.parse("<a></b>").pipe(
 );
 ```
 
-Each error carries a human-readable `message`, and a `position` (`offset` / `line` / `column`) when it has one: the decoding errors report a byte `offset` instead, and `LimitExceeded` has no position when it is hit while decoding bytes. `isSaxError(u)` recognises any of them. `XmlDocument.root` throws `MissingRootElement` only for a hand-built document with no element (the parsers never produce one).
+Each error carries a human-readable `message`, and a `position` (`offset` / `line` / `column`) when it has one: the decoding errors report a byte `offset` instead, and `LimitExceeded`'s `position` is an `Option`, `Option.none()` when the limit is hit while decoding bytes. `isSaxError(u)` recognises any of them. `XmlDocument.root` throws `MissingRootElement` only for a hand-built document with no element (the parsers never produce one).
 
 ## Options
 
@@ -652,7 +653,7 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 | `entities` | all | XML's five, or the full WHATWG set in HTML mode | named-entity table (`Record<string, string>`, names without `&` / `;`) |
 | `whitespace` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `"preserve"` | or `"collapse"` (runs of whitespace become one space, trimmed) |
 | `dropWhitespaceOnlyText` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `false` | drop text events / nodes that are only whitespace |
-| `namespaces` | `Xml` | `true` | resolve prefixes to URIs; when `false`, names keep their prefix and `namespace` is `null` |
+| `namespaces` | `Xml` | `true` | resolve prefixes to URIs; when `false`, names keep their prefix and `namespace` is `Option.none()` |
 | `recover` | `Xml` | `false` | repair a malformed document instead of failing (see [Recovering from malformed XML](#recovering-from-malformed-xml)) |
 | `limits` | all | see [Resource limits](#resource-limits) | the limits left out keep their defaults |
 | `dtd` | `Sax`, `Xml` | `"ignore"` | `"internal"` interprets the internal subset (see [DTD internal subset](#dtd-internal-subset-opt-in)) |
@@ -684,7 +685,7 @@ In the same runs, saxes and htmlparser2 read 44–58 MB/s, @eksml/xml's and easy
 ```ts
 import { QName } from "@thomasfosterau/effect-xml";
 
-QName.fromRaw("svg:rect"); // prefix "svg", local "rect", namespace null
+QName.fromRaw("svg:rect"); // prefix Option.some("svg"), local "rect", namespace Option.none()
 QName.simple("div").clark; // "div"; "{uri}local" once a namespace is resolved
 ```
 
