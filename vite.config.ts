@@ -166,9 +166,15 @@ export default defineConfig({
       // 1 site: the CLI bin (`packages/cli/src/main.ts`), the application
       // entry point the rule's own message exempts (it provides the composed
       // platform layer once, to `NodeRuntime.runMain`). The tests provide
-      // their layers through one `ManagedRuntime` per file. src/ has none;
-      // a site there is a defect (#80).
+      // their layers with `@effect/vitest`'s `layer`, and src/ has none; a
+      // site there is a defect (#80).
       "effecttsgo/strict-effect-provide": "warn",
+      // Off, the owner's decision: `effect/cli`, `FileSystem` and `Path` are
+      // unstable modules the CLI needs, `@effect/vitest` is what the tests
+      // run on, and the rule can't be scoped to them (oxlint applies no
+      // `overrides` to type-aware rules). The Effect language service's
+      // `unstableApiUsage` is off in `tsconfig.base.json` for the same reason.
+      "effecttsgo/unstable-api-usage": "off",
     },
     overrides: [
       // Build/test configs are evaluated by Vite and Vitest in bare Node,
