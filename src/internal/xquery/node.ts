@@ -492,7 +492,7 @@ export class XdmNode {
       onSome: (cursor) => cursor.base,
       onNone: () =>
         Option.match(this.up, {
-          onNone: () => this.tree.baseUri,
+          onNone: () => (this.kind === "document" ? this.tree.baseUri : Option.none()),
           onSome: (parent) => parent.baseUri,
         }),
     });

@@ -28,6 +28,7 @@ import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import { isEnter, preorder } from "../internal/tree.ts";
+import { resolveReference } from "../internal/uri.ts";
 import { Namespaces } from "../Name.ts";
 import { isNamed, nameOf, type NameArgs, type XmlElement, type XmlNode } from "./Node.ts";
 
@@ -52,10 +53,11 @@ const xmlAttribute = (element: XmlElement, local: string): Option.Option<string>
 
 /** Resolve a URI reference against a base, keeping it as written when that isn't possible. */
 const resolveUri = (reference: string, base: Option.Option<string>): string =>
-  // An absolute reference stands as written (RFC 3986 §5.2.2); `URL` would normalize it.
-  /^[A-Za-z][A-Za-z0-9+.-]*:/.test(reference)
-    ? reference
-    : (URL.parse(reference, Option.getOrUndefined(base))?.href ?? reference);
+  // RFC 3986 §5.2.2 on the text as written; `URL` would normalize and encode it.
+  Option.getOrElse(
+    Option.flatMap(base, (b) => resolveReference(reference, b)),
+    () => reference,
+  );
 
 /** Whether a lookup was given a name (it is no-argument "all elements" otherwise). */
 const hasName = (args: NameArgs | readonly []): args is NameArgs => args[0] !== undefined;
