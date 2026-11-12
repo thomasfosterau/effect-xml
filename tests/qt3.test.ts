@@ -225,10 +225,9 @@ const tableEngine = (
 ): Engine => ({
   evaluate: (request) => {
     asked.push(request);
-    return Option.match(Option.fromUndefinedOr(table[request.query]), {
-      onNone: () => Effect.fail(XQuery.xqueryError("XPST0003", `unknown query ${request.query}`)),
-      onSome: Effect.succeed,
-    });
+    return Effect.fromOption(Option.fromUndefinedOr(table[request.query]), () =>
+      XQuery.xqueryError("XPST0003", `unknown query ${request.query}`),
+    );
   },
   serialize: (_, result) =>
     Effect.succeed(

@@ -350,7 +350,7 @@ describe("XQueryError", () => {
     expect(XQuery.hasErrorCode(error, "FOER0000")).toBe(true);
     expect(XQuery.xqueryError("XPST0003", "bad").message).toBe("err:XPST0003: bad");
     // Not an item: `Any` lets it through to the error's own check.
-    const values = Schema.decodeUnknownSync(Schema.Array(Schema.Any))([1]);
+    const values = Schema.decodeSync(Schema.Array(Schema.Any))([1]);
     expect(
       () => new XQuery.XQueryError({ code: XQuery.errorCode("X"), description: "", value: values }),
     ).toThrow("Schema validation failed");
