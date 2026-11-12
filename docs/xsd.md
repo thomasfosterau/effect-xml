@@ -23,7 +23,7 @@ const program = Effect.gen(function* () {
 });
 ```
 
-**Generated parsers.** `Xsd.generate(model)` writes a TypeScript module with a type per schema type, the compiled model as a literal (nothing is compiled at run time) and a parser per global element; [examples/xsd](https://github.com/thomasfosterau/effect-xml/tree/trunk/examples/xsd) has a schema and the module generated from it. The [`effect-xml-xsd`](https://github.com/thomasfosterau/effect-xml/tree/trunk/packages/cli) command-line tool (`@thomasfosterau/effect-xml-cli`) reads a schema file, resolves its includes and imports, and writes the module, with a `--check` mode for CI:
+**Generated parsers.** `Xsd.generate(model)` writes a TypeScript module with an Effect `Schema` per schema type and its type (`export type Line = typeof Line.Type`), the compiled model as a literal (nothing is compiled at run time) and a parser per global element, which decodes the validated value through its element's schema, so a mismatch is a `SchemaError` rather than a value of the wrong type; [examples/xsd](https://github.com/thomasfosterau/effect-xml/tree/trunk/examples/xsd) has a schema and the module generated from it. The module imports only `effect/*` and the library's `Xsd` and `Xml` namespaces. The [`effect-xml-xsd`](https://github.com/thomasfosterau/effect-xml/tree/trunk/packages/cli) command-line tool (`@thomasfosterau/effect-xml-cli`) reads a schema file, resolves its includes and imports, and writes the module, with a `--check` mode for CI:
 
 ```sh
 effect-xml-xsd generate schemas/order.xsd -o src/order.generated.ts [--import-from <module>] [--root <expanded name> …] [--remote] [--check]
@@ -32,7 +32,7 @@ effect-xml-xsd generate schemas/order.xsd -o src/order.generated.ts [--import-fr
 ```ts
 import * as Order from "./order.generated.ts";
 
-const order = yield * Order.order.parse(input); // Effect<Order.Order, Xsd.XsdError>
+const order = yield * Order.order.parse(input); // Effect<Order.Order, Xsd.XsdError | SchemaError>
 order.line[0]?.price.$value; // BigDecimal
 order.customer.$type; // "{urn:example:order}Person" | "{urn:example:order}Company"
 ```
@@ -45,17 +45,17 @@ order.customer.$type; // "{urn:example:order}Person" | "{urn:example:order}Compa
 | `Xsd.decode(model, options?)` | `(Stream<SaxEvent>) => Effect<Validated, …>` |
 | `Xsd.validate(model, options?)` | `(Stream<SaxEvent>) => Stream<SaxEvent, …>`: the events, failing at the first violation |
 | `Xsd.select(model, path, options?)` | `(Stream<SaxEvent>) => Stream<XsdValue, …>`: the value of each element matching `path`, as soon as it ends |
-| `Xsd.parser<A, S>(model, element, streams?)` | a `Parser<A, S>` (`parse`, `parseBytes`, `parseStream`, `parseBytesStream`, `decode`, `stream<B>`, and `streams`: one per child named in `streams`) for one root element |
+| `Xsd.parser(model, element, schema, streams?)` | a `Parser<S, C>` for one root element whose values decode through `schema` (`parse`, `parseBytes`, `parseStream`, `parseBytesStream`, `decode`, `stream(path, schema)`, and `streams(child)` for each child named in `streams`, as `{ element, schema }`), failing with `XsdError \| SchemaError`; without a schema, the `XsdValue` as it is |
 | `Xsd.generate(model, options?)` | `Effect<string, XsdSchemaError>`: a TypeScript module (`importFrom`, `roots`, `source`) |
 
-**Streaming records.** `Xsd.select` decodes a large document in constant memory: it validates the whole document as `Xsd.decode` does, but emits the typed value of each element matching a [streamable path](xml.md#streaming-selection) when it ends, and drops it instead of adding it to its parent. A generated parser has a typed stream for each child element of its root that can occur more than once, named after the property the child fills, and `stream<B>(path)` for any other path:
+**Streaming records.** `Xsd.select` decodes a large document in constant memory: it validates the whole document as `Xsd.decode` does, but emits the typed value of each element matching a [streamable path](xml.md#streaming-selection) when it ends, and drops it instead of adding it to its parent. A generated parser has a typed stream for each child element of its root that can occur more than once, named after the property the child fills, and `stream(path, schema)` for any other path:
 
 ```ts
 import * as Stream from "effect/Stream";
 import { Sax } from "@thomasfosterau/effect-xml";
 import * as Order from "./order.generated.ts";
 
-const lines = Stream.fromIterable(chunks).pipe(Sax.tokenize(), Order.order.streams.line); // Stream<Order.Line, Xsd.XsdError | XPathError>
+const lines = Stream.fromIterable(chunks).pipe(Sax.tokenize(), Order.order.streams("line")); // Stream<Order.Line, Xsd.XsdError | SchemaError | XPathError>
 ```
 
 The stream fails at the first violation anywhere in the document. A streamed child's property in its parent stays an empty array (or is left out, for a child that occurs at most once), and an element inside an identity-constraint scope is held until that scope's element ends and its constraints hold.

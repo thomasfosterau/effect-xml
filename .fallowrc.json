@@ -19,8 +19,13 @@
     {
       "file": "src/Xsd/Validate.ts",
       "exports": ["select"]
+    },
+    {
+      "file": "{examples,tests}/xsd/*.generated.ts",
+      "exports": ["*"]
     }
   ],
+  "duplicates": { "ignore": ["{examples,tests}/xsd/*.generated.ts"] },
   "ignorePatterns": ["**/dist/**", "**/docs/api/**", "**/coverage/**", "tests/fixtures/**"],
   "ignoreDependencies": [
     "@types/node",

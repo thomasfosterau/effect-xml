@@ -59,6 +59,7 @@ export default defineConfig({
       "src/internal/htmlEntities.generated.ts",
       // `Xsd.generate`'s output, compared byte for byte by tests/xsd.test.ts.
       "examples/xsd/order.generated.ts",
+      "tests/xsd/features.generated.ts",
     ],
     overrides: [
       {
@@ -102,10 +103,6 @@ export default defineConfig({
             "The `Buffer` global is typed `any` wherever @cloudflare/workers-types is loaded. Use Uint8Array / TextEncoder / DataView.",
         },
       ],
-      // `casting-awareness` is an awareness prompt, not a defect rule — it
-      // fires on every `as`, including the branded-name casts the parser's
-      // hot path makes after validating once. Stays visible as a warning.
-      "effect/casting-awareness": "warn",
 
       // ---- Effect preset: rules this library's public surface cuts across --
       // `prefer-option-over-null`: the public API spells absence as `Option`
@@ -116,6 +113,10 @@ export default defineConfig({
       // JSON). It stays a warning so those sites stay visible; a new one in
       // a public module is still a finding to read.
       "effect/prefer-option-over-null": "warn",
+      // Every `as` is a claim nothing checks. The library has none left
+      // (`Xsd.parser` decodes through a `Schema`, #181); `as const` is exempt.
+      "effect/casting-awareness": "error",
+      "typescript/no-unsafe-type-assertion": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
       // On explicitly: no preset this config extends turns them on.
       "eslint/prefer-const": "error",
@@ -157,12 +158,6 @@ export default defineConfig({
       // the line so the rule is back at `error`.
       // Type-aware (tsgolint) rules. oxlint applies `overrides` to none of
       // them, so each relaxation here is global and counted.
-      // 3 sites, all in `Xsd.parser` (`src/Xsd/Validate.ts`): the value types
-      // `A` / `B` and `Streams<S>` are the caller's description of what a
-      // schema's type produces (written by `Xsd.generate` from the same
-      // model), so no runtime check can establish them. A new site is a
-      // defect (#80).
-      "typescript/no-unsafe-type-assertion": "warn",
       // 1 site: the CLI bin (`packages/cli/src/main.ts`), the application
       // entry point the rule's own message exempts (it provides the composed
       // platform layer once, to `NodeRuntime.runMain`). The tests provide

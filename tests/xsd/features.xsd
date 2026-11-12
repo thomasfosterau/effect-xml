@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- What `Xsd.generate` writes for each feature: `features.generated.ts` is generated from this schema, and tests/xsd.test.ts compares and runs it. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:f="urn:features"
+           targetNamespace="urn:features"
+           elementFormDefault="qualified">
+
+  <xs:simpleType name="Level">
+    <xs:restriction base="xs:int">
+      <xs:enumeration value="1"/>
+      <xs:enumeration value="2"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Setting">
+    <xs:union memberTypes="f:Level xs:boolean"/>
+  </xs:simpleType>
+
+  <xs:simpleType name="Words">
+    <xs:list itemType="xs:token"/>
+  </xs:simpleType>
+
+  <!-- A recursive type, and a type derived from it: one cycle. -->
+  <xs:complexType name="Node">
+    <xs:sequence>
+      <xs:element name="node" type="f:Node" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="label" type="xs:string"/>
+  </xs:complexType>
+
+  <xs:complexType name="Weighted">
+    <xs:complexContent>
+      <xs:extension base="f:Node">
+        <xs:attribute name="weight" type="xs:decimal" use="required"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:element name="node" type="f:Node"/>
+
+  <!-- A substitution group whose member's type derives from the head's. -->
+  <xs:complexType name="Item">
+    <xs:attribute name="sku" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="Special">
+    <xs:complexContent>
+      <xs:extension base="f:Item">
+        <xs:sequence>
+          <xs:element name="reason" type="xs:string"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:element name="item" type="f:Item"/>
+  <xs:element name="special" type="f:Special" substitutionGroup="f:item"/>
+
+  <xs:complexType name="Prose" mixed="true">
+    <xs:sequence>
+      <xs:element name="em" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="features">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="tree" type="f:Node"/>
+        <xs:element ref="f:item" maxOccurs="unbounded"/>
+        <xs:element name="note" type="xs:string" nillable="true" minOccurs="0"/>
+        <xs:element name="words" type="f:Words"/>
+        <xs:element name="setting" type="f:Setting" maxOccurs="unbounded"/>
+        <xs:element name="data" type="xs:hexBinary" minOccurs="0"/>
+        <xs:element name="prose" type="f:Prose" minOccurs="0"/>
+        <xs:element name="extra" minOccurs="0"/>
+      </xs:sequence>
+      <xs:anyAttribute namespace="##other" processContents="skip"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

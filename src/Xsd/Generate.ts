@@ -1,12 +1,15 @@
 /**
- * Generating a TypeScript module from a compiled schema: an interface or type
- * alias per type, the model as a literal, and a typed parser per global element
- * (with a typed stream, under `streams`, per child of the root element that can
- * occur more than once).
+ * Generating a TypeScript module from a compiled schema: a `Schema` and its
+ * type per type, the model as a literal, and a parser per global element that
+ * decodes through its element's schema (with a stream, named in `streams`,
+ * per child of the root element that can occur more than once).
  */
 import * as Arr from "effect/Array";
+import * as Data from "effect/Data";
+import * as HashSet from "effect/HashSet";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Order from "effect/Order";
 import * as P from "effect/Predicate";
 import * as R from "effect/Record";
 import * as Result from "effect/Result";
@@ -72,8 +75,19 @@ const propertyKey = (name: string): string =>
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }));
 
-/** The names a generated module binds itself, which no type or parser may take. */
-const moduleBindings = ["model", "Xsd", "Xml", "BigDecimal", "Option"];
+/** The names a generated module binds itself or uses, which no type or parser may take. */
+const moduleBindings = [
+  "model",
+  "Xsd",
+  "Xml",
+  "Schema",
+  "BigDecimal",
+  "Option",
+  "ReadonlyArray",
+  "Readonly",
+  "Record",
+  "Uint8Array",
+];
 
 /** Uniquely named: each wanted name, numbered when it is taken. */
 const uniquely = (
@@ -145,50 +159,156 @@ const literal = (checker: SimpleChecker, lexical: string): Option.Option<string>
     (write) => write(normalize(lexical, checker.whiteSpace)),
   );
 
-/** The TypeScript type of each value kind. */
-interface KindTypes {
-  readonly [kind: string]: string;
+/** How a value kind is written: its TypeScript type and its schema. */
+interface KindCode {
+  readonly [kind: string]: readonly [ts: string, schema: string];
 }
 
-const kindTypes: KindTypes = {
-  string: "string",
-  temporal: "string",
-  duration: "string",
-  qname: "string",
-  boolean: "boolean",
-  decimal: "BigDecimal.BigDecimal",
-  integer: "bigint",
-  number: "number",
-  binary: "Uint8Array",
+const kindCode: KindCode = {
+  string: ["string", "Schema.String"],
+  temporal: ["string", "Schema.String"],
+  duration: ["string", "Schema.String"],
+  qname: ["string", "Schema.String"],
+  boolean: ["boolean", "Schema.Boolean"],
+  decimal: ["BigDecimal.BigDecimal", "Schema.BigDecimal"],
+  integer: ["bigint", "Schema.BigInt"],
+  int: ["number", "Schema.Int"],
+  number: ["number", "Schema.Number"],
+  binary: ["Uint8Array", "Schema.Uint8Array"],
 };
 
-/** The TypeScript type of a simple type's values. */
-const simpleTs = (checker: SimpleChecker): string => {
+/** A simple type's value space, which its TypeScript type and its schema are written from. */
+type Space = Data.TaggedEnum<{
+  Atom: { readonly kind: string };
+  Literals: { readonly values: Arr.NonEmptyReadonlyArray<string> };
+  List: { readonly item: Space };
+  Union: { readonly members: Arr.NonEmptyReadonlyArray<Space> };
+}>;
+
+const Space = Data.taggedEnum<Space>();
+
+/** A simple type's value space. */
+const spaceOf = (checker: SimpleChecker): Space => {
   const enumerated = Option.flatMap(Option.fromNullishOr(checker.enumeration), (values) =>
     Option.all(Arr.map(values, (v) => literal(checker, v))),
   );
   if (Option.isSome(enumerated) && Arr.isReadonlyArrayNonEmpty(enumerated.value))
-    return Arr.dedupe(enumerated.value).join(" | ");
+    return Space.Literals({ values: Arr.dedupe(enumerated.value) });
   if (checker.kind === "list")
-    return `ReadonlyArray<${checker.item === undefined ? "string" : wrap(simpleTs(checker.item))}>`;
+    return Space.List({
+      item: checker.item === undefined ? Space.Atom({ kind: "string" }) : spaceOf(checker.item),
+    });
+  const members = checker.members ?? [];
   if (checker.kind === "union")
-    return Arr.dedupe(Arr.map(checker.members ?? [], simpleTs)).join(" | ") || "string";
-  return kindTypes[checker.kind] ?? "string";
+    return Arr.isReadonlyArrayNonEmpty(members)
+      ? Space.Union({ members: Arr.map(members, spaceOf) })
+      : Space.Atom({ kind: "string" });
+  // Integers that fit a `number` (`int`, `short`, …) are checked as integers.
+  return Space.Atom({
+    kind: checker.kind === "number" && checker.primitive === "decimal" ? "int" : checker.kind,
+  });
 };
 
 const wrap = (ts: string): string => (ts.includes(" | ") ? `(${ts})` : ts);
 
+/** The TypeScript type of a value space. */
+const spaceTs: (space: Space) => string = Space.$match({
+  Atom: ({ kind }) => kindCode[kind]?.[0] ?? "string",
+  Literals: ({ values }) => values.join(" | "),
+  List: ({ item }) => `ReadonlyArray<${wrap(spaceTs(item))}>`,
+  Union: ({ members }) => Arr.dedupe(Arr.map(members, spaceTs)).join(" | "),
+});
+
+const literalsSchema = (values: ReadonlyArray<string>): string =>
+  values.length === 1
+    ? `Schema.Literal(${values.join("")})`
+    : `Schema.Literals([${values.join(", ")}])`;
+
+/** A union of schemas, or the one schema when there is only one. */
+const union = (schemas: ReadonlyArray<string>): string => {
+  const distinct = Arr.dedupe(schemas);
+  return distinct.length === 1 ? distinct.join("") : `Schema.Union([${distinct.join(", ")}])`;
+};
+
+/** The literals of a union whose members are all enumerations, merged. */
+const unionLiterals = (members: ReadonlyArray<Space>): Option.Option<ReadonlyArray<string>> =>
+  Option.map(
+    Option.all(
+      Arr.map(members, (m) => (Space.$is("Literals")(m) ? Option.some(m.values) : Option.none())),
+    ),
+    (values) => Arr.dedupe(Arr.flatten(values)),
+  );
+
+/** The schema of a value space. */
+const spaceSchema: (space: Space) => string = Space.$match({
+  Atom: ({ kind }) => kindCode[kind]?.[1] ?? "Schema.String",
+  Literals: ({ values }) => literalsSchema(values),
+  List: ({ item }) => `Schema.Array(${spaceSchema(item)})`,
+  Union: ({ members }) =>
+    Option.match(unionLiterals(members), {
+      onNone: () => union(Arr.map(members, spaceSchema)),
+      onSome: literalsSchema,
+    }),
+});
+
+/** Whether a value space's TypeScript type names `BigDecimal`. */
+const usesDecimal: (space: Space) => boolean = Space.$match({
+  Atom: ({ kind }) => kind === "decimal",
+  Literals: () => false,
+  List: ({ item }) => usesDecimal(item),
+  Union: ({ members }) => Arr.some(members, usesDecimal),
+});
+
+/** The nodes reachable from `start`, `start` included. */
+const closure =
+  (edges: (node: string) => ReadonlyArray<string>) =>
+  (start: string): HashSet.HashSet<string> => {
+    const grow = (
+      frontier: ReadonlyArray<string>,
+      seen: HashSet.HashSet<string>,
+    ): HashSet.HashSet<string> => {
+      const next = Arr.dedupe(
+        Arr.filter(Arr.flatMap(frontier, edges), (node) => !HashSet.has(seen, node)),
+      );
+      return Arr.isReadonlyArrayEmpty(next)
+        ? seen
+        : grow(
+            next,
+            Arr.reduce(next, seen, (set, node) => HashSet.add(set, node)),
+          );
+    };
+    return grow([start], HashSet.make(start));
+  };
+
 /**
- * Write a TypeScript module for a compiled schema: the types of the values
- * each type produces, the model itself (so nothing is compiled at run time),
- * and a typed {@link Parser} for each global element.
+ * Write a TypeScript module for a compiled schema: a `Schema` for the values
+ * of each type, with its type alias, the model itself (so nothing is compiled
+ * at run time), and a {@link Parser} for each global element that decodes
+ * through its element's schema.
  *
- * Simple types become aliases (enumerations of strings, numbers and booleans
- * become unions of literals), complex types interfaces laid out as
- * {@link XsdRecord} describes. An element whose declared type has named
- * derived types may hold any of them (by `xsi:type`): its type is the union,
- * each derived type marked with its `$type`. Parsers are named after their
- * elements in camel case; types in Pascal case.
+ * Each schema describes the {@link XsdValue} validation builds and decodes
+ * it as it is: its `Encoded` and `Type` are the same, and the module's types
+ * are its schemas' (`export type Line = typeof Line.Type`). Simple types are
+ * `Schema.String`, `Schema.Boolean`, `Schema.Int` (integers that fit a
+ * `number`), `Schema.Number` (`float`, `double`), `Schema.BigInt`,
+ * `Schema.BigDecimal`, `Schema.Uint8Array`, `Schema.Array` of the item for a
+ * list and `Schema.Union` of the members for a union; enumerations of
+ * strings, numbers and booleans are `Schema.Literals`. Complex types are
+ * `Schema.Struct`s laid out as {@link XsdRecord} describes: an optional
+ * property is a `Schema.optionalKey`, a nillable element a `Schema.Option`,
+ * wildcard matches DOM elements (`Schema.toType(Xml.XmlElement)`) and an
+ * `xs:anyType` element an {@link XsdRecord}. An element whose declared type
+ * has named derived types may hold any of them (by `xsi:type`): its schema is
+ * the union, each derived type marked with its `$type` and listed before the
+ * declared type, whose schema would otherwise take (and strip) their values.
+ * A type whose values can contain its own is written out as an object type,
+ * which its schema's `Schema.suspend` references name. Property names are
+ * written as strings, as they are XML names; parsers are named after their
+ * elements in camel case, schemas and types in Pascal case.
+ *
+ * The module imports only `effect/Schema` (and, for written-out types,
+ * `effect/BigDecimal` and `effect/Option` types) and the library's `Xsd` and
+ * `Xml` namespaces from `importFrom`.
  *
  * @example
  * ```ts
@@ -202,7 +322,7 @@ const wrap = (ts: string): string => (ts.includes(" | ") ? `(${ts})` : ts);
  *     </xs:schema>`)
  * )
  * const source = Effect.runSync(Xsd.generate(model))
- * console.log(source.includes(`export const greeting = Xsd.parser<string>(model, "greeting");`)) // true
+ * console.log(source.includes(`export const greeting = Xsd.parser(model, "greeting", Schema.String);`)) // true
  * ```
  *
  * @since 0.1.0
@@ -219,50 +339,86 @@ export const generate = (
     return Effect.succeed(write(model, runtime, options));
   });
 
+/** One of the types an element's values may have, as a schema. */
+interface Alternative {
+  /** The complex type it is made from, when it references one. */
+  readonly type: Option.Option<string>;
+  /** Its TypeScript type, for a suspended reference's annotation. */
+  readonly ts: string;
+  readonly schema: string;
+}
+
+/** The simple type of a complex type's simple content. */
+const contentType = (def: ComplexType): Option.Option<string> =>
+  P.isTagged(def.content, "Simple") ? Option.some(def.content.type) : Option.none();
+
+/** A reference to a type in the same cycle is suspended, as the type may not be declared yet. */
+const reference =
+  (cycle: ReadonlyArray<string>) =>
+  (alt: Alternative): string =>
+    Option.exists(alt.type, (t) => cycle.includes(t))
+      ? `Schema.suspend((): Schema.Codec<${alt.ts}> => ${alt.schema})`
+      : alt.schema;
+
 const write = (model: Model, runtime: Runtime, options?: GenerateOptions): string => {
   const names = nameTypes(model);
-  const used = { bigDecimal: false, xml: false, option: false };
+  const used = { decimal: false, xml: false, option: false };
 
-  const simpleRef = (key: string): string => {
+  const isComplex = (key: string): boolean =>
+    Option.exists(typeOf(model, key), (t) => P.isTagged(t, "ComplexType"));
+
+  const spaceAt = (key: string): Space =>
+    Option.match(Result.getSuccess(runtime.checker(key)), {
+      onNone: () => Space.Atom({ kind: "string" }),
+      onSome: spaceOf,
+    });
+
+  // ---- TypeScript types: written for the interfaces of recursive types ----
+
+  const simpleTs = (key: string): string => {
     const name = names[key];
     if (name !== undefined) return name;
-    const checker = Result.getOrUndefined(runtime.checker(key));
-    const ts = checker === undefined ? "string" : simpleTs(checker);
-    if (ts.includes("BigDecimal")) used.bigDecimal = true;
-    return ts;
+    const space = spaceAt(key);
+    if (usesDecimal(space)) used.decimal = true;
+    return spaceTs(space);
   };
 
   /** The type of a type's values, by reference. */
-  const typeRef = (key: string): string => {
+  const typeTs = (key: string): string => {
     if (key === anyType) return "Xsd.XsdRecord";
-    return Option.match(typeOf(model, key), {
-      onNone: () => simpleRef(key),
-      onSome: (def) =>
-        P.isTagged(def, "ComplexType") ? (names[key] ?? "Xsd.XsdRecord") : simpleRef(key),
-    });
+    return isComplex(key) ? (names[key] ?? "Xsd.XsdRecord") : simpleTs(key);
   };
 
+  /** The complex types derived from an element's declared type, which `xsi:type` may name. */
+  const derivedOf = (type: string): ReadonlyArray<string> =>
+    isComplex(type)
+      ? Arr.filter(
+          derivedTypes(model, type),
+          (k) =>
+            names[k] !== undefined &&
+            Option.exists(
+              typeOf(model, k),
+              (t) => P.isTagged(t, "ComplexType") && t.abstract !== true,
+            ),
+        )
+      : [];
+
+  const isAbstract = (type: string): boolean =>
+    Option.exists(typeOf(model, type), (t) => P.isTagged(t, "ComplexType") && t.abstract === true);
+
+  const variantTs = (k: string): string => `${typeTs(k)} & { readonly $type: ${quote(k)} }`;
+
   /** The type of an element's values: its type, or any named type derived from it, as an `Option` if nillable. */
-  const elementRef = (declKey: string): string =>
+  const elementTs = (declKey: string): string =>
     Option.match(runtime.element(declKey), {
       onNone: () => "Xsd.XsdValue",
       onSome: (decl) => {
-        const own = typeOf(model, decl.type);
-        const derived = Option.exists(own, (t) => P.isTagged(t, "ComplexType"))
-          ? Arr.filter(derivedTypes(model, decl.type), (k) =>
-              Option.exists(
-                typeOf(model, k),
-                (t) => P.isTagged(t, "ComplexType") && t.abstract !== true,
-              ),
-            )
-          : [];
-        const abstract = Option.exists(
-          own,
-          (t) => P.isTagged(t, "ComplexType") && t.abstract === true,
-        );
+        const derived = derivedOf(decl.type);
         const alternatives = [
-          ...(abstract && Arr.isReadonlyArrayNonEmpty(derived) ? [] : [typeRef(decl.type)]),
-          ...Arr.map(derived, (k) => `(${typeRef(k)} & { readonly $type: ${quote(k)} })`),
+          ...(isAbstract(decl.type) && Arr.isReadonlyArrayNonEmpty(derived)
+            ? []
+            : [typeTs(decl.type)]),
+          ...Arr.map(derived, (k) => `(${variantTs(k)})`),
         ].join(" | ");
         if (decl.nillable !== true) return alternatives;
         used.option = true;
@@ -270,26 +426,28 @@ const write = (model: Model, runtime: Runtime, options?: GenerateOptions): strin
       },
     });
 
-  const members = (layout: Layout, def: ComplexType): ReadonlyArray<string> => {
-    const attributes = Arr.map(
-      layout.attributes,
-      (slot) =>
-        `  /** The attribute ${slot.name}. */\n  readonly ${propertyKey(slot.property)}${slot.always ? "" : "?"}: ${simpleRef(slot.type)};`,
-    );
-    const elements = Arr.map(layout.elements, (slot) => {
-      const ts = Arr.dedupe(Arr.map(slot.elements, elementRef)).join(" | ");
-      const doc = `  /** The element${slot.cardinality === "many" ? "s" : ""} ${slot.name}. */\n`;
-      return slot.cardinality === "many"
-        ? `${doc}  readonly ${propertyKey(slot.property)}: ReadonlyArray<${wrap(ts)}>;`
-        : `${doc}  readonly ${propertyKey(slot.property)}${slot.cardinality === "optional" ? "?" : ""}: ${ts};`;
-    });
-    const content = P.isTagged(def.content, "Simple") ? simpleRef(def.content.type) : "";
+  const slotTs = (slot: ElementSlot): string =>
+    Arr.dedupe(Arr.map(slot.elements, elementTs)).join(" | ");
+
+  const membersTs = (layout: Layout, def: ComplexType): ReadonlyArray<string> => {
     if (layout.any) used.xml = true;
     return [
-      ...attributes,
-      ...elements,
+      ...Arr.map(
+        layout.attributes,
+        (slot) =>
+          `  /** The attribute ${slot.name}. */\n  readonly ${propertyKey(slot.property)}${slot.always ? "" : "?"}: ${simpleTs(slot.type)};`,
+      ),
+      ...Arr.map(layout.elements, (slot) => {
+        const ts = slotTs(slot);
+        const doc = `  /** The element${slot.cardinality === "many" ? "s" : ""} ${slot.name}. */\n`;
+        return slot.cardinality === "many"
+          ? `${doc}  readonly ${propertyKey(slot.property)}: ReadonlyArray<${wrap(ts)}>;`
+          : `${doc}  readonly ${propertyKey(slot.property)}${slot.cardinality === "optional" ? "?" : ""}: ${ts};`;
+      }),
       ...(layout.text === "value"
-        ? [`  /** The simple content. */\n  readonly $value: ${content};`]
+        ? [
+            `  /** The simple content. */\n  readonly $value: ${Option.match(contentType(def), { onNone: () => "string", onSome: simpleTs })};`,
+          ]
         : []),
       ...(layout.text === "mixed"
         ? [`  /** The text of the mixed content. */\n  readonly $text: string;`]
@@ -307,35 +465,223 @@ const write = (model: Model, runtime: Runtime, options?: GenerateOptions): strin
     ];
   };
 
-  const declarations = Arr.filterMap(R.toEntries(names), ([key, name]) =>
+  // ---- Schemas ----
+
+  const simpleSchema = (key: string): string => names[key] ?? spaceSchema(spaceAt(key));
+
+  /** The schema of a type's values, by reference. */
+  const typeSchema = (key: string): string => {
+    if (key === anyType) return "Xsd.XsdRecord";
+    return isComplex(key) ? (names[key] ?? "Xsd.XsdRecord") : simpleSchema(key);
+  };
+
+  /**
+   * The schema of an element's values. The types derived from its declared
+   * type come first: each has the properties of the declared type, and more.
+   */
+  const elementSchema = (declKey: string, cycle: ReadonlyArray<string>): string =>
+    Option.match(runtime.element(declKey), {
+      onNone: () => "Xsd.XsdValue",
+      onSome: (decl) => {
+        const derived = derivedOf(decl.type);
+        const alternatives: ReadonlyArray<Alternative> = [
+          ...Arr.map(derived, (k) => ({
+            type: Option.some(k),
+            ts: variantTs(k),
+            schema: `Schema.Struct({ ...${typeSchema(k)}.fields, "$type": Schema.Literal(${quote(k)}) })`,
+          })),
+          ...(isAbstract(decl.type) && Arr.isReadonlyArrayNonEmpty(derived)
+            ? []
+            : [
+                {
+                  type: isComplex(decl.type) ? Option.some(decl.type) : Option.none(),
+                  ts: names[decl.type] ?? "",
+                  schema: typeSchema(decl.type),
+                },
+              ]),
+        ];
+        const schema = union(Arr.map(alternatives, reference(cycle)));
+        return decl.nillable === true ? `Schema.Option(${schema})` : schema;
+      },
+    });
+
+  /** How many types derive from a declaration's type: more derived types sort first. */
+  const derivedCount = (declKey: string): number =>
+    Option.match(runtime.element(declKey), {
+      onNone: () => 0,
+      onSome: (decl) => derivedTypes(model, decl.type).length,
+    });
+
+  /**
+   * The schema of a slot's values. Elements whose types derive from another's
+   * come before it, so the other's schema doesn't take (and strip) their values.
+   */
+  const slotSchema = (slot: ElementSlot, cycle: ReadonlyArray<string>): string =>
+    union(
+      Arr.map(Arr.sortWith(slot.elements, derivedCount, Order.Number), (declKey) =>
+        elementSchema(declKey, cycle),
+      ),
+    );
+
+  const membersSchema = (
+    layout: Layout,
+    def: ComplexType,
+    cycle: ReadonlyArray<string>,
+  ): ReadonlyArray<string> => {
+    if (layout.any) used.xml = true;
+    return [
+      ...Arr.map(layout.attributes, (slot) => {
+        const schema = simpleSchema(slot.type);
+        return `  /** The attribute ${slot.name}. */\n  ${quote(slot.property)}: ${slot.always ? schema : `Schema.optionalKey(${schema})`},`;
+      }),
+      ...Arr.map(layout.elements, (slot) => {
+        const schema = slotSchema(slot, cycle);
+        const doc = `  /** The element${slot.cardinality === "many" ? "s" : ""} ${slot.name}. */\n`;
+        const field =
+          slot.cardinality === "many"
+            ? `Schema.Array(${schema})`
+            : slot.cardinality === "optional"
+              ? `Schema.optionalKey(${schema})`
+              : schema;
+        return `${doc}  ${quote(slot.property)}: ${field},`;
+      }),
+      ...(layout.text === "value"
+        ? [
+            `  /** The simple content. */\n  "$value": ${Option.match(contentType(def), { onNone: () => "Schema.String", onSome: simpleSchema })},`,
+          ]
+        : []),
+      ...(layout.text === "mixed"
+        ? [`  /** The text of the mixed content. */\n  "$text": Schema.String,`]
+        : []),
+      ...(layout.any
+        ? [
+            `  /** Elements matched by wildcards. */\n  "$any": Schema.Array(Schema.toType(Xml.XmlElement)),`,
+          ]
+        : []),
+      ...(layout.anyAttribute
+        ? [
+            `  /** Attributes matched by \`anyAttribute\`, by expanded name. */\n  "$attributes": Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),`,
+          ]
+        : []),
+    ];
+  };
+
+  // ---- Declarations ----
+
+  const describe = (key: string): string => {
+    const owner = Arr.findFirst(R.values(model.elements), (d) => d.type === key);
+    return key.startsWith("#")
+      ? `the type of the element ${Option.match(owner, { onNone: () => "", onSome: (d) => d.name })}`
+      : `the type ${key}`;
+  };
+
+  const simpleDeclarations = Arr.filterMap(R.toEntries(names), ([key, name]) =>
+    Option.exists(typeOf(model, key), (t) => P.isTagged(t, "SimpleType"))
+      ? Result.succeed(
+          [
+            `/** The schema of ${describe(key)}. */`,
+            `export const ${name} = ${spaceSchema(spaceAt(key))};`,
+            `/** The values of ${describe(key)}. */`,
+            `export type ${name} = typeof ${name}.Type;`,
+          ].join("\n"),
+        )
+      : Result.failVoid,
+  );
+
+  /** The complex types to declare, with their layouts. */
+  const complexTypes = Arr.filterMap(R.toEntries(names), ([key]) =>
     Option.match(typeOf(model, key), {
       onNone: () => Result.failVoid,
-      onSome: (def) => {
-        const owner = Arr.findFirst(R.values(model.elements), (d) => d.type === key);
-        const doc = key.startsWith("#")
-          ? `/** The type of the element ${Option.match(owner, { onNone: () => "", onSome: (d) => d.name })}. */\n`
-          : `/** The type ${key}. */\n`;
-        if (P.isTagged(def, "SimpleType")) {
-          const checker = Result.getOrUndefined(runtime.checker(key));
-          const ts = checker === undefined ? "string" : simpleTs(checker);
-          if (ts.includes("BigDecimal")) used.bigDecimal = true;
-          return Result.succeed(`${doc}export type ${name} = ${ts};`);
-        }
-        return Result.match(runtime.type(key), {
-          onFailure: () => Result.failVoid,
-          onSuccess: (rt) => {
-            if (!P.isTagged(rt, "Complex")) return Result.failVoid;
-            const body = members(rt.layout, def);
-            return Result.succeed(
-              Arr.isReadonlyArrayEmpty(body)
-                ? `${doc}export interface ${name} {}`
-                : `${doc}export interface ${name} {\n${body.join("\n")}\n}`,
-            );
-          },
-        });
-      },
+      onSome: (def) =>
+        P.isTagged(def, "ComplexType")
+          ? Result.match(runtime.type(key), {
+              onFailure: () => Result.failVoid,
+              onSuccess: (rt) =>
+                P.isTagged(rt, "Complex")
+                  ? Result.succeed([key, def, rt.layout] as const)
+                  : Result.failVoid,
+            })
+          : Result.failVoid,
     }),
   );
+  const complexKeys = Arr.map(complexTypes, ([key]) => key);
+  const layouts = R.fromEntries(
+    Arr.map(complexTypes, ([key, def, layout]) => [key, [def, layout] as const]),
+  );
+
+  /** The complex types a complex type's values contain. */
+  const references = (key: string): ReadonlyArray<string> =>
+    Option.match(R.get(layouts, key), {
+      onNone: () => [],
+      onSome: ([, layout]) =>
+        Arr.filter(
+          Arr.flatMap(layout.elements, (slot) =>
+            Arr.flatMap(slot.elements, (declKey) =>
+              Option.match(runtime.element(declKey), {
+                onNone: () => [],
+                onSome: (decl) => [decl.type, ...derivedOf(decl.type)],
+              }),
+            ),
+          ),
+          (k) => R.has(layouts, k),
+        ),
+    });
+
+  const complexDeclaration = (key: string, cycle: ReadonlyArray<string>): string =>
+    Option.match(R.get(layouts, key), {
+      onNone: () => "",
+      onSome: ([def, layout]) => {
+        const name = names[key] ?? "";
+        const fields = membersSchema(layout, def, cycle);
+        const schema = Arr.isReadonlyArrayEmpty(fields)
+          ? `Schema.Struct({})`
+          : `Schema.Struct({\n${fields.join("\n")}\n})`;
+        const constant = [
+          `/** The schema of ${describe(key)}. */`,
+          `export const ${name} = ${schema};`,
+        ];
+        if (!Arr.isReadonlyArrayNonEmpty(cycle))
+          return [
+            ...constant,
+            `/** The values of ${describe(key)}. */`,
+            `export type ${name} = typeof ${name}.Type;`,
+          ].join("\n");
+        // A recursive type is written out: its schema's type refers to it.
+        const body = membersTs(layout, def);
+        return [
+          `/** The values of ${describe(key)}. */`,
+          Arr.isReadonlyArrayEmpty(body)
+            ? `export type ${name} = Record<never, never>;`
+            : `export type ${name} = {\n${body.join("\n")}\n};`,
+          ...constant,
+        ].join("\n");
+      },
+    });
+
+  // Declared dependencies first: a type reaches strictly more types than any
+  // type it reaches that doesn't reach it back. A type in a cycle (one some
+  // type it references reaches back) is written out, and its references into
+  // the cycle suspended.
+  const edges = R.fromEntries(Arr.map(complexKeys, (k) => [k, references(k)] as const));
+  const reach = R.fromEntries(
+    Arr.map(complexKeys, (k) => [k, closure((n) => edges[n] ?? [])(k)] as const),
+  );
+  const reaches = (from: string, to: string): boolean =>
+    Option.exists(R.get(reach, from), (set) => HashSet.has(set, to));
+  const cycleOf = (key: string): ReadonlyArray<string> =>
+    Arr.some(edges[key] ?? [], (k) => reaches(k, key))
+      ? Arr.filter(complexKeys, (k) => reaches(key, k) && reaches(k, key))
+      : [];
+  const complexDeclarations = Arr.map(
+    Arr.sortWith(
+      complexKeys,
+      (k) => Option.match(R.get(reach, k), { onNone: () => 0, onSome: HashSet.size }),
+      Order.Number,
+    ),
+    (key) => complexDeclaration(key, cycleOf(key)),
+  );
+
+  // ---- Parsers ----
 
   const roots = options?.roots ?? Arr.filter(R.keys(model.elements), (k) => !k.startsWith("#"));
   const rootDecls = Arr.filter(roots, (key) =>
@@ -354,38 +700,23 @@ const write = (model: Model, runtime: Runtime, options?: GenerateOptions): strin
     Option.match(runtime.element(key), {
       onNone: () => [],
       onSome: (decl) =>
-        Result.match(runtime.type(decl.type), {
-          onFailure: () => [],
-          onSuccess: (rt) =>
-            P.isTagged(rt, "Complex")
-              ? Arr.filter(rt.layout.elements, (slot) => slot.cardinality === "many")
-              : [],
+        Option.match(R.get(layouts, decl.type), {
+          onNone: () => [],
+          onSome: ([, layout]) =>
+            Arr.filter(layout.elements, (slot) => slot.cardinality === "many"),
         }),
     });
   const parsers = Arr.map(parserNames, ([key, name]) => {
     const doc = `/** A parser for documents whose root is <${localOf(key)}> (${key}). */`;
+    const head = `export const ${name} = Xsd.parser(model, ${quote(key)}, ${elementSchema(key, [])}`;
     const slots = repeated(key);
-    if (Arr.isReadonlyArrayEmpty(slots))
-      return `${doc}\nexport const ${name} = Xsd.parser<${elementRef(key)}>(model, ${quote(key)});`;
-    const types = Arr.map(slots, (slot) => {
-      const ts = Arr.dedupe(Arr.map(slot.elements, elementRef)).join(" | ");
-      return `    /** Streams the <${localOf(slot.name)}> children (${slot.name}). */\n    readonly ${propertyKey(slot.property)}: ${ts};`;
-    });
+    if (Arr.isReadonlyArrayEmpty(slots)) return `${doc}\n${head});`;
     const children = Arr.map(
       slots,
-      (slot) => `  ${propertyKey(slot.property)}: ${quote(slot.name)},`,
+      (slot) =>
+        `  /** Streams the <${localOf(slot.name)}> children (${slot.name}). */\n  ${propertyKey(slot.property)}: { element: ${quote(slot.name)}, schema: ${slotSchema(slot, [])} },`,
     );
-    return [
-      doc,
-      `export const ${name} = Xsd.parser<`,
-      `  ${elementRef(key)},`,
-      `  {`,
-      ...types,
-      `  }`,
-      `>(model, ${quote(key)}, {`,
-      ...children,
-      `});`,
-    ].join("\n");
+    return [doc, `${head}, {`, ...children, `});`].join("\n");
   });
 
   const library = options?.importFrom ?? "@thomasfosterau/effect-xml";
@@ -393,11 +724,14 @@ const write = (model: Model, runtime: Runtime, options?: GenerateOptions): strin
     "// Generated by @thomasfosterau/effect-xml (Xsd.generate). Do not edit.",
     ...(options?.source === undefined ? [] : [`// Source: ${options.source}`]),
   ];
+  const declarations = [...simpleDeclarations, ...complexDeclarations];
   const imports = [
-    ...(used.bigDecimal ? [`import type * as BigDecimal from "effect/BigDecimal";`] : []),
+    ...(used.decimal ? [`import type * as BigDecimal from "effect/BigDecimal";`] : []),
     ...(used.option ? [`import type * as Option from "effect/Option";`] : []),
-    ...(used.xml ? [`import type { Xml } from ${quote(library)};`] : []),
-    `import { Xsd } from ${quote(library)};`,
+    ...(Arr.some([...declarations, ...parsers], (c) => c.includes("Schema."))
+      ? [`import * as Schema from "effect/Schema";`]
+      : []),
+    `import { ${used.xml ? "Xml, " : ""}Xsd } from ${quote(library)};`,
   ];
   return (
     [
