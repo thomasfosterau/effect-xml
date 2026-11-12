@@ -443,6 +443,15 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      // Every CI gate, in CI's order (`.github/workflows/ci.yml` runs only
+      // this): format and lint, the type gate, the unit tests and conformance
+      // gates, the build, the bundle-size budgets, the docs examples, and the
+      // dependency audit. Fail-fast: the first failing gate stops the run.
+      ci: {
+        command:
+          "vp check && vp run check && vp run test:unit && vp run build && vp run size && vp run docgen && pnpm audit --audit-level high",
+        cache: false,
+      },
       // The CI type gate: `src` under the native, Effect-patched `tsc`, then
       // the tests and the example under tsconfig.test.json.
       check: {

@@ -31,6 +31,7 @@ vp lint                              # oxlint (@effect/tsgo + @enfect/oxlint)
 vp fmt                               # oxfmt
 vp check                             # both
 vp run check                         # the type gate
+vp run ci                            # every CI gate, in order (what CI runs)
 vp run test:unit                     # unit tests + the conformance gates
 vp test run tests/xml.test.ts        # a single file
 vp test run --silent=false tests/conformance.test.ts  # with the per-file html5lib report
@@ -67,11 +68,11 @@ The gates, in order:
 8. `pnpm audit --audit-level high` (network)
 9. `vp run test:coverage`, then `vp exec fallow audit --format json --quiet --explain --gate-marker agent --base origin/trunk` (the [fallow gate in AGENTS.md](AGENTS.md#fallow-local-gate); not a CI step).
 
-Steps 2–8 are CI's required `ci` job, in its order.
+Steps 2–8 are the `ci` task (`vp run ci`), which CI runs on the latest LTS and Current Node.js.
 
 ## CI expectations
 
-[ci.yml](.github/workflows/ci.yml) runs one required job, `ci`, on every pull request to `trunk` and every push to it; its steps are gates 2–8 above. CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA, never persists checkout credentials and sets up the toolchain with `voidzero-dev/setup-vp` (the catalog's `vite-plus` pin through `version-file: pnpm-workspace.yaml`) and never sets `node-version: latest` (it can resolve to a pre-release; CI takes the latest LTS Vite+ resolves, Release pins Node 24, whose npm has trusted publishing); the release job alone holds `id-token: write` and never runs for Dependabot. Dependabot assigns its pull requests to the owner (`assignees` in [dependabot.yml](.github/dependabot.yml)). [release.yml](.github/workflows/release.yml) runs changesets/action on `trunk`: it opens the version PR while unreleased changesets exist and publishes once it merges, via npm OIDC trusted publishing (see [PUBLISHING.md](PUBLISHING.md)).
+[ci.yml](.github/workflows/ci.yml) is the one CI workflow. On every pull request, every push to `trunk` and on demand, it runs `vp run ci` (the `ci` task in `vite.config.ts`: gates 2–8 above, in order, stopping at the first failure) in a matrix of the latest LTS and the latest Current release of Node.js as the checks `ci (node lts)` and `ci (node latest)`, both of which the `trunk` ruleset requires. `vp run ci` runs the same gates locally. CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA, never persists checkout credentials and sets up the toolchain with `voidzero-dev/setup-vp` (the catalog's `vite-plus` pin through `version-file: pnpm-workspace.yaml`; `node-version: lts` / `latest` resolve to released lines only, never a nightly or release candidate; Release pins Node 24, whose npm has trusted publishing); the release job alone holds `id-token: write` and never runs for Dependabot. Dependabot assigns its pull requests to the owner (`assignees` in [dependabot.yml](.github/dependabot.yml)). [release.yml](.github/workflows/release.yml) runs changesets/action on `trunk`: it opens the version PR while unreleased changesets exist and publishes once it merges, via npm OIDC trusted publishing (see [PUBLISHING.md](PUBLISHING.md)).
 
 ## Pre-PR checklist
 
