@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -142,7 +143,7 @@ describe("decoding", () => {
     const Feed = Schema.Struct({
       title: Schema.String,
       link: Schema.optional(
-        Schema.String.pipe(Bind.element({ name: "link", namespace: "urn:other" })),
+        Schema.String.pipe(Bind.element({ name: "link", namespace: Option.some("urn:other") })),
       ),
     });
     expect(
@@ -249,10 +250,14 @@ describe("encoding", () => {
   test("children inherit the root's namespace; namespaced attributes get a prefix", () => {
     const Note = Schema.Struct({
       id: Schema.Number.pipe(Bind.attribute()),
-      lang: Schema.String.pipe(Bind.attribute({ name: "lang", namespace: Namespaces.xml })),
-      ref: Schema.String.pipe(Bind.attribute({ name: "ref", namespace: "urn:x", prefix: "x" })),
+      lang: Schema.String.pipe(
+        Bind.attribute({ name: "lang", namespace: Option.some(Namespaces.xml) }),
+      ),
+      ref: Schema.String.pipe(
+        Bind.attribute({ name: "ref", namespace: Option.some("urn:x"), prefix: "x" }),
+      ),
       body: Schema.String,
-    }).pipe(Bind.named({ name: "note", namespace: "urn:notes" }));
+    }).pipe(Bind.named({ name: "note", namespace: Option.some("urn:notes") }));
     const value = { id: 1, lang: "en", ref: "r", body: "Hi" };
     const xml = encode(Note, value);
     expect(xml).toBe(

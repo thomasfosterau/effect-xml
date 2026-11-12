@@ -146,9 +146,14 @@ export type Axis =
  * @category syntax
  */
 export type NodeTest =
-  | { readonly _tag: "Name"; readonly namespace: string | null; readonly local: string }
-  /** `*` (namespace `undefined`) or `prefix:*`. */
-  | { readonly _tag: "Any"; readonly namespace: string | null | undefined }
+  | {
+      readonly _tag: "Name";
+      /** The namespace URI (`Option.none()` for no namespace). */
+      readonly namespace: Option.Option<string>;
+      readonly local: string;
+    }
+  /** `*` (`namespace` left out) or `prefix:*` (`Option.none()` for no namespace). */
+  | { readonly _tag: "Any"; readonly namespace?: Option.Option<string> }
   | { readonly _tag: "Text" }
   | { readonly _tag: "Node" };
 
@@ -310,7 +315,7 @@ const dynamicError = (expression: string, e: XQueryError): XPathError =>
     reason: `${e.description} (${e.code.qualified})`,
   });
 
-const staticOptions = (options: CompileOptions | undefined) => ({
+const staticOptions = (options?: CompileOptions) => ({
   ...maybe("namespaces", options?.namespaces),
   ...maybe("defaultElementNamespace", options?.defaultNamespace),
   ...maybe("variables", options?.variables),
@@ -320,7 +325,7 @@ const staticOptions = (options: CompileOptions | undefined) => ({
 /** Compile an expression's text to a program and its tree. */
 const build = (
   expression: string,
-  options: CompileOptions | undefined,
+  options?: CompileOptions,
 ): Result.Result<
   { readonly program: Program; readonly expr: XExpr; readonly context: StaticContext },
   XPathError
@@ -428,73 +433,85 @@ const isViewOp = (op: string): op is Op => R.has<string, true>(viewOps, op);
 const prefixUri = (context: StaticContext, prefix: string): string =>
   Option.getOrElse(HashMap.get(context.namespaces, prefix), () => "");
 
-const nullable = (namespace: string): string | null => (namespace === "" ? null : namespace);
+/** A namespace URI as the view has it: `""` is no namespace. */
+const namespaceOf = (namespace: string): Option.Option<string> =>
+  namespace === "" ? Option.none() : Option.some(namespace);
 
-/** A node test in the view's terms; `undefined` for one outside them. */
-const viewTest = (test: XNodeTest, axis: Axis, context: StaticContext): NodeTest | undefined =>
+/** A node test in the view's terms; none for one outside them. */
+const viewTest = (test: XNodeTest, axis: Axis, context: StaticContext): Option.Option<NodeTest> =>
   XNodeTestE.$match(test, {
-    Name: ({ name: { prefix, uri, local } }): NodeTest => ({
-      _tag: "Name",
-      namespace: nullable(
-        Option.isSome(uri)
-          ? uri.value
-          : Option.isSome(prefix)
-            ? prefixUri(context, prefix.value)
-            : axis === "attribute"
-              ? ""
-              : context.defaultElementNamespace,
-      ),
-      local,
-    }),
-    Wildcard: ({ wildcard: { prefix, uri, local } }): NodeTest | undefined =>
+    Name: ({ name: { prefix, uri, local } }): Option.Option<NodeTest> =>
+      Option.some({
+        _tag: "Name",
+        namespace: namespaceOf(
+          Option.isSome(uri)
+            ? uri.value
+            : Option.isSome(prefix)
+              ? prefixUri(context, prefix.value)
+              : axis === "attribute"
+                ? ""
+                : context.defaultElementNamespace,
+        ),
+        local,
+      }),
+    Wildcard: ({ wildcard: { prefix, uri, local } }): Option.Option<NodeTest> =>
       Option.isSome(local)
-        ? undefined
-        : {
+        ? Option.none()
+        : Option.some({
             _tag: "Any",
-            namespace: Option.isSome(uri)
-              ? nullable(uri.value)
-              : Option.isSome(prefix)
-                ? nullable(prefixUri(context, prefix.value))
-                : undefined,
-          },
-    Kind: ({ test: kind }): NodeTest | undefined =>
+            ...maybe(
+              "namespace",
+              Option.isSome(uri)
+                ? namespaceOf(uri.value)
+                : Option.isSome(prefix)
+                  ? namespaceOf(prefixUri(context, prefix.value))
+                  : undefined,
+            ),
+          }),
+    Kind: ({ test: kind }): Option.Option<NodeTest> =>
       P.isTagged(kind, "Text")
-        ? { _tag: "Text" }
+        ? Option.some({ _tag: "Text" })
         : P.isTagged(kind, "AnyKind")
-          ? { _tag: "Node" }
-          : undefined,
+          ? Option.some({ _tag: "Node" })
+          : Option.none(),
   });
 
 const isAnyKind = (test: XNodeTest): boolean =>
   XNodeTestE.$is("Kind")(test) && P.isTagged(test.test, "AnyKind");
 
-const viewStep = (e: XExpr, context: StaticContext, source: string): Step | undefined => {
-  if (XExprE.$is("ContextItem")(e)) return selfStep;
-  if (!XExprE.$is("AxisStep")(e)) return undefined;
+const viewStep = (e: XExpr, context: StaticContext, source: string): Option.Option<Step> => {
+  if (XExprE.$is("ContextItem")(e)) return Option.some(selfStep);
+  if (!XExprE.$is("AxisStep")(e)) return Option.none();
   if (e.axis === "parent" && isAnyKind(e.test) && Arr.isReadonlyArrayEmpty(e.predicates))
-    return parentStep;
-  const test = viewTest(e.test, e.axis, context);
+    return Option.some(parentStep);
+  const axis = e.axis;
   const predicates = e.predicates.map((p) => viewExpr(p, context, source));
-  return test === undefined
-    ? { axis: e.axis, test: { _tag: "Node" }, predicates: [outside, ...predicates] }
-    : { axis: e.axis, test, predicates };
+  return Option.some(
+    Option.match(viewTest(e.test, axis, context), {
+      onNone: (): Step => ({ axis, test: { _tag: "Node" }, predicates: [outside, ...predicates] }),
+      onSome: (test): Step => ({ axis, test, predicates }),
+    }),
+  );
 };
 
 const viewLocationPath = (
   e: XExpr,
   context: StaticContext,
   source: string,
-): LocationPath | undefined => {
-  if (!XExprE.$is("Path")(e)) {
-    const only = viewStep(e, context, source);
-    return only === undefined ? undefined : { absolute: false, steps: [only] };
-  }
-  const steps = e.steps.map((s) => viewStep(s, context, source));
-  if (!steps.every(P.isNotUndefined)) return undefined;
-  return {
-    absolute: e.root !== "relative",
-    steps: e.root === "descendants" ? [anyNode, ...steps] : steps,
-  };
+): Option.Option<LocationPath> => {
+  if (!XExprE.$is("Path")(e))
+    return Option.map(viewStep(e, context, source), (only) => ({
+      absolute: false,
+      steps: [only],
+    }));
+  const root = e.root;
+  return Option.map(
+    Option.all(e.steps.map((s) => viewStep(s, context, source))),
+    (steps): LocationPath => ({
+      absolute: root !== "relative",
+      steps: root === "descendants" ? [anyNode, ...steps] : steps,
+    }),
+  );
 };
 
 /** A call in the view's terms: one of its functions, in `fn:`, at an arity it has; `outside` for any other. */
@@ -532,22 +549,25 @@ const viewExpr = (e: XExpr, context: StaticContext, source: string): Expr => {
       right: viewExpr(e.right, context, source),
     };
   if (XExprE.$is("FunctionCall")(e)) return viewCall(e, context, source);
-  const path = viewLocationPath(e, context, source);
-  return path === undefined ? outside : { _tag: "Path", path };
+  return Option.match(viewLocationPath(e, context, source), {
+    onNone: () => outside,
+    onSome: (path): Expr => ({ _tag: "Path", path }),
+  });
 };
 
 /** The syntax view of an expression: its location path, or `child::node()[position()]` when it is not one. */
 const viewOf = (e: XExpr, context: StaticContext, source: string): LocationPath =>
-  viewLocationPath(e, context, source) ?? {
+  Option.getOrElse(viewLocationPath(e, context, source), () => ({
     absolute: false,
     steps: [{ axis: "child", test: { _tag: "Node" }, predicates: [outside] }],
-  };
+  }));
 
 // -----------------------------------------------------------------------------
 // Printing the syntax view, for paths and predicates built by hand
 // -----------------------------------------------------------------------------
 
-const braced = (namespace: string | null): string => `Q{${namespace ?? ""}}`;
+const braced = (namespace: Option.Option<string>): string =>
+  `Q{${Option.getOrElse(namespace, () => "")}}`;
 
 const printTest = (t: NodeTest): string =>
   Match.valueTags(t, {
@@ -658,7 +678,9 @@ class Trees {
   top(element: XmlElement): XdmNode {
     const known = this.tops.get(element);
     if (known !== undefined) return known;
-    const [node] = XdmNode.fromDocument(makeDocument(null, null, [element])).children;
+    const [node] = XdmNode.fromDocument(
+      makeDocument(Option.none(), Option.none(), [element]),
+    ).children;
     // The document's one child is the element.
     const top = node ?? XdmNode.fromElement(element);
     this.tops.set(element, top);
@@ -731,7 +753,7 @@ const isValues = (v: Value | ReadonlyArray<Value>): v is ReadonlyArray<Value> =>
 const run = (
   path: Path,
   context: Context,
-  options: EvaluateOptions | undefined,
+  options?: EvaluateOptions,
 ): Result.Result<Sequence, XPathError> =>
   Result.flatMap(programOf(path), ({ compiled }) => {
     const trees = new Trees();

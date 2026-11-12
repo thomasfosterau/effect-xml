@@ -41,7 +41,7 @@ describe("namespace-aware lookups", () => {
       const body = some(root.child(ns("body")));
       const paragraphs = body.childElements(ns("p"));
       expect(paragraphs.length).toBe(2);
-      expect(body.childElements(W, "p").length).toBe(2);
+      expect(body.childElements(Option.some(W), "p").length).toBe(2);
       expect(root.descendants(ns("t")).map((t) => t.textContent)).toEqual(["Hello", "World", "!"]);
       const jc = some(
         at(paragraphs, 0)
@@ -49,8 +49,8 @@ describe("namespace-aware lookups", () => {
           .pipe(Option.flatMap((p) => p.child(ns("jc")))),
       );
       expect(jc.attributeNS(ns("val"))).toEqual(Option.some("center"));
-      expect(jc.attributeNS(W14, "val")).toEqual(Option.some("ignored"));
-      expect(jc.attributeNS(null, "val")).toEqual(Option.none());
+      expect(jc.attributeNS(Option.some(W14), "val")).toEqual(Option.some("ignored"));
+      expect(jc.attributeNS(Option.none(), "val")).toEqual(Option.none());
       expect(
         at(paragraphs, 1)
           .child(ns("r"))
@@ -62,10 +62,10 @@ describe("namespace-aware lookups", () => {
 
   test("unprefixed attributes are in no namespace, even under a default namespace", () => {
     const root = parse(`<a xmlns="urn:x" id="1"><b/></a>`).root;
-    expect(root.attributeNS(null, "id")).toEqual(Option.some("1"));
-    expect(root.attributeNS("urn:x", "id")).toEqual(Option.none());
-    expect(root.child("urn:x", "b")._tag).toBe("Some");
-    expect(root.child(null, "b")._tag).toBe("None");
+    expect(root.attributeNS(Option.none(), "id")).toEqual(Option.some("1"));
+    expect(root.attributeNS(Option.some("urn:x"), "id")).toEqual(Option.none());
+    expect(root.child(Option.some("urn:x"), "b")._tag).toBe("Some");
+    expect(root.child(Option.none(), "b")._tag).toBe("None");
   });
 
   test("descendants is iterative", () => {
@@ -73,7 +73,7 @@ describe("namespace-aware lookups", () => {
     const root = Arr.reduce(Arr.range(1, n - 1), Xml.element("a"), (inner) =>
       Xml.element("a", [], [inner]),
     );
-    expect(root.descendants(null, "a").length).toBe(n - 1);
+    expect(root.descendants(Option.none(), "a").length).toBe(n - 1);
   });
 });
 
@@ -85,9 +85,9 @@ describe("inherited xml:lang, xml:space and xml:base", () => {
       `</r>`,
   );
   const root = Xml.cursor(doc.root);
-  const t = at(root.descendants(null, "t"), 0);
-  const u = at(root.descendants(null, "u"), 0);
-  const w = at(root.descendants(null, "w"), 0);
+  const t = at(root.descendants(Option.none(), "t"), 0);
+  const u = at(root.descendants(Option.none(), "u"), 0);
+  const w = at(root.descendants(Option.none(), "w"), 0);
 
   test("xml:lang", () => {
     expect(root.lang).toEqual(Option.some("en"));
@@ -221,9 +221,9 @@ describe("Sax.select", () => {
 
   test("every row, built with namespaces resolved", async () => {
     const rows = await select(sheet(3), "/x:worksheet/x:sheetData/x:row");
-    expect(rows.map((r) => r.attribute("r"))).toEqual(["1", "2", "3"]);
-    expect(at(rows, 0).name.namespace).toBe(X);
-    expect(at(at(rows, 2).descendants(X, "v"), 0).textContent).toBe("2");
+    expect(rows.map((r) => Option.getOrUndefined(r.attribute("r")))).toEqual(["1", "2", "3"]);
+    expect(at(rows, 0).name.namespace).toEqual(Option.some(X));
+    expect(at(at(rows, 2).descendants(Option.some(X), "v"), 0).textContent).toBe("2");
   });
 
   test("chunking doesn't matter", async () => {
@@ -234,9 +234,9 @@ describe("Sax.select", () => {
 
   test("attribute predicates", async () => {
     const visible = await select(sheet(6), "//x:row[not(@hidden = '1')]");
-    expect(visible.map((r) => r.attribute("r"))).toEqual(["1", "3", "5"]);
+    expect(visible.map((r) => Option.getOrUndefined(r.attribute("r")))).toEqual(["1", "3", "5"]);
     const cells = await select(sheet(3), "//x:row[@r > 1]/x:c[starts-with(@r, 'A')]");
-    expect(cells.map((c) => c.attribute("r"))).toEqual(["A2", "A3"]);
+    expect(cells.map((c) => Option.getOrUndefined(c.attribute("r")))).toEqual(["A2", "A3"]);
   });
 
   test("a match inside a selected subtree belongs to it", async () => {
@@ -249,7 +249,7 @@ describe("Sax.select", () => {
       `<a><b xmlns="urn:1"/><b/><p:b xmlns:p="urn:2"/><p:b xmlns:p="urn:1"/><b xmlns="urn:2"/></a>`,
       "/a/*",
     );
-    expect(selected.map((e) => e.name.namespace)).toEqual([
+    expect(selected.map((e) => Option.getOrNull(e.name.namespace))).toEqual([
       "urn:1",
       null,
       "urn:2",
@@ -273,7 +273,9 @@ describe("Sax.select", () => {
         Stream.make(input).pipe(
           Sax.tokenize(),
           Sax.select("//b"),
-          Stream.runForEach((b) => Effect.sync(() => seen.push(b.attribute("n")))),
+          Stream.runForEach((b) =>
+            Effect.sync(() => seen.push(Option.getOrUndefined(b.attribute("n")))),
+          ),
         ),
       ),
     );
@@ -283,7 +285,7 @@ describe("Sax.select", () => {
     const taken = await Effect.runPromise(
       Stream.make(input).pipe(Sax.tokenize(), Sax.select("//b"), Stream.take(2), Stream.runCollect),
     );
-    expect(Array.from(taken, (b) => b.attribute("n"))).toEqual(["1", "2"]);
+    expect(Array.from(taken, (b) => Option.getOrUndefined(b.attribute("n")))).toEqual(["1", "2"]);
   });
 
   test("a large sheet streams through", async () => {

@@ -27,7 +27,7 @@ import type { XmlDocument } from "./Node.ts";
  * @category options
  */
 export interface BuildOptions {
-  /** Resolve namespace prefixes to URIs (default `true`). When false, names keep their prefixes but `namespace` is `null`. */
+  /** Resolve namespace prefixes to URIs (default `true`). When false, names keep their prefixes but `namespace` is `Option.none()`. */
   readonly namespaces?: boolean;
   /**
    * Repair the document instead of failing on a well-formedness error

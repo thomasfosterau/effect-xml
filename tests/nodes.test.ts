@@ -90,7 +90,7 @@ const schemaOf = (node: Instance): Schema.Codec<unknown, unknown> =>
   );
 
 /** The present one of an optional part. */
-const optional = <A>(part: A | null): ReadonlyArray<A> => (part === null ? [] : [part]);
+const optional = <A>(part: Option.Option<A>): ReadonlyArray<A> => Option.toArray(part);
 
 /** The nodes directly inside `node`: names, attributes, children, declarations. */
 const parts: (node: Instance) => ReadonlyArray<Instance> = Match.type<Instance>().pipe(

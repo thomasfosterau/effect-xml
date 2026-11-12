@@ -18,7 +18,7 @@ import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
-import { Namespaces } from "../Name.ts";
+import { Namespaces, type QName } from "../Name.ts";
 import { byKey, byNamespaceThenLocal } from "../internal/order.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
 import { XmlDocument, type XmlElement, type XmlNode } from "./Node.ts";
@@ -71,8 +71,14 @@ type Bindings = HashMap.HashMap<string, string>;
 
 const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
-const isXmlns = (prefix: string | null, local: string, namespace: string | null): boolean =>
-  namespace === Namespaces.xmlns || prefix === "xmlns" || (prefix === null && local === "xmlns");
+const isXmlns = (name: QName): boolean =>
+  Option.contains(name.namespace, Namespaces.xmlns) ||
+  Option.match(name.prefix, {
+    onNone: () => name.local === "xmlns",
+    onSome: (prefix) => prefix === "xmlns",
+  });
+
+const orEmpty = (value: Option.Option<string>): string => Option.getOrElse(value, () => "");
 
 /**
  * Canonicalize nodes (each with all its descendants, none of its ancestors).
@@ -89,18 +95,16 @@ const render = (node: XmlNode, scopes: Array<Bindings>, comments: boolean): stri
       pi.data === "" ? `<?${pi.target}?>` : `<?${pi.target} ${pi.data}?>`,
     XmlElement: (e) => {
       const rendered = scopes.at(-1) ?? HashMap.empty();
-      const attributes = e.attributes.filter(
-        (a) => !isXmlns(a.name.prefix, a.name.local, a.name.namespace),
-      );
+      const attributes = e.attributes.filter((a) => !isXmlns(a.name));
       // The namespaces this element visibly uses: its own prefix (or the
       // default namespace) and its attributes' prefixes.
       const utilized = HashMap.remove(
         Arr.reduce(
           attributes,
-          HashMap.make([e.name.prefix ?? "", e.name.namespace ?? ""] as const),
+          HashMap.make([orEmpty(e.name.prefix), orEmpty(e.name.namespace)] as const),
           (used, a) =>
-            a.name.prefix !== null && a.name.prefix !== "xml"
-              ? HashMap.set(used, a.name.prefix, a.name.namespace ?? "")
+            Option.isSome(a.name.prefix) && a.name.prefix.value !== "xml"
+              ? HashMap.set(used, a.name.prefix.value, orEmpty(a.name.namespace))
               : used,
         ),
         "xml",

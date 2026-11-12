@@ -28,7 +28,7 @@ const parseErr = (input: string, extra?: Xml.ParseOptions) => {
 const outline = (nodes: ReadonlyArray<Xml.XmlNode>) =>
   nodes.map(
     Match.valueTags({
-      XmlElement: (e) => ({ element: e.name.local, namespace: e.name.namespace }),
+      XmlElement: (e) => ({ element: e.name.local, namespace: Option.getOrNull(e.name.namespace) }),
       XmlText: (t) => ({ XmlText: t.data }),
       XmlCData: (t) => ({ XmlCData: t.data }),
       XmlComment: (c) => ({ XmlComment: c.data }),
@@ -81,7 +81,7 @@ describe("dtd: internal", () => {
   <!ATTLIST r kind CDATA "default" tok NMTOKEN #IMPLIED>
 ]>
 <r tok="  a  " a="&greeting;">&greeting;! &markup; &amp2;</r>`);
-    expect(doc.doctype?.name).toBe("r");
+    expect(Option.map(doc.doctype, (d) => d.name)).toEqual(Option.some("r"));
     const attrs = attributesOf(doc.root);
     expect(attrs).toEqual({ tok: "a", a: "Hello World", kind: "default" });
     expect(outline(doc.root.children)).toEqual([
@@ -131,7 +131,7 @@ describe("dtd: internal", () => {
     // declared, so its tab is literal by the time it is normalized (§3.3.3);
     // an escaped one (&#38;#9;) is still a reference then, and survives.
     const doc = parseOk(`<!DOCTYPE a [<!ENTITY ws "a&#9;b&#38;#9;c\td">]><a v="&ws;"/>`);
-    expect(doc.root.attribute("v")).toBe("a b\tc d");
+    expect(doc.root.attribute("v")).toEqual(Option.some("a b\tc d"));
   });
 
   test("entity references inside markup entities, and nested markup", () => {
@@ -225,7 +225,7 @@ describe("dtd: internal", () => {
   <?t?>
   <!-- a comment -->
 ]><a/>`);
-    expect(doc.root.attribute("e")).toBe("1");
+    expect(doc.root.attribute("e")).toEqual(Option.some("1"));
   });
 
   const malformed: ReadonlyArray<readonly [string, string]> = [

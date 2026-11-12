@@ -42,7 +42,7 @@ import { Namespaces, QName } from "../Name.ts";
 import { XmlAttribute, XmlCData, XmlElement, XmlText, type XmlNode } from "./Node.ts";
 import { serialize, type SerializationError, type WriterOptions } from "./Writer.ts";
 import { parse, type ParseOptions } from "./Xml.ts";
-import { maybe } from "../internal/optional.ts";
+import { maybe, sameNamespace } from "../internal/optional.ts";
 
 // -----------------------------------------------------------------------------
 // Annotations
@@ -74,8 +74,8 @@ export interface FieldBinding {
   readonly node: "attribute" | "element" | "text";
   /** The XML name, if not the field's key. `xml:lang`-style names are in the `xml:` namespace. */
   readonly name?: string;
-  /** The namespace URI (`null` for none). Left out, see the module docs. */
-  readonly namespace?: string | null;
+  /** The namespace URI (`Option.none()` for none). Left out, see the module docs. */
+  readonly namespace?: Option.Option<string>;
   /** The prefix to write the name with (the `Writer` picks one if a namespaced attribute has none). */
   readonly prefix?: string;
   /** For elements: the name of one element wrapping the field's elements. */
@@ -90,8 +90,8 @@ export interface FieldBinding {
  */
 export interface ElementName {
   readonly name: string;
-  /** The namespace URI (`null` for none). Left out, the name matches in any namespace. */
-  readonly namespace?: string | null;
+  /** The namespace URI (`Option.none()` for none). Left out, the name matches in any namespace. */
+  readonly namespace?: Option.Option<string>;
   /** The prefix to write the name with (default: none, declaring a default namespace). */
   readonly prefix?: string;
 }
@@ -104,7 +104,8 @@ export interface ElementName {
  */
 export interface NameOptions {
   readonly name?: string;
-  readonly namespace?: string | null;
+  /** The namespace URI (`Option.none()` for none). Left out, see the module docs. */
+  readonly namespace?: Option.Option<string>;
   readonly prefix?: string;
 }
 
@@ -119,7 +120,7 @@ export interface ElementOptions extends NameOptions {
   readonly wrapper?: string;
 }
 
-const toOptions = (nameOrOptions: string | ElementOptions | undefined): ElementOptions =>
+const toOptions = (nameOrOptions?: string | ElementOptions): ElementOptions =>
   P.isString(nameOrOptions) ? { name: nameOrOptions } : (nameOrOptions ?? {});
 
 const fieldBinding = (node: FieldBinding["node"], options: ElementOptions): FieldBinding => ({
@@ -333,7 +334,7 @@ const under =
  */
 type Plan = Data.TaggedEnum<{
   /** A string: an attribute value, an element's text content. `literal` is a single string literal's value. */
-  Leaf: { readonly literal: string | undefined };
+  Leaf: { readonly literal: Option.Option<string> };
   Struct: { readonly struct: StructPlan };
   List: { readonly item: Plan };
   /** A union of structs, told apart by element name (decoding) or by encoded shape (encoding). */
@@ -343,9 +344,9 @@ const Plan = Data.taggedEnum<Plan>();
 
 interface StructPlan {
   /** The {@link named} annotation, if any. */
-  readonly named: ElementName | undefined;
+  readonly named: Option.Option<ElementName>;
   /** The name to write the element with when nothing else names it: {@link named}, the identifier, or the `_tag`. */
-  readonly defaultName: string | undefined;
+  readonly defaultName: Option.Option<string>;
   /** The fields, compiled on first use so recursive schemas compile lazily. */
   readonly fields: () => Result.Result<ReadonlyArray<FieldPlan>, XmlBindError>;
 }
@@ -360,13 +361,13 @@ interface FieldPlan {
   readonly key: string;
   readonly node: FieldBinding["node"];
   readonly local: string;
-  /** `undefined`: an element matches in any namespace, an attribute in none. */
-  readonly namespace: string | null | undefined;
-  readonly prefix: string | null;
-  readonly wrapper: string | undefined;
+  /** Left out: an element matches in any namespace, an attribute in none. */
+  readonly namespace?: Option.Option<string>;
+  readonly prefix: Option.Option<string>;
+  readonly wrapper: Option.Option<string>;
   readonly plan: Plan;
   /** A `_tag` literal filled in on decode and left out on encode. */
-  readonly implicit: string | undefined;
+  readonly implicit: Option.Option<string>;
 }
 
 /** A schema node with its encodings and suspensions followed, and the bindings found on the way. */
@@ -435,16 +436,14 @@ const isAbsent = (ast: SchemaAST.AST): boolean => {
 
 const isLeaf = (plan: Plan): boolean => Plan.$is("Leaf")(plan);
 
-const tagLiteral = (ast: SchemaAST.Objects): string | undefined =>
-  Option.getOrUndefined(
-    Arr.findFirst(ast.propertySignatures, (ps) => {
-      if (ps.name !== "_tag") return Option.none();
-      const resolved = resolve(ps.type).ast;
-      return SchemaAST.isLiteral(resolved) && P.isString(resolved.literal)
-        ? Option.some(resolved.literal)
-        : Option.none();
-    }),
-  );
+const tagLiteral = (ast: SchemaAST.Objects): Option.Option<string> =>
+  Arr.findFirst(ast.propertySignatures, (ps) => {
+    if (ps.name !== "_tag") return Option.none();
+    const resolved = resolve(ps.type).ast;
+    return SchemaAST.isLiteral(resolved) && P.isString(resolved.literal)
+      ? Option.some(resolved.literal)
+      : Option.none();
+  });
 
 const compile = memoize((ast: SchemaAST.AST): Result.Result<Compiled, XmlBindError> => {
   const r = resolve(ast);
@@ -452,7 +451,9 @@ const compile = memoize((ast: SchemaAST.AST): Result.Result<Compiled, XmlBindErr
   const done = (plan: Plan) => Result.succeed({ plan, field: r.field });
   if (SchemaAST.isUnion(node)) return compileUnion(node, r);
   if (SchemaAST.isLiteral(node))
-    return done(Plan.Leaf({ literal: P.isString(node.literal) ? node.literal : undefined }));
+    return done(
+      Plan.Leaf({ literal: P.isString(node.literal) ? Option.some(node.literal) : Option.none() }),
+    );
   if (
     SchemaAST.isString(node) ||
     SchemaAST.isTemplateLiteral(node) ||
@@ -460,13 +461,15 @@ const compile = memoize((ast: SchemaAST.AST): Result.Result<Compiled, XmlBindErr
     SchemaAST.isUndefined(node) ||
     SchemaAST.isVoid(node)
   )
-    return done(Plan.Leaf({ literal: undefined }));
+    return done(Plan.Leaf({ literal: Option.none() }));
   if (SchemaAST.isObjects(node)) {
     if (Arr.isReadonlyArrayNonEmpty(node.indexSignatures))
       return failAt([], "records (index signatures) have no XML mapping");
     const struct: StructPlan = {
-      named: r.named,
-      defaultName: r.named?.name ?? r.identifier ?? tagLiteral(node),
+      named: Option.fromUndefinedOr(r.named),
+      defaultName: Option.orElse(Option.fromUndefinedOr(r.named?.name ?? r.identifier), () =>
+        tagLiteral(node),
+      ),
       fields: () => compileFields(node),
     };
     return done(Plan.Struct({ struct }));
@@ -504,7 +507,7 @@ const compileUnion = (
     Result.all(Arr.map(present, compile)),
     (members): Result.Result<Compiled, XmlBindError> => {
       if (Arr.every(members, (m) => isLeaf(m.plan)))
-        return Result.succeed({ plan: Plan.Leaf({ literal: undefined }), field: r.field });
+        return Result.succeed({ plan: Plan.Leaf({ literal: Option.none() }), field: r.field });
       const structs = Arr.filterMap(Arr.zip(present, members), ([ast, m]) =>
         Plan.$match(m.plan, {
           Struct: ({ struct }): Result.Result<Member, undefined> =>
@@ -524,21 +527,30 @@ const compileUnion = (
 /** Split `prefix:local`; the `xml:` prefix brings its namespace. */
 const splitName = (
   raw: string,
-  namespace: string | null | undefined,
+  namespace: Option.Option<string> | undefined,
   prefix: string | undefined,
 ): Result.Result<
   Omit<FieldPlan, "key" | "node" | "wrapper" | "plan" | "implicit">,
   XmlBindError
 > => {
   const idx = raw.indexOf(":");
-  if (idx < 0) return Result.succeed({ local: raw, namespace, prefix: prefix ?? null });
+  if (idx < 0)
+    return Result.succeed({
+      local: raw,
+      ...maybe("namespace", namespace),
+      prefix: Option.fromUndefinedOr(prefix),
+    });
   const written = raw.slice(0, idx);
   const local = raw.slice(idx + 1);
   if (written === "xml")
-    return Result.succeed({ local, namespace: namespace ?? Namespaces.xml, prefix: written });
+    return Result.succeed({
+      local,
+      namespace: namespace ?? Option.some(Namespaces.xml),
+      prefix: Option.some(written),
+    });
   return namespace === undefined
     ? failAt([], `the name "${raw}" has a prefix but no namespace`)
-    : Result.succeed({ local, namespace, prefix: prefix ?? written });
+    : Result.succeed({ local, namespace, prefix: Option.some(prefix ?? written) });
 };
 
 const compileField = (ps: SchemaAST.PropertySignature): Result.Result<FieldPlan, XmlBindError> => {
@@ -550,7 +562,10 @@ const compileField = (ps: SchemaAST.PropertySignature): Result.Result<FieldPlan,
     const node = binding?.node ?? "element";
     const names = yield* splitName(binding?.name ?? key, binding?.namespace, binding?.prefix);
     const leaf = Plan.$is("Leaf")(c.plan) ? c.plan : undefined;
-    const implicit = key === "_tag" && binding === undefined ? leaf?.literal : undefined;
+    const implicit =
+      key === "_tag" && binding === undefined && leaf !== undefined
+        ? leaf.literal
+        : Option.none<string>();
     if (node === "text" && leaf === undefined)
       return yield* failAt([], "only a leaf (a string, number, …) can be an element's text");
     if (
@@ -559,7 +574,14 @@ const compileField = (ps: SchemaAST.PropertySignature): Result.Result<FieldPlan,
       !(Plan.$is("List")(c.plan) && isLeaf(c.plan.item))
     )
       return yield* failAt([], "only a leaf or an array of leaves can be an attribute");
-    return { key, node, ...names, wrapper: binding?.wrapper, plan: c.plan, implicit };
+    return {
+      key,
+      node,
+      ...names,
+      wrapper: Option.fromUndefinedOr(binding?.wrapper),
+      plan: c.plan,
+      implicit,
+    };
   }).pipe(Result.mapError(under([key])));
 };
 
@@ -583,13 +605,15 @@ const compileRoot = (ast: SchemaAST.AST): Result.Result<Plan, XmlBindError> =>
 type Tree = Schema.StringTree;
 type Read = Result.Result<Tree, XmlBindError>;
 
-const matchesName = (el: XmlElement, local: string, namespace: string | null | undefined) =>
-  el.name.local === local && (namespace === undefined || el.name.namespace === namespace);
+const matchesName = (el: XmlElement, local: string, namespace?: Option.Option<string>) =>
+  el.name.local === local &&
+  (namespace === undefined || sameNamespace(el.name.namespace, namespace));
 
 const matchesNamed = (el: XmlElement, struct: StructPlan) =>
-  struct.named === undefined
-    ? struct.defaultName !== undefined && el.name.local === struct.defaultName
-    : matchesName(el, struct.named.name, struct.named.namespace);
+  Option.match(struct.named, {
+    onNone: () => Option.contains(struct.defaultName, el.name.local),
+    onSome: (given) => matchesName(el, given.name, given.namespace),
+  });
 
 const childElements = (el: XmlElement, accept: (child: XmlElement) => boolean) =>
   Arr.filter(el.elements, accept);
@@ -635,20 +659,20 @@ const readField = (
   path: Path,
 ): Result.Result<Option.Option<readonly [string, Tree]>, XmlBindError> => {
   const entry = (value: Tree) => Option.some([f.key, value] as const);
-  if (f.implicit !== undefined) return Result.succeed(entry(f.implicit));
+  if (Option.isSome(f.implicit)) return Result.succeed(entry(f.implicit.value));
   if (f.node === "text") return Result.succeed(entry(ownText(el)));
   if (f.node === "attribute") {
-    const value = el.attributeNS(f.namespace ?? null, f.local);
+    const value = el.attributeNS(f.namespace ?? Option.none(), f.local);
     return Result.succeed(
       Option.flatMap(value, (v) =>
         entry(Plan.$is("List")(f.plan) ? Arr.filter(v.split(/\s+/), (s) => s !== "") : v),
       ),
     );
   }
-  const container =
-    f.wrapper === undefined
-      ? Option.some(el)
-      : Arr.findFirst(el.elements, (c) => matchesName(c, f.wrapper ?? "", f.namespace));
+  const container = Option.match(f.wrapper, {
+    onNone: () => Option.some(el),
+    onSome: (wrapper) => Arr.findFirst(el.elements, (c) => matchesName(c, wrapper, f.namespace)),
+  });
   return Option.match(container, {
     onNone: () => Result.succeed(Option.none()),
     onSome: (parent) => {
@@ -669,12 +693,12 @@ const readField = (
   });
 };
 
-const readRoot = (plan: Plan, el: XmlElement): Read =>
-  Plan.$is("Struct")(plan) &&
-  plan.struct.named !== undefined &&
-  !matchesName(el, plan.struct.named.name, plan.struct.named.namespace)
-    ? failAt([], `expected the element <${plan.struct.named.name}> but found ${describe(el)}`)
+const readRoot = (plan: Plan, el: XmlElement): Read => {
+  const given = Plan.$is("Struct")(plan) ? plan.struct.named : Option.none();
+  return Option.isSome(given) && !matchesName(el, given.value.name, given.value.namespace)
+    ? failAt([], `expected the element <${given.value.name}> but found ${describe(el)}`)
     : readElement(plan, el, []);
+};
 
 // -----------------------------------------------------------------------------
 // Encoding: string tree → XML
@@ -704,16 +728,20 @@ const asRecord = (
       Result.succeed(value as R.ReadonlyRecord<string, Tree>)
     : failAt(path, "expected an object");
 
-const elementName = (struct: StructPlan, inherited: string | null, path: Path) =>
-  struct.defaultName === undefined
-    ? failAt(path, "the element has no name: annotate it with Xml.Bind.named")
-    : Result.succeed(
+const elementName = (struct: StructPlan, inherited: Option.Option<string>, path: Path) =>
+  Option.match(struct.defaultName, {
+    onNone: () => failAt(path, "the element has no name: annotate it with Xml.Bind.named"),
+    onSome: (local) => {
+      const given = Option.getOrUndefined(struct.named);
+      return Result.succeed(
         new QName({
-          prefix: struct.named?.prefix ?? null,
-          local: struct.defaultName,
-          namespace: struct.named?.namespace === undefined ? inherited : struct.named.namespace,
+          prefix: Option.fromUndefinedOr(given?.prefix),
+          local,
+          namespace: given?.namespace ?? inherited,
         }),
       );
+    },
+  });
 
 const writeStruct = (
   struct: StructPlan,
@@ -739,10 +767,10 @@ const nothing: Content = { attributes: [], children: [] };
 const writeField = (
   f: FieldPlan,
   value: Tree | undefined,
-  inherited: string | null,
+  inherited: Option.Option<string>,
   path: Path,
 ): Result.Result<Content, XmlBindError> => {
-  if (value === undefined || f.implicit !== undefined) return Result.succeed(nothing);
+  if (value === undefined || Option.isSome(f.implicit)) return Result.succeed(nothing);
   if (f.node === "attribute") {
     const written = isList(value)
       ? Result.map(Result.all(Arr.map(value, (v, i) => asString(v, [...path, i]))), Arr.join(" "))
@@ -750,7 +778,11 @@ const writeField = (
     return Result.map(written, (v) => ({
       attributes: [
         new XmlAttribute({
-          name: new QName({ prefix: f.prefix, local: f.local, namespace: f.namespace ?? null }),
+          name: new QName({
+            prefix: f.prefix,
+            local: f.local,
+            namespace: f.namespace ?? Option.none(),
+          }),
           value: v,
         }),
       ],
@@ -762,7 +794,7 @@ const writeField = (
       attributes: [],
       children: [new XmlText({ data: v })],
     }));
-  const namespace = f.namespace === undefined ? inherited : f.namespace;
+  const namespace = f.namespace ?? inherited;
   const items = Plan.$is("List")(f.plan)
     ? Result.flatMap(asList(value, path), (list) =>
         Result.map(
@@ -780,16 +812,16 @@ const writeField = (
     : writeItem(f, f.plan, value, namespace, path);
   return Result.map(items, (children) => ({
     attributes: [],
-    children:
-      f.wrapper === undefined
-        ? children
-        : [
-            new XmlElement({
-              name: new QName({ prefix: f.prefix, local: f.wrapper, namespace }),
-              attributes: [],
-              children,
-            }),
-          ],
+    children: Option.match(f.wrapper, {
+      onNone: () => children,
+      onSome: (wrapper) => [
+        new XmlElement({
+          name: new QName({ prefix: f.prefix, local: wrapper, namespace }),
+          attributes: [],
+          children,
+        }),
+      ],
+    }),
   }));
 };
 
@@ -797,10 +829,10 @@ const writeItem = (
   f: FieldPlan,
   plan: Plan,
   value: Tree,
-  namespace: string | null,
+  namespace: Option.Option<string>,
   path: Path,
 ): Written => {
-  const name = (inner: string | null | undefined) =>
+  const name = (inner?: Option.Option<string>) =>
     new QName({
       prefix: f.prefix,
       local: f.local,
@@ -810,13 +842,16 @@ const writeItem = (
     Leaf: (): Written =>
       Result.map(asString(value, path), (v) => [
         new XmlElement({
-          name: name(undefined),
+          name: name(),
           attributes: [],
           children: [new XmlText({ data: v })],
         }),
       ]),
     Struct: ({ struct }) =>
-      Result.map(writeStruct(struct, value, name(struct.named?.namespace), path), Arr.of),
+      Result.map(
+        writeStruct(struct, value, name(Option.getOrUndefined(struct.named)?.namespace), path),
+        Arr.of,
+      ),
     List: () => failAt(path, "an array of arrays has no XML mapping"),
     Choice: ({ members }) => Result.map(writeChoice(members, value, namespace, path), Arr.of),
   });
@@ -825,7 +860,7 @@ const writeItem = (
 const writeChoice = (
   members: ReadonlyArray<Member>,
   value: Tree,
-  inherited: string | null,
+  inherited: Option.Option<string>,
   path: Path,
 ): Result.Result<XmlElement, XmlBindError> =>
   Option.match(
@@ -842,8 +877,10 @@ const writeChoice = (
 const writeRoot = (plan: Plan, value: Tree): Result.Result<XmlElement, XmlBindError> =>
   Plan.$match(plan, {
     Struct: ({ struct }) =>
-      Result.flatMap(elementName(struct, null, []), (name) => writeStruct(struct, value, name, [])),
-    Choice: ({ members }) => writeChoice(members, value, null, []),
+      Result.flatMap(elementName(struct, Option.none(), []), (name) =>
+        writeStruct(struct, value, name, []),
+      ),
+    Choice: ({ members }) => writeChoice(members, value, Option.none(), []),
     Leaf: () => failAt([], "the root of a document must be a struct"),
     List: () => failAt([], "the root of a document must be a struct"),
   });
@@ -1004,6 +1041,7 @@ export interface EncodeOptions extends WriterOptions {
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
+ * import * as Option from "effect/Option"
  * import * as Schema from "effect/Schema"
  * import { Xml } from "@thomasfosterau/effect-xml"
  *
@@ -1011,7 +1049,7 @@ export interface EncodeOptions extends WriterOptions {
  *   id: Schema.Number.pipe(Xml.Bind.attribute()),
  *   to: Schema.String,
  *   body: Schema.String
- * }).pipe(Xml.Bind.named({ name: "note", namespace: "urn:notes" }))
+ * }).pipe(Xml.Bind.named({ name: "note", namespace: Option.some("urn:notes") }))
  *
  * const xml = Effect.runSync(Xml.Bind.encode(Note)({ id: 1, to: "Tove", body: "Hi" }))
  * console.log(xml) // <note xmlns="urn:notes" id="1"><to>Tove</to><body>Hi</body></note>

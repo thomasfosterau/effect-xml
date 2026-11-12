@@ -15,18 +15,19 @@ import * as P from "effect/Predicate";
 import * as Iterable from "effect/Iterable";
 import * as Schema from "effect/Schema";
 import { isEnter, preorder } from "../internal/tree.ts";
+import { sameNamespace } from "../internal/optional.ts";
 import { Namespaces, QName } from "../Name.ts";
 
 /**
- * A name to look elements and attributes up by: a namespace URI (`null` for
- * none) and a local name. A {@link QName} is one; so is what an `Ns` handle
+ * A name to look elements and attributes up by: a namespace URI
+ * (`Option.none()` for none) and a local name. A {@link QName} is one; so is what an `Ns` handle
  * returns. Matching ignores prefixes, which producers are free to choose.
  *
  * @since 0.1.0
  * @category names
  */
 export interface NameLike {
-  readonly namespace: string | null;
+  readonly namespace: Option.Option<string>;
   readonly local: string;
 }
 
@@ -38,7 +39,7 @@ export interface NameLike {
  */
 export type NameArgs =
   | readonly [name: NameLike]
-  | readonly [namespace: string | null, local: string];
+  | readonly [namespace: Option.Option<string>, local: string];
 
 /** @internal */
 export const nameOf = (args: NameArgs): NameLike =>
@@ -46,7 +47,7 @@ export const nameOf = (args: NameArgs): NameLike =>
 
 /** @internal Whether a resolved name is `name`. */
 export const isNamed = (qname: QName, name: NameLike): boolean =>
-  qname.local === name.local && qname.namespace === name.namespace;
+  qname.local === name.local && sameNamespace(qname.namespace, name.namespace);
 
 /**
  * An attribute on an element.
@@ -136,9 +137,12 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
   attributes: Schema.Array(XmlAttribute),
   children: Schema.Array(Schema.suspend((): Schema.Codec<XmlNode, XmlNodeEncoded> => XmlNode)),
 }) {
-  /** First attribute value matching `name` (by qualified name). */
-  attribute(name: string): string | undefined {
-    return this.attributes.find((a) => a.name.qualified === name)?.value;
+  /** The value of the first attribute matching `name` (by qualified name). */
+  attribute(name: string): Option.Option<string> {
+    return Option.map(
+      Arr.findFirst(this.attributes, (a) => a.name.qualified === name),
+      (a) => a.value,
+    );
   }
 
   /** Direct child elements. */
@@ -148,8 +152,8 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
 
   /**
    * The value of the attribute with this namespace and local name. Attributes
-   * without a prefix are in no namespace (`null`), whatever the default
-   * namespace is.
+   * without a prefix are in no namespace (`Option.none()`), whatever the
+   * default namespace is.
    */
   attributeNS(...args: NameArgs): Option.Option<string> {
     const name = nameOf(args);
@@ -157,8 +161,8 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
       (a) =>
         isNamed(a.name, name) ||
         // `xml:` attributes in a document parsed without namespace resolution.
-        (name.namespace === Namespaces.xml &&
-          a.name.prefix === "xml" &&
+        (Option.contains(name.namespace, Namespaces.xml) &&
+          Option.contains(a.name.prefix, "xml") &&
           a.name.local === name.local),
     );
     return found === undefined ? Option.none() : Option.some(found.value);
@@ -241,8 +245,10 @@ export const XmlNode = Schema.Union([
  */
 export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration")({
   version: Schema.String,
-  encoding: Schema.NullOr(Schema.String),
-  standalone: Schema.NullOr(Schema.Boolean),
+  /** The declared encoding, if any (encoded as `null` when absent). */
+  encoding: Schema.OptionFromNullOr(Schema.String),
+  /** The declared standalone flag, if any (encoded as `null` when absent). */
+  standalone: Schema.OptionFromNullOr(Schema.Boolean),
 }) {}
 
 /**
@@ -253,9 +259,12 @@ export class XmlDeclaration extends Schema.Class<XmlDeclaration>("XmlDeclaration
  */
 export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
   name: Schema.String,
-  publicId: Schema.NullOr(Schema.String),
-  systemId: Schema.NullOr(Schema.String),
-  internalSubset: Schema.NullOr(Schema.String),
+  /** The public identifier, if any (encoded as `null` when absent). */
+  publicId: Schema.OptionFromNullOr(Schema.String),
+  /** The system identifier, if any (encoded as `null` when absent). */
+  systemId: Schema.OptionFromNullOr(Schema.String),
+  /** The internal subset's text, if any (encoded as `null` when absent). */
+  internalSubset: Schema.OptionFromNullOr(Schema.String),
 }) {}
 
 /**
@@ -265,8 +274,10 @@ export class XmlDoctype extends Schema.Class<XmlDoctype>("XmlDoctype")({
  * @category models
  */
 export class XmlDocument extends Schema.Class<XmlDocument>("XmlDocument")({
-  declaration: Schema.NullOr(XmlDeclaration),
-  doctype: Schema.NullOr(XmlDoctype),
+  /** The XML declaration, if any (encoded as `null` when absent). */
+  declaration: Schema.OptionFromNullOr(XmlDeclaration),
+  /** The document type declaration, if any (encoded as `null` when absent). */
+  doctype: Schema.OptionFromNullOr(XmlDoctype),
   /** Top-level nodes in order (comments / PIs around the root element). */
   children: Schema.Array(XmlNode),
 }) {
