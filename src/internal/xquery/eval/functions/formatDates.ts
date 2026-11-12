@@ -17,7 +17,7 @@ import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import type { Sequence } from "../../item.ts";
 import { raise } from "../raise.ts";
 import {
@@ -508,7 +508,7 @@ const formatTemporal =
     const parts = parsePicture(text(arg(args, 1)), call.offset);
     const unavailable = kind === "date" ? TIME_ONLY : kind === "time" ? DATE_ONLY : "";
     const missing = parts
-      .filter((p): p is Marker => !Predicate.isString(p))
+      .filter((p): p is Marker => !P.isString(p))
       .find((p) => unavailable.includes(p.component));
     if (missing !== undefined)
       return raise(
@@ -532,8 +532,7 @@ const formatTemporal =
           zoneName: moved?.[1],
         };
         return str(
-          prefix +
-            parts.map((part) => (Predicate.isString(part) ? part : formatMarker(part, v))).join(""),
+          prefix + parts.map((part) => (P.isString(part) ? part : formatMarker(part, v))).join(""),
         );
       },
     });

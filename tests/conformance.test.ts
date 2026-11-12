@@ -18,8 +18,8 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import { Html } from "../src/index.ts";
 import * as Option from "effect/Option";
 import type { SaxError } from "../src/Error.ts";
@@ -47,7 +47,7 @@ interface Fixture {
 
 /** The fixture files in name order. */
 const FILES: ReadonlyArray<Fixture> = Arr.sort(
-  Arr.map(Record.toEntries(SOURCES), ([path, content]): Fixture => ({
+  Arr.map(R.toEntries(SOURCES), ([path, content]): Fixture => ({
     file: path.replace(/^.*\//, "").replace(/\.dat$/, ""),
     content,
   })),
@@ -101,7 +101,7 @@ const render = (t: Html5libTest): string =>
     onSuccess: (tree) => tree,
     onFailure: (cause) => {
       const error = Cause.squash(cause);
-      return "THREW: " + (Predicate.isError(error) ? error.message : String(error));
+      return "THREW: " + (P.isError(error) ? error.message : String(error));
     },
   });
 

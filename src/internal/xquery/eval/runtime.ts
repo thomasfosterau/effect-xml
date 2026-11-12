@@ -11,7 +11,7 @@
  */
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import type * as Result from "effect/Result";
 import type { QName } from "../../../Name.ts";
 import type { XQueryError } from "../../../XQuery/Error.ts";
@@ -129,7 +129,7 @@ export const singleAtomic = (sequence: Sequence, what: string, offset?: number):
 /** An array's member at a 1-based position: `err:FOAY0001` when there is none. */
 export const arrayMember = (array: ArrayItem, position: AtomicValue, offset?: number): Sequence => {
   const v = position.value;
-  if (!Predicate.isBigInt(v) || !derivesFrom(position.type, AtomicTypes.integer))
+  if (!P.isBigInt(v) || !derivesFrom(position.type, AtomicTypes.integer))
     return raise(
       "XPTY0004",
       `an array is indexed by an xs:integer, not xs:${position.type.name}`,

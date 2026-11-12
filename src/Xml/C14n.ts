@@ -17,7 +17,7 @@ import * as HashMap from "effect/HashMap";
 import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { Namespaces } from "../Name.ts";
 import { byKey, byNamespaceThenLocal } from "../internal/order.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
@@ -69,7 +69,7 @@ export const escapeAttribute = (value: string): string =>
 /** Namespace declarations: prefix (`""` for the default namespace) to URI. */
 type Bindings = HashMap.HashMap<string, string>;
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
 const isXmlns = (prefix: string | null, local: string, namespace: string | null): boolean =>
   namespace === Namespaces.xmlns || prefix === "xmlns" || (prefix === null && local === "xmlns");

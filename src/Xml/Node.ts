@@ -11,7 +11,7 @@
  */
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Iterable from "effect/Iterable";
 import * as Schema from "effect/Schema";
 import { isEnter, preorder } from "../internal/tree.ts";
@@ -203,9 +203,9 @@ export class XmlElement extends Schema.TaggedClass<XmlElement>()("XmlElement", {
 }
 
 /** Is this node an element? */
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
-const isText = (node: XmlNode): node is XmlText => Predicate.isTagged(node, "XmlText");
-const isCData = (node: XmlNode): node is XmlCData => Predicate.isTagged(node, "XmlCData");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
+const isText = (node: XmlNode): node is XmlText => P.isTagged(node, "XmlText");
+const isCData = (node: XmlNode): node is XmlCData => P.isTagged(node, "XmlCData");
 
 /** Every node under `nodes`, in document order, without recursion (any depth is fine). */
 const walk = (nodes: ReadonlyArray<XmlNode>) =>
@@ -310,7 +310,7 @@ export const element = (
   children: ReadonlyArray<XmlNode> = [],
 ): XmlElement =>
   new XmlElement({
-    name: Predicate.isString(name) ? QName.fromRaw(name) : name,
+    name: P.isString(name) ? QName.fromRaw(name) : name,
     attributes,
     children,
   });
@@ -331,6 +331,6 @@ export const text = (data: string): XmlText => new XmlText({ data });
  */
 export const attr = (name: string | QName, value: string): XmlAttribute =>
   new XmlAttribute({
-    name: Predicate.isString(name) ? QName.fromRaw(name) : name,
+    name: P.isString(name) ? QName.fromRaw(name) : name,
     value,
   });

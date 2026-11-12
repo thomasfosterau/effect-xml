@@ -11,7 +11,7 @@
 import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { QName } from "../../../Name.ts";
 import type { Query } from "../../../XQuery/Compile.ts";
 import { AtomicValue, atomicString } from "../atomic.ts";
@@ -228,7 +228,7 @@ const rangeBound = (s: Sequence, offset: number): bigint | undefined => {
   const a = optionalAtomic(s, "an operand of `to`", offset);
   if (a === undefined) return undefined;
   const v = castAtomic(a, AtomicTypes.integer, undefined, offset).value;
-  return Predicate.isBigInt(v) &&
+  return P.isBigInt(v) &&
     (a.type === AtomicTypes.untypedAtomic || derivesFrom(a.type, AtomicTypes.integer))
     ? v
     : raise(
@@ -579,7 +579,7 @@ interface Args {
 
 const compileArgs = (argExprs: ReadonlyArray<ExprT>, scope: Scope): Args => {
   const all = argExprs.map((a) => (isPlaceholder(a) ? undefined : compileExpr(a, scope)));
-  const codes = all.filter(Predicate.isNotUndefined);
+  const codes = all.filter(P.isNotUndefined);
   return { all, codes: codes.length === all.length ? codes : undefined };
 };
 
@@ -1007,7 +1007,7 @@ const stringConstructor = (
     AtomicValue.string(
       parts
         .map((p) =>
-          Predicate.isString(p)
+          P.isString(p)
             ? p
             : unwrap(atomize(p(ctx)), e.offset)
                 .map(atomicString)

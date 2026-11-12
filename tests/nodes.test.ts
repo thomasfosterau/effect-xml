@@ -7,7 +7,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
+import * as Eq from "effect/Equal";
 import * as Hash from "effect/Hash";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
@@ -136,8 +136,8 @@ const expectAsConstructed = (roots: ReadonlyArray<Instance>): Array<string> => {
     expect(own(actual)).toEqual(own(expected));
     expect(Object.isFrozen(actual)).toBe(Object.isFrozen(expected));
     expect(Object.isExtensible(actual)).toBe(Object.isExtensible(expected));
-    expect(Equal.equals(actual, expected)).toBe(true);
-    expect(Equal.equals(expected, actual)).toBe(true);
+    expect(Eq.equals(actual, expected)).toBe(true);
+    expect(Eq.equals(expected, actual)).toBe(true);
     expect(Hash.hash(actual)).toBe(Hash.hash(expected));
     expect(textOf(actual)).toBe(textOf(expected));
     const schema = schemaOf(actual);

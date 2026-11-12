@@ -18,7 +18,7 @@
 import * as Arr from "effect/Array";
 import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { isEnter, preorder } from "../internal/tree.ts";
@@ -250,7 +250,7 @@ export class HtmlElement extends Schema.TaggedClass<HtmlElement>()("HtmlElement"
  * @category guards
  */
 export const isHtmlElement = (node: HtmlNode): node is HtmlElement =>
-  Predicate.isTagged(node, "HtmlElement");
+  P.isTagged(node, "HtmlElement");
 
 /**
  * Is this node text?
@@ -258,8 +258,7 @@ export const isHtmlElement = (node: HtmlNode): node is HtmlElement =>
  * @since 0.1.0
  * @category guards
  */
-export const isHtmlText = (node: HtmlNode): node is HtmlText =>
-  Predicate.isTagged(node, "HtmlText");
+export const isHtmlText = (node: HtmlNode): node is HtmlText => P.isTagged(node, "HtmlText");
 
 /**
  * Is this a document (rather than a node)?
@@ -268,7 +267,7 @@ export const isHtmlText = (node: HtmlNode): node is HtmlText =>
  * @category guards
  */
 export const isHtmlDocument = (input: HtmlDocument | HtmlNode): input is HtmlDocument =>
-  Predicate.isTagged(input, "HtmlDocument");
+  P.isTagged(input, "HtmlDocument");
 
 const isNamed = (el: HtmlElement, name: string, namespace: HtmlNamespace): boolean =>
   el.name === name && el.namespace === namespace;

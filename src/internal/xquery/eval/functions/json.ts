@@ -11,9 +11,9 @@
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as HashMap from "effect/HashMap";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import type { XmlAttribute, XmlElement } from "../../../../Xml/Node.ts";
 import { attribute, document, element, qname, text as textNode } from "../../../nodes.ts";
 import { quote } from "../../../quote.ts";
@@ -49,7 +49,7 @@ const booleanOption = (m: MapItem, name: string, fallback: boolean, call: Call):
     onNone: () => fallback,
     onSome: (v) => {
       const [a] = v;
-      return v.length === 1 && a instanceof AtomicValue && Predicate.isBoolean(a.value)
+      return v.length === 1 && a instanceof AtomicValue && P.isBoolean(a.value)
         ? a.value
         : badOption(name, call);
     },
@@ -164,7 +164,7 @@ const decodeUnits = (body: string, call: Call): ReadonlyArray<number | string> =
 const jsonString = (body: string, options: Options, call: Call): string => {
   const units = decodeUnits(body, call);
   // Join the \uXXXX units first, so escaped surrogate pairs become one character.
-  const joined = units.map((u) => (Predicate.isNumber(u) ? String.fromCharCode(u) : u)).join("");
+  const joined = units.map((u) => (P.isNumber(u) ? String.fromCharCode(u) : u)).join("");
   return Arr.fromIterable(joined)
     .map((ch) => {
       const c = ch.codePointAt(0) ?? 0;
@@ -335,7 +335,7 @@ const deduplicate = (
 ): ReadonlyArray<readonly [string, string, Json]> => {
   if (options.duplicates === "retain") return entries;
   const byKey = Arr.groupBy(entries, ([k]) => k);
-  if (options.duplicates === "reject" && Record.values(byKey).some((g) => g.length > 1))
+  if (options.duplicates === "reject" && R.values(byKey).some((g) => g.length > 1))
     return raise("FOJS0003", "a JSON object has duplicate keys", call.offset);
   return entries.filter(([k], i) => {
     const group = byKey[k] ?? [];
@@ -371,7 +371,7 @@ const fetchJson = (href: string, call: Call): string => {
   const uri =
     URL.parse(href, base)?.href ?? raise("FOUT1170", `${href} cannot be resolved`, call.offset);
   const got = fetchResource(call.ctx.dyn, { kind: "text", uri, encoding: undefined }, call.offset);
-  return Predicate.isString(got)
+  return P.isString(got)
     ? got.replace(/^﻿/, "")
     : raise("FOUT1170", `${href} is not a text`, call.offset);
 };
@@ -549,7 +549,12 @@ const keyValue = (m: XdmNode, call: Call): string => {
 };
 
 /** How each element of the JSON vocabulary is written as JSON. */
-const writers: Readonly<Partial<Record<string, (n: XdmNode, call: Call) => string>>> = {
+/** The JSON writer of each element of the vocabulary, by local name. */
+interface Writers {
+  readonly [local: string]: (n: XdmNode, call: Call) => string;
+}
+
+const writers: Writers = {
   null: (n, call) =>
     Arr.isReadonlyArrayEmpty(
       n.children.filter((c) => c.kind !== "comment" && c.kind !== "processing-instruction"),
@@ -562,7 +567,7 @@ const writers: Readonly<Partial<Record<string, (n: XdmNode, call: Call) => strin
       () => castAtomic(AtomicValue.string(n.stringValue), AtomicTypes.double).value,
       Number.NaN,
     );
-    const d = Predicate.isNumber(v) ? v : Number.NaN;
+    const d = P.isNumber(v) ? v : Number.NaN;
     return Number.isFinite(d)
       ? atomicString(AtomicValue.double(d))
       : invalidXml(`"${n.stringValue}" is not a JSON number`, call);

@@ -29,8 +29,8 @@ import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";
 import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -69,8 +69,7 @@ export type WriterEvent =
   | { readonly _tag: "Comment"; readonly data: string }
   | { readonly _tag: "ProcessingInstruction"; readonly target: string; readonly data: string };
 
-const toQName = (name: string | QName): QName =>
-  Predicate.isString(name) ? QName.fromRaw(name) : name;
+const toQName = (name: string | QName): QName => (P.isString(name) ? QName.fromRaw(name) : name);
 
 /**
  * A start tag.
@@ -137,7 +136,7 @@ const WriterEvent = Data.taggedEnum<WriterEvent>();
 const matchWriterEvent = WriterEvent.$match;
 const isStartEvent = WriterEvent.$is("StartElement");
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
 /** The event a node starts with (an element's start tag; all of a leaf). */
 const eventOf = (node: XmlNode): WriterEvent =>
@@ -148,9 +147,7 @@ const eventOf = (node: XmlNode): WriterEvent =>
       attributes: e.attributes,
       // Whitespace-only text is layout, which pretty-printing replaces.
       inline: e.children.some(
-        (c) =>
-          Predicate.isTagged(c, "XmlCData") ||
-          (Predicate.isTagged(c, "XmlText") && /[^ \t\r\n]/.test(c.data)),
+        (c) => P.isTagged(c, "XmlCData") || (P.isTagged(c, "XmlText") && /[^ \t\r\n]/.test(c.data)),
       ),
     }),
     XmlText: (t): WriterEvent => ({ _tag: "Text", data: t.data }),
@@ -268,7 +265,7 @@ const escapeAttributeChars = (s: string): string =>
   );
 
 /** Namespace bindings: prefix (`""` for the default namespace) to URI, in declaration order. */
-type Bindings = Record.ReadonlyRecord<string, string>;
+type Bindings = R.ReadonlyRecord<string, string>;
 
 // -----------------------------------------------------------------------------
 // The writer
@@ -306,7 +303,7 @@ export class XmlWriter {
   constructor(options: WriterOptions = {}) {
     this.options = options;
     const i = options.indent;
-    this.indent = i === undefined ? null : Predicate.isNumber(i) ? " ".repeat(i) : i;
+    this.indent = i === undefined ? null : P.isNumber(i) ? " ".repeat(i) : i;
     this.invalid = options.invalid ?? "fail";
   }
 
@@ -342,7 +339,7 @@ export class XmlWriter {
 
   private text(data: string, attribute: boolean): string | SerializationError {
     const s = this.chars(data, attribute ? "an attribute value" : "text");
-    if (!Predicate.isString(s)) return s;
+    if (!P.isString(s)) return s;
     return attribute ? escapeAttributeChars(s) : escapeTextChars(s);
   }
 
@@ -354,7 +351,7 @@ export class XmlWriter {
     fix: (s: string) => string,
   ): string | SerializationError {
     const chars = this.chars(s, what);
-    if (!Predicate.isString(chars)) return chars;
+    if (!P.isString(chars)) return chars;
     if (!bad.test(chars)) return chars;
     if (this.invalid === "fail")
       return new SerializationError({
@@ -400,7 +397,7 @@ export class XmlWriter {
     this.started = true;
     const encoding = this.options.encoding === "utf-16" ? "UTF-16" : "UTF-8";
     const standalone =
-      Predicate.isObjectOrArray(d) && d.standalone !== undefined
+      P.isObjectOrArray(d) && d.standalone !== undefined
         ? ` standalone="${d.standalone ? "yes" : "no"}"`
         : "";
     return `<?xml version="1.0" encoding="${encoding}"${standalone}?>`;
@@ -420,14 +417,14 @@ export class XmlWriter {
     let scope: Bindings = this.scope;
     let decls: Bindings = {};
     const declare = (prefix: string, uri: string) => {
-      if (Option.getOrUndefined(Record.get(scope, prefix)) === uri) return;
-      decls = Record.set(decls, prefix, uri);
-      scope = Record.set(scope, prefix, uri);
+      if (Option.getOrUndefined(R.get(scope, prefix)) === uri) return;
+      decls = R.set(decls, prefix, uri);
+      scope = R.set(scope, prefix, uri);
     };
     // The first prefix (in declaration order) bound to `uri`.
     const prefixFor = (uri: string): string | undefined =>
       Option.getOrUndefined(
-        Arr.findFirst(Record.toEntries(scope), ([p, u]) =>
+        Arr.findFirst(R.toEntries(scope), ([p, u]) =>
           u === uri && p !== "" ? Option.some(p) : Option.none(),
         ),
       );
@@ -437,7 +434,7 @@ export class XmlWriter {
     const fresh = (preferred: string | null, uri: string): string => {
       const candidates = [
         preferred,
-        ...Arr.filterMap(Record.toEntries(this.options.prefixes ?? {}), ([p, u]) =>
+        ...Arr.filterMap(R.toEntries(this.options.prefixes ?? {}), ([p, u]) =>
           u === uri ? Result.succeed(p) : Result.failVoid,
         ),
       ];
@@ -450,15 +447,15 @@ export class XmlWriter {
           p !== "xmlns" &&
           p !== elementPrefix &&
           // A prefix this element already declared for something else is taken.
-          !(Record.has(decls, p) && Option.getOrUndefined(Record.get(decls, p)) !== uri),
+          !(R.has(decls, p) && Option.getOrUndefined(R.get(decls, p)) !== uri),
       );
       if (Option.isSome(usable)) return usable.value;
       // One of the first `size + 1` is free: there are only `size` bindings.
       return Option.getOrElse(
-        Arr.findFirst(Arr.range(0, Record.size(scope)), (i) => !Record.has(scope, `ns${i}`)).pipe(
+        Arr.findFirst(Arr.range(0, R.size(scope)), (i) => !R.has(scope, `ns${i}`)).pipe(
           Option.map((i) => `ns${i}`),
         ),
-        () => `ns${Record.size(scope)}`,
+        () => `ns${R.size(scope)}`,
       );
     };
 
@@ -473,7 +470,7 @@ export class XmlWriter {
       return !isDeclaration;
     });
     if (Arr.isReadonlyArrayEmpty(this.stack)) {
-      Arr.sort(Record.toEntries(this.options.prefixes ?? {}), byKey).forEach(([p, uri]) =>
+      Arr.sort(R.toEntries(this.options.prefixes ?? {}), byKey).forEach(([p, uri]) =>
         declare(p, uri),
       );
     }
@@ -484,25 +481,22 @@ export class XmlWriter {
     if (name.namespace === null) {
       if (name.prefix !== null) element = name.qualified; // an unresolved name: as written
       else {
-        if (Option.getOrUndefined(Record.get(scope, "")) !== "") declare("", "");
+        if (Option.getOrUndefined(R.get(scope, "")) !== "") declare("", "");
         element = name.local;
       }
     } else if (name.namespace === Namespaces.xml) {
       element = `xml:${name.local}`;
     } else if (
       name.prefix !== null &&
-      Option.getOrUndefined(Record.get(scope, name.prefix)) === name.namespace
+      Option.getOrUndefined(R.get(scope, name.prefix)) === name.namespace
     ) {
       element = name.qualified;
-    } else if (
-      name.prefix === null &&
-      Option.getOrUndefined(Record.get(scope, "")) === name.namespace
-    ) {
+    } else if (name.prefix === null && Option.getOrUndefined(R.get(scope, "")) === name.namespace) {
       element = name.local;
     } else {
       const existing = prefixFor(name.namespace);
       if (existing !== undefined) element = `${existing}:${name.local}`;
-      else if (name.prefix === null && !Record.has(decls, "")) {
+      else if (name.prefix === null && !R.has(decls, "")) {
         declare("", name.namespace);
         element = name.local;
       } else {
@@ -526,10 +520,7 @@ export class XmlWriter {
       let qualified: string;
       if (n.namespace === null) qualified = n.qualified;
       else if (n.namespace === Namespaces.xml) qualified = `xml:${n.local}`;
-      else if (
-        n.prefix !== null &&
-        Option.getOrUndefined(Record.get(scope, n.prefix)) === n.namespace
-      )
+      else if (n.prefix !== null && Option.getOrUndefined(R.get(scope, n.prefix)) === n.namespace)
         qualified = n.qualified;
       else {
         const existing = prefixFor(n.namespace);
@@ -580,7 +571,7 @@ export class XmlWriter {
   ): string | SerializationError {
     const seen = MutableHashSet.empty<string>();
     return Arr.reduce(attributes, "", (out: string | SerializationError, a) => {
-      if (!Predicate.isString(out)) return out;
+      if (!P.isString(out)) return out;
       if (MutableHashSet.has(seen, a.name.qualified)) {
         return this.invalid === "fail"
           ? new SerializationError({
@@ -590,7 +581,7 @@ export class XmlWriter {
       }
       MutableHashSet.add(seen, a.name.qualified);
       const v = this.text(a.value, true);
-      return Predicate.isString(v) ? `${out} ${a.name.qualified}="${v}"` : v;
+      return P.isString(v) ? `${out} ${a.name.qualified}="${v}"` : v;
     });
   }
 
@@ -599,13 +590,13 @@ export class XmlWriter {
     readonly attributes: ReadonlyArray<readonly [string, string]>;
     readonly decls: Bindings;
   }): string | SerializationError {
-    const xmlns = Arr.sort(Record.toEntries(names.decls), byKey)
+    const xmlns = Arr.sort(R.toEntries(names.decls), byKey)
       .map(([p, uri]) => ` ${p === "" ? "xmlns" : `xmlns:${p}`}="${escapeAttributeChars(uri)}"`)
       .join("");
     return Arr.reduce(names.attributes, xmlns, (out: string | SerializationError, [q, value]) => {
-      if (!Predicate.isString(out)) return out;
+      if (!P.isString(out)) return out;
       const v = this.text(value, true);
-      return Predicate.isString(v) ? `${out} ${q}="${v}"` : v;
+      return P.isString(v) ? `${out} ${q}="${v}"` : v;
     });
   }
 
@@ -627,7 +618,7 @@ export class XmlWriter {
       scope = names.scope;
       attrs = this.attributesManaged(names);
     }
-    if (!Predicate.isString(attrs)) return attrs;
+    if (!P.isString(attrs)) return attrs;
     const space = ev.attributes.find(
       (a) =>
         a.name.local === "space" &&
@@ -655,7 +646,7 @@ export class XmlWriter {
       const name = this.pendingStart;
       this.pendingStart = null;
       const sc = this.options.selfClose ?? true;
-      return (Predicate.isFunction(sc) ? sc(name) : sc) ? "/>" : `></${frame.name}>`;
+      return (P.isFunction(sc) ? sc(name) : sc) ? "/>" : `></${frame.name}>`;
     }
     const nl =
       this.indent !== null && frame.hasChildren && !frame.inline
@@ -676,7 +667,7 @@ export class XmlWriter {
     if (data === "") return "";
     if (parent !== undefined) parent.inline = true;
     const t = this.text(data, false);
-    if (!Predicate.isString(t)) return t;
+    if (!P.isString(t)) return t;
     return this.prolog() + this.flush() + t;
   }
 
@@ -684,7 +675,7 @@ export class XmlWriter {
     const parent = this.stack.at(-1);
     if (parent !== undefined) parent.inline = true;
     const data = this.chars(content, "a CDATA section");
-    if (!Predicate.isString(data)) return data;
+    if (!P.isString(data)) return data;
     // `]]>` can't occur inside a section: end it after `]]` and start another.
     return (
       this.prolog() + this.flush() + `<![CDATA[${data.replaceAll("]]>", "]]]]><![CDATA[>")}]]>`
@@ -697,7 +688,7 @@ export class XmlWriter {
       const out = s.replace(/-(?=-)/g, "- ");
       return out.endsWith("-") ? out + " " : out;
     });
-    if (!Predicate.isString(data)) return data;
+    if (!P.isString(data)) return data;
     return this.beforeNode() + `<!--${data}-->`;
   }
 
@@ -710,7 +701,7 @@ export class XmlWriter {
     const data = this.unescapable(content, "a processing instruction", /\?>/, (s) =>
       s.replaceAll("?>", "? >"),
     );
-    if (!Predicate.isString(data)) return data;
+    if (!P.isString(data)) return data;
     return this.beforeNode() + `<?${target}${data === "" ? "" : " " + data}?>`;
   }
 
@@ -734,7 +725,7 @@ export class XmlWriter {
 // -----------------------------------------------------------------------------
 
 const lift = (out: string | SerializationError) =>
-  Predicate.isString(out) ? Effect.succeed(out) : Effect.fail(out);
+  P.isString(out) ? Effect.succeed(out) : Effect.fail(out);
 
 /**
  * Write a stream of events as a stream of XML text.
@@ -819,7 +810,7 @@ const usedPrefixes = (node: XmlNode | XmlDocument): Bindings => {
       : Arr.reduce(
           [...prefixed(ev.name), ...ev.attributes.flatMap((a) => prefixed(a.name))],
           found,
-          (acc, [prefix, uri]) => (Record.has(acc, prefix) ? acc : Record.set(acc, prefix, uri)),
+          (acc, [prefix, uri]) => (R.has(acc, prefix) ? acc : R.set(acc, prefix, uri)),
         ),
   );
 };
@@ -860,7 +851,7 @@ export const serializeSync = (
   let doctype = isDoc ? doctypeOf(node) : "";
   if (out !== "") writer.markup("");
   const written = Iterable.reduce(events(node), out, (acc: string | SerializationError, ev) => {
-    if (!Predicate.isString(acc)) return acc;
+    if (!P.isString(acc)) return acc;
     let prefix = "";
     if (doctype !== "" && isStartEvent(ev)) {
       // The DOCTYPE goes right before the root element.
@@ -868,11 +859,11 @@ export const serializeSync = (
       doctype = "";
     }
     const s = writer.write(ev);
-    return Predicate.isString(s) ? acc + prefix + s : s;
+    return P.isString(s) ? acc + prefix + s : s;
   });
-  if (!Predicate.isString(written)) return Result.fail(written);
+  if (!P.isString(written)) return Result.fail(written);
   const tail = writer.end();
-  if (!Predicate.isString(tail)) return Result.fail(tail);
+  if (!P.isString(tail)) return Result.fail(tail);
   return Result.succeed(written + tail);
 };
 

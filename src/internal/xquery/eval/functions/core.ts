@@ -8,7 +8,7 @@
  */
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { XQueryError, errorCode } from "../../../../XQuery/Error.ts";
 import { canonicalEncoding } from "../../../../Encoding.ts";
@@ -307,7 +307,7 @@ const fetchDocument = (uri: string, call: Call): Sequence => {
     { kind: "document", uri: absolute(uri, call), encoding: undefined },
     call.offset,
   );
-  return Predicate.isString(got) ? [] : got;
+  return P.isString(got) ? [] : got;
 };
 
 const resources: ReadonlyArray<BuiltinSpec> = [
@@ -400,7 +400,7 @@ const collection = (uri: string, call: Call): Sequence => {
     { kind: "collection", uri, encoding: undefined },
     call.offset,
   );
-  return Predicate.isString(got) ? [] : got;
+  return P.isString(got) ? [] : got;
 };
 
 /**
@@ -437,7 +437,7 @@ const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
     { kind: "text", uri: absolute(text(arg(args, 0)), call, "FOUT1170", "FOUT1170"), encoding },
     call.offset,
   );
-  if (!Predicate.isString(got)) return [];
+  if (!P.isString(got)) return [];
   return NON_XML.test(got)
     ? raise("FOUT1190", "the resource contains a character that is not allowed in XML", call.offset)
     : str(got);

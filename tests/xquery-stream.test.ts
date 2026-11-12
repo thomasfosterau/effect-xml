@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Sax, Xml, XQuery } from "../src/index.ts";
@@ -37,7 +37,7 @@ const canonical = (item: XQuery.Item): string => {
 
 /** The `err:` local name of an error from a stream, which must be an `XQueryError`. */
 const codeOf = (error: { readonly _tag: string }): string =>
-  Predicate.isTagged(error, "XQueryError") && error instanceof XQuery.XQueryError
+  P.isTagged(error, "XQueryError") && error instanceof XQuery.XQueryError
     ? error.code.local
     : "not an XQueryError";
 
@@ -261,7 +261,7 @@ describe("XQuery.stream", () => {
         XQuery.stream("//row ! xs:integer(v)"),
         Stream.runForEach((item) =>
           Effect.sync(() => {
-            if (XQuery.isAtomic(item) && Predicate.isBigInt(item.value)) total += item.value;
+            if (XQuery.isAtomic(item) && P.isBigInt(item.value)) total += item.value;
           }),
         ),
       ),

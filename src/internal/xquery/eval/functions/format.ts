@@ -13,7 +13,7 @@ import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import type { Sequence } from "../../item.ts";
 import { AtomicTypes, derivesFrom } from "../../types.ts";
 import { raise } from "../raise.ts";
@@ -51,7 +51,7 @@ const formatInteger = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   if (sequence === undefined)
     return pictureError(`"${token}" is not a valid decimal digit pattern`, call.offset);
   if (value === undefined) return str("");
-  const n = Predicate.isBigInt(value.value) ? value.value : 0n;
+  const n = P.isBigInt(value.value) ? value.value : 0n;
   const formatted = formatInSequence(n < 0n ? -n : n, sequence, modifier.startsWith("o"));
   return str(n < 0n ? `-${formatted}` : formatted);
 };
@@ -379,7 +379,7 @@ const formatNumber = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const pictures = analysePicture(text(arg(args, 1)), df, call.offset);
   const value = optionalAtom(arg(args, 0));
   const v = value?.value ?? Number.NaN;
-  if (Predicate.isNumber(v))
+  if (P.isNumber(v))
     return str(
       formatFloating(
         v,
@@ -388,7 +388,7 @@ const formatNumber = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
         df,
       ),
     );
-  const d = Predicate.isBigInt(v)
+  const d = P.isBigInt(v)
     ? BigDecimal.fromBigInt(v)
     : BigDecimal.isBigDecimal(v)
       ? v

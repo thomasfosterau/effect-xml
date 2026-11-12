@@ -1,6 +1,6 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { Sax } from "../src/index.ts";
 import { isSaxError } from "../src/Error.ts";
@@ -52,7 +52,7 @@ describe("entities", () => {
   test("entity error reports a sensible position", async () => {
     const result = await Effect.runPromise(Sax.collect("<a>\n  &bad;</a>").pipe(Effect.result));
     assert(
-      Result.isFailure(result) && Predicate.isTagged(result.failure, "InvalidEntity"),
+      Result.isFailure(result) && P.isTagged(result.failure, "InvalidEntity"),
       "expected InvalidEntity",
     );
     expect(result.failure.position).toEqual({ offset: 6, line: 2, column: 3 });

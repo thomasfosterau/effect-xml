@@ -12,7 +12,7 @@
  */
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { AtomicValue, atomicString, fromLexical } from "../atomic.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../types.ts";
 import { raise, unwrap } from "./raise.ts";
@@ -31,18 +31,18 @@ const cannotCast = (from: AtomicType, to: AtomicType, offset: number | undefined
 /** A numeric value as a JavaScript number. */
 export const toNumber = (value: AtomicValue): number => {
   const v = value.value;
-  if (Predicate.isNumber(v)) return v;
-  if (Predicate.isBigInt(v)) return Number(v);
+  if (P.isNumber(v)) return v;
+  if (P.isBigInt(v)) return Number(v);
   if (BigDecimal.isBigDecimal(v)) return BigDecimal.toNumberUnsafe(v);
-  return Predicate.isBoolean(v) ? (v ? 1 : 0) : Number.NaN;
+  return P.isBoolean(v) ? (v ? 1 : 0) : Number.NaN;
 };
 
 /** A numeric (or boolean) value as an exact decimal; `err:FOCA0002` for NaN and the infinities. */
 export const toDecimal = (value: AtomicValue, offset?: number): BigDecimal.BigDecimal => {
   const v = value.value;
   if (BigDecimal.isBigDecimal(v)) return v;
-  if (Predicate.isBigInt(v)) return BigDecimal.fromBigInt(v);
-  if (Predicate.isBoolean(v)) return BigDecimal.fromBigInt(v ? 1n : 0n);
+  if (P.isBigInt(v)) return BigDecimal.fromBigInt(v);
+  if (P.isBoolean(v)) return BigDecimal.fromBigInt(v ? 1n : 0n);
   const n = toNumber(value);
   if (!Number.isFinite(n))
     return raise("FOCA0002", `${atomicString(value)} cannot be cast to xs:decimal`, offset);
@@ -52,7 +52,7 @@ export const toDecimal = (value: AtomicValue, offset?: number): BigDecimal.BigDe
 /** A numeric (or boolean) value truncated to an integer; `err:FOCA0002` for NaN and the infinities. */
 const toInteger = (value: AtomicValue, offset?: number): bigint => {
   const v = value.value;
-  if (Predicate.isBigInt(v)) return v;
+  if (P.isBigInt(v)) return v;
   const d = BigDecimal.truncate(toDecimal(value, offset));
   return d.scale >= 0 ? d.value / 10n ** BigInt(d.scale) : d.value * 10n ** BigInt(-d.scale);
 };

@@ -11,8 +11,8 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
@@ -227,10 +227,7 @@ export const compileStream = (
   query: Query | string,
   options?: CompileOptions,
 ): Result.Result<StreamQuery, XQueryError> =>
-  Result.flatMap(
-    Predicate.isString(query) ? compile(query, options) : Result.succeed(query),
-    planOf,
-  );
+  Result.flatMap(P.isString(query) ? compile(query, options) : Result.succeed(query), planOf);
 
 /**
  * Options for {@link stream}: those of `evaluate` but the context item, which
@@ -318,15 +315,15 @@ export const stream =
     Stream.unwrap(
       Effect.gen(function* () {
         const compiled = Result.flatMap(
-          Predicate.isString(query)
+          P.isString(query)
             ? compileStream(query, {
                 ...options.compile,
                 variables: [
                   ...(options.compile?.variables ?? []),
-                  ...Record.keys(options.variables ?? {}),
+                  ...R.keys(options.variables ?? {}),
                 ],
               })
-            : Predicate.isTagged(query, "StreamQuery")
+            : P.isTagged(query, "StreamQuery")
               ? Result.succeed(query)
               : compileStream(query),
           planFor,
