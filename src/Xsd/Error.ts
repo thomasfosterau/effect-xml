@@ -23,7 +23,10 @@ const ErrorPosition = Schema.Struct({
  * @since 0.1.0
  * @category errors
  */
-export class XsdSchemaError extends Schema.TaggedError<XsdSchemaError>()("XsdSchemaError", {
+export class XsdSchemaError extends Schema.TaggedError<
+  XsdSchemaError,
+  { readonly brand: unique symbol }
+>()("XsdSchemaError", {
   reason: Schema.String,
   location: Schema.NullOr(Schema.String),
 }) {
@@ -60,25 +63,25 @@ export type ValidationRule =
  * @since 0.1.0
  * @category errors
  */
-export class XsdValidationError extends Schema.TaggedError<XsdValidationError>()(
-  "XsdValidationError",
-  {
-    rule: Schema.Literals([
-      "UnexpectedElement",
-      "MissingElement",
-      "UnexpectedAttribute",
-      "MissingAttribute",
-      "UnexpectedText",
-      "InvalidValue",
-      "InvalidType",
-      "Nil",
-      "IdentityConstraint",
-    ]),
-    reason: Schema.String,
-    path: Schema.String,
-    position: ErrorPosition,
-  },
-) {
+export class XsdValidationError extends Schema.TaggedError<
+  XsdValidationError,
+  { readonly brand: unique symbol }
+>()("XsdValidationError", {
+  rule: Schema.Literals([
+    "UnexpectedElement",
+    "MissingElement",
+    "UnexpectedAttribute",
+    "MissingAttribute",
+    "UnexpectedText",
+    "InvalidValue",
+    "InvalidType",
+    "Nil",
+    "IdentityConstraint",
+  ]),
+  reason: Schema.String,
+  path: Schema.String,
+  position: ErrorPosition,
+}) {
   override get message(): string {
     return `Invalid document at ${showPosition(this.position)} (${this.path}): ${this.reason}`;
   }

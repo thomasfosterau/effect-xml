@@ -301,7 +301,10 @@ export const named =
  * @since 0.1.0
  * @category errors
  */
-export class XmlBindError extends Schema.TaggedError<XmlBindError>()("XmlBindError", {
+export class XmlBindError extends Schema.TaggedError<
+  XmlBindError,
+  { readonly brand: unique symbol }
+>()("XmlBindError", {
   /** The field keys and array indices leading to the problem. */
   path: Schema.Array(Schema.Union([Schema.String, Schema.Number])),
   reason: Schema.String,

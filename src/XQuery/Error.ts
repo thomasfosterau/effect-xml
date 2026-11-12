@@ -90,7 +90,10 @@ const ErrorValue = /*#__PURE__*/ Schema.declare(
  * @since 0.1.0
  * @category errors
  */
-export class XQueryError extends Schema.TaggedError<XQueryError>()("XQueryError", {
+export class XQueryError extends Schema.TaggedError<
+  XQueryError,
+  { readonly brand: unique symbol }
+>()("XQueryError", {
   code: QName,
   description: Schema.String,
   offset: Schema.optional(Schema.Number),

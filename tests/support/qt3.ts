@@ -714,7 +714,10 @@ export interface Request {
 }
 
 /** The engine can't run this yet: never a pass, whatever the test expects. */
-class NotImplemented extends Schema.TaggedError<NotImplemented>()("NotImplemented", {
+class NotImplemented extends Schema.TaggedError<
+  NotImplemented,
+  { readonly brand: unique symbol }
+>()("NotImplemented", {
   what: Schema.String,
 }) {}
 

@@ -130,7 +130,7 @@ export const Namespaces = {
  * @since 0.1.0
  * @category names
  */
-export class QName extends Schema.Class<QName>("QName")({
+export class QName extends Schema.Class<QName, { readonly brand: unique symbol }>("QName")({
   /** The prefix as written (`null` for the default / no namespace). */
   prefix: Schema.NullOr(Schema.String),
   /** The local part (`NCName`). */
