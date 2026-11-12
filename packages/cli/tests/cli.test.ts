@@ -1,8 +1,9 @@
-import { assert, describe, expect, test } from "vite-plus/test";
+import { afterAll, assert, describe, expect, test } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Result from "effect/Result";
 import * as Command from "effect/cli/Command";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
@@ -29,15 +30,19 @@ const layer = Layer.mergeAll(
   FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub))),
 );
 
+/** One runtime for the services every test uses, provided once. */
+const runtime = ManagedRuntime.make(layer);
+afterAll(() => runtime.dispose());
+
 /** Run a program with a fresh temporary directory, its path passed in. */
 const inTemp = <A, E>(f: (dir: string) => Effect.Effect<A, E, Layer.Success<typeof layer>>) =>
-  Effect.runPromise(
+  runtime.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         return yield* f(yield* fs.makeTempDirectoryScoped());
       }),
-    ).pipe(Effect.provide(layer)),
+    ),
   );
 
 const write = Effect.fnUntraced(function* (path: string, text: string) {

@@ -148,8 +148,10 @@ export default defineConfig({
       // model), so no runtime check can establish them. A new site is a
       // defect (#80).
       "typescript/no-unsafe-type-assertion": "warn",
-      // 3 sites, each an entry point the rule's own message exempts: the CLI
-      // bin (`packages/cli/src/main.ts`) and two test programs. src/ has none;
+      // 1 site: the CLI bin (`packages/cli/src/main.ts`), the application
+      // entry point the rule's own message exempts (it provides the composed
+      // platform layer once, to `NodeRuntime.runMain`). The tests provide
+      // their layers through one `ManagedRuntime` per file. src/ has none;
       // a site there is a defect (#80).
       "effecttsgo/strict-effect-provide": "warn",
     },

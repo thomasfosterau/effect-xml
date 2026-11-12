@@ -15,10 +15,11 @@
  * Constructs it does not implement yet count as failures, never as errors a
  * test may expect.
  */
-import { assert, describe, expect, test } from "vite-plus/test";
+import { afterAll, assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as R from "effect/Record";
@@ -99,8 +100,12 @@ const countsBySet = (
   return counts;
 };
 
+/** One runtime for the file's fixture services (the file system), provided once. */
+const runtime = ManagedRuntime.make(Fixtures.layer);
+afterAll(() => runtime.dispose());
+
 /** The catalog, read once for every test in this file. */
-const catalog = Effect.runPromise(readCatalog().pipe(Effect.provide(Fixtures.layer)));
+const catalog = runtime.runPromise(readCatalog());
 
 const total = (counts: Record<string, Counts>): Counts =>
   Arr.reduce(R.values(counts), { runnable: 0, passing: 0 }, (a, c) => ({
@@ -127,7 +132,7 @@ const shortfalls = (
 describe("W3C QT3 conformance", () => {
   test("meets the per-test-set baselines", async () => {
     const started = performance.now();
-    const { baseline, sets, results } = await Effect.runPromise(
+    const { baseline, sets, results } = await runtime.runPromise(
       Effect.gen(function* () {
         const expected = yield* readBaseline;
         const read = yield* Effect.tryPromise(() => catalog);
@@ -139,7 +144,7 @@ describe("W3C QT3 conformance", () => {
           { concurrency: 1 },
         );
         return { baseline: expected, sets: read, results: verdicts };
-      }).pipe(Effect.provide(Fixtures.layer)),
+      }),
     );
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
     const counts = R.fromEntries(

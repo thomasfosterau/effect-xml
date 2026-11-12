@@ -17,10 +17,11 @@
  * `QT3_REPORT=1` lists the disagreements and prints the counts as a new
  * baseline.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { afterAll, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as R from "effect/Record";
 import * as Result from "effect/Result";
@@ -274,10 +275,14 @@ const sum = (counts: Record<string, Counts>): Counts =>
     static: a.static + c.static,
   }));
 
+/** One runtime for the file's fixture services (the file system), provided once. */
+const runtime = ManagedRuntime.make(Fixtures.layer);
+afterAll(() => runtime.dispose());
+
 describe("W3C QT3 parse-only pass", () => {
   test("meets the per-test-set parse baselines", async () => {
     const started = performance.now();
-    const { baseline, results } = await Effect.runPromise(
+    const { baseline, results } = await runtime.runPromise(
       Effect.gen(function* () {
         const want = yield* readBaseline;
         const sets = yield* readCatalog();
@@ -288,7 +293,7 @@ describe("W3C QT3 parse-only pass", () => {
           { concurrency: 1 },
         );
         return { baseline: want, results: verdicts };
-      }).pipe(Effect.provide(Fixtures.layer)),
+      }),
     );
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
     const counts = R.fromEntries(
