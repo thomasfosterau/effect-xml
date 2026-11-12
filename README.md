@@ -10,7 +10,7 @@ Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.websit
 pnpm add @thomasfosterau/effect-xml effect @thomasfosterau/effect-parse
 ```
 
-`effect` and `@thomasfosterau/effect-parse` are peer dependencies. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node 22 or later, browsers, workers).
+`effect` (`^4.0.0`) and `@thomasfosterau/effect-parse` (`^0.4.1 || ^0.5.0`) are peer dependencies. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node 22 or later, browsers, workers).
 
 ## Example
 
