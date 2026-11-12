@@ -3,7 +3,8 @@
  * the same ones fail and with the same failures as `Xml.parse` with
  * `namespaces: false`, and each tree is the DOM's, plainly.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -29,44 +30,53 @@ const plain = (element: Xml.XmlElement): Xml.PlainElement => ({
   ),
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runSync(Effect.exit(effect));
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.exit(effect);
 
 describe("Xml.parsePlain", () => {
-  test("agrees with Xml.parse without namespaces: trees and failures", () => {
-    Arr.forEach(documents(3, 3000), (doc) =>
-      expect(run(Xml.parsePlain(doc)), doc).toStrictEqual(
-        Exit.map(run(Xml.parse(doc, { namespaces: false })), (d) => plain(d.root)),
-      ),
-    );
-  });
+  it.effect("agrees with Xml.parse without namespaces: trees and failures", () =>
+    Effect.forEach(
+      documents(3, 3000),
+      (doc) =>
+        Effect.gen(function* () {
+          return expect(yield* run(Xml.parsePlain(doc)), doc).toStrictEqual(
+            Exit.map(yield* run(Xml.parse(doc, { namespaces: false })), (d) => plain(d.root)),
+          );
+        }),
+      { concurrency: 1, discard: true },
+    ),
+  );
 
-  test("joins text and CDATA, and leaves out comments, PIs and the DOCTYPE", () => {
-    const root = Effect.runSync(
-      Xml.parsePlain(
+  it.effect("joins text and CDATA, and leaves out comments, PIs and the DOCTYPE", () =>
+    Effect.gen(function* () {
+      const root = yield* Xml.parsePlain(
         `<?xml version="1.0"?><!DOCTYPE r><r a="1">x<!-- c --><![CDATA[<y>]]>&amp;<?p d?><e/>z</r>`,
-      ),
-    );
-    expect(root).toStrictEqual({
-      name: "r",
-      attributes: { a: "1" },
-      children: ["x<y>&", { name: "e", attributes: {}, children: [] }, "z"],
-    });
-  });
+      );
+      expect(root).toStrictEqual({
+        name: "r",
+        attributes: { a: "1" },
+        children: ["x<y>&", { name: "e", attributes: {}, children: [] }, "z"],
+      });
+    }),
+  );
 
-  test("an attribute named __proto__ is an attribute", () => {
-    const root = Effect.runSync(Xml.parsePlain(`<r __proto__="p" b="2"/>`));
-    expect(Object.getPrototypeOf(root.attributes)).toBe(Object.prototype);
-    expect(R.toEntries(root.attributes)).toStrictEqual([
-      ["__proto__", "p"],
-      ["b", "2"],
-    ]);
-  });
+  it.effect("an attribute named __proto__ is an attribute", () =>
+    Effect.gen(function* () {
+      const root = yield* Xml.parsePlain(`<r __proto__="p" b="2"/>`);
+      expect(Object.getPrototypeOf(root.attributes)).toBe(Object.prototype);
+      expect(R.toEntries(root.attributes)).toStrictEqual([
+        ["__proto__", "p"],
+        ["b", "2"],
+      ]);
+    }),
+  );
 
-  test("reads bytes, and fails where Xml.parse fails, at the same place", () => {
-    const bytes = new TextEncoder().encode(`<r>\n  <a></b></r>`);
-    expect(run(Xml.parsePlain(bytes))).toStrictEqual(
-      run(Effect.map(Xml.parseBytes(bytes, { namespaces: false }), (d) => plain(d.root))),
-    );
-    expect(Exit.isFailure(run(Xml.parsePlain(bytes)))).toBe(true);
-  });
+  it.effect("reads bytes, and fails where Xml.parse fails, at the same place", () =>
+    Effect.gen(function* () {
+      const bytes = new TextEncoder().encode(`<r>\n  <a></b></r>`);
+      expect(yield* run(Xml.parsePlain(bytes))).toStrictEqual(
+        yield* run(Effect.map(Xml.parseBytes(bytes, { namespaces: false }), (d) => plain(d.root))),
+      );
+      expect(Exit.isFailure(yield* run(Xml.parsePlain(bytes)))).toBe(true);
+    }),
+  );
 });

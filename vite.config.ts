@@ -140,6 +140,15 @@ export default defineConfig({
         "error",
         { assertFunctionNames: ["expect", "expect*", "assert", "assert*", "rejects"] },
       ],
+      // `@effect/vitest`'s `it.effect` / `it.live` are test blocks (also on the
+      // `it` a `layer(...)` block hands its callback); the rule only knows
+      // vitest's own.
+      "vitest/no-standalone-expect": [
+        "error",
+        {
+          additionalTestBlockFunctions: ["it.effect", "it.live", "it.effect.each", "it.live.each"],
+        },
+      ],
       // Vitest's `expect(value, message)` takes the failure message second.
       "vitest/valid-expect": ["error", { maxArgs: 2 }],
       // Adoption allowances (#61): sites that predate the `suspicious`
@@ -423,15 +432,6 @@ export default defineConfig({
       {
         files: ["examples/**/*.ts"],
         rules: {
-          "effect/effect-run-in-body": "off",
-        },
-      },
-      // Test fixtures are the seams under test, not domain code.
-      {
-        files: ["tests/**/*.ts", "packages/*/tests/**/*.ts"],
-        rules: {
-          // A test IS the boundary the rule sends execution to: each case
-          // runs its program with `Effect.runPromise` / `runSync`.
           "effect/effect-run-in-body": "off",
         },
       },

@@ -9,13 +9,13 @@
  * (read as `tests/xmlconf.test.ts` reads it), every XML document under
  * `tests/fixtures`, and the generated documents of `tests/support/documents.ts`.
  */
-import { afterAll, describe, expect, test } from "vite-plus/test";
+import { expect } from "vite-plus/test";
+import { layer } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as P from "effect/Predicate";
@@ -48,12 +48,11 @@ const outcome = (exit: Exit.Exit<Iterable<Sax.SaxEvent>, SaxError>): string =>
 
 /** `Sax.tokenize`'s outcome for `doc` in chunks of `size`. */
 const tokenize = (doc: string, options: Sax.SaxOptions, size: number) =>
-  outcome(
-    Effect.runSync(
-      Effect.exit(
-        Stream.fromIterable(splitEvery(doc, size)).pipe(Sax.tokenize(options), Stream.runCollect),
-      ),
+  Effect.map(
+    Effect.exit(
+      Stream.fromIterable(splitEvery(doc, size)).pipe(Sax.tokenize(options), Stream.runCollect),
     ),
+    outcome,
   );
 
 /** The DTD-aware grammars' outcome for `doc` in chunks of `size`. */
@@ -61,11 +60,12 @@ const eagerly = (doc: string, options: Sax.SaxOptions, size: number) =>
   outcome(tokenizeEagerly(splitEvery(doc, size), options));
 
 /** `Sax.forEach`'s outcome for `doc`. */
-const each = (doc: string, options: Sax.SaxOptions) => {
-  const events: Array<Sax.SaxEvent> = [];
-  const exit = Effect.runSync(Effect.exit(Sax.forEach(doc, (ev) => events.push(ev), options)));
-  return outcome(Exit.map(exit, () => events));
-};
+const each = (doc: string, options: Sax.SaxOptions) =>
+  Effect.gen(function* () {
+    const events: Array<Sax.SaxEvent> = [];
+    const exit = yield* Effect.exit(Sax.forEach(doc, (ev) => events.push(ev), options));
+    return outcome(Exit.map(exit, () => events));
+  });
 
 const internal = { dtd: "internal" } as const;
 const variants: ReadonlyArray<Sax.SaxOptions> = [
@@ -85,32 +85,47 @@ const hasDoctype = (doc: string): boolean => /<!doctype/i.test(doc);
  * rest of the chunk for the next `&` once per token, quadratic in a chunk's
  * length where none follows.
  */
-const agree = (doc: string, sizes: ReadonlyArray<number>, only = variants): string => {
-  const whole = Math.max(1, Math.min(doc.length, 8192));
-  Arr.forEach(only, (options) => {
-    const expected = eagerly(doc, options, whole);
-    expect(tokenize(doc, options, whole), doc).toBe(expected);
-    Arr.forEach(sizes, (size) =>
-      expect(tokenize(doc, options, size), `${doc} in chunks of ${size}`).toBe(
-        eagerly(doc, options, size),
-      ),
+const agree = (doc: string, sizes: ReadonlyArray<number>, only = variants) =>
+  Effect.gen(function* () {
+    const whole = Math.max(1, Math.min(doc.length, 8192));
+    yield* Effect.forEach(
+      only,
+      (options) =>
+        Effect.gen(function* () {
+          const expected = eagerly(doc, options, whole);
+          expect(yield* tokenize(doc, options, whole), doc).toBe(expected);
+          yield* Effect.forEach(
+            sizes,
+            (size) =>
+              Effect.map(tokenize(doc, options, size), (got) =>
+                expect(got, `${doc} in chunks of ${size}`).toBe(eagerly(doc, options, size)),
+              ),
+            { concurrency: 1, discard: true },
+          );
+          expect(yield* each(doc, options), `${doc} (Sax.forEach)`).toBe(expected);
+        }),
+      { concurrency: 1, discard: true },
     );
-    expect(each(doc, options), `${doc} (Sax.forEach)`).toBe(expected);
+    return yield* tokenize(doc, internal, whole);
   });
-  return tokenize(doc, internal, whole);
-};
 
 /** On documents without a DOCTYPE, `dtd: "internal"` reads as `"ignore"` does; how many there were. */
-const asIgnore = (docs: ReadonlyArray<string>): number => {
-  const without = docs.filter((doc) => !hasDoctype(doc));
-  Arr.forEach(without, (doc) => {
-    const whole = Math.max(1, Math.min(doc.length, 8192));
-    expect(tokenize(doc, internal, whole), `${doc} (as dtd: "ignore")`).toBe(
-      tokenize(doc, {}, whole),
+const asIgnore = (docs: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const without = docs.filter((doc) => !hasDoctype(doc));
+    yield* Effect.forEach(
+      without,
+      (doc) =>
+        Effect.gen(function* () {
+          const whole = Math.max(1, Math.min(doc.length, 8192));
+          expect(yield* tokenize(doc, internal, whole), `${doc} (as dtd: "ignore")`).toBe(
+            yield* tokenize(doc, {}, whole),
+          );
+        }),
+      { concurrency: 1, discard: true },
     );
+    return without.length;
   });
-  return without.length;
-};
 
 /** How many of the outcomes are failures. */
 const failures = (outcomes: ReadonlyArray<string>): number =>
@@ -161,71 +176,102 @@ const fixtureFiles = Effect.fn("fixtureFiles")(function* () {
   );
 });
 
-const runtime = ManagedRuntime.make(Fixtures.layer);
-afterAll(() => runtime.dispose());
-
-describe('dtd: "internal" without the DTD-aware grammars until a declaration (#99)', () => {
-  test("agrees on the generated documents, whole and chunked", () => {
-    const outcomes = generated.map((doc, i) => agree(doc, i < 400 ? [1, 3, 7] : [5]));
-    // Documents that parse, and ones that fail.
-    expect(failures(outcomes)).toBeGreaterThan(900);
-    expect(outcomes.length - failures(outcomes)).toBeGreaterThan(400);
-    expect(asIgnore(generated)).toBeGreaterThan(2000);
-  });
-
-  test("agrees on documents with DOCTYPEs and references, whole and chunked", () => {
-    expect(declared.filter(hasDoctype).length).toBeGreaterThan(500);
-    const outcomes = declared.map((doc) => agree(doc, [1, 2, 7, 64]));
-    expect(failures(outcomes)).toBeGreaterThan(200);
-    expect(outcomes.length - failures(outcomes)).toBeGreaterThan(25);
-  });
-
-  test("agrees on the W3C XML conformance suite, whole and chunked", async () => {
-    const texts = await runtime.runPromise(
-      readManifest(XMLCONF).pipe(
-        Effect.flatMap((tests) =>
-          Effect.forEach(tests, (t) => Fixtures.readBytes(XMLCONF, t.uri), { concurrency: 8 }),
-        ),
-      ),
+layer(Fixtures.layer)(
+  'dtd: "internal" without the DTD-aware grammars until a declaration (#99)',
+  (it) => {
+    it.effect(
+      "agrees on the generated documents, whole and chunked",
+      () =>
+        Effect.gen(function* () {
+          const outcomes = yield* Effect.forEach(
+            generated,
+            (doc, i) => agree(doc, i < 400 ? [1, 3, 7] : [5]),
+            { concurrency: 1 },
+          );
+          // Documents that parse, and ones that fail.
+          expect(failures(outcomes)).toBeGreaterThan(900);
+          expect(outcomes.length - failures(outcomes)).toBeGreaterThan(400);
+          expect(yield* asIgnore(generated)).toBeGreaterThan(2000);
+        }),
+      120_000,
     );
-    const docs = Arr.getSomes(texts.map(decoded));
-    expect(docs.length).toBeGreaterThan(1700);
-    expect(docs.filter(hasDoctype).length).toBeGreaterThan(1000);
-    const outcomes = docs.map((doc) => agree(doc, [1, 7, 256]));
-    expect(failures(outcomes)).toBeGreaterThan(800);
-    expect(outcomes.length - failures(outcomes)).toBeGreaterThan(700);
-    expect(asIgnore(docs)).toBeGreaterThan(200);
-  }, 300_000);
 
-  test("agrees on the XML documents under tests/fixtures", async () => {
-    const texts = await runtime.runPromise(
-      fixtureFiles().pipe(
-        Effect.flatMap((files) =>
-          Effect.forEach(files, (f) => Fixtures.readBytes(FIXTURES, f), { concurrency: 8 }),
-        ),
-      ),
+    it.effect(
+      "agrees on documents with DOCTYPEs and references, whole and chunked",
+      () =>
+        Effect.gen(function* () {
+          expect(declared.filter(hasDoctype).length).toBeGreaterThan(500);
+          const outcomes = yield* Effect.forEach(declared, (doc) => agree(doc, [1, 2, 7, 64]), {
+            concurrency: 1,
+          });
+          expect(failures(outcomes)).toBeGreaterThan(200);
+          expect(outcomes.length - failures(outcomes)).toBeGreaterThan(25);
+        }),
+      120_000,
     );
-    const docs = Arr.getSomes(texts.map(decoded));
-    expect(docs.length).toBeGreaterThan(600);
-    const outcomes = docs.map((doc) =>
-      doc.length <= 8192
-        ? agree(doc, [7, 1024])
-        : // (The large ones, most of the bytes, strictly only.)
-          agree(doc, doc.length <= 65_536 ? [1024] : [], [internal]),
-    );
-    expect(outcomes.length - failures(outcomes)).toBeGreaterThan(500);
-    expect(asIgnore(docs)).toBeGreaterThan(500);
-  }, 300_000);
 
-  test("keeps the DTD-aware grammars for an entity table with names they alone read", () => {
-    // The grammars without a DTD read an entity name as ASCII letters and
-    // digits; with one, up to a delimiter: `&a-b;` decodes only with a DTD.
-    const entities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", "a-b": "!" };
-    const doc = "<root>&a-b;</root>";
-    const options = { dtd: "internal", entities } as const;
-    expect(tokenize(doc, options, doc.length)).toBe(eagerly(doc, options, doc.length));
-    expect(each(doc, options)).toBe(eagerly(doc, options, doc.length));
-    expect(tokenize(doc, options, 1)).toBe(eagerly(doc, options, 1));
-    expect(tokenize(doc, options, doc.length)).not.toBe(tokenize(doc, { entities }, doc.length));
-  });
-});
+    it.effect(
+      "agrees on the W3C XML conformance suite, whole and chunked",
+      () =>
+        Effect.gen(function* () {
+          const texts = yield* readManifest(XMLCONF).pipe(
+            Effect.flatMap((tests) =>
+              Effect.forEach(tests, (t) => Fixtures.readBytes(XMLCONF, t.uri), { concurrency: 8 }),
+            ),
+          );
+          const docs = Arr.getSomes(texts.map(decoded));
+          expect(docs.length).toBeGreaterThan(1700);
+          expect(docs.filter(hasDoctype).length).toBeGreaterThan(1000);
+          const outcomes = yield* Effect.forEach(docs, (doc) => agree(doc, [1, 7, 256]), {
+            concurrency: 1,
+          });
+          expect(failures(outcomes)).toBeGreaterThan(800);
+          expect(outcomes.length - failures(outcomes)).toBeGreaterThan(700);
+          expect(yield* asIgnore(docs)).toBeGreaterThan(200);
+        }),
+      300_000,
+    );
+
+    it.effect(
+      "agrees on the XML documents under tests/fixtures",
+      () =>
+        Effect.gen(function* () {
+          const texts = yield* fixtureFiles().pipe(
+            Effect.flatMap((files) =>
+              Effect.forEach(files, (f) => Fixtures.readBytes(FIXTURES, f), { concurrency: 8 }),
+            ),
+          );
+          const docs = Arr.getSomes(texts.map(decoded));
+          expect(docs.length).toBeGreaterThan(600);
+          const outcomes = yield* Effect.forEach(
+            docs,
+            (doc) =>
+              doc.length <= 8192
+                ? agree(doc, [7, 1024])
+                : // (The large ones, most of the bytes, strictly only.)
+                  agree(doc, doc.length <= 65_536 ? [1024] : [], [internal]),
+            { concurrency: 1 },
+          );
+          expect(outcomes.length - failures(outcomes)).toBeGreaterThan(500);
+          expect(yield* asIgnore(docs)).toBeGreaterThan(500);
+        }),
+      300_000,
+    );
+
+    it.effect("keeps the DTD-aware grammars for an entity table with names they alone read", () =>
+      Effect.gen(function* () {
+        // The grammars without a DTD read an entity name as ASCII letters and
+        // digits; with one, up to a delimiter: `&a-b;` decodes only with a DTD.
+        const entities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", "a-b": "!" };
+        const doc = "<root>&a-b;</root>";
+        const options = { dtd: "internal", entities } as const;
+        expect(yield* tokenize(doc, options, doc.length)).toBe(eagerly(doc, options, doc.length));
+        expect(yield* each(doc, options)).toBe(eagerly(doc, options, doc.length));
+        expect(yield* tokenize(doc, options, 1)).toBe(eagerly(doc, options, 1));
+        expect(yield* tokenize(doc, options, doc.length)).not.toBe(
+          yield* tokenize(doc, { entities }, doc.length),
+        );
+      }),
+    );
+  },
+);

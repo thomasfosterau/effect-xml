@@ -4,7 +4,8 @@
  * `new` would have produced from the same fields. If an `effect` upgrade
  * changes what a `Schema` class instance holds, this fails.
  */
-import { assert, describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Eq from "effect/Equal";
@@ -179,32 +180,36 @@ const allClasses = [
 ];
 
 describe("parsed nodes are indistinguishable from constructed ones", () => {
-  test("Xml.parse", async () => {
-    const doc = await Effect.runPromise(Xml.parse(xml));
-    expect(Arr.sort(expectAsConstructed([doc]), Order.String)).toEqual(
-      Arr.sort(allClasses, Order.String),
-    );
-  });
+  it.effect("Xml.parse", () =>
+    Effect.gen(function* () {
+      const doc = yield* Xml.parse(xml);
+      expect(Arr.sort(expectAsConstructed([doc]), Order.String)).toEqual(
+        Arr.sort(allClasses, Order.String),
+      );
+    }),
+  );
 
-  test("Xml.parse without namespaces, and recovering", async () => {
-    const plain = await Effect.runPromise(Xml.parse(xml, { namespaces: false }));
-    const recovered = await Effect.runPromise(
-      Xml.parse(`<r q:x="1" a="1" a="2"><open>text<x:y/></r>`, { recover: true }),
-    );
-    expectAsConstructed([plain, recovered]);
-  });
+  it.effect("Xml.parse without namespaces, and recovering", () =>
+    Effect.gen(function* () {
+      const plain = yield* Xml.parse(xml, { namespaces: false });
+      const recovered = yield* Xml.parse(`<r q:x="1" a="1" a="2"><open>text<x:y/></r>`, {
+        recover: true,
+      });
+      expectAsConstructed([plain, recovered]);
+    }),
+  );
 
-  test("Sax.select", async () => {
-    const selected = await Effect.runPromise(
-      Stream.make(xml).pipe(
+  it.effect("Sax.select", () =>
+    Effect.gen(function* () {
+      const selected = yield* Stream.make(xml).pipe(
         Sax.tokenize(),
         Sax.select("//d:e", { namespaces: { d: "urn:d" } }),
         Stream.runCollect,
-      ),
-    );
-    expect(selected.length).toBe(1);
-    expectAsConstructed(selected);
-  });
+      );
+      expect(selected.length).toBe(1);
+      expectAsConstructed(selected);
+    }),
+  );
 
   const htmlInput =
     `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">` +
@@ -223,44 +228,53 @@ describe("parsed nodes are indistinguishable from constructed ones", () => {
     "HtmlDocument",
   ];
 
-  test("Html.parseDocument", async () => {
-    const doc = await Effect.runPromise(Html.parseDocument(htmlInput));
-    expect(Arr.sort(expectAsConstructed([doc]), Order.String)).toEqual(
-      Arr.sort(htmlClasses, Order.String),
-    );
-  });
+  it.effect("Html.parseDocument", () =>
+    Effect.gen(function* () {
+      const doc = yield* Html.parseDocument(htmlInput);
+      expect(Arr.sort(expectAsConstructed([doc]), Order.String)).toEqual(
+        Arr.sort(htmlClasses, Order.String),
+      );
+    }),
+  );
 
-  test("Html.parseDocumentFragment", async () => {
-    const nodes = await Effect.runPromise(
-      Html.parseDocumentFragment(`<td>a<template><b>t</b></template><svg><g xml:lang=en/></svg>`, {
-        context: "tr",
-      }),
-    );
-    expectAsConstructed(nodes);
-  });
+  it.effect("Html.parseDocumentFragment", () =>
+    Effect.gen(function* () {
+      const nodes = yield* Html.parseDocumentFragment(
+        `<td>a<template><b>t</b></template><svg><g xml:lang=en/></svg>`,
+        {
+          context: "tr",
+        },
+      );
+      expectAsConstructed(nodes);
+    }),
+  );
 
-  test("Html.parseFragment", async () => {
-    const nodes = await Effect.runPromise(
-      Html.parseFragment(`<P Class=x>a<br><b>b<![CDATA[c]]><!-- c --><?pi d?></p>tail`),
-    );
-    expectAsConstructed(nodes);
-  });
+  it.effect("Html.parseFragment", () =>
+    Effect.gen(function* () {
+      const nodes = yield* Html.parseFragment(
+        `<P Class=x>a<br><b>b<![CDATA[c]]><!-- c --><?pi d?></p>tail`,
+      );
+      expectAsConstructed(nodes);
+    }),
+  );
 
-  test("Html.toXml", async () => {
-    const doc = await Effect.runPromise(Html.parseDocument(htmlInput));
-    expect(Arr.sort(expectAsConstructed([Html.toXml(doc)]), Order.String)).toEqual(
-      Arr.sort(
-        [
-          "QName",
-          "XmlAttribute",
-          "XmlText",
-          "XmlComment",
-          "XmlElement",
-          "XmlDoctype",
-          "XmlDocument",
-        ],
-        Order.String,
-      ),
-    );
-  });
+  it.effect("Html.toXml", () =>
+    Effect.gen(function* () {
+      const doc = yield* Html.parseDocument(htmlInput);
+      expect(Arr.sort(expectAsConstructed([Html.toXml(doc)]), Order.String)).toEqual(
+        Arr.sort(
+          [
+            "QName",
+            "XmlAttribute",
+            "XmlText",
+            "XmlComment",
+            "XmlElement",
+            "XmlDoctype",
+            "XmlDocument",
+          ],
+          Order.String,
+        ),
+      );
+    }),
+  );
 });

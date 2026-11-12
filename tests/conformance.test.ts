@@ -11,7 +11,8 @@
  * directory is picked up automatically.
  */
 /// <reference types="vite-plus/client" />
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
@@ -96,60 +97,63 @@ const parseCaseAsXml = (t: Html5libTest): Effect.Effect<readonly [string, string
 };
 
 /** Our tree for a case in html5lib notation, or `THREW: <message>` when parsing failed. */
-const render = (t: Html5libTest): string =>
-  Exit.match(Effect.runSyncExit(parseCase(t)), {
-    onSuccess: (tree) => tree,
-    onFailure: (cause) => {
-      const error = Cause.squash(cause);
-      return "THREW: " + (P.isError(error) ? error.message : String(error));
-    },
-  });
+const render = (t: Html5libTest): Effect.Effect<string> =>
+  Effect.map(
+    Effect.exit(parseCase(t)),
+    Exit.match({
+      onSuccess: (tree) => tree,
+      onFailure: (cause) => {
+        const error = Cause.squash(cause);
+        return "THREW: " + (P.isError(error) ? error.message : String(error));
+      },
+    }),
+  );
 
 describe("html5lib tree-construction conformance", () => {
-  test("meets the pass-count baseline", () => {
-    const perFile = Arr.map(FILES, ({ file, content }) => {
-      const tests = runnableTests(content);
-      return {
-        file,
-        runnable: tests.length,
-        passed: Arr.filter(tests, (t) => render(t) === t.document).length,
-      };
-    });
-    const runnable = Arr.reduce(perFile, 0, (n, f) => n + f.runnable);
-    const passed = Arr.reduce(perFile, 0, (n, f) => n + f.passed);
+  // The summary goes to the real console, which `it.effect` replaces.
+  it.live("meets the pass-count baseline", () =>
+    Effect.gen(function* () {
+      const perFile = yield* Effect.forEach(
+        FILES,
+        ({ file, content }) =>
+          Effect.gen(function* () {
+            const tests = runnableTests(content);
+            const passed = yield* Effect.filter(tests, (t) =>
+              Effect.map(render(t), (tree) => tree === t.document),
+            );
+            return { file, runnable: tests.length, passed: passed.length };
+          }),
+        { concurrency: 1 },
+      );
+      const runnable = Arr.reduce(perFile, 0, (n, f) => n + f.runnable);
+      const passed = Arr.reduce(perFile, 0, (n, f) => n + f.passed);
 
-    Effect.runSync(
-      Console.log(
+      yield* Console.log(
         `html5lib: ${passed}/${runnable} passed (${((100 * passed) / runnable).toFixed(1)}%)\n` +
           Arr.map(perFile, (f) => `${f.file}: ${f.passed}/${f.runnable}`).join("\n"),
-      ),
-    );
+      );
 
-    expect(runnable).toBe(RUNNABLE);
-    expect(passed).toBeGreaterThanOrEqual(BASELINE);
-  });
+      expect(runnable).toBe(RUNNABLE);
+      expect(passed).toBeGreaterThanOrEqual(BASELINE);
+    }),
+  );
 
-  test("Html.toXml keeps every case's tree", () => {
-    const differing = Arr.filter(
+  it.effect("Html.toXml keeps every case's tree", () =>
+    Effect.gen(function* () {
+      const differing = yield* Effect.filter(
+        Arr.flatMap(FILES, ({ content }) => runnableTests(content)),
+        (t) => Effect.map(parseCaseAsXml(t), ([html, xml]) => html !== xml),
+      );
+      expect(Arr.map(differing, (t) => t.data)).toEqual([]);
+    }),
+  );
+
+  it.effect("never throws on any supported case", () =>
+    Effect.forEach(
       Arr.flatMap(FILES, ({ content }) => runnableTests(content)),
-      (t) => {
-        const [html, xml] = Effect.runSync(parseCaseAsXml(t));
-        return html !== xml;
-      },
-    );
-    expect(Arr.map(differing, (t) => t.data)).toEqual([]);
-  });
-
-  test("never throws on any supported case", async () => {
-    await expect(
-      Effect.runPromise(
-        Effect.forEach(
-          Arr.flatMap(FILES, ({ content }) => runnableTests(content)),
-          // Should always produce a tree, even for malformed input.
-          (t) => Effect.asVoid(parseCase(t)),
-          { concurrency: 1, discard: true },
-        ),
-      ),
-    ).resolves.toBeUndefined();
-  });
+      // Should always produce a tree, even for malformed input.
+      (t) => Effect.asVoid(parseCase(t)),
+      { concurrency: 1, discard: true },
+    ),
+  );
 });

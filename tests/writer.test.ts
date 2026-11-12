@@ -1,5 +1,6 @@
 import * as Option from "effect/Option";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -12,7 +13,7 @@ const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
 const ok = (node: Xml.XmlNode | Xml.XmlDocument, options?: Xml.Writer.WriterOptions) =>
-  Effect.runSync(Writer.serialize(node, options));
+  Writer.serialize(node, options);
 
 const err = (node: Xml.XmlNode | Xml.XmlDocument, options?: Xml.Writer.WriterOptions) => {
   const r = Writer.serializeSync(node, options);
@@ -31,68 +32,89 @@ const el = (
   children: ReadonlyArray<Xml.XmlNode> = [],
 ) => Xml.element(name, attrs, children);
 
-const parse = (s: string) => Effect.runSync(Xml.parse(s));
+const parse = (s: string) => Xml.parse(s);
 
 /** OOXML's `_xHHHH_` escape for a code point. */
 const ooxml = (cp: number) => Option.some(`_x${cp.toString(16).toUpperCase().padStart(4, "0")}_`);
 
 /** The children of a document's root element. */
-const content = (input: string) => parse(input).root.children;
+const content = (input: string) =>
+  Effect.gen(function* () {
+    return (yield* parse(input)).root.children;
+  });
 
 /** The exclusive canonical form, with comments, of a document's root element's children. */
-const c14n = (input: string) => C14n.exclusive(content(input), { comments: true });
+const c14n = (input: string) =>
+  Effect.gen(function* () {
+    return C14n.exclusive(yield* content(input), { comments: true });
+  });
 
 /** Parse an HTML document and serialize it back. */
-const html = (s: string) => Html.serialize(Effect.runSync(Html.parseDocument(s)));
+const html = (s: string) =>
+  Effect.gen(function* () {
+    return Html.serialize(yield* Html.parseDocument(s));
+  });
 
 describe("escaping and well-formedness", () => {
-  test("text and attribute values", () => {
-    expect(ok(el("a", [Xml.attr("v", `<"&'>\t\n\r`)], [Xml.text(`<&>\r]]>`)]))).toBe(
-      `<a v="&lt;&quot;&amp;'&gt;&#x9;&#xA;&#xD;">&lt;&amp;&gt;&#xD;]]&gt;</a>`,
-    );
-  });
+  it.effect("text and attribute values", () =>
+    Effect.gen(function* () {
+      expect(yield* ok(el("a", [Xml.attr("v", `<"&'>\t\n\r`)], [Xml.text(`<&>\r]]>`)]))).toBe(
+        `<a v="&lt;&quot;&amp;'&gt;&#x9;&#xA;&#xD;">&lt;&amp;&gt;&#xD;]]&gt;</a>`,
+      );
+    }),
+  );
 
-  test("attribute values survive a round trip, tabs and newlines included", () => {
-    const value = "a\tb\nc\r d";
-    const doc = parse(ok(el("a", [Xml.attr("v", value)])));
-    expect(doc.root.attribute("v")).toEqual(Option.some(value));
-  });
+  it.effect("attribute values survive a round trip, tabs and newlines included", () =>
+    Effect.gen(function* () {
+      const value = "a\tb\nc\r d";
+      const doc = yield* parse(yield* ok(el("a", [Xml.attr("v", value)])));
+      expect(doc.root.attribute("v")).toEqual(Option.some(value));
+    }),
+  );
 
-  test("a CDATA section containing ]]> is split", () => {
-    const out = ok(el("a", [], [new Xml.XmlCData({ data: "x]]>y]]>" })]));
-    expect(out).toBe("<a><![CDATA[x]]]]><![CDATA[>y]]]]><![CDATA[>]]></a>");
-    expect(parse(out).root.textContent).toBe("x]]>y]]>");
-  });
+  it.effect("a CDATA section containing ]]> is split", () =>
+    Effect.gen(function* () {
+      const out = yield* ok(el("a", [], [new Xml.XmlCData({ data: "x]]>y]]>" })]));
+      expect(out).toBe("<a><![CDATA[x]]]]><![CDATA[>y]]]]><![CDATA[>]]></a>");
+      expect((yield* parse(out)).root.textContent).toBe("x]]>y]]>");
+    }),
+  );
 
-  test("comments and PIs that can't be written: fail, or patched up", () => {
-    const bad = el(
-      "a",
-      [],
-      [
-        new Xml.XmlComment({ data: "x--y-" }),
-        new Xml.XmlProcessingInstruction({ target: "p", data: "a?>b" }),
-      ],
-    );
-    expect(err(bad)._tag).toBe("SerializationError");
-    const patched = ok(bad, { invalid: "replace" });
-    expect(patched).toBe("<a><!--x- -y- --><?p a? >b?></a>");
-    parse(patched);
-    expect(err(new Xml.XmlProcessingInstruction({ target: "xml", data: "" })).reason).toContain(
-      "reserved",
-    );
-  });
+  it.effect("comments and PIs that can't be written: fail, or patched up", () =>
+    Effect.gen(function* () {
+      const bad = el(
+        "a",
+        [],
+        [
+          new Xml.XmlComment({ data: "x--y-" }),
+          new Xml.XmlProcessingInstruction({ target: "p", data: "a?>b" }),
+        ],
+      );
+      expect(err(bad)._tag).toBe("SerializationError");
+      const patched = yield* ok(bad, { invalid: "replace" });
+      expect(patched).toBe("<a><!--x- -y- --><?p a? >b?></a>");
+      yield* parse(patched);
+      expect(err(new Xml.XmlProcessingInstruction({ target: "xml", data: "" })).reason).toContain(
+        "reserved",
+      );
+    }),
+  );
 
-  test("characters XML forbids: fail, strip, replace, or a format's own escape", () => {
-    const node = el("a", [Xml.attr("v", "x\u0001")], [Xml.text("a\u0000b￾c\uD800d")]);
-    expect(err(node).reason).toContain("U+0001");
-    expect(ok(node, { invalid: "strip" })).toBe(`<a v="x">abcd</a>`);
-    expect(ok(node, { invalid: "replace" })).toBe(`<a v="x�">a�b�c�d</a>`);
-    expect(ok(node, { escape: ooxml })).toBe(`<a v="x_x0001_">a_x0000_b_xFFFE_c_xD800_d</a>`);
-    // Astral characters are fine.
-    expect(ok(Xml.text("𝄞"))).toBe("𝄞");
-  });
+  it.effect("characters XML forbids: fail, strip, replace, or a format's own escape", () =>
+    Effect.gen(function* () {
+      const node = el("a", [Xml.attr("v", "x\u0001")], [Xml.text("a\u0000b￾c\uD800d")]);
+      expect(err(node).reason).toContain("U+0001");
+      expect(yield* ok(node, { invalid: "strip" })).toBe(`<a v="x">abcd</a>`);
+      expect(yield* ok(node, { invalid: "replace" })).toBe(`<a v="x�">a�b�c�d</a>`);
+      expect(yield* ok(node, { escape: ooxml })).toBe(
+        `<a v="x_x0001_">a_x0000_b_xFFFE_c_xD800_d</a>`,
+      );
+      // Astral characters are fine.
+      expect(yield* ok(Xml.text("𝄞"))).toBe("𝄞");
+    }),
+  );
 
-  test("Xml.serialize is always well-formed, and keeps names as written", () => {
+  it("Xml.serialize is always well-formed, and keeps names as written", () => {
     const node = el(
       "w:p",
       [],
@@ -104,73 +126,93 @@ describe("escaping and well-formedness", () => {
 });
 
 describe("namespace management", () => {
-  test("a namespace without a declaration gets one, where first needed", () => {
-    const body = el(q(W, "body", "w"), [], [el(q(W, "p", "w"), [Xml.attr(q(W, "val", "w"), "1")])]);
-    expect(Xml.serialize(body)).toBe(`<w:body><w:p w:val="1"/></w:body>`); // as written: binding lost
-    const out = ok(body);
-    expect(out).toBe(`<w:body xmlns:w="${W}"><w:p w:val="1"/></w:body>`);
-    const reparsed = parse(out);
-    expect(reparsed.root.name.namespace).toEqual(Option.some(W));
-    expect(at(at(reparsed.root.elements, 0).attributes, 0).name.namespace).toEqual(Option.some(W));
-  });
+  it.effect("a namespace without a declaration gets one, where first needed", () =>
+    Effect.gen(function* () {
+      const body = el(
+        q(W, "body", "w"),
+        [],
+        [el(q(W, "p", "w"), [Xml.attr(q(W, "val", "w"), "1")])],
+      );
+      expect(Xml.serialize(body)).toBe(`<w:body><w:p w:val="1"/></w:body>`); // as written: binding lost
+      const out = yield* ok(body);
+      expect(out).toBe(`<w:body xmlns:w="${W}"><w:p w:val="1"/></w:body>`);
+      const reparsed = yield* parse(out);
+      expect(reparsed.root.name.namespace).toEqual(Option.some(W));
+      expect(at(at(reparsed.root.elements, 0).attributes, 0).name.namespace).toEqual(
+        Option.some(W),
+      );
+    }),
+  );
 
-  test("unprefixed names use the default namespace, and undeclare it when needed", () => {
-    const tree = el(q("urn:d", "a"), [], [el(q(null, "b")), el(q("urn:d", "c"))]);
-    expect(ok(tree)).toBe(`<a xmlns="urn:d"><b xmlns=""/><c/></a>`);
-  });
+  it.effect("unprefixed names use the default namespace, and undeclare it when needed", () =>
+    Effect.gen(function* () {
+      const tree = el(q("urn:d", "a"), [], [el(q(null, "b")), el(q("urn:d", "c"))]);
+      expect(yield* ok(tree)).toBe(`<a xmlns="urn:d"><b xmlns=""/><c/></a>`);
+    }),
+  );
 
-  test("namespaced attributes always get a prefix", () => {
-    const tree = el(q("urn:d", "a"), [Xml.attr(q("urn:d", "x"), "1"), Xml.attr(q(R, "id"), "2")]);
-    expect(ok(tree)).toBe(
-      `<a xmlns="urn:d" xmlns:ns0="urn:d" xmlns:ns1="${R}" ns0:x="1" ns1:id="2"/>`,
-    );
-    // A preferred prefix in scope is reused for the element too.
-    expect(ok(tree, { prefixes: { r: R, d: "urn:d" } })).toBe(
-      `<d:a xmlns:d="urn:d" xmlns:r="${R}" d:x="1" r:id="2"/>`,
-    );
-  });
+  it.effect("namespaced attributes always get a prefix", () =>
+    Effect.gen(function* () {
+      const tree = el(q("urn:d", "a"), [Xml.attr(q("urn:d", "x"), "1"), Xml.attr(q(R, "id"), "2")]);
+      expect(yield* ok(tree)).toBe(
+        `<a xmlns="urn:d" xmlns:ns0="urn:d" xmlns:ns1="${R}" ns0:x="1" ns1:id="2"/>`,
+      );
+      // A preferred prefix in scope is reused for the element too.
+      expect(yield* ok(tree, { prefixes: { r: R, d: "urn:d" } })).toBe(
+        `<d:a xmlns:d="urn:d" xmlns:r="${R}" d:x="1" r:id="2"/>`,
+      );
+    }),
+  );
 
-  test("preferred prefixes are declared once, on the root, in a fixed order", () => {
-    const tree = el(
-      q(W, "document"),
-      [],
-      [el(q(W, "body"), [], [el(q(R, "x"), [Xml.attr(q(R, "id"), "1")])])],
-    );
-    expect(ok(tree, { prefixes: { w: W, r: R } })).toBe(
-      `<w:document xmlns:r="${R}" xmlns:w="${W}"><w:body><r:x r:id="1"/></w:body></w:document>`,
-    );
-  });
+  it.effect("preferred prefixes are declared once, on the root, in a fixed order", () =>
+    Effect.gen(function* () {
+      const tree = el(
+        q(W, "document"),
+        [],
+        [el(q(W, "body"), [], [el(q(R, "x"), [Xml.attr(q(R, "id"), "1")])])],
+      );
+      expect(yield* ok(tree, { prefixes: { w: W, r: R } })).toBe(
+        `<w:document xmlns:r="${R}" xmlns:w="${W}"><w:body><r:x r:id="1"/></w:body></w:document>`,
+      );
+    }),
+  );
 
-  test("a DOM's prefixes are declared on its root", () => {
-    const tree = el(
-      q("urn:a", "root"),
-      [],
-      [el(q("urn:b", "x", "b"), [Xml.attr(q("urn:c", "y", "c"), "1")])],
-    );
-    expect(ok(tree)).toBe(
-      `<root xmlns="urn:a" xmlns:b="urn:b" xmlns:c="urn:c"><b:x c:y="1"/></root>`,
-    );
-  });
+  it.effect("a DOM's prefixes are declared on its root", () =>
+    Effect.gen(function* () {
+      const tree = el(
+        q("urn:a", "root"),
+        [],
+        [el(q("urn:b", "x", "b"), [Xml.attr(q("urn:c", "y", "c"), "1")])],
+      );
+      expect(yield* ok(tree)).toBe(
+        `<root xmlns="urn:a" xmlns:b="urn:b" xmlns:c="urn:c"><b:x c:y="1"/></root>`,
+      );
+    }),
+  );
 
-  test("a parsed document round-trips without redundant declarations", () => {
-    const src = `<w:document xmlns:w="${W}" xmlns:r="${R}"><w:body r:id="1"><w:p/></w:body></w:document>`;
-    const out = ok(parse(src));
-    expect(out).toBe(
-      `<w:document xmlns:r="${R}" xmlns:w="${W}"><w:body r:id="1"><w:p/></w:body></w:document>`,
-    );
-  });
+  it.effect("a parsed document round-trips without redundant declarations", () =>
+    Effect.gen(function* () {
+      const src = `<w:document xmlns:w="${W}" xmlns:r="${R}"><w:body r:id="1"><w:p/></w:body></w:document>`;
+      const out = yield* ok(yield* parse(src));
+      expect(out).toBe(
+        `<w:document xmlns:r="${R}" xmlns:w="${W}"><w:body r:id="1"><w:p/></w:body></w:document>`,
+      );
+    }),
+  );
 
-  test("a prefix bound to another namespace is not reused", () => {
-    const tree = el(q("urn:a", "x", "p"), [Xml.attr(q("urn:b", "y", "p"), "1")]);
-    const out = ok(tree);
-    const doc = parse(out);
-    expect(doc.root.name.namespace).toEqual(Option.some("urn:a"));
-    expect(doc.root.attributes.find((a) => a.name.local === "y")?.name.namespace).toEqual(
-      Option.some("urn:b"),
-    );
-  });
+  it.effect("a prefix bound to another namespace is not reused", () =>
+    Effect.gen(function* () {
+      const tree = el(q("urn:a", "x", "p"), [Xml.attr(q("urn:b", "y", "p"), "1")]);
+      const out = yield* ok(tree);
+      const doc = yield* parse(out);
+      expect(doc.root.name.namespace).toEqual(Option.some("urn:a"));
+      expect(doc.root.attributes.find((a) => a.name.local === "y")?.name.namespace).toEqual(
+        Option.some("urn:b"),
+      );
+    }),
+  );
 
-  test("two attributes with the same expanded name", () => {
+  it("two attributes with the same expanded name", () => {
     const tree = el("a", [
       Xml.attr(q("urn:x", "v", "p"), "1"),
       Xml.attr(q("urn:x", "v", "q"), "2"),
@@ -178,52 +220,70 @@ describe("namespace management", () => {
     expect(err(tree).reason).toContain("two");
   });
 
-  test("sortAttributes", () => {
-    const tree = el("a", [Xml.attr("z", "1"), Xml.attr(q(R, "id", "r"), "2"), Xml.attr("b", "3")]);
-    expect(ok(tree, { sortAttributes: true })).toBe(`<a xmlns:r="${R}" b="3" z="1" r:id="2"/>`);
-  });
+  it.effect("sortAttributes", () =>
+    Effect.gen(function* () {
+      const tree = el("a", [
+        Xml.attr("z", "1"),
+        Xml.attr(q(R, "id", "r"), "2"),
+        Xml.attr("b", "3"),
+      ]);
+      expect(yield* ok(tree, { sortAttributes: true })).toBe(
+        `<a xmlns:r="${R}" b="3" z="1" r:id="2"/>`,
+      );
+    }),
+  );
 });
 
 describe("options", () => {
-  test("declaration and encoding", () => {
-    expect(ok(el("a"), { declaration: true })).toBe(`<?xml version="1.0" encoding="UTF-8"?><a/>`);
-    expect(ok(el("a"), { declaration: { standalone: true }, encoding: "utf-16" })).toBe(
-      `<?xml version="1.0" encoding="UTF-16" standalone="yes"?><a/>`,
-    );
-  });
+  it.effect("declaration and encoding", () =>
+    Effect.gen(function* () {
+      expect(yield* ok(el("a"), { declaration: true })).toBe(
+        `<?xml version="1.0" encoding="UTF-8"?><a/>`,
+      );
+      expect(yield* ok(el("a"), { declaration: { standalone: true }, encoding: "utf-16" })).toBe(
+        `<?xml version="1.0" encoding="UTF-16" standalone="yes"?><a/>`,
+      );
+    }),
+  );
 
-  test("a document keeps its declaration and DOCTYPE", () => {
-    const doc = parse(
-      `<?xml version="1.0" standalone="no"?><!DOCTYPE a SYSTEM "a.dtd" [<!ENTITY x "y">]><a/>`,
-    );
-    expect(ok(doc)).toBe(
-      `<?xml version="1.0" standalone="no"?><!DOCTYPE a SYSTEM "a.dtd" [<!ENTITY x "y">]><a/>`,
-    );
-  });
+  it.effect("a document keeps its declaration and DOCTYPE", () =>
+    Effect.gen(function* () {
+      const doc = yield* parse(
+        `<?xml version="1.0" standalone="no"?><!DOCTYPE a SYSTEM "a.dtd" [<!ENTITY x "y">]><a/>`,
+      );
+      expect(yield* ok(doc)).toBe(
+        `<?xml version="1.0" standalone="no"?><!DOCTYPE a SYSTEM "a.dtd" [<!ENTITY x "y">]><a/>`,
+      );
+    }),
+  );
 
-  test("self-closing or explicit empty elements", () => {
-    const tree = el("a", [], [el("b"), el("c")]);
-    expect(ok(tree, { selfClose: false })).toBe("<a><b></b><c></c></a>");
-    expect(ok(tree, { selfClose: (n) => n.local === "b" })).toBe("<a><b/><c></c></a>");
-  });
+  it.effect("self-closing or explicit empty elements", () =>
+    Effect.gen(function* () {
+      const tree = el("a", [], [el("b"), el("c")]);
+      expect(yield* ok(tree, { selfClose: false })).toBe("<a><b></b><c></c></a>");
+      expect(yield* ok(tree, { selfClose: (n) => n.local === "b" })).toBe("<a><b/><c></c></a>");
+    }),
+  );
 
-  test("pretty-printing leaves mixed content and xml:space='preserve' alone", () => {
-    const doc = parse(
-      `<a> <b>text <i>x</i></b>  <c><d/></c><e xml:space="preserve"> <f/> </e><!--n--></a>`,
-    );
-    expect(ok(doc, { indent: 2 })).toBe(
-      [
-        "<a>",
-        "  <b>text <i>x</i></b>",
-        "  <c>",
-        "    <d/>",
-        "  </c>",
-        `  <e xml:space="preserve"> <f/> </e>`,
-        "  <!--n-->",
-        "</a>",
-      ].join("\n"),
-    );
-  });
+  it.effect("pretty-printing leaves mixed content and xml:space='preserve' alone", () =>
+    Effect.gen(function* () {
+      const doc = yield* parse(
+        `<a> <b>text <i>x</i></b>  <c><d/></c><e xml:space="preserve"> <f/> </e><!--n--></a>`,
+      );
+      expect(yield* ok(doc, { indent: 2 })).toBe(
+        [
+          "<a>",
+          "  <b>text <i>x</i></b>",
+          "  <c>",
+          "    <d/>",
+          "  </c>",
+          `  <e xml:space="preserve"> <f/> </e>`,
+          "  <!--n-->",
+          "</a>",
+        ].join("\n"),
+      );
+    }),
+  );
 });
 
 describe("streaming", () => {
@@ -251,23 +311,26 @@ describe("streaming", () => {
       ),
     );
 
-  test("a sheet, written as a stream", async () => {
-    const chunks = await Effect.runPromise(
-      sheet(3).pipe(Writer.write({ declaration: true, prefixes: { x: SML } }), Stream.runCollect),
-    );
-    expect(Array.from(chunks).join("")).toBe(
-      `<?xml version="1.0" encoding="UTF-8"?><x:worksheet xmlns:x="${SML}"><x:sheetData>` +
-        [1, 2, 3].map((i) => `<x:row r="${i}"><x:c><x:v>${i}</x:v></x:c></x:row>`).join("") +
-        `</x:sheetData></x:worksheet>`,
-    );
-  });
+  it.effect("a sheet, written as a stream", () =>
+    Effect.gen(function* () {
+      const chunks = yield* sheet(3).pipe(
+        Writer.write({ declaration: true, prefixes: { x: SML } }),
+        Stream.runCollect,
+      );
+      expect(Array.from(chunks).join("")).toBe(
+        `<?xml version="1.0" encoding="UTF-8"?><x:worksheet xmlns:x="${SML}"><x:sheetData>` +
+          [1, 2, 3].map((i) => `<x:row r="${i}"><x:c><x:v>${i}</x:v></x:c></x:row>`).join("") +
+          `</x:sheetData></x:worksheet>`,
+      );
+    }),
+  );
 
-  test("a large sheet streams through and parses back", async () => {
-    const rows = 50_000;
-    let length = 0;
-    let text = "";
-    await Effect.runPromise(
-      sheet(rows).pipe(
+  it.effect("a large sheet streams through and parses back", () =>
+    Effect.gen(function* () {
+      const rows = 50_000;
+      let length = 0;
+      let text = "";
+      yield* sheet(rows).pipe(
         Writer.write(),
         Stream.runForEach((s) =>
           Effect.sync(() => {
@@ -275,95 +338,115 @@ describe("streaming", () => {
             if (text.length < 200) text += s;
           }),
         ),
-      ),
-    );
-    expect(length).toBeGreaterThan(rows * 30);
-    expect(text.startsWith(`<worksheet xmlns="${SML}"><sheetData><row r="1">`)).toBe(true);
-  });
+      );
+      expect(length).toBeGreaterThan(rows * 30);
+      expect(text.startsWith(`<worksheet xmlns="${SML}"><sheetData><row r="1">`)).toBe(true);
+    }),
+  );
 
-  test("UTF-16 bytes parse back", async () => {
-    const bytes = await Effect.runPromise(
-      sheet(2).pipe(
+  it.effect("UTF-16 bytes parse back", () =>
+    Effect.gen(function* () {
+      const bytes = yield* sheet(2).pipe(
         Writer.writeBytes({ declaration: true, encoding: "utf-16" }),
         Stream.runCollect,
         Effect.map((c) => concatBytes(Array.from(c))),
-      ),
-    );
-    expect([bytes[0], bytes[1]]).toEqual([0xff, 0xfe]);
-    const doc = Effect.runSync(Xml.parseBytes(bytes));
-    expect(at(doc.root.elements, 0).elements.length).toBe(2);
-  });
-
-  test("unbalanced events fail", async () => {
-    const run = (events: ReadonlyArray<Xml.Writer.WriterEvent>) =>
-      Effect.runPromise(
-        Effect.result(Stream.fromIterable(events).pipe(Writer.write(), Stream.runDrain)),
       );
-    expect((await run([Writer.start("a")]))._tag).toBe("Failure");
-    expect((await run([Writer.end]))._tag).toBe("Failure");
-  });
+      expect([bytes[0], bytes[1]]).toEqual([0xff, 0xfe]);
+      const doc = yield* Xml.parseBytes(bytes);
+      expect(at(doc.root.elements, 0).elements.length).toBe(2);
+    }),
+  );
+
+  it.effect("unbalanced events fail", () =>
+    Effect.gen(function* () {
+      const run = (events: ReadonlyArray<Xml.Writer.WriterEvent>) =>
+        Effect.result(Stream.fromIterable(events).pipe(Writer.write(), Stream.runDrain));
+      expect((yield* run([Writer.start("a")]))._tag).toBe("Failure");
+      expect((yield* run([Writer.end]))._tag).toBe("Failure");
+    }),
+  );
 });
 
 describe("Exclusive C14N", () => {
   // Ported from effect-rdfxml (Xml.canonicalize).
 
-  test("renders visibly utilised namespaces only", () => {
-    expect(
-      c14n(`<r xmlns="urn:d" xmlns:a="urn:a" xmlns:unused="urn:u"><a:x><y a:attr="1"/></a:x></r>`),
-    ).toBe(`<a:x xmlns:a="urn:a"><y xmlns="urn:d" a:attr="1"></y></a:x>`);
-  });
+  it.effect("renders visibly utilised namespaces only", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* c14n(
+          `<r xmlns="urn:d" xmlns:a="urn:a" xmlns:unused="urn:u"><a:x><y a:attr="1"/></a:x></r>`,
+        ),
+      ).toBe(`<a:x xmlns:a="urn:a"><y xmlns="urn:d" a:attr="1"></y></a:x>`);
+    }),
+  );
 
-  test("undeclares the default namespace when needed", () => {
-    expect(c14n(`<r xmlns="urn:d"><x><y xmlns=""/></x></r>`)).toBe(
-      `<x xmlns="urn:d"><y xmlns=""></y></x>`,
-    );
-    expect(c14n("<r><x/></r>")).toBe("<x></x>");
-  });
+  it.effect("undeclares the default namespace when needed", () =>
+    Effect.gen(function* () {
+      expect(yield* c14n(`<r xmlns="urn:d"><x><y xmlns=""/></x></r>`)).toBe(
+        `<x xmlns="urn:d"><y xmlns=""></y></x>`,
+      );
+      expect(yield* c14n("<r><x/></r>")).toBe("<x></x>");
+    }),
+  );
 
-  test("sorts attributes and escapes values", () => {
-    expect(
-      c14n(
-        `<r xmlns:b="urn:b" xmlns:a="urn:z"><e z="&quot;&lt;&amp;&#9;&#10;&#13;" b:y="1" a:y="2" a="&gt;"/></r>`,
-      ),
-    ).toBe(
-      `<e xmlns:a="urn:z" xmlns:b="urn:b" a=">" z="&quot;&lt;&amp;&#x9;&#xA;&#xD;" b:y="1" a:y="2"></e>`,
-    );
-  });
+  it.effect("sorts attributes and escapes values", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* c14n(
+          `<r xmlns:b="urn:b" xmlns:a="urn:z"><e z="&quot;&lt;&amp;&#9;&#10;&#13;" b:y="1" a:y="2" a="&gt;"/></r>`,
+        ),
+      ).toBe(
+        `<e xmlns:a="urn:z" xmlns:b="urn:b" a=">" z="&quot;&lt;&amp;&#x9;&#xA;&#xD;" b:y="1" a:y="2"></e>`,
+      );
+    }),
+  );
 
-  test("escapes text, keeps comments and processing instructions", () => {
-    expect(c14n(`<r>a &lt; b &amp;&gt; &#13;<!--c--><?pi x?></r>`)).toBe(
-      "a &lt; b &amp;&gt; &#xD;<!--c--><?pi x?>",
-    );
-  });
+  it.effect("escapes text, keeps comments and processing instructions", () =>
+    Effect.gen(function* () {
+      expect(yield* c14n(`<r>a &lt; b &amp;&gt; &#13;<!--c--><?pi x?></r>`)).toBe(
+        "a &lt; b &amp;&gt; &#xD;<!--c--><?pi x?>",
+      );
+    }),
+  );
 
-  test("without comments, and a whole document", () => {
-    const doc = parse(`<?xml version="1.0"?><!--c--><?p?><a><!--x-->y<![CDATA[<z>]]></a><!--d-->`);
-    expect(C14n.exclusive(doc)).toBe(`<?p?>\n<a>y&lt;z&gt;</a>`);
-    expect(C14n.exclusive(doc, { comments: true })).toBe(
-      `<!--c-->\n<?p?>\n<a><!--x-->y&lt;z&gt;</a>\n<!--d-->`,
-    );
-  });
+  it.effect("without comments, and a whole document", () =>
+    Effect.gen(function* () {
+      const doc = yield* parse(
+        `<?xml version="1.0"?><!--c--><?p?><a><!--x-->y<![CDATA[<z>]]></a><!--d-->`,
+      );
+      expect(C14n.exclusive(doc)).toBe(`<?p?>\n<a>y&lt;z&gt;</a>`);
+      expect(C14n.exclusive(doc, { comments: true })).toBe(
+        `<!--c-->\n<?p?>\n<a><!--x-->y&lt;z&gt;</a>\n<!--d-->`,
+      );
+    }),
+  );
 });
 
 describe("Html.serialize", () => {
-  test("void elements, raw text, escaping", () => {
-    expect(
-      html(
-        `<!doctype html><p a="x&quot;y ">a&amp;b <br><img src=x></p><script>if (a<b) {}</script>`,
-      ),
-    ).toBe(
-      `<!DOCTYPE html><html><head></head><body><p a="x&quot;y&nbsp;">a&amp;b&nbsp;<br><img src="x"></p><script>if (a<b) {}</script></body></html>`,
-    );
-  });
+  it.effect("void elements, raw text, escaping", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* html(
+          `<!doctype html><p a="x&quot;y ">a&amp;b <br><img src=x></p><script>if (a<b) {}</script>`,
+        ),
+      ).toBe(
+        `<!DOCTYPE html><html><head></head><body><p a="x&quot;y&nbsp;">a&amp;b&nbsp;<br><img src="x"></p><script>if (a<b) {}</script></body></html>`,
+      );
+    }),
+  );
 
-  test("foreign content", () => {
-    expect(html(`<svg viewBox="0 0 1 1"><a xlink:href="#x"/></svg>`)).toBe(
-      `<html><head></head><body><svg viewBox="0 0 1 1"><a xlink:href="#x"></a></svg></body></html>`,
-    );
-  });
+  it.effect("foreign content", () =>
+    Effect.gen(function* () {
+      expect(yield* html(`<svg viewBox="0 0 1 1"><a xlink:href="#x"/></svg>`)).toBe(
+        `<html><head></head><body><svg viewBox="0 0 1 1"><a xlink:href="#x"></a></svg></body></html>`,
+      );
+    }),
+  );
 
-  test("fragments", () => {
-    const nodes = Effect.runSync(Html.parseFragment(`<p>1<br>2</p><style>a>b</style>`));
-    expect(Html.serializeFragment(nodes)).toBe(`<p>1<br>2</p><style>a>b</style>`);
-  });
+  it.effect("fragments", () =>
+    Effect.gen(function* () {
+      const nodes = yield* Html.parseFragment(`<p>1<br>2</p><style>a>b</style>`);
+      expect(Html.serializeFragment(nodes)).toBe(`<p>1<br>2</p><style>a>b</style>`);
+    }),
+  );
 });
