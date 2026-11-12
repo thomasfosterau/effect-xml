@@ -585,8 +585,20 @@ export class Dtd implements EntityResolver {
       const ch = charRef(body);
       return ch === null ? { reason: "invalid character reference" } : out + ch;
     }
+    return this.expandNamed(out, segment, inAttribute, stack);
+  }
+
+  /** {@link expandSegment} for `&name;`. */
+  private expandNamed(
+    out: string,
+    segment: string,
+    inAttribute: boolean,
+    stack: ReadonlyArray<string>,
+  ): string | ExpansionFailure {
+    const body = segment.slice(1, -1);
     const predefined = PREDEFINED[body];
     if (predefined !== undefined) return out + predefined;
+    // Recovering, a reference to an undeclared entity is text, as written.
     if (this.recover && !this.declares(body)) return out + segment;
     const value = this.replacement(body, stack);
     if (!P.isString(value)) return value;

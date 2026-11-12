@@ -1127,62 +1127,93 @@ const dispatchMarkup = (
   );
 };
 
+/** The markup grammars of XML's data state: strict XML's, or the recovering ones. */
+interface XmlMarkup {
+  readonly comment: P<Step>;
+  readonly cdata: P<Step>;
+  readonly doctype: P<Step>;
+  /** `<!` that starts none of the others. */
+  readonly otherDeclaration: P<Step>;
+  readonly endTag: P<Step>;
+  readonly pi: P<Step>;
+  readonly startTag: P<Step>;
+  /** `<` that opens nothing. */
+  readonly badOpen: P<Step>;
+}
+
+const xmlMarkup = (cfg: EntityConfig, textToken: P<Step>): XmlMarkup =>
+  cfg.recover
+    ? {
+        comment: recoverComment,
+        cdata: recoverCdata,
+        doctype: recoverDoctype,
+        // Any other `<!` is a bogus comment (XML5).
+        otherDeclaration: bogusComment("<!"),
+        endTag: recoverEndTag,
+        pi: recoverPi,
+        startTag: recoverStartTag(cfg),
+        // A `<` that opens nothing is text (`recoverText` reads it).
+        badOpen: textToken,
+      }
+    : {
+        comment: comment(true),
+        cdata: cdata(true),
+        doctype: xmlDoctypeToken,
+        otherDeclaration: badMarkupDeclaration,
+        endTag: Parser.cut(xmlEndTag),
+        pi: piToken,
+        startTag: xmlStartTag(cfg),
+        badOpen: Parser.preceded(Token.literal("<"), unexpected("opening a tag")),
+      };
+
+/** XML's data state: one token. */
+const xmlData = (cfg: EntityConfig, textToken: P<Step>): P<Step> => {
+  const markup = xmlMarkup(cfg, textToken);
+  // Once a construct's opening delimiter has matched, it must parse: a
+  // failure inside it (EOF included) is an error, not a cue to try another.
+  const committed = <A>(open: Parser.Parser<unknown>, p: P<A>): P<A> =>
+    Parser.preceded(Parser.peek(open), Parser.cut(p));
+  const markupDeclaration = Parser.alt(
+    committed(Token.literal("<!--"), markup.comment),
+    committed(Token.literal("<![CDATA["), markup.cdata),
+    committed(Parser.seq(Token.literal("<!"), Ascii.caseless("DOCTYPE")), markup.doctype),
+    markup.otherDeclaration,
+  );
+  return dispatchMarkup(
+    textToken,
+    { "/": markup.endTag, "!": markupDeclaration, "?": Parser.cut(markup.pi) },
+    Parser.cut(markup.startTag),
+    markup.badOpen,
+  );
+};
+
+/** HTML's data state: one token. */
+const htmlData = (cfg: EntityConfig, textToken: P<Step>): P<Step> => {
+  const tagOpen = Parser.seq(Token.literal("<"), Token.oneOf(nameStart));
+  const start = startTag(cfg);
+  // At EOF an unfinished start tag is dropped.
+  const startOrDrop = Parser.alt(
+    Parser.backtrack(start),
+    Parser.as(Parser.seq(tagOpen, Token.rest, eof), none),
+  );
+  const markupDeclaration = Parser.alt(
+    comment(false),
+    cdata(false),
+    htmlDoctype,
+    bogusComment("<!"),
+  );
+  return dispatchMarkup(
+    textToken,
+    { "/": htmlEndTag, "!": markupDeclaration, "?": bogusComment("<") },
+    startOrDrop,
+    strayLessThan(cfg),
+  );
+};
+
 const makeGrammars = (cfg: EntityConfig): Grammars => {
   // (With a DTD, `textRun` also produces entity references.)
   const textToken = cfg.recover ? recoverText(cfg) : textRun(cfg);
-  const tagOpen = Parser.seq(Token.literal("<"), Token.oneOf(nameStart));
-  let data: P<Step>;
-  if (cfg.strict) {
-    // Once a construct's opening delimiter has matched, it must parse: a
-    // failure inside it (EOF included) is an error, not a cue to try another.
-    const committed = <A>(open: Parser.Parser<unknown>, p: P<A>): P<A> =>
-      Parser.preceded(Parser.peek(open), Parser.cut(p));
-    const markupDeclaration = Parser.alt(
-      committed(Token.literal("<!--"), cfg.recover ? recoverComment : comment(true)),
-      committed(Token.literal("<![CDATA["), cfg.recover ? recoverCdata : cdata(true)),
-      committed(
-        Parser.seq(Token.literal("<!"), Ascii.caseless("DOCTYPE")),
-        cfg.recover ? recoverDoctype : xmlDoctypeToken,
-      ),
-      // Recovering, any other `<!` is a bogus comment (XML5).
-      cfg.recover ? bogusComment("<!") : badMarkupDeclaration,
-    );
-    // Recovering, a `<` that opens nothing is text (`recoverText` reads it).
-    const badOpen = cfg.recover
-      ? textToken
-      : Parser.preceded(Token.literal("<"), unexpected("opening a tag"));
-    data = dispatchMarkup(
-      textToken,
-      {
-        "/": cfg.recover ? recoverEndTag : Parser.cut(xmlEndTag),
-        "!": markupDeclaration,
-        "?": Parser.cut(cfg.recover ? recoverPi : piToken),
-      },
-      Parser.cut(cfg.recover ? recoverStartTag(cfg) : xmlStartTag(cfg)),
-      badOpen,
-    );
-  } else {
-    const start = startTag(cfg);
-    // At EOF an unfinished start tag is dropped.
-    const startOrDrop = Parser.alt(
-      Parser.backtrack(start),
-      Parser.as(Parser.seq(tagOpen, Token.rest, eof), none),
-    );
-    const markupDeclaration = Parser.alt(
-      comment(false),
-      cdata(false),
-      htmlDoctype,
-      bogusComment("<!"),
-    );
-    const stray = strayLessThan(cfg);
-    const pi = bogusComment("<");
-    data = dispatchMarkup(
-      textToken,
-      { "/": htmlEndTag, "!": markupDeclaration, "?": pi },
-      startOrDrop,
-      stray,
-    );
-  }
+  const data = cfg.strict ? xmlData(cfg, textToken) : htmlData(cfg, textToken);
   const raws = MutableHashMap.empty<string, P<Step>>();
   const raw = (name: string, kind: RawKind): P<Step> => {
     const key = `${kind}:${name}`;

@@ -645,19 +645,27 @@ export class Lexer {
     const end = this.scanner.end;
     // The grammar reports a forbidden character the token takes in.
     if (this.forbidden !== -1 && this.forbidden < this.base + end) return undefined;
-    // `misplaced`, for the tokens the scanner reads.
-    if (ev._tag === "StartElement") {
-      if (!ev.selfClosing) this.depth++;
-      this.prologEnded = true;
-      if (this.recover && !ev.selfClosing) this.opened.push(ev.name);
-    } else if (ev._tag === "EndElement") {
-      if (this.depth > 0) this.depth--;
-      if (this.recover) this.closed(ev.name);
-    }
+    this.scannedTag(ev);
     this.cursor = end;
     this.retryAt = 0;
     this.compact();
     return ev;
+  }
+
+  /** `misplaced` (and, recovering, `place`), for the tags the scanner reads. */
+  private scannedTag(ev: LexEvent): void {
+    if (ev._tag === "StartElement") {
+      if (ev.selfClosing) {
+        this.prologEnded = true;
+        return;
+      }
+      this.depth++;
+      this.prologEnded = true;
+      if (this.recover) this.opened.push(ev.name);
+    } else if (ev._tag === "EndElement") {
+      if (this.depth > 0) this.depth--;
+      if (this.recover) this.closed(ev.name);
+    }
   }
 
   /** What {@link scanXml} reads with. */

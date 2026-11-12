@@ -5,7 +5,8 @@
  * The input is a generated SpreadsheetML worksheet (the shape of a large
  * XLSX `sheet1.xml`, about 8 MB by default). effect-xml is measured as a SAX
  * stream (whole string and 64 KiB chunks), as bytes, as a DOM (strictly and
- * with `recover: true`, which reads it with the lexer, not directly), with
+ * with `recover: true`, which reads it with the lexer, not directly, unless
+ * `strict: false` lets it read strictly first), with
  * `dtd: "internal"` (as SAX and DOM, and as a DOM with a DOCTYPE that
  * declares entities the worksheet references), with
  * streaming selection of rows, and validated against a schema for the
@@ -326,6 +327,10 @@ const main = Effect.fn("bench")(function* () {
     { concurrency: 1 },
   );
   yield* time("effect-xml DOM (Xml.parse, recover)", Xml.parse(input, { recover: true }));
+  yield* time(
+    "effect-xml DOM (recover, strict: false)",
+    Xml.parse(input, { recover: true, strict: false }),
+  );
   yield* time(
     "effect-xml rows (Sax.select)",
     Stream.make(input).pipe(
