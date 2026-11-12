@@ -13,7 +13,7 @@ import * as BigDecimal from "effect/BigDecimal";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { AtomicValue, atomicString } from "../../atomic.ts";
 import { MapItem, type Item, type Sequence } from "../../item.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../../types.ts";
@@ -48,7 +48,7 @@ const roundFloating = (n: number, mode: Mode, precision: number): number => {
 /** A number rounded with a mode to a precision, keeping its primitive numeric type. */
 const roundNumber = (a: AtomicValue, mode: Mode, precision: number): AtomicValue => {
   const v = a.value;
-  if (Predicate.isBigInt(v))
+  if (P.isBigInt(v))
     return AtomicValue.integer(
       precision >= 0
         ? v
@@ -70,7 +70,7 @@ const roundNumber = (a: AtomicValue, mode: Mode, precision: number): AtomicValue
 
 const absolute = (a: AtomicValue): AtomicValue => {
   const v = a.value;
-  if (Predicate.isBigInt(v)) return AtomicValue.integer(v < 0n ? -v : v);
+  if (P.isBigInt(v)) return AtomicValue.integer(v < 0n ? -v : v);
   if (BigDecimal.isBigDecimal(v)) return AtomicValue.decimal(BigDecimal.abs(v));
   const n = Math.abs(toNumber(a));
   return a.type.primitive === "float" ? AtomicValue.float(n) : AtomicValue.double(n);
@@ -214,7 +214,7 @@ const extreme = (
         ? AtomicValue.string(atomicString(v))
         : v,
   );
-  const nan = values.find((v) => Predicate.isNumber(v.value) && Number.isNaN(v.value));
+  const nan = values.find((v) => P.isNumber(v.value) && Number.isNaN(v.value));
   if (nan !== undefined) return [nan];
   const collation = collationArg(args, 1, call);
   const best = Arr.reduce(values.slice(1), values[0] ?? first, (acc, v) =>

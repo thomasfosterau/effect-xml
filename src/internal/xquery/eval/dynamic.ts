@@ -7,7 +7,7 @@ import * as BigDecimal from "effect/BigDecimal";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as HashMap from "effect/HashMap";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import type { Item, Sequence } from "../item.ts";
 import { AtomicTypes } from "../types.ts";
 import { Resources, type Dynamic } from "./runtime.ts";
@@ -46,7 +46,7 @@ export const dynamicContext = (
       const tz = options.implicitTimezone ?? 0;
       return {
         externals: HashMap.fromIterable(
-          Record.toEntries(options.variables ?? {}).map(([k, v]): readonly [string, Sequence] => [
+          R.toEntries(options.variables ?? {}).map(([k, v]): readonly [string, Sequence] => [
             clarkKey(k),
             isSequence(v) ? v : [v],
           ]),

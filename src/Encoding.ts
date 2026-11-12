@@ -23,7 +23,7 @@ import * as Effect from "effect/Effect";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import * as Str from "effect/String";
 import {
@@ -571,7 +571,7 @@ export class ByteDecoder {
 
   private runWith(decoder: Decoder, bytes: Uint8Array, final: boolean): string | DecodeError {
     const out = decoder.decode(bytes, final);
-    return Predicate.isNumber(out)
+    return P.isNumber(out)
       ? new InvalidByteSequence({ encoding: this.encoding, offset: out + this.skipped })
       : out;
   }
@@ -579,7 +579,7 @@ export class ByteDecoder {
 
 /** A decoder's output as an effect: the text, or its failure. */
 const lift = (out: string | DecodeError | LimitExceeded) =>
-  Predicate.isString(out) ? Effect.succeed(out) : Effect.fail(out);
+  P.isString(out) ? Effect.succeed(out) : Effect.fail(out);
 
 /**
  * Decode a stream of bytes into a stream of text, detecting the encoding from
@@ -614,7 +614,7 @@ export const decodeBytes = (
   Effect.suspend(() => {
     const decoder = new ByteDecoder(options);
     const first = decoder.write(bytes);
-    if (!Predicate.isString(first)) return Effect.fail(first);
+    if (!P.isString(first)) return Effect.fail(first);
     const rest = decoder.end();
-    return Predicate.isString(rest) ? Effect.succeed(first + rest) : Effect.fail(rest);
+    return P.isString(rest) ? Effect.succeed(first + rest) : Effect.fail(rest);
   });

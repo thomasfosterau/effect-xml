@@ -3,8 +3,8 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Sax, Xml, type SaxError } from "../src/index.ts";
@@ -38,7 +38,7 @@ const outline = (nodes: ReadonlyArray<Xml.XmlNode>) =>
 
 /** An element's attributes as a local name → value record. */
 const attributesOf = (element: Xml.XmlElement) =>
-  Record.fromEntries(element.attributes.map((a) => [a.name.local, a.value] as const));
+  R.fromEntries(element.attributes.map((a) => [a.name.local, a.value] as const));
 
 /** The SAX events of `input` with `dtd: "internal"`, written one character at a time. */
 const charByChar = (input: string) =>
@@ -61,7 +61,7 @@ const laughs = (body: string) =>
   ).join("")}]><a>&l9;</a>`;
 
 /** The limit an error exceeded, or its tag if it is not a `LimitExceeded`. */
-const limit = (e: SaxError): string => (Predicate.isTagged(e, "LimitExceeded") ? e.limit : e._tag);
+const limit = (e: SaxError): string => (P.isTagged(e, "LimitExceeded") ? e.limit : e._tag);
 
 /** A DOCTYPE of `n` entities, each wrapping the next in `open` … `close`. */
 const chain = (n: number, open: string, close: string) =>

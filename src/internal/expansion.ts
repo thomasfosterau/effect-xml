@@ -15,7 +15,7 @@ import type { ExpansionFailure } from "./entities.ts";
 import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import {
   isDoctypeEvent,
   isEndElementEvent,
@@ -77,7 +77,7 @@ export class Expander {
     }
     const before = this.dtd.spent;
     const value = this.dtd.replacement(name, stack);
-    if (!Predicate.isString(value)) return this.fail(name, span, value);
+    if (!P.isString(value)) return this.fail(name, span, value);
     const lexer = new Lexer({
       mode: "xml",
       entities: this.entities,
@@ -94,7 +94,7 @@ export class Expander {
     const take = (o: LexOutput): Failure | null => {
       if (isFault(o)) {
         // Positions inside replacement text mean little; report the reference.
-        return Predicate.isTagged(o.error, "LimitExceeded")
+        return P.isTagged(o.error, "LimitExceeded")
           ? new LimitExceeded({ limit: o.error.limit, max: o.error.max, position: span.start })
           : new InvalidEntity({
               reference: `&${name};`,

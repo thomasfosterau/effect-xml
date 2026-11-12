@@ -19,8 +19,8 @@ import * as Match from "effect/Match";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import { Namespaces } from "../../Name.ts";
 import type { XmlElement } from "../../Xml/Node.ts";
@@ -60,7 +60,7 @@ export interface SchemaDocument {
   readonly chameleon?: string;
 }
 
-type R<A> = Result.Result<A, XsdSchemaError>;
+type Res<A> = Result.Result<A, XsdSchemaError>;
 
 interface DocContext {
   readonly location: string | null;
@@ -81,7 +81,7 @@ interface Node {
 const anyType = builtin("anyType");
 const anySimpleType = builtin("anySimpleType");
 
-const fail = (doc: DocContext, reason: string): R<never> =>
+const fail = (doc: DocContext, reason: string): Res<never> =>
   Result.fail(new XsdSchemaError({ reason, location: doc.location }));
 
 // -----------------------------------------------------------------------------
@@ -133,7 +133,7 @@ const derivations = (value: string): ReadonlyArray<Derivation> =>
       );
 
 /** Resolve a `QName`-valued attribute value to an expanded name. */
-const resolveQName = (node: Node, raw: string): R<string> => {
+const resolveQName = (node: Node, raw: string): Res<string> => {
   const value = raw.trim();
   const colon = value.indexOf(":");
   const prefix = colon < 0 ? "" : value.slice(0, colon);
@@ -144,13 +144,13 @@ const resolveQName = (node: Node, raw: string): R<string> => {
   return Result.succeed(clark(ns === "" && node.doc.chameleon ? node.doc.tns : ns, local));
 };
 
-const qnameAttr = (node: Node, name: string): R<Option.Option<string>> =>
+const qnameAttr = (node: Node, name: string): Res<Option.Option<string>> =>
   Option.match(attr(node, name), {
     onNone: () => Result.succeed(Option.none()),
     onSome: (raw) => Result.map(resolveQName(node, raw), Option.some),
   });
 
-const occurs = (node: Node): R<{ readonly min: number; readonly max: MaxOccurs }> => {
+const occurs = (node: Node): Res<{ readonly min: number; readonly max: MaxOccurs }> => {
   const min = Option.getOrElse(attr(node, "minOccurs"), () => "1");
   const max = Option.getOrElse(attr(node, "maxOccurs"), () => "1");
   if (!/^\d+$/.test(min) || !(/^\d+$/.test(max) || max === "unbounded"))
@@ -258,7 +258,7 @@ const combineWildcards = (
 
 /** Does a particle contain any element or wildcard? */
 const hasTerms = (p: Particle): boolean =>
-  Predicate.isTagged(p, "Element") || Predicate.isTagged(p, "Any") || p.particles.some(hasTerms);
+  P.isTagged(p, "Element") || P.isTagged(p, "Any") || p.particles.some(hasTerms);
 
 const facetNames = tagSet(
   "length",
@@ -343,7 +343,7 @@ const contextOf = (doc: SchemaDocument): DocContext => {
 };
 
 /** The built-in declarations of the `xml:` attributes, for schemas that refer to them without importing xml.xsd. */
-const xmlAttributes: Readonly<Record<string, AttributeDeclaration>> = Record.fromEntries(
+const xmlAttributes: Readonly<Record<string, AttributeDeclaration>> = R.fromEntries(
   Arr.map(
     [
       ["lang", "string"],
@@ -392,7 +392,7 @@ const contentOf = (particle: Option.Option<Particle>, mixed: boolean): Content =
   );
 
 /** The `xs:extension` or `xs:restriction` of a simple or complex content, with its base. */
-const derivationOf = (node: Node): R<readonly [Node, "extension" | "restriction", string]> =>
+const derivationOf = (node: Node): Res<readonly [Node, "extension" | "restriction", string]> =>
   Option.match(kid(node, "extension", "restriction"), {
     onNone: () => fail(node.doc, `xs:${node.el.name.local} has no extension or restriction`),
     onSome: (d) =>
@@ -412,7 +412,7 @@ const derivationOf = (node: Node): R<readonly [Node, "extension" | "restriction"
   });
 
 /** An `xs:unique`, `xs:key` or `xs:keyref`. */
-const identityConstraint = (node: Node): R<IdentityConstraint> =>
+const identityConstraint = (node: Node): Res<IdentityConstraint> =>
   Result.gen(function* () {
     const local = attr(node, "name");
     if (Option.isNone(local)) return yield* fail(node.doc, "an identity constraint has no name");
@@ -431,7 +431,7 @@ const identityConstraint = (node: Node): R<IdentityConstraint> =>
       ...maybe("refer", Option.getOrUndefined(refer)),
       selector: selector.value,
       fields,
-      namespaces: Record.filter(node.ns, (_, prefix) => prefix !== ""),
+      namespaces: R.filter(node.ns, (_, prefix) => prefix !== ""),
     };
     if (tag === "KeyRef" && Option.isNone(refer))
       return yield* fail(node.doc, `the keyref ${local.value} has no refer`);
@@ -445,7 +445,7 @@ const extendContent = (
   mixed: boolean,
 ): Content => {
   const own = Option.filter(particle, hasTerms);
-  if (!Predicate.isTagged(base, "Elements")) return contentOf(own, mixed);
+  if (!P.isTagged(base, "Elements")) return contentOf(own, mixed);
   return Option.match(own, {
     onNone: () => base,
     onSome: (p) => ({
@@ -456,7 +456,7 @@ const extendContent = (
 };
 
 /** The identity constraints an element declaration defines. */
-const constraintsOf = (node: Node): R<ReadonlyArray<IdentityConstraint>> =>
+const constraintsOf = (node: Node): Res<ReadonlyArray<IdentityConstraint>> =>
   Result.all(
     Arr.map(
       Arr.filter(kids(node), (k) => isXs(k, "unique", "key", "keyref")),
@@ -471,7 +471,7 @@ const rawAttr = (n: Node, name: string) => n.el.attributeNS(null, name);
  * Compile a set of schema documents (the entry and everything it includes and
  * imports, in any order) into a model.
  */
-export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
+export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
   const index: Index = {
     elements: MutableHashMap.empty(),
     types: MutableHashMap.empty(),
@@ -493,14 +493,14 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   // Indexing
   // ---------------------------------------------------------------------------
 
-  const indexDocument = (doc: SchemaDocument): R<void> => {
+  const indexDocument = (doc: SchemaDocument): Res<void> => {
     const context = contextOf(doc);
     const root: Node = { el: doc.root, ns: scopeOf(doc.root, {}), doc: context };
     if (root.el.name.namespace !== XS || root.el.name.local !== "schema")
       return fail(context, `the document element is <${root.el.name.qualified}>, not xs:schema`);
     return Result.gen(function* () {
       yield* Result.all(
-        Arr.map(kids(root), (node): R<void> => {
+        Arr.map(kids(root), (node): Res<void> => {
           if (isIn(unsupported, node.el.name.local))
             return fail(context, `xs:${node.el.name.local} is not supported`);
           const kind = kindOf(node);
@@ -524,7 +524,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     });
   };
 
-  const lookup = (kind: keyof Index, node: Node, name: string): R<Node> =>
+  const lookup = (kind: keyof Index, node: Node, name: string): Res<Node> =>
     Option.match(MutableHashMap.get(index[kind], name), {
       onNone: () => fail(node.doc, `no ${kind.replace(/s$/, "")} named ${name} is defined`),
       onSome: Result.succeed,
@@ -535,10 +535,10 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   // ---------------------------------------------------------------------------
 
   /** The variety of a simple type, compiling it if needed. */
-  const variety = (node: Node, key: string): R<SimpleType["variety"]> => {
+  const variety = (node: Node, key: string): Res<SimpleType["variety"]> => {
     if (isBuiltinSimple(key)) return Result.succeed(isListBuiltin(key) ? "list" : "atomic");
     return Result.flatMap(typeDefinition(node, key), (def) =>
-      Predicate.isTagged(def, "SimpleType")
+      P.isTagged(def, "SimpleType")
         ? Result.succeed(def.variety)
         : fail(node.doc, `${key} is a complex type where a simple type is required`),
     );
@@ -550,7 +550,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     const next = isBuiltinSimple(key)
       ? builtinBase(key)
       : Option.flatMap(MutableHashMap.get(types, key), (def) =>
-          Predicate.isTagged(def, "SimpleType") && def.variety === "atomic"
+          P.isTagged(def, "SimpleType") && def.variety === "atomic"
             ? Option.some(def.base)
             : Option.none(),
         );
@@ -560,7 +560,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     });
   };
 
-  const facetsOf = (node: Node, base: string): R<Facets> => {
+  const facetsOf = (node: Node, base: string): Res<Facets> => {
     const children = kids(node);
     const values = (name: string) =>
       Arr.filterMap(children, (k) =>
@@ -595,7 +595,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       if (Option.isSome(unknown))
         return yield* fail(node.doc, `xs:${unknown.value.el.name.local} is not a facet`);
       const enumerated = yield* enumeration;
-      const numeric = Record.fromEntries(
+      const numeric = R.fromEntries(
         Arr.filterMap(numericFacets, (f) =>
           Result.fromOption(
             Option.map(Arr.head(values(f)), (v) => [f, Number(v)] as const),
@@ -603,7 +603,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
           ),
         ),
       );
-      const ranges = Record.fromEntries(
+      const ranges = R.fromEntries(
         Arr.filterMap(boundFacets, (f) =>
           Result.fromOption(
             Option.map(Arr.head(values(f)), (v) => [f, v] as const),
@@ -637,7 +637,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   };
 
   /** A simple type given inline or by name in `attribute`, or the default. */
-  const simpleTypeRef = (node: Node, attribute: string, fallback: string): R<string> =>
+  const simpleTypeRef = (node: Node, attribute: string, fallback: string): Res<string> =>
     Option.match(kid(node, "simpleType"), {
       onSome: (inline) => anonymousType(inline),
       onNone: () =>
@@ -650,12 +650,12 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     });
 
   /** A type reference, checked to name a type that exists. */
-  const knownType = (node: Node, key: string): R<string> =>
+  const knownType = (node: Node, key: string): Res<string> =>
     key === anyType || isBuiltinSimple(key) || MutableHashMap.has(index.types, key)
       ? Result.succeed(key)
       : fail(node.doc, `no type named ${key} is defined`);
 
-  const readSimpleType = (node: Node, key: string): R<SimpleType> =>
+  const readSimpleType = (node: Node, key: string): Res<SimpleType> =>
     Result.gen(function* () {
       const restriction = kid(node, "restriction");
       if (Option.isSome(restriction)) {
@@ -717,9 +717,9 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   // ---------------------------------------------------------------------------
 
   /** Compile an anonymous type and return its key. */
-  const anonymousType = (node: Node): R<string> => {
+  const anonymousType = (node: Node): Res<string> => {
     const key = fresh("t");
-    const def: R<TypeDefinition> = isXs(node, "simpleType")
+    const def: Res<TypeDefinition> = isXs(node, "simpleType")
       ? readSimpleType(node, key)
       : readComplexType(node, key);
     return Result.map(def, (d) => {
@@ -729,14 +729,14 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   };
 
   /** The definition of a named type, compiling it on first use. */
-  const typeDefinition = (from: Node, key: string): R<TypeDefinition> => {
+  const typeDefinition = (from: Node, key: string): Res<TypeDefinition> => {
     const done = MutableHashMap.get(types, key);
     if (Option.isSome(done)) return Result.succeed(done.value);
     if (MutableHashSet.has(compiling, key))
       return fail(from.doc, `the type ${key} is derived from itself`);
     return Result.flatMap(lookup("types", from, key), (node) => {
       MutableHashSet.add(compiling, key);
-      const def: R<TypeDefinition> = isXs(node, "simpleType")
+      const def: Res<TypeDefinition> = isXs(node, "simpleType")
         ? readSimpleType(node, key)
         : readComplexType(node, key);
       MutableHashSet.remove(compiling, key);
@@ -748,11 +748,11 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   };
 
   /** A base type, as a complex type (a simple type is the content of an attribute-less one). */
-  const complexBase = (node: Node, key: string): R<ComplexType> => {
+  const complexBase = (node: Node, key: string): Res<ComplexType> => {
     if (key === anyType) return Result.succeed(anyTypeDefinition);
     if (isBuiltinSimple(key)) return Result.succeed(simpleContentType(key));
     return Result.map(typeDefinition(node, key), (def) =>
-      Predicate.isTagged(def, "ComplexType") ? def : simpleContentType(key),
+      P.isTagged(def, "ComplexType") ? def : simpleContentType(key),
     );
   };
 
@@ -762,7 +762,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     readonly wildcard: Wildcard | undefined;
   }
 
-  const readAttributeUse = (node: Node): R<Option.Option<AttributeUse>> =>
+  const readAttributeUse = (node: Node): Res<Option.Option<AttributeUse>> =>
     Result.gen(function* () {
       const ref = yield* qnameAttr(node, "ref");
       const use = Option.getOrElse(attr(node, "use"), () => "optional");
@@ -788,7 +788,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       return Option.some(out);
     });
 
-  const prohibitedName = (node: Node): R<Option.Option<string>> =>
+  const prohibitedName = (node: Node): Res<Option.Option<string>> =>
     Option.contains(attr(node, "use"), "prohibited")
       ? Result.flatMap(qnameAttr(node, "ref"), (ref) =>
           Option.match(ref, {
@@ -798,7 +798,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
         )
       : Result.succeed(Option.none());
 
-  const localAttribute = (node: Node): R<AttributeDeclaration> =>
+  const localAttribute = (node: Node): Res<AttributeDeclaration> =>
     Option.match(attr(node, "name"), {
       onNone: () => fail(node.doc, "a local xs:attribute has neither a name nor a ref"),
       onSome: (local) => {
@@ -813,7 +813,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       },
     });
 
-  const globalAttribute = (from: Node, name: string): R<AttributeDeclaration> => {
+  const globalAttribute = (from: Node, name: string): Res<AttributeDeclaration> => {
     const done = MutableHashMap.get(attributes, name);
     if (Option.isSome(done)) return Result.succeed(done.value);
     const builtinXml = xmlAttributes[name];
@@ -829,18 +829,18 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   };
 
   /** The attribute uses, prohibitions and wildcard of a type or attribute group's children. */
-  const readAttributes = (node: Node): R<Attributes> =>
+  const readAttributes = (node: Node): Res<Attributes> =>
     Arr.reduce(kids(node), noAttributes, (acc, k) =>
       Result.flatMap(acc, (so) => addAttributes(so, k)),
     );
 
-  const noAttributes: R<Attributes> = Result.succeed({
+  const noAttributes: Res<Attributes> = Result.succeed({
     uses: [],
     prohibited: [],
     wildcard: undefined,
   });
 
-  const addAttributes = (so: Attributes, k: Node): R<Attributes> => {
+  const addAttributes = (so: Attributes, k: Node): Res<Attributes> => {
     if (isXs(k, "attribute"))
       return Result.flatMap(readAttributeUse(k), (use) =>
         Result.map(prohibitedName(k), (prohibited) => ({
@@ -865,7 +865,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     wildcard: combineWildcards(a.wildcard, b.wildcard, intersect),
   });
 
-  const attributeGroup = (ref: Node): R<Attributes> =>
+  const attributeGroup = (ref: Node): Res<Attributes> =>
     Result.gen(function* () {
       const name = yield* qnameAttr(ref, "ref");
       if (Option.isNone(name)) return yield* fail(ref.doc, "a local xs:attributeGroup has no ref");
@@ -892,13 +892,13 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   // ---------------------------------------------------------------------------
 
   /** The content particle among a type's (or derivation's) children, if any. */
-  const ownParticle = (node: Node): R<Option.Option<Particle>> =>
+  const ownParticle = (node: Node): Res<Option.Option<Particle>> =>
     Option.match(kid(node, "sequence", "choice", "all", "group"), {
       onNone: () => Result.succeed(Option.none()),
       onSome: (k) => Result.map(particle(k), Option.some),
     });
 
-  const readComplexType = (node: Node, key: string): R<ComplexType> =>
+  const readComplexType = (node: Node, key: string): Res<ComplexType> =>
     Result.gen(function* () {
       const header = {
         _tag: "ComplexType" as const,
@@ -928,11 +928,11 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
 
   type Header = Pick<ComplexType, "_tag" | "name" | "abstract" | "block">;
 
-  const simpleContent = (node: Node, header: Header): R<ComplexType> =>
+  const simpleContent = (node: Node, header: Header): Res<ComplexType> =>
     Result.gen(function* () {
       const [derivation, how, baseKey] = yield* derivationOf(node);
       const base = yield* complexBase(derivation, baseKey);
-      if (!Predicate.isTagged(base.content, "Simple"))
+      if (!P.isTagged(base.content, "Simple"))
         return yield* fail(
           node.doc,
           `the base ${baseKey} of a simple content type has no simple content`,
@@ -970,7 +970,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   });
 
   /** The content type of a simple content restriction: the base's, restricted by the facets given. */
-  const restrictedContent = (derivation: Node, baseType: string): R<string> =>
+  const restrictedContent = (derivation: Node, baseType: string): Res<string> =>
     Result.gen(function* () {
       const inline = kid(derivation, "simpleType");
       const base = Option.isSome(inline) ? yield* anonymousType(inline.value) : baseType;
@@ -988,7 +988,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       return key;
     });
 
-  const complexContent = (node: Node, header: Header, typeMixed: boolean): R<ComplexType> =>
+  const complexContent = (node: Node, header: Header, typeMixed: boolean): Res<ComplexType> =>
     Result.gen(function* () {
       const [derivation, how, baseKey] = yield* derivationOf(node);
       const base = yield* complexBase(derivation, baseKey);
@@ -1002,7 +1002,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
         how === "restriction"
           ? contentOf(particle, mixed)
           : extendContent(base.content, particle, mixed);
-      if (how === "extension" && Predicate.isTagged(base.content, "Simple"))
+      if (how === "extension" && P.isTagged(base.content, "Simple"))
         return yield* fail(
           node.doc,
           `${header.name} extends the simple content of ${baseKey} with complex content`,
@@ -1020,8 +1020,8 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   // Particles and element declarations
   // ---------------------------------------------------------------------------
 
-  const particle = (node: Node): R<Particle> =>
-    Result.flatMap(occurs(node), (b): R<Particle> => {
+  const particle = (node: Node): Res<Particle> =>
+    Result.flatMap(occurs(node), (b): Res<Particle> => {
       if (isXs(node, "element")) return elementParticle(node, b);
       if (isXs(node, "any"))
         return Result.succeed({ _tag: "Any", wildcard: wildcardOf(node), ...bounds(b) });
@@ -1033,7 +1033,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   const modelGroup = (
     node: Node,
     b: { readonly min: number; readonly max: MaxOccurs },
-  ): R<Particle> =>
+  ): Res<Particle> =>
     Result.map(
       Result.all(
         Arr.map(
@@ -1058,7 +1058,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
   const groupParticle = (
     ref: Node,
     b: { readonly min: number; readonly max: MaxOccurs },
-  ): R<Particle> =>
+  ): Res<Particle> =>
     Result.gen(function* () {
       const name = yield* qnameAttr(ref, "ref");
       if (Option.isNone(name)) return yield* fail(ref.doc, "a local xs:group has no ref");
@@ -1075,15 +1075,13 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       const inner = modelGroup(body.value, { min: 1, max: 1 });
       MutableHashSet.remove(inlining, name.value);
       const p = yield* inner;
-      return Predicate.isTagged(p, "Element") || Predicate.isTagged(p, "Any")
-        ? p
-        : { ...p, ...bounds(b) };
+      return P.isTagged(p, "Element") || P.isTagged(p, "Any") ? p : { ...p, ...bounds(b) };
     });
 
   const elementParticle = (
     node: Node,
     b: { readonly min: number; readonly max: MaxOccurs },
-  ): R<Particle> =>
+  ): Res<Particle> =>
     Result.gen(function* () {
       const ref = yield* qnameAttr(node, "ref");
       if (Option.isSome(ref)) {
@@ -1104,7 +1102,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     });
 
   /** The type of a declaration: given by name or inline, the substitution group head's, or `anyType`. */
-  const declaredType = (node: Node, head: Option.Option<string>): R<string> =>
+  const declaredType = (node: Node, head: Option.Option<string>): Res<string> =>
     Result.gen(function* () {
       const inline = kid(node, "complexType", "simpleType");
       if (Option.isSome(inline)) return yield* anonymousType(inline.value);
@@ -1117,7 +1115,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
       return anyType;
     });
 
-  const declaration = (node: Node, name: string): R<ElementDeclaration> =>
+  const declaration = (node: Node, name: string): Res<ElementDeclaration> =>
     Result.gen(function* () {
       const head = yield* qnameAttr(node, "substitutionGroup");
       const type = yield* declaredType(node, head);
@@ -1139,7 +1137,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     });
 
   /** A global element declaration, compiled on first use. */
-  const globalElement = (from: Node, name: string): R<ElementDeclaration> => {
+  const globalElement = (from: Node, name: string): Res<ElementDeclaration> => {
     const done = MutableHashMap.get(elements, name);
     if (Option.isSome(done)) return Result.succeed(done.value);
     if (MutableHashSet.has(compiling, name))
@@ -1161,8 +1159,8 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
 
   const compileAll = <A>(
     table: MutableHashMap.MutableHashMap<string, Node>,
-    compile: (node: Node, name: string) => R<A>,
-  ): R<void> =>
+    compile: (node: Node, name: string) => Res<A>,
+  ): Res<void> =>
     Result.map(
       Result.all(Arr.map(Arr.fromIterable(table), ([name, node]) => compile(node, name))),
       () => undefined,
@@ -1174,9 +1172,9 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): R<Model> => {
     yield* compileAll(index.elements, globalElement);
     yield* compileAll(index.attributes, globalAttribute);
     const model: Model = {
-      elements: Record.fromEntries(Arr.fromIterable(elements)),
-      types: Record.fromEntries(Arr.fromIterable(types)),
-      attributes: Record.fromEntries(Arr.fromIterable(attributes)),
+      elements: R.fromEntries(Arr.fromIterable(elements)),
+      types: R.fromEntries(Arr.fromIterable(types)),
+      attributes: R.fromEntries(Arr.fromIterable(attributes)),
     };
     return model;
   });

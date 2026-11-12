@@ -3,8 +3,8 @@ import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Sax, Xml, Xsd } from "../src/index.ts";
@@ -43,7 +43,7 @@ const validation = (e: Xsd.XsdError): Xsd.XsdValidationError => {
 const rule = (model: Xsd.Model, doc: string) => validation(invalid(model, doc)).rule;
 
 const isRecord = (v: Xsd.XsdValue): v is Xsd.XsdRecord =>
-  Predicate.isObject(v) &&
+  P.isObject(v) &&
   !Arr.isArray(v) &&
   !(v instanceof Xml.XmlElement) &&
   !(v instanceof Uint8Array) &&
@@ -106,7 +106,7 @@ describe("Xsd.compile", () => {
         `targetNamespace="urn:t" xmlns:t="urn:t"`,
       ),
     );
-    expect(Record.keys(model.elements)).toEqual(["{urn:t}a"]);
+    expect(R.keys(model.elements)).toEqual(["{urn:t}a"]);
     expect(model.elements["{urn:t}a"]?.type).toBe("{urn:t}T");
     expect(model.types["{urn:t}T"]?._tag).toBe("ComplexType");
   });
@@ -152,7 +152,7 @@ describe("Xsd.compile", () => {
         },
       },
     );
-    expect(Arr.sort(Record.keys(model.types), Order.String)).toEqual(["{urn:t}C", "{urn:t}X"]);
+    expect(Arr.sort(R.keys(model.types), Order.String)).toEqual(["{urn:t}C", "{urn:t}X"]);
     expect(value(model, `<t:a xmlns:t="urn:t"><x>1</x></t:a>`)).toEqual({ x: 1 });
   });
 
@@ -170,7 +170,7 @@ describe("Xsd.compile", () => {
       },
     );
     expect(fetched).toEqual(["http://example.com/s/b.xsd"]);
-    expect(Record.keys(model.elements)).toEqual(["b"]);
+    expect(R.keys(model.elements)).toEqual(["b"]);
   });
 
   test.each([

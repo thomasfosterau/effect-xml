@@ -32,8 +32,8 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import { memoize } from "effect/Function";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as SchemaAST from "effect/SchemaAST";
@@ -120,7 +120,7 @@ export interface ElementOptions extends NameOptions {
 }
 
 const toOptions = (nameOrOptions: string | ElementOptions | undefined): ElementOptions =>
-  Predicate.isString(nameOrOptions) ? { name: nameOrOptions } : (nameOrOptions ?? {});
+  P.isString(nameOrOptions) ? { name: nameOrOptions } : (nameOrOptions ?? {});
 
 const fieldBinding = (node: FieldBinding["node"], options: ElementOptions): FieldBinding => ({
   node,
@@ -440,7 +440,7 @@ const tagLiteral = (ast: SchemaAST.Objects): string | undefined =>
     Arr.findFirst(ast.propertySignatures, (ps) => {
       if (ps.name !== "_tag") return Option.none();
       const resolved = resolve(ps.type).ast;
-      return SchemaAST.isLiteral(resolved) && Predicate.isString(resolved.literal)
+      return SchemaAST.isLiteral(resolved) && P.isString(resolved.literal)
         ? Option.some(resolved.literal)
         : Option.none();
     }),
@@ -452,9 +452,7 @@ const compile = memoize((ast: SchemaAST.AST): Result.Result<Compiled, XmlBindErr
   const done = (plan: Plan) => Result.succeed({ plan, field: r.field });
   if (SchemaAST.isUnion(node)) return compileUnion(node, r);
   if (SchemaAST.isLiteral(node))
-    return done(
-      Plan.Leaf({ literal: Predicate.isString(node.literal) ? node.literal : undefined }),
-    );
+    return done(Plan.Leaf({ literal: P.isString(node.literal) ? node.literal : undefined }));
   if (
     SchemaAST.isString(node) ||
     SchemaAST.isTemplateLiteral(node) ||
@@ -545,7 +543,7 @@ const splitName = (
 
 const compileField = (ps: SchemaAST.PropertySignature): Result.Result<FieldPlan, XmlBindError> => {
   const key = ps.name;
-  if (!Predicate.isString(key)) return failAt([], "symbol keys have no XML mapping");
+  if (!P.isString(key)) return failAt([], "symbol keys have no XML mapping");
   return Result.gen(function* () {
     const c = yield* compile(ps.type);
     const binding = c.field;
@@ -622,7 +620,7 @@ const readStruct = (struct: StructPlan, el: XmlElement, path: Path): Read =>
   Result.gen(function* () {
     const fields = yield* struct.fields().pipe(Result.mapError(under(path)));
     const entries = yield* Result.all(Arr.map(fields, (f) => readField(f, el, [...path, f.key])));
-    return Record.fromEntries(Arr.getSomes(entries));
+    return R.fromEntries(Arr.getSomes(entries));
   });
 
 /** Does `child` belong to a field of this plan? A choice's elements are named by its members. */
@@ -690,7 +688,7 @@ interface Content {
 }
 
 const asString = (value: Tree, path: Path): Result.Result<string, XmlBindError> =>
-  Predicate.isString(value) ? Result.succeed(value) : failAt(path, "expected a string leaf");
+  P.isString(value) ? Result.succeed(value) : failAt(path, "expected a string leaf");
 
 const isList = (value: Tree): value is ReadonlyArray<Tree> => Arr.isArray(value);
 
@@ -700,10 +698,10 @@ const asList = (value: Tree, path: Path): Result.Result<ReadonlyArray<Tree>, Xml
 const asRecord = (
   value: Tree,
   path: Path,
-): Result.Result<Record.ReadonlyRecord<string, Tree>, XmlBindError> =>
-  Predicate.isObject(value) && !isList(value)
+): Result.Result<R.ReadonlyRecord<string, Tree>, XmlBindError> =>
+  P.isObject(value) && !isList(value)
     ? // SAFETY: a non-array object in a string tree is a record of string trees.
-      Result.succeed(value as Record.ReadonlyRecord<string, Tree>)
+      Result.succeed(value as R.ReadonlyRecord<string, Tree>)
     : failAt(path, "expected an object");
 
 const elementName = (struct: StructPlan, inherited: string | null, path: Path) =>

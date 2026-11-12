@@ -6,7 +6,7 @@
  *
  * @internal
  */
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 
 /**
  * The object `{ [key]: value }`, or `{}` when `value` is `undefined`.
@@ -16,4 +16,4 @@ import * as Record from "effect/Record";
 export const maybe = <const K extends string, V>(
   key: K,
   value: V | undefined,
-): { readonly [P in K]?: V } => (value === undefined ? {} : Record.singleton(key, value));
+): { readonly [P in K]?: V } => (value === undefined ? {} : R.singleton(key, value));

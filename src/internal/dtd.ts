@@ -24,7 +24,7 @@ import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { resolveLimits, type Limits } from "../Limits.ts";
 import { isXmlChar, type EntityResolver, type ExpansionFailure } from "./entities.ts";
@@ -309,7 +309,7 @@ export const declaredNames = (subset: string): ReadonlyArray<string> =>
   Result.match(Parser.parse(internalSubset, subset), {
     onFailure: () => [],
     onSuccess: Arr.filterMap((decl) =>
-      Predicate.isTagged(decl, "Entity") || Predicate.isTagged(decl, "Notation")
+      P.isTagged(decl, "Entity") || P.isTagged(decl, "Notation")
         ? Result.succeed(decl.name)
         : Result.failVoid,
     ),
@@ -359,15 +359,15 @@ export class Dtd implements EntityResolver {
   }
 
   private declareOne(decl: Decl): DeclarationError | null {
-    if (Predicate.isTagged(decl, "Entity")) return this.declareEntity(decl);
-    if (Predicate.isTagged(decl, "Attlist")) return this.declareAttlist(decl);
+    if (P.isTagged(decl, "Entity")) return this.declareEntity(decl);
+    if (P.isTagged(decl, "Attlist")) return this.declareAttlist(decl);
     return null;
   }
 
   private declareEntity(decl: Extract<Decl, { _tag: "Entity" }>): DeclarationError | null {
     // Every entity value must be well-formed, whether or not it is ever used.
     const value = decl.value === null ? null : this.literal(decl.value);
-    if (value !== null && !Predicate.isString(value))
+    if (value !== null && !P.isString(value))
       return {
         offset: 0,
         expected: `a valid value for entity "${decl.name}" (${value.reason})`,
@@ -403,7 +403,7 @@ export class Dtd implements EntityResolver {
           return Option.none();
         }
         const expanded = this.expand(a.value, true, []);
-        if (!Predicate.isString(expanded))
+        if (!P.isString(expanded))
           return Option.some({
             offset: 0,
             expected: `a valid default for attribute "${a.name}" (${expanded.reason})`,
@@ -518,7 +518,7 @@ export class Dtd implements EntityResolver {
     // reach its depth limit rather than overflow the stack.)
     return Array.from(raw.matchAll(/&[^;]*;|&|[^&]+/g)).reduce<string | ExpansionFailure>(
       (out, [segment]) =>
-        Predicate.isString(out) ? this.expandSegment(out, segment, inAttribute, stack) : out,
+        P.isString(out) ? this.expandSegment(out, segment, inAttribute, stack) : out,
       "",
     );
   }
@@ -547,9 +547,9 @@ export class Dtd implements EntityResolver {
     const predefined = PREDEFINED[body];
     if (predefined !== undefined) return out + predefined;
     const value = this.replacement(body, stack);
-    if (!Predicate.isString(value)) return value;
+    if (!P.isString(value)) return value;
     const inner = this.expand(value, inAttribute, [...stack, body]);
-    return Predicate.isString(inner) ? out + inner : inner;
+    return P.isString(inner) ? out + inner : inner;
   }
 
   /** The attributes declared for an element. */

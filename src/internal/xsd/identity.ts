@@ -15,7 +15,7 @@ import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { XmlAttribute, XmlElement } from "../../Xml/Node.ts";
 import { compile, select, type Path, type XPathNode } from "../../Xml/XPath.ts";
@@ -80,7 +80,7 @@ const valueOf = (node: XPathNode): string =>
     ? node.value
     : node instanceof XmlElement
       ? node.textContent
-      : Predicate.hasProperty(node, "data") && Predicate.isString(node.data)
+      : P.hasProperty(node, "data") && P.isString(node.data)
         ? node.data
         : "";
 
@@ -164,7 +164,7 @@ const table = (
     scope,
     typeOf,
     () =>
-      Predicate.isTagged(c.constraint, "Key")
+      P.isTagged(c.constraint, "Key")
         ? Result.fail(`a field of the key ${c.constraint.name} is missing`)
         : ok,
     (values) => {
@@ -214,8 +214,8 @@ export const evaluateConstraints = (
   typeOf: TypeOf,
 ): Result.Result<void, string> =>
   Result.flatMap(Result.all(Arr.map(constraints, compiled)), (all) => {
-    const refs = Arr.filter(all, (c) => Predicate.isTagged(c.constraint, "KeyRef"));
-    const keys = Arr.filter(all, (c) => !Predicate.isTagged(c.constraint, "KeyRef"));
+    const refs = Arr.filter(all, (c) => P.isTagged(c.constraint, "KeyRef"));
+    const keys = Arr.filter(all, (c) => !P.isTagged(c.constraint, "KeyRef"));
     return Result.flatMap(
       Arr.reduce(keys, ok, (acc, c) =>
         Result.flatMap(acc, () =>

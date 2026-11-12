@@ -28,8 +28,8 @@ import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { Encoding, Namespaces, Xml, XQuery } from "../../src/index.ts";
@@ -288,7 +288,7 @@ const readDecimalFormat = (element: Xml.XmlElement): DecimalFormat => ({
       ? { namespace: null, local: raw }
       : { namespace: declared(element, raw.slice(0, colon)), local: raw.slice(colon + 1) };
   }),
-  properties: Record.fromEntries(
+  properties: R.fromEntries(
     element.attributes
       .filter((a) => a.name.prefix === null && a.name.local !== "name" && a.name.local !== "xmlns")
       .map((a) => [a.name.local, a.value]),
@@ -527,7 +527,7 @@ const readTestCase = Effect.fnUntraced(function* (
   const testCase: TestCase = {
     set,
     name,
-    base: Predicate.isTagged(query, "File") ? query.file : base,
+    base: P.isTagged(query, "File") ? query.file : base,
     environment,
     modules: children(element, "module").map((m) => ({
       uri: required(m, "uri"),
@@ -825,12 +825,12 @@ const compileCached = (spec: Spec, query: string, options: XQuery.CompileOptions
   const key = [
     spec,
     query,
-    Record.toEntries(options.namespaces ?? {}).join(" "),
+    R.toEntries(options.namespaces ?? {}).join(" "),
     (options.variables ?? []).join(" "),
     options.baseUri ?? "",
     String(options.xpath1Compatibility ?? false),
-    Record.toEntries(options.decimalFormats ?? {})
-      .map(([name, properties]) => `${name}=${Record.toEntries(properties).join(",")}`)
+    R.toEntries(options.decimalFormats ?? {})
+      .map(([name, properties]) => `${name}=${R.toEntries(properties).join(",")}`)
       .join(" "),
   ].join("\u0000");
   return Option.getOrElse(HashMap.get(compiledQueries, key), () => {
@@ -845,11 +845,11 @@ const compileCached = (spec: Spec, query: string, options: XQuery.CompileOptions
 export const xqueryEngine: Engine = {
   evaluate: (request) => {
     const options: XQuery.CompileOptions = {
-      namespaces: Record.fromEntries(request.namespaces.map((b) => [b.prefix, b.uri] as const)),
+      namespaces: R.fromEntries(request.namespaces.map((b) => [b.prefix, b.uri] as const)),
       variables: request.variables.map((v) => clarkOf(request, v.name)),
       ...maybe("baseUri", Option.getOrUndefined(request.baseUri)),
       xpath1Compatibility: request.xpath1Compatibility,
-      decimalFormats: Record.fromEntries(
+      decimalFormats: R.fromEntries(
         request.decimalFormats.map((f) => [
           Option.match(f.name, {
             onNone: () => "",
@@ -869,7 +869,7 @@ export const xqueryEngine: Engine = {
       Effect.flatMap((query) =>
         XQuery.evaluate(query, {
           ...maybe("context", Option.getOrUndefined(request.contextItem)),
-          variables: Record.fromEntries(
+          variables: R.fromEntries(
             request.variables.map((v) => [clarkOf(request, v.name), v.value] as const),
           ),
         }),
@@ -1269,7 +1269,7 @@ const normalizeSpace = (s: string): string => s.replace(/[ \t\r\n]+/g, " ").trim
 
 /** A canonical rendering of DOM nodes: names by namespace URI, attributes sorted, adjacent text merged. */
 const isTextLike = (node: Xml.XmlNode): node is Xml.XmlText | Xml.XmlCData =>
-  Predicate.isTagged(node, "XmlText") || Predicate.isTagged(node, "XmlCData");
+  P.isTagged(node, "XmlText") || P.isTagged(node, "XmlCData");
 
 /** Adjacent text and CDATA as one text node. */
 const mergeText = (nodes: ReadonlyArray<Xml.XmlNode>): ReadonlyArray<Xml.XmlNode> =>

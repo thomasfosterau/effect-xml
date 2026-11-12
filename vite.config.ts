@@ -100,10 +100,6 @@ export default defineConfig({
       // fires on every `as`, including the branded-name casts the parser's
       // hot path makes after validating once. Stays visible as a warning.
       "effect/casting-awareness": "warn",
-      // Hard-codes abbreviations (`Arr`, `P`, `R`, …) with no options, so it is
-      // unsatisfiable under the full-name convention (`import { Option } from
-      // "effect"`) this family shares with its consumers.
-      "effect/prefer-namespace-imports": "off",
 
       // ---- Effect preset: rules this library's public surface cuts across --
       // `prefer-option-over-null` fires on the `string | null` members of the

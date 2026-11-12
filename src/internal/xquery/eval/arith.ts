@@ -9,7 +9,7 @@
  */
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { AtomicValue } from "../atomic.ts";
 import { atomize, type Sequence } from "../item.ts";
 import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../types.ts";
@@ -141,7 +141,7 @@ const numericArith = (
   offset?: number,
 ): AtomicValue => {
   const kind = promoted(a.type, b.type);
-  if (kind === "integer" && Predicate.isBigInt(a.value) && Predicate.isBigInt(b.value))
+  if (kind === "integer" && P.isBigInt(a.value) && P.isBigInt(b.value))
     return integerArith(op, a.value, b.value, offset);
   if (kind === "integer" || kind === "decimal") return decimalArith(op, a, b, offset);
   return floatingArith(op, kind, a, b, offset);
@@ -330,7 +330,7 @@ export const unary = (op: "+" | "-", operandValue: Sequence, offset?: number): S
     return raise("XPTY0004", `unary ${op} needs a number, not xs:${a.type.name}`, offset);
   if (op === "+") return [a];
   const v = a.value;
-  if (Predicate.isBigInt(v)) return [AtomicValue.integer(-v)];
+  if (P.isBigInt(v)) return [AtomicValue.integer(-v)];
   if (BigDecimal.isBigDecimal(v)) return [AtomicValue.decimal(BigDecimal.negate(v))];
   return [
     a.type.primitive === "float"

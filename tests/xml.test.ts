@@ -1,6 +1,6 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
+import * as Eq from "effect/Equal";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -253,7 +253,7 @@ describe("Xml — Schema integration", () => {
     expect(decoded).toBeInstanceOf(Xml.XmlElement);
     expect(decoded.elements[0]).toBeInstanceOf(Xml.XmlElement);
     expect(Xml.serialize(decoded)).toBe(Xml.serialize(doc.root));
-    expect(Equal.equals(decoded.name, doc.root.name)).toBe(true);
+    expect(Eq.equals(decoded.name, doc.root.name)).toBe(true);
   });
 
   test("attribute values are normalized: literal whitespace becomes spaces, references stay", async () => {

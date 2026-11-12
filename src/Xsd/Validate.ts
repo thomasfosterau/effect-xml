@@ -5,7 +5,7 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
@@ -410,7 +410,7 @@ export const parser = <A = XsdValue, S = Record<string, never>>(
       );
   // SAFETY: one entry per key of `streams`, which the signature ties to the
   // keys of `S`; each streams the child its type `S[K]` describes.
-  const named = Record.map(streams ?? {}, (child: string) => {
+  const named = R.map(streams ?? {}, (child: string) => {
     const [path, namespaces] = childPath(element, child);
     return stream(path, { namespaces });
   }) as Streams<S>;

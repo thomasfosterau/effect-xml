@@ -13,7 +13,7 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import type {
   Annotation,
@@ -363,7 +363,7 @@ const decimalFormatDecl = (
   const key = `decimal-format:${name}`;
   const declared = withContext(fold, (c) => ({
     ...c,
-    decimalFormats: HashMap.set(c.decimalFormats, name, Record.fromEntries(d.properties)),
+    decimalFormats: HashMap.set(c.decimalFormats, name, R.fromEntries(d.properties)),
   }));
   return once(
     withErrors(declared, [

@@ -11,7 +11,7 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { isNode, type Sequence } from "../../item.ts";
@@ -48,8 +48,7 @@ const order =
 // Sequences
 // -----------------------------------------------------------------------------
 
-const isNaNValue = (a: AtomicValue): boolean =>
-  Predicate.isNumber(a.value) && Number.isNaN(a.value);
+const isNaNValue = (a: AtomicValue): boolean => P.isNumber(a.value) && Number.isNaN(a.value);
 
 /** Whether two values are equal as `index-of` takes it: `eq`, with incomparable values unequal. */
 const equalForIndex = (a: AtomicValue, b: AtomicValue, tz: number, c: Collation): boolean =>

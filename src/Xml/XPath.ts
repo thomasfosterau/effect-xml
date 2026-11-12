@@ -63,8 +63,8 @@ import * as Clock from "effect/Clock";
 import * as HashMap from "effect/HashMap";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { document as makeDocument } from "../internal/nodes.ts";
@@ -390,7 +390,10 @@ const anyNode: Step = { axis: "descendant-or-self", test: { _tag: "Node" }, pred
 /** What a predicate outside the view's subset shows as. */
 const outside: Expr = { _tag: "Call", fn: "position", args: [] };
 
-const viewFunctions: Readonly<Record<string, readonly [number, number]>> = {
+/** The arity range of each function the view supports, by name. */
+interface ViewFunctions extends R.ReadonlyRecord<string, readonly [min: number, max: number]> {}
+
+const viewFunctions: ViewFunctions = {
   not: [1, 1],
   position: [0, 0],
   last: [0, 0],
@@ -402,9 +405,13 @@ const viewFunctions: Readonly<Record<string, readonly [number, number]>> = {
   "normalize-space": [0, 1],
 };
 
-const isViewFunction = (local: string): local is Fn => Record.has(viewFunctions, local);
+const isViewFunction = (local: string): local is Fn =>
+  R.has<string, readonly [min: number, max: number]>(viewFunctions, local);
 
-const viewOps: Readonly<Record<string, true>> = {
+/** The operators the view supports. */
+interface ViewOps extends R.ReadonlyRecord<string, true> {}
+
+const viewOps: ViewOps = {
   or: true,
   and: true,
   "=": true,
@@ -415,7 +422,7 @@ const viewOps: Readonly<Record<string, true>> = {
   ">=": true,
 };
 
-const isViewOp = (op: string): op is Op => Record.has(viewOps, op);
+const isViewOp = (op: string): op is Op => R.has<string, true>(viewOps, op);
 
 /** The namespace a prefix is bound to; the analysis checked it is bound. */
 const prefixUri = (context: StaticContext, prefix: string): string =>
@@ -451,15 +458,15 @@ const viewTest = (test: XNodeTest, axis: Axis, context: StaticContext): NodeTest
                 : undefined,
           },
     Kind: ({ test: kind }): NodeTest | undefined =>
-      Predicate.isTagged(kind, "Text")
+      P.isTagged(kind, "Text")
         ? { _tag: "Text" }
-        : Predicate.isTagged(kind, "AnyKind")
+        : P.isTagged(kind, "AnyKind")
           ? { _tag: "Node" }
           : undefined,
   });
 
 const isAnyKind = (test: XNodeTest): boolean =>
-  XNodeTestE.$is("Kind")(test) && Predicate.isTagged(test.test, "AnyKind");
+  XNodeTestE.$is("Kind")(test) && P.isTagged(test.test, "AnyKind");
 
 const viewStep = (e: XExpr, context: StaticContext, source: string): Step | undefined => {
   if (XExprE.$is("ContextItem")(e)) return selfStep;
@@ -483,7 +490,7 @@ const viewLocationPath = (
     return only === undefined ? undefined : { absolute: false, steps: [only] };
   }
   const steps = e.steps.map((s) => viewStep(s, context, source));
-  if (!steps.every(Predicate.isNotUndefined)) return undefined;
+  if (!steps.every(P.isNotUndefined)) return undefined;
   return {
     absolute: e.root !== "relative",
     steps: e.root === "descendants" ? [anyNode, ...steps] : steps,
@@ -679,15 +686,14 @@ const childAt = (node: XdmNode, index: number): XdmNode =>
 
 /** An item for a variable's value; an attribute, text, comment or PI on its own is a parentless node. */
 const itemOf = (trees: Trees, v: Value): Item => {
-  if (Predicate.isString(v)) return AtomicValue.string(v);
-  if (Predicate.isNumber(v)) return AtomicValue.double(v);
-  if (Predicate.isBoolean(v)) return AtomicValue.boolean(v);
+  if (P.isString(v)) return AtomicValue.string(v);
+  if (P.isNumber(v)) return AtomicValue.double(v);
+  if (P.isBoolean(v)) return AtomicValue.boolean(v);
   if (v instanceof Cursor || v instanceof XmlElement || v instanceof XmlDocument)
     return trees.node(v);
   if (v instanceof XmlAttribute) return XdmNode.fromAttribute(v);
-  if (Predicate.isTagged(v, "XmlComment")) return XdmNode.fromComment(v);
-  if (Predicate.isTagged(v, "XmlProcessingInstruction"))
-    return XdmNode.fromProcessingInstruction(v);
+  if (P.isTagged(v, "XmlComment")) return XdmNode.fromComment(v);
+  if (P.isTagged(v, "XmlProcessingInstruction")) return XdmNode.fromProcessingInstruction(v);
   return XdmNode.fromText(v.data);
 };
 
@@ -734,7 +740,7 @@ const run = (
       variables === undefined
         ? noExternals
         : HashMap.fromIterable(
-            Record.toEntries(variables).map(([k, v]): readonly [string, Sequence] => [
+            R.toEntries(variables).map(([k, v]): readonly [string, Sequence] => [
               clarkKey(k),
               isValues(v) ? v.map((x) => itemOf(trees, x)) : [itemOf(trees, v)],
             ]),
@@ -750,13 +756,13 @@ const itemsOf = (path: Path, context: Context, options?: EvaluateOptions): Seque
   Result.getOrElse(run(path, context, options), () => []);
 
 const isTextLike = (n: XmlNode): n is XmlText | XmlCData =>
-  Predicate.isTagged(n, "XmlText") || Predicate.isTagged(n, "XmlCData");
+  P.isTagged(n, "XmlText") || P.isTagged(n, "XmlCData");
 
 const isXPathNode = (dom: XdmNode["dom"]): dom is Extract<XdmNode["dom"], XPathNode> =>
   dom instanceof XmlAttribute ||
-  Predicate.isTagged(dom, "XmlElement") ||
-  Predicate.isTagged(dom, "XmlComment") ||
-  Predicate.isTagged(dom, "XmlProcessingInstruction");
+  P.isTagged(dom, "XmlElement") ||
+  P.isTagged(dom, "XmlComment") ||
+  P.isTagged(dom, "XmlProcessingInstruction");
 
 /** The DOM nodes an XDM node stands for (a text node's are the text and CDATA nodes it merges); none for a document or namespace node. */
 const domNodes = (n: XdmNode): ReadonlyArray<XPathNode> => {
@@ -901,7 +907,7 @@ const valuesOf = (item: Item): Result.Result<ReadonlyArray<Value>, string> => {
   if (isNode(item)) return Result.succeed(domNodes(item));
   if (!isAtomic(item)) return Result.fail("a function, map or array, which has no XPath 1.0 value");
   if (isNumericType(item.type)) return Result.succeed([toNumber(item)]);
-  if (Predicate.isBoolean(item.value)) return Result.succeed([item.value]);
+  if (P.isBoolean(item.value)) return Result.succeed([item.value]);
   return Result.succeed([atomicString(item)]);
 };
 

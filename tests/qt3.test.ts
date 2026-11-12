@@ -21,7 +21,7 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { Xml, XQuery } from "../src/index.ts";
@@ -85,7 +85,7 @@ const countsBySet = (
   sets: ReadonlyArray<TestSet>,
   verdicts: ReadonlyArray<Verdict>,
 ): Record<string, Counts> => {
-  const counts = Record.fromEntries(
+  const counts = R.fromEntries(
     sets.map((s): readonly [string, Counts] => [s.name, { runnable: 0, passing: 0 }]),
   );
   verdicts.forEach((v) => {
@@ -103,7 +103,7 @@ const countsBySet = (
 const catalog = Effect.runPromise(readCatalog().pipe(Effect.provide(Fixtures.layer)));
 
 const total = (counts: Record<string, Counts>): Counts =>
-  Arr.reduce(Record.values(counts), { runnable: 0, passing: 0 }, (a, c) => ({
+  Arr.reduce(R.values(counts), { runnable: 0, passing: 0 }, (a, c) => ({
     runnable: a.runnable + c.runnable,
     passing: a.passing + c.passing,
   }));
@@ -114,7 +114,7 @@ const shortfalls = (
   baseline: Readonly<Record<string, Counts>>,
   counts: Readonly<Record<string, Counts>>,
 ): ReadonlyArray<string> =>
-  Record.toEntries(baseline).flatMap(([set, want]) => {
+  R.toEntries(baseline).flatMap(([set, want]) => {
     const got = counts[set] ?? { runnable: 0, passing: 0 };
     const runnable = `${spec} ${set}: ${got.runnable} runnable, baseline ${want.runnable}`;
     const passing = `${spec} ${set}: ${got.passing} passing, baseline ${want.passing}`;
@@ -142,7 +142,7 @@ describe("W3C QT3 conformance", () => {
       }).pipe(Effect.provide(Fixtures.layer)),
     );
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    const counts = Record.fromEntries(
+    const counts = R.fromEntries(
       results.map(([spec, verdicts]) => [spec, countsBySet(sets, verdicts)] as const),
     );
     const report = Effect.runSync(reportRequested("QT3_REPORT"));

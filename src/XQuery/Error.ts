@@ -8,7 +8,7 @@
  * tagged error class carries all of them, so callers branch on `code`.
  */
 import * as Arr from "effect/Array";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { QName } from "../Name.ts";
 import type { Item, Sequence } from "../internal/xquery/item.ts";
@@ -57,7 +57,7 @@ const itemTags: ReadonlyArray<Item["_tag"]> = [
 ];
 
 const isItem = (u: unknown): u is Item =>
-  Predicate.hasProperty(u, "_tag") && itemTags.some((tag) => u._tag === tag);
+  P.hasProperty(u, "_tag") && itemTags.some((tag) => u._tag === tag);
 
 /** An XDM sequence, checked item by item (an error value is never encoded). */
 const ErrorValue = /*#__PURE__*/ Schema.declare(

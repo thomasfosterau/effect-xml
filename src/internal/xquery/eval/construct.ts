@@ -19,7 +19,7 @@ import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { isValidNCName, QName } from "../../../Name.ts";
 import type { XmlAttribute, XmlElement, XmlNode } from "../../../Xml/Node.ts";
@@ -72,7 +72,7 @@ const modesOf = (scope: Scope): Modes => {
 // Namespace declarations in the DOM
 // -----------------------------------------------------------------------------
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
 const isDeclaration = (a: XmlAttribute): boolean =>
   a.name.prefix === "xmlns" || (a.name.prefix === null && a.name.local === "xmlns");
@@ -162,7 +162,7 @@ const stripNamespaces = (root: XmlElement): XmlElement => {
 /** What a namespace node stands for. */
 const bindingOf = (node: XdmNode): NamespaceBinding | undefined => {
   const dom = node.dom;
-  return !Predicate.isString(dom) && "uri" in dom ? dom : undefined;
+  return !P.isString(dom) && "uri" in dom ? dom : undefined;
 };
 
 /** The DOM of an element node, copied as the copy-namespaces mode says (before its new parent is known). */
@@ -239,7 +239,7 @@ class Content {
     if (data === "") return;
     const last = this.children.length - 1;
     const prev = this.children[last];
-    if (prev !== undefined && Predicate.isTagged(prev, "XmlText"))
+    if (prev !== undefined && P.isTagged(prev, "XmlText"))
       this.children[last] = Nodes.text(prev.data + data);
     else this.children.push(Nodes.text(data));
     this.hasChild = true;
@@ -277,7 +277,7 @@ class Content {
   private node(node: XdmNode): void {
     const dom = node.dom;
     const binding = bindingOf(node);
-    if (!Predicate.isString(dom) && "value" in dom && "name" in dom) {
+    if (!P.isString(dom) && "value" in dom && "name" in dom) {
       this.leading("an attribute");
       this.attributes.push(dom);
     } else if (binding !== undefined) {
@@ -287,12 +287,8 @@ class Content {
     else if (node.kind === "text") this.text(node.stringValue);
     else {
       this.hasChild = true;
-      if (Predicate.isTagged(dom, "XmlElement"))
-        this.children.push(copyElement(node, dom, this.modes));
-      else if (
-        Predicate.isTagged(dom, "XmlComment") ||
-        Predicate.isTagged(dom, "XmlProcessingInstruction")
-      )
+      if (P.isTagged(dom, "XmlElement")) this.children.push(copyElement(node, dom, this.modes));
+      else if (P.isTagged(dom, "XmlComment") || P.isTagged(dom, "XmlProcessingInstruction"))
         this.children.push(dom);
     }
   }
@@ -308,7 +304,7 @@ const gather = (
 ): Content => {
   const content = new Content(modes, document, offset);
   parts.forEach((part) => {
-    if (Predicate.isString(part)) content.text(part);
+    if (P.isString(part)) content.text(part);
     else content.sequence(part(ctx));
   });
   return content;
@@ -570,11 +566,11 @@ const attributeValue = (
   offset: number,
 ): ((ctx: Ctx) => string) => {
   const codes = parts.map((p): Part => (isDirText(p) ? p.value : compileExpr(p, scope)));
-  if (codes.every(Predicate.isString)) {
+  if (codes.every(P.isString)) {
     const text = codes.join("");
     return () => text;
   }
-  return (ctx) => codes.map((c) => (Predicate.isString(c) ? c : joined(c(ctx), offset))).join("");
+  return (ctx) => codes.map((c) => (P.isString(c) ? c : joined(c(ctx), offset))).join("");
 };
 
 const isDirText = Expr.$is("DirText");

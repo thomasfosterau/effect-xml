@@ -16,7 +16,7 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
 import { forEachLeniently } from "./internal/lenient.ts";
@@ -366,11 +366,11 @@ export const tokenizeByteArray = (
   Stream.suspend(() => {
     const decoder = new Encoding.ByteDecoder(decodeOptions(options));
     const first = decoder.write(input);
-    if (!Predicate.isString(first)) return Stream.fail(first);
+    if (!P.isString(first)) return Stream.fail(first);
     const rest = decoder.end();
     // `decode` drops empty chunks; the end of the input may fail after the text.
     const text = Stream.fromIterable(first === "" ? [] : [first]);
-    const chunks = Predicate.isString(rest)
+    const chunks = P.isString(rest)
       ? Stream.concat(text, Stream.fromIterable(rest === "" ? [] : [rest]))
       : Stream.concat(text, Stream.fail(rest));
     return chunks.pipe(tokenize(options));
@@ -425,7 +425,7 @@ export const forEach = (
   options?: ForEachOptions,
 ): Effect.Effect<void, SaxError> =>
   Effect.suspend(() => {
-    const chunks = Predicate.isString(input)
+    const chunks = P.isString(input)
       ? { chunks: [input] }
       : decodeChunks(input, decodeOptions(options));
     const opts = resolveSaxOptions(options);

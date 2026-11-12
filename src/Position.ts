@@ -25,7 +25,7 @@
  * Being getters, they are not plain data: `Object.keys`, spreading,
  * `structuredClone` and structural matchers see only a position's `offset`,
  * and nothing on a span. `JSON.stringify` (through `toJSON`) gives
- * `{ start, end }` and `{ offset, line, column }`, `Equal.equals` and
+ * `{ start, end }` and `{ offset, line, column }`, `Eq.equals` and
  * `Hash.hash` compare the resolved values (a parser's position is never equal
  * to a plain object literal; {@link makePosition} makes one that can be), and
  * errors copy their position into a plain `{ offset, line, column }` object
@@ -71,14 +71,14 @@ export interface Span {
 
 /**
  * A position with the given offset, line and column, in the form the parsers
- * produce (so it is `Equal.equals` to theirs).
+ * produce (so it is `Eq.equals` to theirs).
  *
  * @example
  * ```ts
- * import * as Equal from "effect/Equal"
+ * import * as Eq from "effect/Equal"
  * import { makePosition, origin } from "@thomasfosterau/effect-xml"
  *
- * console.log(Equal.equals(makePosition({ offset: 0, line: 1, column: 1 }), origin)) // true
+ * console.log(Eq.equals(makePosition({ offset: 0, line: 1, column: 1 }), origin)) // true
  * ```
  *
  * @since 0.1.0

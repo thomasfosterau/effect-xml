@@ -15,7 +15,7 @@
 import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { AtomicValue, atomicString } from "../atomic.ts";
 import { atomize, effectiveBooleanValue, sameKey, type Item, type Sequence } from "../item.ts";
 import type {
@@ -368,7 +368,7 @@ const folded = (
     ? new AtomicValue(a.type, fold(atomicString(a)))
     : a;
 
-const isNaNKey = (a: AtomicValue): boolean => Predicate.isNumber(a.value) && Number.isNaN(a.value);
+const isNaNKey = (a: AtomicValue): boolean => P.isNumber(a.value) && Number.isNaN(a.value);
 
 interface OrderKey {
   readonly code: Code;

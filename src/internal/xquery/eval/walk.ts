@@ -8,7 +8,7 @@
  * recursion is too.
  */
 import * as Arr from "effect/Array";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { Expr, ItemType, NodeTest } from "../parser/ast.ts";
 
 /** The functions whose value depends on the position or size of the focus, or may (`function-lookup`). */
@@ -20,9 +20,8 @@ const focusFunctions: ReadonlyArray<string> = ["position", "last", "function-loo
  * test.
  */
 const isFocusCall = (x: unknown): boolean => {
-  if (!(Predicate.isTagged(x, "FunctionCall") || Predicate.isTagged(x, "NamedFunctionRef")))
-    return false;
-  if (!Predicate.hasProperty(x, "name") || !Predicate.hasProperty(x.name, "local")) return false;
+  if (!(P.isTagged(x, "FunctionCall") || P.isTagged(x, "NamedFunctionRef"))) return false;
+  if (!P.hasProperty(x, "name") || !P.hasProperty(x.name, "local")) return false;
   const local = x.name.local;
   return focusFunctions.some((f) => f === local);
 };
@@ -31,7 +30,7 @@ const isFocusCall = (x: unknown): boolean => {
 const someNode = (value: unknown, test: (x: unknown) => boolean): boolean => {
   if (test(value)) return true;
   if (Array.isArray(value)) return value.some((v) => someNode(v, test));
-  return Predicate.isObject(value) && Object.values(value).some((v) => someNode(v, test));
+  return P.isObject(value) && Object.values(value).some((v) => someNode(v, test));
 };
 
 /** Whether an expression calls `position()` or `last()` anywhere within it. */

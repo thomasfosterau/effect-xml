@@ -11,7 +11,7 @@
 import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import type { Arity } from "./builtins.ts";
 import { Namespaces } from "./builtins.ts";
 import type { ItemType } from "./ast.ts";
@@ -133,7 +133,7 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
   xpath1Compatibility: !xquery && options.xpath1Compatibility === true,
   namespaces: HashMap.fromIterable([
     ...predeclared(xquery),
-    ...Record.toEntries(options.namespaces ?? {}).filter(([prefix]) => prefix !== "xml"),
+    ...R.toEntries(options.namespaces ?? {}).filter(([prefix]) => prefix !== "xml"),
   ]),
   defaultElementNamespace: options.defaultElementNamespace ?? "",
   defaultFunctionNamespace: options.defaultFunctionNamespace ?? Namespaces.fn,
@@ -141,7 +141,7 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
     (options.variables ?? []).map((v) => (v.startsWith("{") ? v : `{}${v}`)),
   ),
   functions: HashMap.fromIterable(
-    Record.toEntries(options.functions ?? {}).map(([k, v]) => [k, toArities(v)] as const),
+    R.toEntries(options.functions ?? {}).map(([k, v]) => [k, toArities(v)] as const),
   ),
   opaqueNamespaces: HashSet.fromIterable(options.opaqueNamespaces ?? []),
   baseUri: Option.fromNullishOr(options.baseUri),
@@ -155,7 +155,7 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
   contextItemType: Option.none(),
   options: HashMap.empty(),
   decimalFormats: HashMap.fromIterable(
-    Record.toEntries(options.decimalFormats ?? {}).map(
+    R.toEntries(options.decimalFormats ?? {}).map(
       ([k, v]) => [k === "" || k.startsWith("{") ? k : `{}${k}`, v] as const,
     ),
   ),

@@ -7,8 +7,8 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
@@ -92,9 +92,9 @@ const uniquely = (
 
 /** The TypeScript names given to the schema's types. */
 const nameTypes = (model: Model): Readonly<Record<string, string>> => {
-  const named = Arr.filter(Record.keys(model.types), (k) => !k.startsWith("#"));
+  const named = Arr.filter(R.keys(model.types), (k) => !k.startsWith("#"));
   // Anonymous complex types are named after the first element that has them, global ones first.
-  const elements = Record.toEntries(model.elements);
+  const elements = R.toEntries(model.elements);
   const ordered = [
     ...Arr.filter(elements, ([k]) => !k.startsWith("#")),
     ...Arr.filter(elements, ([k]) => k.startsWith("#")),
@@ -104,11 +104,11 @@ const nameTypes = (model: Model): Readonly<Record<string, string>> => {
       ordered,
       ([, decl]) =>
         decl.type.startsWith("#") &&
-        Option.exists(typeOf(model, decl.type), (t) => Predicate.isTagged(t, "ComplexType")),
+        Option.exists(typeOf(model, decl.type), (t) => P.isTagged(t, "ComplexType")),
     ),
     ([, a], [, b]) => a.type === b.type,
   );
-  return Record.fromEntries(
+  return R.fromEntries(
     Arr.drop(
       uniquely([
         ...Arr.map(moduleBindings, (n) => [n, n] as const),
@@ -123,7 +123,12 @@ const nameTypes = (model: Model): Readonly<Record<string, string>> => {
 const quoted = (normalized: string): Option.Option<string> => Option.some(quote(normalized));
 
 /** How an enumerated value of each kind is written as a TypeScript literal, where it can be. */
-const literals: Readonly<Record<string, (normalized: string) => Option.Option<string>>> = {
+interface Literals extends R.ReadonlyRecord<
+  string,
+  (normalized: string) => Option.Option<string>
+> {}
+
+const literals: Literals = {
   string: quoted,
   temporal: quoted,
   duration: quoted,
@@ -136,11 +141,17 @@ const literals: Readonly<Record<string, (normalized: string) => Option.Option<st
 
 /** A literal of a simple type's value, if an enumerated lexical form can be written as one. */
 const literal = (checker: SimpleChecker, lexical: string): Option.Option<string> =>
-  Option.flatMap(Record.get(literals, checker.kind), (write) =>
-    write(normalize(lexical, checker.whiteSpace)),
+  Option.flatMap(
+    R.get<string, (normalized: string) => Option.Option<string>>(literals, checker.kind),
+    (write) => write(normalize(lexical, checker.whiteSpace)),
   );
 
-const kindTypes: Readonly<Record<string, string>> = {
+/** The TypeScript type of each value kind. */
+interface KindTypes {
+  readonly [kind: string]: string;
+}
+
+const kindTypes: KindTypes = {
   string: "string",
   temporal: "string",
   duration: "string",
@@ -204,9 +215,7 @@ export const generate = (
 ): Effect.Effect<string, XsdSchemaError> =>
   Effect.suspend(() => {
     const runtime = new Runtime(model);
-    const failed = Arr.findFirst(Record.keys(model.types), (key) =>
-      Result.isFailure(runtime.type(key)),
-    );
+    const failed = Arr.findFirst(R.keys(model.types), (key) => Result.isFailure(runtime.type(key)));
     if (Option.isSome(failed))
       return Effect.flatMap(Effect.fromResult(runtime.type(failed.value)), () =>
         Effect.succeed(""),
@@ -233,7 +242,7 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
     return Option.match(typeOf(model, key), {
       onNone: () => simpleRef(key),
       onSome: (def) =>
-        Predicate.isTagged(def, "ComplexType") ? (names[key] ?? "Xsd.XsdRecord") : simpleRef(key),
+        P.isTagged(def, "ComplexType") ? (names[key] ?? "Xsd.XsdRecord") : simpleRef(key),
     });
   };
 
@@ -243,17 +252,17 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
       onNone: () => "Xsd.XsdValue",
       onSome: (decl) => {
         const own = typeOf(model, decl.type);
-        const derived = Option.exists(own, (t) => Predicate.isTagged(t, "ComplexType"))
+        const derived = Option.exists(own, (t) => P.isTagged(t, "ComplexType"))
           ? Arr.filter(derivedTypes(model, decl.type), (k) =>
               Option.exists(
                 typeOf(model, k),
-                (t) => Predicate.isTagged(t, "ComplexType") && t.abstract !== true,
+                (t) => P.isTagged(t, "ComplexType") && t.abstract !== true,
               ),
             )
           : [];
         const abstract = Option.exists(
           own,
-          (t) => Predicate.isTagged(t, "ComplexType") && t.abstract === true,
+          (t) => P.isTagged(t, "ComplexType") && t.abstract === true,
         );
         const alternatives = [
           ...(abstract && Arr.isReadonlyArrayNonEmpty(derived) ? [] : [typeRef(decl.type)]),
@@ -277,7 +286,7 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
         ? `${doc}  readonly ${propertyKey(slot.property)}: ReadonlyArray<${wrap(ts)}>;`
         : `${doc}  readonly ${propertyKey(slot.property)}${slot.cardinality === "optional" ? "?" : ""}: ${ts};`;
     });
-    const content = Predicate.isTagged(def.content, "Simple") ? simpleRef(def.content.type) : "";
+    const content = P.isTagged(def.content, "Simple") ? simpleRef(def.content.type) : "";
     if (layout.any) used.xml = true;
     return [
       ...attributes,
@@ -301,15 +310,15 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
     ];
   };
 
-  const declarations = Arr.filterMap(Record.toEntries(names), ([key, name]) =>
+  const declarations = Arr.filterMap(R.toEntries(names), ([key, name]) =>
     Option.match(typeOf(model, key), {
       onNone: () => Result.failVoid,
       onSome: (def) => {
-        const owner = Arr.findFirst(Record.values(model.elements), (d) => d.type === key);
+        const owner = Arr.findFirst(R.values(model.elements), (d) => d.type === key);
         const doc = key.startsWith("#")
           ? `/** The type of the element ${Option.match(owner, { onNone: () => "", onSome: (d) => d.name })}. */\n`
           : `/** The type ${key}. */\n`;
-        if (Predicate.isTagged(def, "SimpleType")) {
+        if (P.isTagged(def, "SimpleType")) {
           const checker = Result.getOrUndefined(runtime.checker(key));
           const ts = checker === undefined ? "string" : simpleTs(checker);
           if (ts.includes("BigDecimal")) used.bigDecimal = true;
@@ -318,7 +327,7 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
         return Result.match(runtime.type(key), {
           onFailure: () => Result.failVoid,
           onSuccess: (rt) => {
-            if (!Predicate.isTagged(rt, "Complex")) return Result.failVoid;
+            if (!P.isTagged(rt, "Complex")) return Result.failVoid;
             const body = members(rt.layout, def);
             return Result.succeed(
               Arr.isReadonlyArrayEmpty(body)
@@ -331,8 +340,7 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
     }),
   );
 
-  const roots =
-    options?.roots ?? Arr.filter(Record.keys(model.elements), (k) => !k.startsWith("#"));
+  const roots = options?.roots ?? Arr.filter(R.keys(model.elements), (k) => !k.startsWith("#"));
   const rootDecls = Arr.filter(roots, (key) =>
     Option.exists(runtime.element(key), (decl) => decl.abstract !== true),
   );
@@ -352,7 +360,7 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
         Result.match(runtime.type(decl.type), {
           onFailure: () => [],
           onSuccess: (rt) =>
-            Predicate.isTagged(rt, "Complex")
+            P.isTagged(rt, "Complex")
               ? Arr.filter(rt.layout.elements, (slot) => slot.cardinality === "many")
               : [],
         }),

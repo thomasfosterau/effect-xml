@@ -11,7 +11,7 @@
 import * as Arr from "effect/Array";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import type { Module as ModuleT } from "./ast.ts";
 import { Decl, Module } from "./ast.ts";
@@ -118,7 +118,7 @@ const load = (
         ),
       );
       return Result.map(libraries, (all) => {
-        const ms = all.filter(Predicate.isNotUndefined);
+        const ms = all.filter(P.isNotUndefined);
         loaded.modules = HashMap.set(loaded.modules, imp.uri, ms);
         return Arr.isReadonlyArrayEmpty(ms)
           ? visible

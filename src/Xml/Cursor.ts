@@ -26,7 +26,7 @@
 import * as Arr from "effect/Array";
 import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { isEnter, preorder } from "../internal/tree.ts";
 import { Namespaces } from "../Name.ts";
 import { isNamed, nameOf, type NameArgs, type XmlElement, type XmlNode } from "./Node.ts";
@@ -53,7 +53,7 @@ const resolveUri = (reference: string, base: string | null): string =>
 /** Whether a lookup was given a name (it is no-argument "all elements" otherwise). */
 const hasName = (args: NameArgs | readonly []): args is NameArgs => args[0] !== undefined;
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
 const inherit = (element: XmlElement, from: Inherited): Inherited => {
   const lang = xmlAttribute(element, "lang");
