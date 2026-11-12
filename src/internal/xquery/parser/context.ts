@@ -34,7 +34,11 @@ export interface ModuleExports {
 
 /** The host's part of the static context: what a caller may set before compiling. */
 export interface StaticOptions {
-  /** Prefix → namespace URI bindings, added to (and overriding) the predeclared ones. */
+  /**
+   * Prefix → namespace URI bindings, added to (and overriding) the predeclared
+   * ones. The empty prefix binds the default element namespace, unless
+   * `defaultElementNamespace` is given.
+   */
   readonly namespaces?: Readonly<Record<string, string>> | undefined;
   /** The default namespace of element and type names (default: none). */
   readonly defaultElementNamespace?: string | undefined;
@@ -44,7 +48,10 @@ export interface StaticOptions {
   readonly variables?: ReadonlyArray<string> | undefined;
   /** Functions the host provides, beyond the built-in library: Clark name → arities. */
   readonly functions?: Readonly<Record<string, ReadonlyArray<number>>> | undefined;
-  /** Collation URIs the host supports, beyond the codepoint, HTML case-insensitive and UCA collations. */
+  /**
+   * Collation URIs the host supports, beyond the codepoint, HTML
+   * case-insensitive and UCA collations (the ones `XQuery.evaluate` lists).
+   */
   readonly collations?: ReadonlyArray<string> | undefined;
   /** The static base URI. */
   readonly baseUri?: string | undefined;
@@ -133,9 +140,11 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
   xpath1Compatibility: !xquery && options.xpath1Compatibility === true,
   namespaces: HashMap.fromIterable([
     ...predeclared(xquery),
-    ...R.toEntries(options.namespaces ?? {}).filter(([prefix]) => prefix !== "xml"),
+    ...R.toEntries(options.namespaces ?? {}).filter(
+      ([prefix]) => prefix !== "xml" && prefix !== "",
+    ),
   ]),
-  defaultElementNamespace: options.defaultElementNamespace ?? "",
+  defaultElementNamespace: options.defaultElementNamespace ?? options.namespaces?.[""] ?? "",
   defaultFunctionNamespace: options.defaultFunctionNamespace ?? Namespaces.fn,
   variables: HashSet.fromIterable(
     (options.variables ?? []).map((v) => (v.startsWith("{") ? v : `{}${v}`)),

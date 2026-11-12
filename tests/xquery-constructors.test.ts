@@ -149,7 +149,11 @@ describe("copies and identity", () => {
     const source = `let $b := <x xmlns:r="w"><b xmlns:q="v"/></x>/b return <a xmlns:p="u">{$b}</a>/b`;
     expect(inScope(source)).toEqual(["p=u", "q=v", "r=w"]);
     expect(inScope(`declare copy-namespaces no-preserve, inherit; ${source}`)).toEqual(["p=u"]);
-    expect(inScope(`declare copy-namespaces preserve, no-inherit; ${source}`)).toEqual(["q=v"]);
+    // The nested `b` keeps `r`, which its enclosing `x` declares, in both modes.
+    expect(inScope(`declare copy-namespaces preserve, no-inherit; ${source}`)).toEqual([
+      "q=v",
+      "r=w",
+    ]);
     expect(inScope(`declare copy-namespaces no-preserve, no-inherit; ${source}`)).toEqual([]);
     // no-preserve keeps the namespaces names use, all the way down.
     expect(

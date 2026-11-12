@@ -152,7 +152,7 @@ const temporalPatterns: TemporalPatterns = {
   gYear: new RegExp(`^${year}${tz}$`),
   gMonthDay: new RegExp(`^--(?<m>\\d\\d)-(?<d>\\d\\d)${tz}$`),
   gDay: new RegExp(`^---(?<d>\\d\\d)${tz}$`),
-  gMonth: new RegExp(`^--(?<m>\\d\\d)(?:--)?${tz}$`),
+  gMonth: new RegExp(`^--(?<m>\\d\\d)${tz}$`),
 };
 
 interface Moment {
@@ -358,11 +358,15 @@ const parseHex = (s: string): Result.Result<SimpleValue, string> =>
 const base64Pattern =
   /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})?$/;
 
+/** The unused bits before padding are zero: `==` follows one of `AQgw`, and `=` one of `AEIMQUYcgkosw048`. */
+const base64Padding = /^(?:[^=]*[AQgw]==|[^=]*[AEIMQUYcgkosw048]=|[^=]*)$/;
+
 const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 const parseBase64 = (s: string): Result.Result<SimpleValue, string> => {
   const compact = s.replace(/ /g, "");
-  if (!base64Pattern.test(compact)) return invalid(s, "base64Binary");
+  if (!base64Pattern.test(compact) || !base64Padding.test(compact))
+    return invalid(s, "base64Binary");
   const sextets = Arr.map(Arr.fromIterable(compact.replace(/=+$/, "")), (c) =>
     base64Alphabet.indexOf(c),
   );

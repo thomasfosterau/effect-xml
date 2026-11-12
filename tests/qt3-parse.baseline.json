@@ -66,9 +66,9 @@
       "static": 76
     },
     "fn-collation-key": {
-      "runnable": 21,
-      "syntax": 21,
-      "static": 21
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
     },
     "fn-collection": {
       "runnable": 30,
@@ -76,9 +76,9 @@
       "static": 30
     },
     "fn-compare": {
-      "runnable": 87,
-      "syntax": 87,
-      "static": 87
+      "runnable": 95,
+      "syntax": 95,
+      "static": 95
     },
     "fn-concat": {
       "runnable": 96,
@@ -86,9 +86,9 @@
       "static": 96
     },
     "fn-contains": {
-      "runnable": 68,
-      "syntax": 68,
-      "static": 68
+      "runnable": 75,
+      "syntax": 75,
+      "static": 75
     },
     "fn-contains-token": {
       "runnable": 43,
@@ -141,9 +141,9 @@
       "static": 31
     },
     "fn-deep-equal": {
-      "runnable": 247,
-      "syntax": 247,
-      "static": 247
+      "runnable": 248,
+      "syntax": 248,
+      "static": 248
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -186,9 +186,9 @@
       "static": 29
     },
     "fn-ends-with": {
-      "runnable": 52,
-      "syntax": 52,
-      "static": 52
+      "runnable": 55,
+      "syntax": 55,
+      "static": 55
     },
     "fn-environment-variable": {
       "runnable": 12,
@@ -616,9 +616,9 @@
       "static": 39
     },
     "fn-starts-with": {
-      "runnable": 60,
-      "syntax": 60,
-      "static": 60
+      "runnable": 64,
+      "syntax": 64,
+      "static": 64
     },
     "fn-static-base-uri": {
       "runnable": 18,
@@ -656,14 +656,14 @@
       "static": 48
     },
     "fn-substring-after": {
-      "runnable": 50,
-      "syntax": 50,
-      "static": 50
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
     },
     "fn-substring-before": {
-      "runnable": 50,
-      "syntax": 50,
-      "static": 50
+      "runnable": 53,
+      "syntax": 53,
+      "static": 53
     },
     "fn-sum": {
       "runnable": 222,
@@ -1563,7 +1563,7 @@
     "prod-ContextItemDecl": {
       "runnable": 42,
       "syntax": 42,
-      "static": 40
+      "static": 41
     },
     "prod-ContextItemExpr": {
       "runnable": 45,
@@ -1738,7 +1738,7 @@
     "prod-ModuleImport": {
       "runnable": 105,
       "syntax": 105,
-      "static": 104
+      "static": 105
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,
@@ -1941,9 +1941,9 @@
       "static": 17
     },
     "misc-UCACollation": {
-      "runnable": 73,
-      "syntax": 73,
-      "static": 73
+      "runnable": 89,
+      "syntax": 89,
+      "static": 89
     },
     "misc-XMLEdition": {
       "runnable": 11,
@@ -2018,9 +2018,9 @@
       "static": 70
     },
     "fn-collation-key": {
-      "runnable": 21,
-      "syntax": 21,
-      "static": 21
+      "runnable": 28,
+      "syntax": 28,
+      "static": 28
     },
     "fn-collection": {
       "runnable": 23,
@@ -2028,9 +2028,9 @@
       "static": 23
     },
     "fn-compare": {
-      "runnable": 87,
-      "syntax": 87,
-      "static": 87
+      "runnable": 95,
+      "syntax": 95,
+      "static": 95
     },
     "fn-concat": {
       "runnable": 96,
@@ -2038,9 +2038,9 @@
       "static": 96
     },
     "fn-contains": {
-      "runnable": 60,
-      "syntax": 60,
-      "static": 60
+      "runnable": 67,
+      "syntax": 67,
+      "static": 67
     },
     "fn-contains-token": {
       "runnable": 36,
@@ -2093,9 +2093,9 @@
       "static": 31
     },
     "fn-deep-equal": {
-      "runnable": 193,
-      "syntax": 193,
-      "static": 193
+      "runnable": 194,
+      "syntax": 194,
+      "static": 194
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -2138,9 +2138,9 @@
       "static": 29
     },
     "fn-ends-with": {
-      "runnable": 52,
-      "syntax": 52,
-      "static": 52
+      "runnable": 55,
+      "syntax": 55,
+      "static": 55
     },
     "fn-environment-variable": {
       "runnable": 12,
@@ -2568,9 +2568,9 @@
       "static": 33
     },
     "fn-starts-with": {
-      "runnable": 60,
-      "syntax": 60,
-      "static": 60
+      "runnable": 64,
+      "syntax": 64,
+      "static": 64
     },
     "fn-static-base-uri": {
       "runnable": 5,
@@ -2608,14 +2608,14 @@
       "static": 48
     },
     "fn-substring-after": {
-      "runnable": 50,
-      "syntax": 50,
-      "static": 50
+      "runnable": 54,
+      "syntax": 54,
+      "static": 54
     },
     "fn-substring-before": {
-      "runnable": 50,
-      "syntax": 50,
-      "static": 50
+      "runnable": 53,
+      "syntax": 53,
+      "static": 53
     },
     "fn-sum": {
       "runnable": 222,
@@ -3653,9 +3653,9 @@
       "static": 17
     },
     "misc-UCACollation": {
-      "runnable": 73,
-      "syntax": 73,
-      "static": 73
+      "runnable": 89,
+      "syntax": 89,
+      "static": 89
     },
     "misc-XMLEdition": {
       "runnable": 1,
