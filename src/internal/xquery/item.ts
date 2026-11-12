@@ -14,6 +14,7 @@ import { QName } from "../../Name.ts";
 import { type XQueryError, xqueryError } from "../../XQuery/Error.ts";
 import { AtomicValue, atomicString } from "./atomic.ts";
 import type { XdmNode } from "./node.ts";
+import { exactDecimal } from "./eval/cast.ts";
 import { partsOf, timelineSeconds } from "./eval/temporal.ts";
 import { AtomicTypes, derivesFrom, isNumericType } from "./types.ts";
 
@@ -203,24 +204,8 @@ const isQName = /*#__PURE__*/ Schema.is(QName);
 // -----------------------------------------------------------------------------
 
 /** The exact decimal expansion of a finite double. */
-const exactDecimal = (n: number): string => {
-  if (Number.isInteger(n) && Math.abs(n) < 2 ** 53) return String(n);
-  const view = new DataView(new ArrayBuffer(8));
-  view.setFloat64(0, n);
-  const bits = view.getBigUint64(0);
-  const negative = bits >> 63n === 1n;
-  const exponent = Number((bits >> 52n) & 0x7ffn);
-  const fraction = bits & ((1n << 52n) - 1n);
-  const mantissa = exponent === 0 ? fraction : fraction | (1n << 52n);
-  const power = (exponent === 0 ? 1 : exponent) - 1075;
-  const value =
-    power >= 0
-      ? BigDecimal.fromBigInt(mantissa << BigInt(power))
-      : // m × 2^-k = m × 5^k / 10^k, exactly.
-        BigDecimal.make(mantissa * 5n ** BigInt(-power), -power);
-  const formatted = atomicString(AtomicValue.decimal(value));
-  return negative ? `-${formatted}` : formatted;
-};
+const exactDecimalString = (n: number): string =>
+  atomicString(AtomicValue.decimal(exactDecimal(n)));
 
 /** The key a numeric value is stored under: its exact value, so `1`, `1.0` and `1e0` are one key. */
 const numericKey = (atomic: AtomicValue): string => {
@@ -229,7 +214,7 @@ const numericKey = (atomic: AtomicValue): string => {
     if (Number.isNaN(v)) return "n:NaN";
     if (!Number.isFinite(v)) return v > 0 ? "n:INF" : "n:-INF";
     // Negative zero is the same key as zero.
-    return `n:${exactDecimal(v === 0 ? 0 : v)}`;
+    return `n:${exactDecimalString(v === 0 ? 0 : v)}`;
   }
   return `n:${atomicString(atomic)}`;
 };
