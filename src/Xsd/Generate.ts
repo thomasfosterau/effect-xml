@@ -216,10 +216,7 @@ export const generate = (
   Effect.suspend(() => {
     const runtime = new Runtime(model);
     const failed = Arr.findFirst(R.keys(model.types), (key) => Result.isFailure(runtime.type(key)));
-    if (Option.isSome(failed))
-      return Effect.flatMap(Effect.fromResult(runtime.type(failed.value)), () =>
-        Effect.succeed(""),
-      );
+    if (Option.isSome(failed)) return Effect.as(Effect.fromResult(runtime.type(failed.value)), "");
     return Effect.succeed(write(model, runtime, options));
   });
 

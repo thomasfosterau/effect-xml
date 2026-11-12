@@ -332,7 +332,7 @@ export class Validator {
     if (prefix === null && isAttribute) return expanded(prefix, local, null);
     const ns = bindings[prefix ?? ""];
     if (ns === undefined && prefix !== null)
-      return new UnboundNamespacePrefix({ prefix, name: raw, position });
+      return new UnboundNamespacePrefix({ prefix, qualifiedName: raw, position });
     return expanded(prefix, local, ns === undefined || ns === "" ? null : ns);
   }
 
@@ -921,7 +921,7 @@ export class Validator {
 
   private end(raw: string, position: Position): Failure | null {
     const frame = this.frames.at(-1);
-    if (frame === undefined) return new UnexpectedEndTag({ name: raw, position });
+    if (frame === undefined) return new UnexpectedEndTag({ tagName: raw, position });
     if (frame.raw !== raw)
       return new MismatchedEndTag({ expected: frame.raw, actual: raw, position });
     // A skipped element's DOM is kept instead (see `close`).

@@ -15,10 +15,11 @@
  * Constructs it does not implement yet count as failures, never as errors a
  * test may expect.
  */
-import { assert, describe, expect, test } from "vite-plus/test";
+import { afterAll, assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as R from "effect/Record";
@@ -50,7 +51,7 @@ import { reportRequested } from "./support/report.ts";
 /** The engine under test. */
 const ENGINE: Engine = xqueryEngine;
 
-const Counts = Schema.Struct({ runnable: Schema.Number, passing: Schema.Number });
+const Counts = Schema.Struct({ runnable: Schema.Int, passing: Schema.Int });
 const Baseline = Schema.fromJsonString(
   Schema.Struct({
     XQ31: Schema.Record(Schema.String, Counts),
@@ -99,8 +100,12 @@ const countsBySet = (
   return counts;
 };
 
+/** One runtime for the file's fixture services (the file system), provided once. */
+const runtime = ManagedRuntime.make(Fixtures.layer);
+afterAll(() => runtime.dispose());
+
 /** The catalog, read once for every test in this file. */
-const catalog = Effect.runPromise(readCatalog().pipe(Effect.provide(Fixtures.layer)));
+const catalog = runtime.runPromise(readCatalog());
 
 const total = (counts: Record<string, Counts>): Counts =>
   Arr.reduce(R.values(counts), { runnable: 0, passing: 0 }, (a, c) => ({
@@ -127,7 +132,7 @@ const shortfalls = (
 describe("W3C QT3 conformance", () => {
   test("meets the per-test-set baselines", async () => {
     const started = performance.now();
-    const { baseline, sets, results } = await Effect.runPromise(
+    const { baseline, sets, results } = await runtime.runPromise(
       Effect.gen(function* () {
         const expected = yield* readBaseline;
         const read = yield* Effect.tryPromise(() => catalog);
@@ -139,7 +144,7 @@ describe("W3C QT3 conformance", () => {
           { concurrency: 1 },
         );
         return { baseline: expected, sets: read, results: verdicts };
-      }).pipe(Effect.provide(Fixtures.layer)),
+      }),
     );
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
     const counts = R.fromEntries(
@@ -225,10 +230,9 @@ const tableEngine = (
 ): Engine => ({
   evaluate: (request) => {
     asked.push(request);
-    return Option.match(Option.fromUndefinedOr(table[request.query]), {
-      onNone: () => Effect.fail(XQuery.xqueryError("XPST0003", `unknown query ${request.query}`)),
-      onSome: Effect.succeed,
-    });
+    return Effect.fromOption(Option.fromUndefinedOr(table[request.query]), () =>
+      XQuery.xqueryError("XPST0003", `unknown query ${request.query}`),
+    );
   },
   serialize: (_, result) =>
     Effect.succeed(

@@ -7,12 +7,7 @@ import { at, isHtmlElement as isElement, narrowAt } from "./support/narrow.ts";
 
 const frag = (input: string) => Effect.runPromise(Html.parseFragment(input));
 const drain = (input: string) =>
-  Effect.runPromise(
-    Html.events(input).pipe(
-      Stream.runDrain,
-      Effect.catch(() => Effect.void),
-    ),
-  );
+  Effect.runPromise(Html.events(input).pipe(Stream.runDrain, Effect.ignore));
 
 describe("Html tokenization (lenient)", () => {
   test("unquoted and boolean attributes", async () => {

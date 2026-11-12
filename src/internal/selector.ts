@@ -137,7 +137,11 @@ export class Selector<P, V> {
     // `xmlns:p=""` undeclares `p` (XML 1.1; an error in 1.0, reported earlier).
     if (ns === undefined || (ns === "" && parsed.prefix !== null)) {
       if (parsed.prefix === null) return this.names.name(parsed, null);
-      return new UnboundNamespacePrefix({ prefix: parsed.prefix, name: raw, position: at.start });
+      return new UnboundNamespacePrefix({
+        prefix: parsed.prefix,
+        qualifiedName: raw,
+        position: at.start,
+      });
     }
     // `xmlns=""` undeclares the default namespace.
     return this.names.name(parsed, ns === "" ? null : ns);
@@ -250,7 +254,7 @@ export class Selector<P, V> {
 
   private end(rawName: string, at: Span): Match | SaxError | null {
     const level = this.levels.pop();
-    if (level === undefined) return new UnexpectedEndTag({ name: rawName, position: at.start });
+    if (level === undefined) return new UnexpectedEndTag({ tagName: rawName, position: at.start });
     if (level.rawName !== rawName)
       return new MismatchedEndTag({ expected: level.rawName, actual: rawName, position: at.start });
     if (this.options.ancestors) this.open.pop();

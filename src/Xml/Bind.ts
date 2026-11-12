@@ -13,7 +13,7 @@
  *     repeated elements (wrapped in one element with `wrapper`); a union of
  *     structs is a choice, picked by element name (see {@link named}).
  *   - Leaf values travel as strings, through `Schema.toCodecStringTree`: a
- *     `Schema.Number`, `Schema.Boolean`, `Schema.NumberFromString` or a branded
+ *     `Schema.Finite`, `Schema.Boolean`, `Schema.FiniteFromString` or a branded
  *     or checked string decodes from text with its own transformations and
  *     checks, and validation failures are `SchemaError`s with the field path.
  *   - A field named `_tag` holding a literal (from `Schema.TaggedStruct` or
@@ -186,7 +186,7 @@ export const annotations = {
  *
  * const Item = Schema.Struct({
  *   sku: Schema.String.pipe(Xml.Bind.attribute()),
- *   quantity: Schema.NumberFromString.pipe(Xml.Bind.attribute("qty")),
+ *   quantity: Schema.FiniteFromString.pipe(Xml.Bind.attribute("qty")),
  *   name: Schema.String
  * }).pipe(Xml.Bind.named("item"))
  *
@@ -242,7 +242,7 @@ export const element =
  *
  * const Price = Schema.Struct({
  *   currency: Schema.String.pipe(Xml.Bind.attribute()),
- *   amount: Schema.NumberFromString.pipe(Xml.Bind.text())
+ *   amount: Schema.FiniteFromString.pipe(Xml.Bind.text())
  * }).pipe(Xml.Bind.named("price"))
  *
  * const price = Effect.runSync(Xml.Bind.decode(Price)(`<price currency="EUR">9.5</price>`))
@@ -270,10 +270,10 @@ export const text =
  * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Circle = Schema.TaggedStruct("Circle", {
- *   r: Schema.NumberFromString.pipe(Xml.Bind.attribute())
+ *   r: Schema.FiniteFromString.pipe(Xml.Bind.attribute())
  * }).pipe(Xml.Bind.named("circle"))
  * const Square = Schema.TaggedStruct("Square", {
- *   side: Schema.NumberFromString.pipe(Xml.Bind.attribute())
+ *   side: Schema.FiniteFromString.pipe(Xml.Bind.attribute())
  * }).pipe(Xml.Bind.named("square"))
  * const Drawing = Schema.Struct({
  *   shapes: Schema.Array(Schema.Union([Circle, Square]))
@@ -303,9 +303,12 @@ export const named =
  * @since 0.1.0
  * @category errors
  */
-export class XmlBindError extends Schema.TaggedError<XmlBindError>()("XmlBindError", {
+export class XmlBindError extends Schema.TaggedError<
+  XmlBindError,
+  { readonly brand: unique symbol }
+>()("XmlBindError", {
   /** The field keys and array indices leading to the problem. */
-  path: Schema.Array(Schema.Union([Schema.String, Schema.Number])),
+  path: Schema.Array(Schema.Union([Schema.String, Schema.Int])),
   reason: Schema.String,
 }) {
   override get message(): string {
@@ -378,19 +381,34 @@ interface Resolved {
   readonly identifier: string | undefined;
 }
 
-/** The value each binding annotation key carries. */
-interface BindingAnnotations {
-  readonly [FieldBindingId]: FieldBinding;
-  readonly [ElementNameId]: ElementName;
-}
+/** Is this annotation value a {@link FieldBinding}? */
+const isFieldBinding = /*#__PURE__*/ Schema.is(
+  Schema.Struct({
+    node: Schema.Literals(["attribute", "element", "text"]),
+    name: Schema.optionalKey(Schema.String),
+    namespace: Schema.optionalKey(Schema.Option(Schema.String)),
+    prefix: Schema.optionalKey(Schema.String),
+    wrapper: Schema.optionalKey(Schema.String),
+  }),
+);
 
-const annotationAt = <K extends keyof BindingAnnotations>(
+/** Is this annotation value an {@link ElementName}? */
+const isElementName = /*#__PURE__*/ Schema.is(
+  Schema.Struct({
+    name: Schema.String,
+    namespace: Schema.optionalKey(Schema.Option(Schema.String)),
+    prefix: Schema.optionalKey(Schema.String),
+  }),
+);
+
+/** The value of a binding annotation `key` on `ast`, if it is one `guard` accepts (only `annotations` writes them). */
+const annotationAt = <A>(
   ast: SchemaAST.AST,
-  key: K,
-): BindingAnnotations[K] | undefined => {
+  key: string,
+  guard: (u: unknown) => u is A,
+): A | undefined => {
   const found = ast.context?.annotations?.[key] ?? SchemaAST.resolve(ast)?.[key];
-  // SAFETY: the values under the binding keys are only written by `annotations`.
-  return found as BindingAnnotations[K] | undefined;
+  return guard(found) ? found : undefined;
 };
 
 /** `outer`'s value unless it was left out. */
@@ -414,8 +432,8 @@ const mergeField = (
 
 const resolve = (ast: SchemaAST.AST, outer?: Omit<Resolved, "ast">): Resolved => {
   const here = {
-    field: mergeField(outer?.field, annotationAt(ast, FieldBindingId)),
-    named: outer?.named ?? annotationAt(ast, ElementNameId),
+    field: mergeField(outer?.field, annotationAt(ast, FieldBindingId, isFieldBinding)),
+    named: outer?.named ?? annotationAt(ast, ElementNameId, isElementName),
     identifier: outer?.identifier ?? SchemaAST.resolveIdentifier(ast),
   };
   if (ast.encoding !== undefined) return resolve(Arr.lastNonEmpty(ast.encoding).to, here);
@@ -716,6 +734,10 @@ const asString = (value: Tree, path: Path): Result.Result<string, XmlBindError> 
 
 const isList = (value: Tree): value is ReadonlyArray<Tree> => Arr.isArray(value);
 
+/** Is this node a record? A non-array object in a string tree is a record of string trees. */
+const isTreeRecord = (value: Tree): value is Schema.TreeRecord<string | undefined> =>
+  P.isObject(value) && !isList(value);
+
 const asList = (value: Tree, path: Path): Result.Result<ReadonlyArray<Tree>, XmlBindError> =>
   isList(value) ? Result.succeed(value) : failAt(path, "expected an array");
 
@@ -723,10 +745,7 @@ const asRecord = (
   value: Tree,
   path: Path,
 ): Result.Result<R.ReadonlyRecord<string, Tree>, XmlBindError> =>
-  P.isObject(value) && !isList(value)
-    ? // SAFETY: a non-array object in a string tree is a record of string trees.
-      Result.succeed(value as R.ReadonlyRecord<string, Tree>)
-    : failAt(path, "expected an object");
+  isTreeRecord(value) ? Result.succeed(value) : failAt(path, "expected an object");
 
 const elementName = (struct: StructPlan, inherited: Option.Option<string>, path: Path) =>
   Option.match(struct.defaultName, {
@@ -900,7 +919,7 @@ const writeRoot = (plan: Plan, value: Tree): Result.Result<XmlElement, XmlBindEr
  * import { Sax, Xml } from "@thomasfosterau/effect-xml"
  *
  * const Row = Schema.Struct({
- *   r: Schema.NumberFromString.pipe(Xml.Bind.attribute()),
+ *   r: Schema.FiniteFromString.pipe(Xml.Bind.attribute()),
  *   v: Schema.String
  * })
  *
@@ -968,7 +987,7 @@ export interface DecodeOptions extends ParseOptions {
  *   {
  *     isbn: Schema.String.pipe(Xml.Bind.attribute()),
  *     title: Schema.String,
- *     year: Schema.NumberFromString,
+ *     year: Schema.FiniteFromString,
  *     authors: Schema.Array(Author).pipe(Xml.Bind.element("author")),
  *     subtitle: Schema.optional(Schema.String)
  *   },
@@ -1046,7 +1065,7 @@ export interface EncodeOptions extends WriterOptions {
  * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Note = Schema.Struct({
- *   id: Schema.Number.pipe(Xml.Bind.attribute()),
+ *   id: Schema.Finite.pipe(Xml.Bind.attribute()),
  *   to: Schema.String,
  *   body: Schema.String
  * }).pipe(Xml.Bind.named({ name: "note", namespace: Option.some("urn:notes") }))

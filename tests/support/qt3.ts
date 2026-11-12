@@ -717,7 +717,10 @@ export interface Request {
 }
 
 /** The engine can't run this yet: never a pass, whatever the test expects. */
-class NotImplemented extends Schema.TaggedError<NotImplemented>()("NotImplemented", {
+class NotImplemented extends Schema.TaggedError<
+  NotImplemented,
+  { readonly brand: unique symbol }
+>()("NotImplemented", {
   what: Schema.String,
 }) {}
 
@@ -1165,8 +1168,8 @@ export interface CheckContext {
   readonly request: Request;
 }
 
-const pass = Effect.succeed(Option.none<string>());
-const fail = (reason: string) => Effect.succeed(Option.some(reason));
+const pass = Effect.succeedNone;
+const fail = (reason: string) => Effect.succeedSome(reason);
 
 const ERR = "http://www.w3.org/2005/xqt-errors";
 

@@ -120,7 +120,7 @@ class Pass {
       end: 0,
       count: 0,
       inside: false,
-      names: Arr.allocate<string>(NAME_SLOTS),
+      names: Arr.allocate<Context["names"][number]>(NAME_SLOTS),
       reused: new Reused(),
       marks: freshMarks(),
     };

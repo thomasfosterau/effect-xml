@@ -17,12 +17,12 @@ const decode = <S extends Pure>(schema: S, input: string) =>
 const encode = <S extends Pure>(schema: S, value: S["Type"]) =>
   Effect.runSync(Bind.encode(schema)(value));
 
-class Author extends Schema.Class<Author>("Author")({
+class Author extends Schema.Class<Author, { readonly brand: unique symbol }>("Author")({
   id: Schema.String.pipe(Bind.attribute()),
   name: Schema.String,
 }) {}
 
-class Book extends Schema.Class<Book>("Book")(
+class Book extends Schema.Class<Book, { readonly brand: unique symbol }>("Book")(
   {
     isbn: Schema.String.pipe(Bind.attribute()),
     lang: Schema.optional(Schema.String).pipe(Bind.attribute("xml:lang")),
@@ -62,7 +62,7 @@ describe("decoding", () => {
   test("text content next to attributes", () => {
     const Price = Schema.Struct({
       currency: Schema.String.pipe(Bind.attribute()),
-      amount: Schema.NumberFromString.pipe(Bind.text()),
+      amount: Schema.FiniteFromString.pipe(Bind.text()),
     });
     const Item = Schema.Struct({ price: Price });
     expect(
@@ -79,10 +79,10 @@ describe("decoding", () => {
 
   test("a union of tagged structs is a choice picked by element name", () => {
     const Circle = Schema.TaggedStruct("Circle", {
-      r: Schema.NumberFromString.pipe(Bind.attribute()),
+      r: Schema.FiniteFromString.pipe(Bind.attribute()),
     }).pipe(Bind.named("circle"));
     const Square = Schema.TaggedStruct("Square", {
-      side: Schema.NumberFromString.pipe(Bind.attribute()),
+      side: Schema.FiniteFromString.pipe(Bind.attribute()),
     }).pipe(Bind.named("square"));
     const Drawing = Schema.Struct({
       figures: Schema.Array(Schema.Union([Circle, Square])),
@@ -106,8 +106,12 @@ describe("decoding", () => {
   });
 
   test("tagged classes are named after their tag when not annotated", () => {
-    class Cat extends Schema.TaggedClass<Cat>()("Cat", { name: Schema.String }) {}
-    class Dog extends Schema.TaggedClass<Dog>()("Dog", { name: Schema.String }) {}
+    class Cat extends Schema.TaggedClass<Cat, { readonly brand: unique symbol }>()("Cat", {
+      name: Schema.String,
+    }) {}
+    class Dog extends Schema.TaggedClass<Dog, { readonly brand: unique symbol }>()("Dog", {
+      name: Schema.String,
+    }) {}
     const Pets = Schema.Struct({ pets: Schema.Array(Schema.Union([Cat, Dog])) });
     const pets = success(
       decode(Pets, `<pets><Dog><name>Rex</name></Dog><Cat><name>Tom</name></Cat></pets>`),
@@ -189,7 +193,7 @@ describe("decoding", () => {
 
   test("decodeElement decodes subtrees selected from a SAX stream", () => {
     const Row = Schema.Struct({
-      r: Schema.NumberFromString.pipe(Bind.attribute()),
+      r: Schema.FiniteFromString.pipe(Bind.attribute()),
       v: Schema.String,
     });
     const rows = Stream.make(
@@ -218,9 +222,9 @@ describe("encoding", () => {
   });
 
   test("names the root after the identifier, and leaves _tag out", () => {
-    class Cat extends Schema.TaggedClass<Cat>()("Cat", {
+    class Cat extends Schema.TaggedClass<Cat, { readonly brand: unique symbol }>()("Cat", {
       name: Schema.String.pipe(Bind.attribute()),
-      lives: Schema.Number,
+      lives: Schema.Finite,
     }) {}
     expect(encode(Cat, new Cat({ name: "Tom", lives: 9 }))).toBe(
       `<Cat name="Tom"><lives>9</lives></Cat>`,
@@ -229,10 +233,10 @@ describe("encoding", () => {
 
   test("a choice writes the member the value belongs to", () => {
     const Circle = Schema.TaggedStruct("Circle", {
-      r: Schema.Number.pipe(Bind.attribute()),
+      r: Schema.Finite.pipe(Bind.attribute()),
     }).pipe(Bind.named("circle"));
     const Square = Schema.TaggedStruct("Square", {
-      side: Schema.Number.pipe(Bind.attribute()),
+      side: Schema.Finite.pipe(Bind.attribute()),
     }).pipe(Bind.named("square"));
     const Drawing = Schema.Struct({ figures: Schema.Array(Schema.Union([Circle, Square])) }).pipe(
       Bind.named("drawing"),
@@ -249,7 +253,7 @@ describe("encoding", () => {
 
   test("children inherit the root's namespace; namespaced attributes get a prefix", () => {
     const Note = Schema.Struct({
-      id: Schema.Number.pipe(Bind.attribute()),
+      id: Schema.Finite.pipe(Bind.attribute()),
       lang: Schema.String.pipe(
         Bind.attribute({ name: "lang", namespace: Option.some(Namespaces.xml) }),
       ),
@@ -267,7 +271,7 @@ describe("encoding", () => {
   });
 
   test("an encoding failure is a SchemaError", () => {
-    const Positive = Schema.Struct({ n: Schema.Number.check(Schema.isGreaterThan(0)) }).pipe(
+    const Positive = Schema.Struct({ n: Schema.Finite.check(Schema.isGreaterThan(0)) }).pipe(
       Bind.named("p"),
     );
     const exit = Effect.runSync(Effect.result(Bind.encode(Positive)({ n: -1 })));

@@ -8,6 +8,7 @@
  * lexed once and its events reused, so a document with many references costs
  * linear time, while each use still counts against the expansion budget.
  */
+import { unsafeAttrName } from "../Name.ts";
 import { InvalidEntity, LimitExceeded, type LexError } from "../Error.ts";
 import type { Span } from "../Position.ts";
 import { collapse, type Dtd } from "./dtd.ts";
@@ -155,7 +156,7 @@ export const applyDefaults = (
   const withDefaults = Arr.reduce(decls, attributes, (present, d) =>
     d.value === null || present.some((a) => a.name === d.name)
       ? present
-      : [...present, { name: d.name, value: d.value, span: ev.span }],
+      : [...present, { name: unsafeAttrName(d.name), value: d.value, span: ev.span }],
   );
   return { ...ev, attributes: withDefaults };
 };

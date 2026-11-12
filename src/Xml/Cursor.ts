@@ -150,30 +150,25 @@ export class Cursor {
     return this.ancestors.at(-1) ?? this;
   }
 
-  /** @internal A cursor at the child at `index` of this element's `children`, which must be an element. */
-  at(index: number): Cursor {
-    // SAFETY: callers pass the index of an element child (`childElements`, `child`).
-    return new Cursor(
-      this.element.children[index] as XmlElement,
-      Option.some(this),
-      index,
-      this.inherited,
-    );
+  /** @internal A cursor at `child`, the element at `index` of this element's `children`. */
+  at(child: XmlElement, index: number): Cursor {
+    return new Cursor(child, Option.some(this), index, this.inherited);
   }
 
   /** The child elements, or those with a name. */
   childElements(...args: NameArgs | readonly []): ReadonlyArray<Cursor> {
     const name = hasName(args) ? nameOf(args) : null;
     return Arr.flatMap(this.element.children, (c, i) =>
-      isElement(c) && (name === null || isNamed(c.name, name)) ? [this.at(i)] : [],
+      isElement(c) && (name === null || isNamed(c.name, name)) ? [this.at(c, i)] : [],
     );
   }
 
   /** The first child element with this name. */
   child(...args: NameArgs): Option.Option<Cursor> {
     const name = nameOf(args);
-    const i = this.element.children.findIndex((c) => isElement(c) && isNamed(c.name, name));
-    return i === -1 ? Option.none() : Option.some(this.at(i));
+    return Arr.findFirst(this.element.children, (c, i) =>
+      isElement(c) && isNamed(c.name, name) ? Option.some(this.at(c, i)) : Option.none(),
+    );
   }
 
   /** The descendant elements (not this one), or those with a name, in document order. */

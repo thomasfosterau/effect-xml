@@ -17,7 +17,7 @@ import { isValidName, isValidNCName, QName } from "../../Name.ts";
 import { XQueryError, xqueryError } from "../../XQuery/Error.ts";
 import { builtin } from "../../Xsd/Model.ts";
 import { quote } from "../quote.ts";
-import { builtinChecker, decode, type SimpleValue } from "../xsd/datatypes.ts";
+import { builtinChecker, decode, isList, type SimpleValue } from "../xsd/datatypes.ts";
 import { AtomicTypes, derivesFrom, type AtomicType } from "./types.ts";
 
 /**
@@ -192,10 +192,12 @@ const xdmRule = (type: AtomicType): Option.Option<XdmRule> => {
 };
 
 /** The JavaScript value of a decoded XML Schema value of the atomic type `type`. */
-const fromChecked = (type: AtomicType, value: SimpleValue): AtomicData => {
-  if (P.isNumber(value) && derivesFrom(type, AtomicTypes.integer)) return BigInt(value);
-  // SAFETY: an atomic type's checker never returns a list, the one `SimpleValue` that isn't `AtomicData`.
-  return value as AtomicData;
+const fromChecked = (type: AtomicType, value: SimpleValue): Result.Result<AtomicData, string> => {
+  // An atomic type's checker never returns a list, the one `SimpleValue` that isn't `AtomicData`.
+  if (isList(value)) return Result.fail("it has a list value");
+  if (P.isNumber(value) && derivesFrom(type, AtomicTypes.integer))
+    return Result.succeed(BigInt(value));
+  return Result.succeed(value);
 };
 
 /**
@@ -239,8 +241,9 @@ export const fromLexical = (
     onSome: (checker) =>
       decode(checker, lexical, { resolve: () => undefined }).pipe(
         Result.flatMap(obeysRule),
+        Result.flatMap((value) => fromChecked(type, value)),
         Result.mapError((reason) => invalidLexical(lexical, type, reason)),
-        Result.map((value) => new AtomicValue(type, fromChecked(type, value))),
+        Result.map((value) => new AtomicValue(type, value)),
       ),
   });
 };
