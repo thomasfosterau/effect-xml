@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`CLAUDE.md` is a symlink to this file. Project conventions live here; personal style preferences live in user memory.
+This is the general guide for any coding agent: architecture, invariants and conventions. Claude Code reads [.claude/CLAUDE.md](.claude/CLAUDE.md), which imports this file, CONTRIBUTING.md and README.md and adds the Claude-specific parts (hooks, settings, worktrees). Personal style preferences live in user memory.
 
 This repo publishes `@thomasfosterau/effect-xml` from the repository root: type-safe, streaming XML and HTML parsing for Effect. A second workspace package, `@thomasfosterau/effect-xml-cli` (`packages/cli`, `"private": true` until its npm setup is done, see [PUBLISHING.md](PUBLISHING.md)), ships the `effect-xml-xsd` command (`generate`, built on `effect/cli` and `@effect/platform-node`), so the library itself stays platform-neutral and side-effect free. It has three layers, each usable on its own and each a thin composition of the one below, plus XML Schema validation (`Xsd`) on top of the SAX stream:
 
@@ -48,41 +48,15 @@ input chunks ──▶ Lexer ──▶ Sax (Stream<SaxEvent>) ──▶ tree bui
 - **Lint findings are fixed, not suppressed.** No `oxlint-disable` comments; a rule is relaxed only in `vite.config.ts`, with a comment giving the reason.
 - **Every export has a doc comment** whose first sentence stands alone in a hover, plus `@since` and `@category`; the main entry points carry a runnable `@example`.
 
-## Commands
+## Commands and gates
 
-- `pnpm install` — dependencies plus the Vite+ git hooks (pre-commit runs `vp staged`: format + lint on staged files) and the `prepare` step that patches the native `tsc` / `oxlint` with `@effect/tsgo`. No pre-push hook: run the gates yourself.
-- `vp check` — format + lint (Oxfmt + Oxlint with `@effect/tsgo`'s preset, `@enfect/oxlint`'s `recommended` Effect rules and oxlint's `import` / `promise` / `vitest` / `jsdoc` plugins at the `correctness`, `suspicious` and `perf` categories). Lint is type-aware through oxlint-tsgolint (`typeAware` + `typeCheck`, which also runs `@effect/tsgo`'s `effecttsgo/*` rules); tsgolint reads each file's nearest `tsconfig.json`, which is why `tests/`, `examples/` and `bench/` carry one extending `tsconfig.test.json`. `vp run check` — the type gate: `src` under `tsconfig.json`, then `src` + `tests` + `examples` under `tsconfig.test.json`, plus `packages/cli`'s. They are different commands.
-- `vp run test:unit` — the unit suite, including the html5lib conformance gate, and `packages/cli`'s.
-- `vp run build` — `vp pack` → `dist/` (one ESM module + `.d.ts` per source module, `unbundle`), and `packages/cli/dist/main.js` (the `effect-xml-xsd` executable).
-- `vp run size` — builds, then bundles a consumer's `Sax.forEach` and `Xml.parse` from `dist/` with esbuild against their size budgets (`bench/size.ts`); fails over a budget or when XQuery / XSD code is pulled in.
-- `vp run docgen` — compiles and runs every `@example` against `dist/`, writes the (git-ignored) API reference to `docs/`.
-- `vp run test:coverage` — the suite under an Istanbul map at `coverage/coverage-final.json`, which `fallow audit` reads.
-- `vp run example` — the tour in `examples/usage.ts`.
-- `vp run bench` — the parsing benchmarks (`bench/parse.ts`; `vpx bench/parse.ts 32` for a 32 MB input).
-- `pnpm changeset` — add a changeset.
+The commands, the gate list and what CI runs are in [CONTRIBUTING.md](CONTRIBUTING.md#commands); they are not repeated here. Invoke everything through `vp` (`vp exec` instead of `npx`). The sanctioned non-`vp` invocations: `pnpm install` (`--frozen-lockfile` in CI), `pnpm changeset`, and `pnpm publish` on the release path. Tools run through Vite+: `vp exec fallow …` for fallow, `vpx <file>.ts` for TypeScript scripts (`tsx` stays installed only because `@effect/docgen` spawns it); nothing else is put on PATH.
 
-Invoke everything through `vp` (`vp exec` instead of `npx`). The sanctioned non-`vp` invocations: `pnpm install` (`--frozen-lockfile` in CI), `pnpm changeset`, and `pnpm publish` on the release path. Single-check variants are in [CONTRIBUTING.md](CONTRIBUTING.md#running-individual-checks).
-
-## Verification
-
-Before you report work as done, run the gates below in order and quote each command with its final pass/fail. If a gate can't run here, say which and why; never imply it ran.
-
-1. From a clean install, which is what CI sees: `rm -rf node_modules dist && pnpm install --frozen-lockfile`.
-2. `vp check`
-3. `vp run check`
-4. `vp run test:unit`
-5. `vp run build`
-6. `vp run size`
-7. `vp run docgen`
-8. `pnpm audit --audit-level high` (network)
-9. `vp run test:coverage`, then `vp exec fallow audit --format json --quiet --explain --gate-marker agent --base origin/trunk` (the fallow gate below; not a CI step).
-
-Steps 2–8 are CI's required `ci` job, in its order ([ci.yml](.github/workflows/ci.yml)). CI holds a read-only token and no secrets or OIDC (so Dependabot PRs run it safely), pins every action to a commit SHA, never persists checkout credentials and never sets `node-version: latest` (it can resolve to a pre-release; the setup action uses `"*"` with `check-latest`, Release the engines major); the release job alone holds `id-token: write` and never runs for Dependabot. `uvx zizmor .github` audits the workflows (config in `.github/zizmor.yml`).
+Before you report work as done, run the [gates](CONTRIBUTING.md#verification) in order and quote each command with its final pass/fail. If a gate can't run here, say which and why; never imply it ran.
 
 ## Branches and pull requests
 
 - The default branch is `trunk`. Branch off `trunk`; PR against `trunk`; squash-merge with a conventional prefix (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`). Rebase onto `origin/trunk` before opening or updating a PR; never merge `trunk` into your branch.
-- Agent work uses git worktrees under `.claude/worktrees/`, one per branch. A worktree needs its own `pnpm install`.
 - Open a pull request only when the owner asks for one; otherwise push the branch and report it. There is no standing approval to open PRs in this repo.
 - Every change to the published package's behaviour or its emitted `.d.ts` carries a changeset (`pnpm changeset`); doc-comment changes that reach the `.d.ts` take a `patch`. README, guidance, CI and tooling changes need none. Never publish or version by hand: the Release workflow opens the version PR (`chore: version packages`) and the owner merges it. Publishing is npm trusted publishing (OIDC) from the protected `release` environment; there is no `NPM_TOKEN` ([PUBLISHING.md](PUBLISHING.md)).
 - GitHub writes go to `thomasfosterau/effect-xml` only. If another repo (effect-parse, say) needs a change, say so in the PR body or an issue here.
@@ -101,15 +75,9 @@ Never guess at an Effect API: read the installed package — `node_modules/effec
 - Tagged errors are `Schema.TaggedError<Self>()(tag, fields)`; tagged unions that are plain data (`SaxEvent`, the lexer's tokens) are `Data.taggedEnum`s.
 - The grammars are `@thomasfosterau/effect-parse` parsers; its README is the reference for `Parser` / `Token` / `Input`.
 
-## Agent sessions
-
-- The SessionStart hook (`.claude/hooks/session-start.sh`) installs the global Vite+ CLI at the catalog's `vite-plus` pin with the official installer (npm-provenance and SHA-512 checked; it needs `vite.plus` and `viteplus.dev` on the environment's network allowlist), links `vp` and `vpx` into `~/.local/bin` (the CLI lives under `$VP_HOME` when set, as in the Vite+ container image, else `~/.local/share/vite-plus`), and runs `vp install --frozen-lockfile`. Everything else goes through Vite+: `vp exec fallow …` for fallow, `vpx <file>.ts` for TypeScript scripts (`tsx` stays installed only because `@effect/docgen` spawns it). Nothing else is put on PATH. If the installer can't run, `vp` falls back to this checkout's `node_modules` copy. It hydrates no secrets; none are needed, and nothing here can publish.
-- A PreToolUse hook (`.claude/hooks/fallow-gate.sh`) blocks `git commit` / `git push` when `fallow audit --base origin/trunk` (run as `vp exec fallow`) fails; it audits only this checkout and its `.claude/worktrees/*`, skipping any other tree with a notice. It reads the coverage map on disk, and runs `vp run test:coverage` first when the map is missing or older than any file under `src/`, `tests/`, `bench/` or `examples/` (blocking if that fails), so a commit in a fresh worktree is still audited. A PostToolUse hook runs `vp fmt` on every source, JSON, CSS or Markdown file you write or edit.
-- Every gate in [Verification](#verification) runs in an agent session; `pnpm audit` needs the network.
-
 ## Documentation surfaces
 
-`README.md` is the landing page and the npm-facing API reference (it is what npm shows); `CONTRIBUTING.md` carries human setup, hooks and single-check commands; `PUBLISHING.md` the release pipeline and its one-time owner setup; `SECURITY.md` the reporting channel and supply-chain posture; this file the architecture, invariants and conventions. No `docs/` tree is committed (`docs/` is docgen output); decisions go in issue comments.
+`README.md` is the landing page and the npm-facing API reference (it is what npm shows); `CONTRIBUTING.md` carries setup, hooks, commands, the gate list and what CI runs; `.claude/CLAUDE.md` the Claude Code specifics (hooks, settings, worktrees) and the imports of this file, CONTRIBUTING.md and README.md; `PUBLISHING.md` the release pipeline and its one-time owner setup; `SECURITY.md` the reporting channel and supply-chain posture; this file the architecture, invariants and conventions. No `docs/` tree is committed (`docs/` is docgen output); decisions go in issue comments.
 
 ---
 
