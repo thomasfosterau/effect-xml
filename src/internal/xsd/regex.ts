@@ -14,7 +14,7 @@ import { Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import { quote } from "../quote.ts";
 import { isIn, tagSet } from "../tagSet.ts";
@@ -59,7 +59,12 @@ const nameChars =
     [0x203f, 0x2040],
   ]);
 
-const multiCharEscapes: Readonly<Record<string, string>> = {
+/** A table of escape letters, to the text each stands for. */
+interface EscapeTable {
+  readonly [letter: string]: string;
+}
+
+const multiCharEscapes: EscapeTable = {
   s: "[\\u{20}\\u{9}\\u{a}\\u{d}]",
   S: "[^\\u{20}\\u{9}\\u{a}\\u{d}]",
   i: `[${nameStartChars}]`,
@@ -72,7 +77,7 @@ const multiCharEscapes: Readonly<Record<string, string>> = {
   W: "[\\p{P}\\p{Z}\\p{C}]",
 };
 
-const singleCharEscapes: Readonly<Record<string, string>> = { n: "\n", r: "\r", t: "\t" };
+const singleCharEscapes: EscapeTable = { n: "\n", r: "\r", t: "\t" };
 
 const categories = tagSet(
   "L",
@@ -208,7 +213,7 @@ const blockList: ReadonlyArray<readonly [string, ReadonlyArray<readonly [number,
   ["Tags", [[0xe0000, 0xe007f]]],
 ];
 
-const blocks = Record.fromEntries(blockList);
+const blocks = R.fromEntries(blockList);
 
 /** `\p{…}` (or, negated, `\P{…}`) for a category or `Is` block name. */
 const property = (
@@ -218,10 +223,7 @@ const property = (
 ): Option.Option<string> => {
   if (isIn(categories, name)) return Option.some(`\\${negated ? "P" : "p"}{${name}}`);
   if (!name.startsWith("Is")) return Option.none();
-  return Option.map(
-    Record.get(known, name.slice(2)),
-    (rs) => `[${negated ? "^" : ""}${ranges(rs)}]`,
-  );
+  return Option.map(R.get(known, name.slice(2)), (rs) => `[${negated ? "^" : ""}${ranges(rs)}]`);
 };
 
 const lit = Token.literal;
@@ -447,7 +449,7 @@ const laterBlocks: ReadonlyArray<readonly [string, ReadonlyArray<readonly [numbe
   ["LowSurrogates", [[0xdc00, 0xdfff]]],
 ];
 
-const xpBlocks = Record.fromEntries([...blockList, ...laterBlocks]);
+const xpBlocks = R.fromEntries([...blockList, ...laterBlocks]);
 
 const xpClassEscape = Parser.alt(categoryEscapeOf(xpBlocks), multiCharEscape);
 

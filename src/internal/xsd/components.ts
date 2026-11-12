@@ -8,8 +8,8 @@ import * as Arr from "effect/Array";
 import * as Match from "effect/Match";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import {
   builtin,
   type ComplexType,
@@ -67,7 +67,7 @@ export const allows = (wildcard: Wildcard, namespace: string): boolean =>
 
 /** A type definition by key: user-defined, `anyType`, or (for a built-in simple type) nothing. */
 export const typeOf = (model: Model, key: string): Option.Option<TypeDefinition> =>
-  key === anyType ? Option.some(anyTypeDefinition) : Record.get(model.types, key);
+  key === anyType ? Option.some(anyTypeDefinition) : R.get(model.types, key);
 
 /** The type a type is derived from, and how; nothing for `anyType`. */
 const baseOf = (
@@ -76,8 +76,8 @@ const baseOf = (
 ): Option.Option<readonly [string, "extension" | "restriction"]> => {
   if (key === anyType) return Option.none();
   if (isBuiltinSimple(key)) return Option.map(builtinBase(key), (b) => [b, "restriction"] as const);
-  return Option.map(Record.get(model.types, key), (def) =>
-    Predicate.isTagged(def, "SimpleType")
+  return Option.map(R.get(model.types, key), (def) =>
+    P.isTagged(def, "SimpleType")
       ? ([def.base, "restriction"] as const)
       : ([def.base ?? anyType, def.derivation ?? "restriction"] as const),
   );
@@ -100,7 +100,7 @@ export const derivationPath = (
 /** The types derived from `key` (not `key` itself) that the model defines by name. */
 export const derivedTypes = (model: Model, key: string): ReadonlyArray<string> =>
   Arr.filter(
-    Record.keys(model.types),
+    R.keys(model.types),
     (k) => !k.startsWith("#") && k !== key && Option.isSome(derivationPath(model, k, key)),
   );
 
@@ -119,9 +119,7 @@ export const substitutionsOf = (
   const cache = MutableHashMap.empty<string, ReadonlyArray<readonly [string, string]>>();
   const inGroup = (key: string, head: string, depth: number): boolean => {
     if (key === head) return true;
-    const next = Option.flatMap(Record.get(model.elements, key), (d) =>
-      Option.fromNullishOr(headOf(d)),
-    );
+    const next = Option.flatMap(R.get(model.elements, key), (d) => Option.fromNullishOr(headOf(d)));
     return (
       depth < 64 &&
       Option.match(next, { onNone: () => false, onSome: (h) => inGroup(h, head, depth + 1) })
@@ -132,7 +130,7 @@ export const substitutionsOf = (
       ...(head.block ?? []),
       ...Option.match(typeOf(model, head.type), {
         onNone: () => [],
-        onSome: (t) => (Predicate.isTagged(t, "ComplexType") ? (t.block ?? []) : []),
+        onSome: (t) => (P.isTagged(t, "ComplexType") ? (t.block ?? []) : []),
       }),
     );
     return Option.match(derivationPath(model, member.type, head.type), {
@@ -141,7 +139,7 @@ export const substitutionsOf = (
     });
   };
   const compute = (head: string): ReadonlyArray<readonly [string, string]> =>
-    Option.match(Record.get(model.elements, head), {
+    Option.match(R.get(model.elements, head), {
       onNone: () => [],
       onSome: (decl) =>
         decl.block?.includes("substitution")
@@ -149,7 +147,7 @@ export const substitutionsOf = (
             ? []
             : [[decl.name, head] as const]
           : Arr.filter(
-              Record.toEntries(model.elements),
+              R.toEntries(model.elements),
               ([key, member]) =>
                 !key.startsWith("#") &&
                 member.abstract !== true &&
@@ -161,9 +159,7 @@ export const substitutionsOf = (
     Option.getOrElse(MutableHashMap.get(cache, head), () => {
       // Local declarations are never substitution group heads.
       const out = head.startsWith("#")
-        ? Arr.fromOption(
-            Option.map(Record.get(model.elements, head), (d) => [d.name, head] as const),
-          )
+        ? Arr.fromOption(Option.map(R.get(model.elements, head), (d) => [d.name, head] as const))
         : compute(head);
       MutableHashMap.set(cache, head, out);
       return out;
@@ -223,9 +219,9 @@ const mergeWith = (
   f: (x: Range, y: Range) => Range,
   absent: Range,
 ): Readonly<Record<string, Range>> =>
-  Record.fromEntries(
+  R.fromEntries(
     Arr.map(
-      Arr.union(Record.keys(a), Record.keys(b)),
+      Arr.union(R.keys(a), R.keys(b)),
       (k) => [k, f(a[k] ?? absent, b[k] ?? absent)] as const,
     ),
   );
@@ -247,12 +243,12 @@ const occurrences = (
 ): Occurrences => {
   const min = particle.min ?? 1;
   const max = toNumber(particle.max ?? 1);
-  if (Predicate.isTagged(particle, "Any")) return { ranges: {}, elements: [], any: max > 0 };
-  if (Predicate.isTagged(particle, "Element")) {
+  if (P.isTagged(particle, "Any")) return { ranges: {}, elements: [], any: max > 0 };
+  if (P.isTagged(particle, "Element")) {
     const named = substitutes(particle.element);
     const single = named.length === 1;
     return {
-      ranges: Record.fromEntries(
+      ranges: R.fromEntries(
         Arr.map(
           named,
           ([name]) => [name, single ? ([min, max] as const) : ([0, max] as const)] as const,
@@ -263,7 +259,7 @@ const occurrences = (
     };
   }
   const parts = Arr.map(particle.particles, (p) => occurrences(substitutes, p));
-  const choice = Predicate.isTagged(particle, "Choice");
+  const choice = P.isTagged(particle, "Choice");
   const combined = Arr.reduce(parts, Option.none<Readonly<Record<string, Range>>>(), (acc, part) =>
     Option.some(
       Option.match(acc, {
@@ -276,7 +272,7 @@ const occurrences = (
     ),
   );
   return {
-    ranges: Record.map(
+    ranges: R.map(
       Option.getOrElse(combined, () => ({})),
       (r) => scale(r, min, max),
     ),
@@ -299,7 +295,7 @@ export const layoutOf = (
   substitutes: (head: string) => ReadonlyArray<readonly [string, string]>,
   def: ComplexType,
 ): Layout => {
-  const occ = Predicate.isTagged(def.content, "Elements")
+  const occ = P.isTagged(def.content, "Elements")
     ? occurrences(substitutes, def.content.particle)
     : { ranges: {}, elements: [], any: false };
   const names = Arr.dedupe(Arr.map(occ.elements, ([name]) => name));
@@ -331,13 +327,9 @@ export const layoutOf = (
   return {
     attributes,
     elements,
-    byName: Record.fromEntries(Arr.map(elements, (e) => [e.name, e] as const)),
+    byName: R.fromEntries(Arr.map(elements, (e) => [e.name, e] as const)),
     any: occ.any,
     anyAttribute: def.anyAttribute !== undefined,
-    text: Predicate.isTagged(def.content, "Simple")
-      ? "value"
-      : def.mixed === true
-        ? "mixed"
-        : "none",
+    text: P.isTagged(def.content, "Simple") ? "value" : def.mixed === true ? "mixed" : "none",
   };
 };

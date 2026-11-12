@@ -15,7 +15,7 @@ import * as Arr from "effect/Array";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import type { QName } from "../Name.ts";
 import { Cursor } from "../Xml/Cursor.ts";
@@ -77,7 +77,7 @@ export type ExpandedName = Pick<QName, "local" | "namespace">;
 
 /** Whether `name` passes an element test. */
 const namePasses = (t: ElementTest, name: ExpandedName): boolean =>
-  Predicate.isTagged(t, "Name")
+  P.isTagged(t, "Name")
     ? name.local === t.local && name.namespace === t.namespace
     : (t.namespace === undefined || name.namespace === t.namespace) &&
       (t.local === undefined || name.local === t.local);
@@ -307,12 +307,9 @@ export const compileStreamable = (
   path: string | Path,
   options: CompileOptions | undefined,
 ): Result.Result<ReadonlyArray<StreamStep>, XPathError> =>
-  Result.flatMap(
-    Predicate.isString(path) ? compile(path, options) : Result.succeed(path),
-    (compiled) => {
-      const steps = toStreamSteps(compiled);
-      return Predicate.isString(steps)
-        ? Result.fail(new XPathError({ expression: compiled.expression, offset: 0, reason: steps }))
-        : Result.succeed(steps);
-    },
-  );
+  Result.flatMap(P.isString(path) ? compile(path, options) : Result.succeed(path), (compiled) => {
+    const steps = toStreamSteps(compiled);
+    return P.isString(steps)
+      ? Result.fail(new XPathError({ expression: compiled.expression, offset: 0, reason: steps }))
+      : Result.succeed(steps);
+  });

@@ -22,7 +22,7 @@ import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { XQuery } from "../src/index.ts";
@@ -116,7 +116,7 @@ const optionsOf = (
   environment: Environment,
   modules: Readonly<Record<string, ReadonlyArray<XQuery.ModuleSource>>>,
 ): XQuery.CompileOptions => ({
-  namespaces: Record.fromEntries(environment.namespaces.map((b) => [b.prefix, b.uri] as const)),
+  namespaces: R.fromEntries(environment.namespaces.map((b) => [b.prefix, b.uri] as const)),
   variables: [
     ...environment.params.filter((p) => !p.declared).map((p) => clark(environment, p.name)),
     ...environment.sources.flatMap((s) =>
@@ -241,7 +241,7 @@ const runSpec = (spec: Spec, tests: ReadonlyArray<TestCase>) =>
   );
 
 const countsBySet = (verdicts: ReadonlyArray<Verdict>): Record<string, Counts> =>
-  Arr.reduce(verdicts, Record.empty<string, Counts>(), (counts, v) => {
+  Arr.reduce(verdicts, R.empty<string, Counts>(), (counts, v) => {
     const c = counts[v.set] ?? { runnable: 0, syntax: 0, static: 0 };
     return {
       ...counts,
@@ -259,7 +259,7 @@ const shortfalls = (
   baseline: Readonly<Record<string, Counts>>,
   counts: Readonly<Record<string, Counts>>,
 ): ReadonlyArray<string> =>
-  Record.toEntries(baseline).flatMap(([set, want]) => {
+  R.toEntries(baseline).flatMap(([set, want]) => {
     const got = counts[set] ?? { runnable: 0, syntax: 0, static: 0 };
     return (["runnable", "syntax", "static"] as const).flatMap((k) =>
       got[k] < want[k] ? [`${spec} ${set}: ${k} ${got[k]}, baseline ${want[k]}`] : [],
@@ -267,7 +267,7 @@ const shortfalls = (
   });
 
 const sum = (counts: Record<string, Counts>): Counts =>
-  Arr.reduce(Record.values(counts), { runnable: 0, syntax: 0, static: 0 }, (a, c) => ({
+  Arr.reduce(R.values(counts), { runnable: 0, syntax: 0, static: 0 }, (a, c) => ({
     runnable: a.runnable + c.runnable,
     syntax: a.syntax + c.syntax,
     static: a.static + c.static,
@@ -290,7 +290,7 @@ describe("W3C QT3 parse-only pass", () => {
       }).pipe(Effect.provide(Fixtures.layer)),
     );
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    const counts = Record.fromEntries(
+    const counts = R.fromEntries(
       results.map(([spec, verdicts]) => [spec, countsBySet(verdicts)] as const),
     );
     const report = Effect.runSync(reportRequested("QT3_REPORT"));

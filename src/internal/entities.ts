@@ -13,7 +13,7 @@ import { Compiler, Parser, Token } from "@thomasfosterau/effect-parse";
 import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { htmlLegacyEntities, htmlNamedEntities } from "./htmlEntities.generated.ts";
 
@@ -247,7 +247,7 @@ const namedReference = (options: EntityOptions): Parser.Parser<Part> => {
     if (has(entities, name)) return entities[name] ?? reference;
     if (dtd === undefined) return reference;
     const out = dtd.resolve(name, inAttribute);
-    if (Predicate.isString(out)) return out;
+    if (P.isString(out)) return out;
     const error: EntityError = { reference, reason: out.reason, relativeOffset };
     return out.limit === undefined ? error : { ...error, limit: out.limit };
   };
@@ -337,9 +337,9 @@ export const decode = (raw: string, options: EntityOptions): Result.Result<strin
   // In strict mode an error part, if any, ends the parts (it takes the rest).
   const parts = Parser.parseSync(grammar(options), raw);
   return Option.match(
-    Arr.findFirst(parts, (part): part is EntityError => !Predicate.isString(part)),
+    Arr.findFirst(parts, (part): part is EntityError => !P.isString(part)),
     {
-      onNone: () => Result.succeed(Arr.filter(parts, Predicate.isString).join("")),
+      onNone: () => Result.succeed(Arr.filter(parts, P.isString).join("")),
       onSome: Result.fail,
     },
   );

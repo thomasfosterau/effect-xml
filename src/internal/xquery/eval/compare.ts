@@ -12,7 +12,7 @@ import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { QName } from "../../../Name.ts";
 import { AtomicValue, atomicString } from "../atomic.ts";
 import {
@@ -79,7 +79,7 @@ const compareNumeric = (a: AtomicValue, b: AtomicValue): number => {
     const y = single ? Math.fround(toNumber(b)) : toNumber(b);
     return compareFloating(x, y);
   }
-  if (Predicate.isBigInt(a.value) && Predicate.isBigInt(b.value)) return order(a.value, b.value);
+  if (P.isBigInt(a.value) && P.isBigInt(b.value)) return order(a.value, b.value);
   return BigDecimal.Order(toDecimal(a), toDecimal(b));
 };
 
@@ -133,7 +133,7 @@ const compareOther = (
 ): number => {
   const x = a.value;
   const y = b.value;
-  if (Predicate.isBoolean(x) && Predicate.isBoolean(y)) return Number(x) - Number(y);
+  if (P.isBoolean(x) && P.isBoolean(y)) return Number(x) - Number(y);
   if (isQNameValue(x) && isQNameValue(y) && a.type.primitive === b.type.primitive)
     return ordering
       ? noOrder(a, offset)
@@ -330,8 +330,7 @@ export const generalCompareCompatible = (
 // fn:deep-equal
 // -----------------------------------------------------------------------------
 
-const isNaNValue = (v: AtomicValue): boolean =>
-  Predicate.isNumber(v.value) && Number.isNaN(v.value);
+const isNaNValue = (v: AtomicValue): boolean => P.isNumber(v.value) && Number.isNaN(v.value);
 
 /** Whether two atomic values are equal as `deep-equal` takes them: NaN equals NaN, incomparable values are unequal. */
 export const atomicDeepEqual = (

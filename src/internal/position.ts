@@ -3,7 +3,7 @@
  * and `column` are resolved against a per-input {@link LineIndex} only when
  * read.
  */
-import * as Equal from "effect/Equal";
+import * as Eq from "effect/Equal";
 import * as Hash from "effect/Hash";
 import { NodeInspectSymbol } from "effect/Inspectable";
 import type { Position, Span } from "../Position.ts";
@@ -98,9 +98,9 @@ export class LineIndex implements LineSource {
 /**
  * A position whose `line` and `column` are getters, resolved when read. Its
  * only own enumerable property is `offset`; `toJSON` and the Node inspector
- * show all three, and `Equal.equals` compares all three.
+ * show all three, and `Eq.equals` compares all three.
  */
-export class LazyPosition implements Position, Equal.Equal {
+export class LazyPosition implements Position, Eq.Equal {
   readonly offset: number;
   /** The index into the CRLF-normalized input the line and column are resolved at. */
   readonly #index: number;
@@ -131,7 +131,7 @@ export class LazyPosition implements Position, Equal.Equal {
     return this.toJSON();
   }
 
-  [Equal.symbol](that: Equal.Equal): boolean {
+  [Eq.symbol](that: Eq.Equal): boolean {
     return (
       that instanceof LazyPosition &&
       this.offset === that.offset &&
@@ -154,9 +154,9 @@ export const fixed = (offset: number, line: number, column: number): Position =>
  * {@link LazyPosition}s on the first read of either (and keeping them): one
  * field to set per span rather than one per end, as most spans are never
  * read. It has no own enumerable properties; `toJSON` and the Node inspector show
- * `{ start, end }`, and `Equal.equals` compares both ends.
+ * `{ start, end }`, and `Eq.equals` compares both ends.
  */
-export class LazySpan implements Span, Equal.Equal {
+export class LazySpan implements Span, Eq.Equal {
   readonly #lines: LineIndex;
   readonly #startOffset: number;
   readonly #startIndex: number;
@@ -209,11 +209,9 @@ export class LazySpan implements Span, Equal.Equal {
     return this.toJSON();
   }
 
-  [Equal.symbol](that: Equal.Equal): boolean {
+  [Eq.symbol](that: Eq.Equal): boolean {
     return (
-      that instanceof LazySpan &&
-      Equal.equals(this.start, that.start) &&
-      Equal.equals(this.end, that.end)
+      that instanceof LazySpan && Eq.equals(this.start, that.start) && Eq.equals(this.end, that.end)
     );
   }
 

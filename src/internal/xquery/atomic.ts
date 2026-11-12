@@ -11,7 +11,7 @@
 import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { isValidName, isValidNCName, QName } from "../../Name.ts";
 import { XQueryError, xqueryError } from "../../XQuery/Error.ts";
@@ -192,7 +192,7 @@ const xdmRule = (type: AtomicType): Option.Option<XdmRule> => {
 
 /** The JavaScript value of a decoded XML Schema value of the atomic type `type`. */
 const fromChecked = (type: AtomicType, value: SimpleValue): AtomicData => {
-  if (Predicate.isNumber(value) && derivesFrom(type, AtomicTypes.integer)) return BigInt(value);
+  if (P.isNumber(value) && derivesFrom(type, AtomicTypes.integer)) return BigInt(value);
   // SAFETY: an atomic type's checker never returns a list, the one `SimpleValue` that isn't `AtomicData`.
   return value as AtomicData;
 };
@@ -350,7 +350,7 @@ const formatDuration = (type: AtomicType, lexical: string): string => {
  */
 export const atomicString = (atomic: AtomicValue): string => {
   const { type, value } = atomic;
-  if (Predicate.isString(value)) {
+  if (P.isString(value)) {
     if (type.primitive === "duration") return formatDuration(type, value);
     if (
       ["dateTime", "time", "date", "gYearMonth", "gYear", "gMonthDay", "gDay", "gMonth"].includes(
@@ -360,9 +360,9 @@ export const atomicString = (atomic: AtomicValue): string => {
       return formatTemporal(value);
     return value;
   }
-  if (Predicate.isBoolean(value)) return value ? "true" : "false";
-  if (Predicate.isBigInt(value)) return value.toString();
-  if (Predicate.isNumber(value)) return formatFloating(value, type.primitive === "float");
+  if (P.isBoolean(value)) return value ? "true" : "false";
+  if (P.isBigInt(value)) return value.toString();
+  if (P.isNumber(value)) return formatFloating(value, type.primitive === "float");
   if (BigDecimal.isBigDecimal(value)) return formatDecimal(value);
   if (value instanceof Uint8Array)
     return type.primitive === "hexBinary" ? formatHex(value) : formatBase64(value);

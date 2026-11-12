@@ -7,7 +7,7 @@
  * Positions and lengths count characters (code points), not UTF-16 units.
  */
 import * as Arr from "effect/Array";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { AtomicValue } from "../../atomic.ts";
 import { stringValue, type Sequence } from "../../item.ts";
 import { AtomicTypes } from "../../types.ts";
@@ -32,7 +32,7 @@ const codepointsToString = (args: ReadonlyArray<Sequence>, call: Call): Sequence
   str(
     atomsOf(arg(args, 0))
       .map((a) => {
-        const c = Predicate.isBigInt(a.value) ? a.value : -1n;
+        const c = P.isBigInt(a.value) ? a.value : -1n;
         return isXmlChar(c)
           ? String.fromCodePoint(Number(c))
           : raise(

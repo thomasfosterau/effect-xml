@@ -6,7 +6,7 @@
  * tagged, callers can exhaustively narrow with `Effect.catchTag` /
  * `Effect.catchTags` and the type system guarantees every case is handled.
  */
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { showPosition } from "./Position.ts";
 import { quote } from "./internal/quote.ts";
@@ -330,7 +330,7 @@ export type SaxError =
  * @category guards
  */
 export const isSaxError = (u: unknown): u is SaxError =>
-  Predicate.hasProperty(u, "_tag") && Predicate.isString(u._tag) && isIn(saxErrorTags, u._tag);
+  P.hasProperty(u, "_tag") && P.isString(u._tag) && isIn(saxErrorTags, u._tag);
 
 const saxErrorTags = tagSet(
   "UnexpectedCharacter",
