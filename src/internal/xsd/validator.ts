@@ -349,7 +349,7 @@ export class Validator {
     const known = names?.get(raw);
     if (known !== undefined) return known;
     const name = this.resolve(raw, isAttribute, bindings, position);
-    if (names !== undefined && !(name instanceof UnboundNamespacePrefix)) names.set(raw, name);
+    if (names !== undefined && !P.isTagged(name, "UnboundNamespacePrefix")) names.set(raw, name);
     return name;
   }
 
@@ -413,7 +413,7 @@ export class Validator {
       bindings,
       ev.span.start,
     );
-    if (name instanceof UnboundNamespacePrefix) return name;
+    if (P.isTagged(name, "UnboundNamespacePrefix")) return name;
     const index = parent === undefined ? 1 : count(parent, ev.name);
     const opening: Opening = {
       ev,
@@ -733,7 +733,7 @@ export class Validator {
             : a.name.startsWith("xmlns:")
               ? expanded("xmlns", a.name.slice(6), Namespaces.xmlns)
               : this.resolve(a.name, true, bindings, a.span.start);
-        return name instanceof UnboundNamespacePrefix
+        return P.isTagged(name, "UnboundNamespacePrefix")
           ? Result.fail(name)
           : Result.succeed(Nodes.attribute(toQName(name), a.value));
       }),
@@ -769,7 +769,7 @@ export class Validator {
   ): Failure | null {
     const { ev, bindings } = opening;
     const qname = this.resolveIn(opening.attributeNames, a.name, true, bindings, a.span.start);
-    if (qname instanceof UnboundNamespacePrefix) return qname;
+    if (P.isTagged(qname, "UnboundNamespacePrefix")) return qname;
     const key = qname.clark;
     if (seen.includes(key))
       return new DuplicateAttribute({
@@ -1110,7 +1110,7 @@ const count = (parent: Frame, raw: string): number => {
 const isBag = (
   v: XsdValue | Array<XsdValue> | Record<string, string>,
 ): v is Record<string, string> =>
-  P.isObject(v) && !Arr.isArray(v) && !(v instanceof XmlElement) && !(v instanceof Uint8Array);
+  P.isObject(v) && !Arr.isArray(v) && !P.isTagged(v, "XmlElement") && !(v instanceof Uint8Array);
 
 const allowsName = (wildcard: Wildcard, name: Expanded): boolean =>
   P.isTagged(wildcard.namespaces, "Any") ||
