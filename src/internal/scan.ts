@@ -421,7 +421,20 @@ const declaration = (buf: string, pos: number, ctx: Context): ScanResult => {
 const isS = (c: number): boolean => c === 32 || c === TAB || c === LF || c === 13;
 
 /**
- * `<?target data?>` (§2.6), with an ASCII `Name` for a target other than
+ * Is the ASCII name `name` a `QName` (`NCName (':' NCName)?`), as the
+ * grammar reads a processing instruction's target: no colon first or last,
+ * and at most one?
+ */
+const isAsciiQName = (name: string): boolean => {
+  const colon = name.indexOf(":");
+  return (
+    colon === -1 ||
+    (colon > 0 && colon === name.lastIndexOf(":") && is(name.charCodeAt(colon + 1), NAME_START))
+  );
+};
+
+/**
+ * `<?target data?>` (§2.6), with an ASCII `QName` for a target other than
  * `xml` in any case (`xml` itself starts the XML declaration, the grammar's).
  */
 const processingInstruction = (buf: string, pos: number, ctx: Context): ScanResult => {
@@ -431,6 +444,7 @@ const processingInstruction = (buf: string, pos: number, ctx: Context): ScanResu
   if (targetEnd >= end) return Fallback;
   const target = buf.slice(pos + 2, targetEnd);
   if (target.length === 3 && target.toLowerCase() === "xml") return Fallback;
+  if (!isAsciiQName(target)) return Fallback;
   let from = targetEnd;
   while (from < end && isS(buf.charCodeAt(from))) from++;
   // Data only after whitespace; `?>` straight after the target ends it empty.

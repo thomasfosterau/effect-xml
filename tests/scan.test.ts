@@ -1,8 +1,10 @@
 /**
  * The hand-written XML scanner (`src/internal/scan.ts`) against the token
- * grammars it stands in for. With `dtd: "internal"` the lexer reads every
- * token with the grammars, so on a document without a DOCTYPE the two must
- * agree exactly: the same events with the same spans, and the same failure.
+ * grammars it stands in for. Read with the DTD-aware grammars from the first
+ * token (`tokenizeEagerly`, `dtd: "internal"` as before #99), the lexer reads
+ * every token with the grammars, so on a document without a DOCTYPE the two
+ * must agree exactly: the same events with the same spans, and the same
+ * failure.
  * `Xml.parse` builds without positions first (rerunning with them to report
  * a failure); it must agree with `Xml.parseStream`, which never does.
  */
@@ -13,7 +15,9 @@ import * as Exit from "effect/Exit";
 import * as P from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import { origin, Sax, Xml } from "../src/index.ts";
+import { splitEvery } from "./support/chunks.ts";
 import { documents } from "./support/documents.ts";
+import { tokenizeEagerly } from "./support/eager.ts";
 import { some } from "./support/narrow.ts";
 import { plain } from "./support/plain.ts";
 
@@ -26,6 +30,10 @@ const tokenize = (doc: string, options: Sax.SaxOptions, size: number) =>
       ).pipe(Sax.tokenize(options), Stream.runCollect),
     ),
   );
+
+/** The events of `doc` (or its failure) read with the grammars alone, whole or in chunks of `size`. */
+const grammars = (doc: string, options: Sax.SaxOptions, size: number) =>
+  tokenizeEagerly(splitEvery(doc, size), { ...options, dtd: "internal" });
 
 /** An exit's events as plain data: lazy spans resolved, so a comparison sees every position. */
 const located = <E>(exit: Exit.Exit<Iterable<Sax.SaxEvent>, E>) =>
@@ -74,7 +82,7 @@ describe("the XML scanner", () => {
   test("agrees with the token grammars: events, spans and failures", () => {
     Arr.forEach(docs, (doc) =>
       expect(located(tokenize(doc, {}, doc.length)), doc).toStrictEqual(
-        located(tokenize(doc, { dtd: "internal" }, doc.length)),
+        located(grammars(doc, {}, doc.length)),
       ),
     );
   });
@@ -83,7 +91,7 @@ describe("the XML scanner", () => {
     Arr.forEach(docs.slice(0, 300), (doc) =>
       Arr.forEach([1, 2, 3, 7], (size) =>
         expect(located(tokenize(doc, {}, size)), `${doc} in chunks of ${size}`).toStrictEqual(
-          located(tokenize(doc, { dtd: "internal" }, size)),
+          located(grammars(doc, {}, size)),
         ),
       ),
     );
@@ -95,7 +103,7 @@ describe("the XML scanner", () => {
         expect(
           located(tokenize(doc, { recover: true }, size)),
           `${doc} in chunks of ${size}`,
-        ).toStrictEqual(located(tokenize(doc, { recover: true, dtd: "internal" }, size))),
+        ).toStrictEqual(located(grammars(doc, { recover: true }, size))),
       ),
     );
   });

@@ -17,6 +17,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "./Error.ts";
 import { forEachLeniently } from "./internal/lenient.ts";
@@ -194,7 +195,8 @@ export interface SaxOptions {
    * entities are expanded (markup included), within `limits.maxEntityExpansion`
    * and `limits.maxEntityDepth`, and `<!ATTLIST>` defaults are applied.
    * External and parameter entities are never fetched; referring to one is
-   * an error.
+   * an error. Until a DOCTYPE declares a general entity, `"internal"` reads
+   * as fast as `"ignore"`: a document without one costs nothing more.
    */
   readonly dtd?: "ignore" | "internal";
   /**
@@ -357,6 +359,35 @@ export const tokenize =
       return Stream.concat(body, tail);
     });
   };
+
+/**
+ * @internal The events of `chunks` (or the failure), as {@link tokenize}
+ * streams them, but with `dtd: "internal"` read by the DTD-aware grammars
+ * from the first token, whatever the DOCTYPE declares, as before #99. The
+ * reference the differential tests hold the faster reading to; not for use
+ * outside them.
+ */
+export const tokenizeEagerly = (
+  chunks: ReadonlyArray<string>,
+  options?: SaxOptions,
+): Result.Result<ReadonlyArray<SaxEvent>, SaxError> => {
+  const tokenizer = new Tokenizer(resolveSaxOptions(options), false, true);
+  const events: Array<SaxEvent> = [];
+  const keep = (ev: SaxEvent): boolean => {
+    events.push(ev);
+    return true;
+  };
+  const early = Arr.findFirst(chunks, (chunk): Option.Option<SaxError> => {
+    const over = tokenizer.write(chunk);
+    if (over !== undefined) return Option.some(over);
+    tokenizer.run(keep);
+    return Option.fromUndefinedOr(tokenizer.fault);
+  });
+  if (Option.isSome(early)) return Result.fail(early.value);
+  tokenizer.close();
+  tokenizer.run(keep);
+  return tokenizer.fault === undefined ? Result.succeed(events) : Result.fail(tokenizer.fault);
+};
 
 /**
  * Options for byte input: the SAX options plus an external encoding hint.

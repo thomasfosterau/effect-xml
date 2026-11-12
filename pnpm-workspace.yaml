@@ -70,7 +70,7 @@ catalog:
   # bench/size.ts only: bundles a consumer's program from dist/ against its size
   # budget (`vp run size`). The version vite-plus already resolves.
   esbuild: ^0.28.2
-  fallow: 3.39.0
+  fallow: 3.41.0
   # Exists only for docgen, which requires `tsx` as a peer and spawns it to
   # run the compiled examples. Scripts and tasks run TypeScript with `vpx`.
   tsx: ^4.23.15

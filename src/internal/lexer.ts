@@ -56,6 +56,7 @@ import { type AttrName, type TagName, unsafeAttrName, unsafeTagName } from "../N
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
 import type { Dtd } from "./dtd.ts";
+import { hasAsciiNames } from "./entities.ts";
 import { grammars, type Grammars, Issue, type RawKind, type Tok } from "./tokens.ts";
 
 // -----------------------------------------------------------------------------
@@ -155,8 +156,18 @@ export interface LexerOptions {
   readonly mode: "xml" | "html";
   /** Named entity table. */
   readonly entities: Record<string, string>;
-  /** Declared entities, for XML with `dtd: "internal"`. */
+  /**
+   * Declared entities, for XML with `dtd: "internal"`. The lexer reads with
+   * the grammars without a DTD (and the scanner) until one declares a
+   * general entity (see {@link Lexer.afterDoctype}).
+   */
   readonly dtd?: Dtd;
+  /**
+   * With {@link dtd}: read with the DTD-aware grammars from the first token,
+   * whatever the DTD declares, as before #99. Only the tests set it, to
+   * check that reading without them until a declaration changes nothing.
+   */
+  readonly eagerDtd?: boolean;
   /**
    * XML: the input is content (an entity's replacement text), not a
    * document, so references and CDATA sections may appear at its top level.
@@ -341,7 +352,14 @@ export class Lexer {
   private prologEnded = false;
   /** XML: why the last token {@link misplaced} looked at is not well-formed. */
   private misplacement: Option.Option<InvalidDocumentStructure> = Option.none();
-  private readonly grammars: Grammars;
+  private grammars: Grammars;
+  /**
+   * XML with a DTD: whether the DTD-aware grammars are on. They are off
+   * while nothing is declared (see {@link afterDoctype}).
+   */
+  private dtdOn: boolean;
+  /** XML with a DTD, its grammars off: a DOCTYPE has just been read, so look at the DTD before the next token. */
+  private doctypeRead = false;
   private readonly positions: Positions = new Positions();
 
   /**
@@ -371,15 +389,21 @@ export class Lexer {
 
   private readonly options: LexerOptions;
 
-  /** Whether {@link scanXml} reads the data state's tokens (XML without a DTD). */
-  private readonly scans: boolean;
+  /** Whether {@link scanXml} reads the data state's tokens (XML, the DTD-aware grammars off). */
+  private scans: boolean;
 
   /** XML: whether to recover (see {@link LexerOptions.recover}). */
   private readonly recover: boolean;
 
   constructor(options: LexerOptions) {
     this.options = options;
-    this.scans = options.mode === "xml" && options.dtd === undefined;
+    const dtd = options.dtd;
+    // An empty DTD reads as none, unless the entity table has a name the
+    // grammars without a DTD don't read (see `hasAsciiNames`).
+    this.dtdOn =
+      dtd !== undefined &&
+      (options.eagerDtd === true || dtd.declaresEntities || !hasAsciiNames(options.entities));
+    this.scans = options.mode === "xml" && !this.dtdOn;
     this.recover = options.mode === "xml" && options.recover === true;
     this.scanner = {
       entities: options.entities,
@@ -394,12 +418,25 @@ export class Lexer {
       reused: new Reused(),
       marks: freshMarks(),
     };
-    this.grammars = grammars(
-      options.mode,
-      options.entities,
-      options.dtd !== undefined,
-      this.recover,
-    );
+    this.grammars = grammars(options.mode, options.entities, this.dtdOn, this.recover);
+  }
+
+  /**
+   * XML with a DTD, read so far without its grammars: after a DOCTYPE (once
+   * the SAX layer has read its internal subset, before the next token),
+   * switch them on if it declares a general entity. Until then the DTD
+   * changes nothing the grammars read: no name is declared, so no reference
+   * resolves through it and none has markup in it, and the entity table's
+   * names read the same either way. Nothing but a DOCTYPE declares anything,
+   * and there is at most one, before the root element.
+   */
+  private afterDoctype(): void {
+    this.doctypeRead = false;
+    const dtd = this.options.dtd;
+    if (dtd === undefined || !dtd.declaresEntities) return;
+    this.dtdOn = true;
+    this.scans = false;
+    this.grammars = grammars(this.options.mode, this.options.entities, true, this.recover);
   }
 
   /** Signal end of input and flush any pending output. */
@@ -455,14 +492,22 @@ export class Lexer {
    * no token can be read until more input arrives (or ever, after the end).
    */
   pull(): ReadonlyArray<LexOutput> | null {
+    const ev = this.scanned();
+    if (ev === null) return null;
+    return ev === undefined ? this.parse() : [ev];
+  }
+
+  /**
+   * The next token as the scanner reads it: its event, `null` when no token
+   * can be read yet (or ever, after the end), or `undefined` when the
+   * grammar reads it (see {@link scan}; always, with the scanner off).
+   */
+  private scanned(): LexEvent | null | undefined {
     if (this.failed || this.cursor >= this.buf.length) return null;
     if (!this.ended && this.buf.length < this.retryAt) return null;
-    if (this.scans) {
-      const ev = this.scan();
-      if (ev === null) return null;
-      if (ev !== undefined) return [ev];
-    }
-    return this.parse();
+    if (this.doctypeRead) this.afterDoctype();
+    // (A DOCTYPE may have switched the scanner off.)
+    return this.scans ? this.scan() : undefined;
   }
 
   /** Lex the next token with the grammar (see {@link pull}). */
@@ -472,7 +517,7 @@ export class Lexer {
     const state = this.parseState(start);
     // The `dtd: "internal"` grammars are shared: point them at this document's DTD.
     const dtd = this.options.dtd;
-    if (dtd !== undefined) this.grammars.dtd.current = dtd;
+    if (dtd !== undefined && this.dtdOn) this.grammars.dtd.current = dtd;
     // The compiled grammar runs on the reused state; on a failure `Parser.run`
     // re-runs the interpreter, so `mode` and the reported failure are its.
     const step = Parser.run(this.grammar(), state);
@@ -547,9 +592,7 @@ export class Lexer {
    * `null` when no token can be read yet.
    */
   private next(f: (output: LexOutput) => boolean): boolean | null {
-    if (this.failed || this.cursor >= this.buf.length) return null;
-    if (!this.ended && this.buf.length < this.retryAt) return null;
-    const ev = this.scan();
+    const ev = this.scanned();
     if (ev === null) return null;
     if (ev !== undefined) return f(ev);
     // (The scanner has had its turn.)
@@ -641,7 +684,11 @@ export class Lexer {
 
   /** The tokenizer state after a token. */
   private transition(t: Tok): void {
-    if (isEndTag(t)) {
+    if (t._tag === "Doctype") {
+      // A DOCTYPE that is kept (one that is out of place is a fault, or
+      // dropped when recovering): see `afterDoctype`.
+      if (!this.dtdOn && this.options.dtd !== undefined) this.doctypeRead = true;
+    } else if (isEndTag(t)) {
       this.state = DATA;
     } else if (
       isStartTag(t) &&
