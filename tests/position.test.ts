@@ -16,6 +16,8 @@ import {
 import { at } from "./support/narrow.ts";
 import { plain } from "./support/plain.ts";
 
+const isMismatchedEndTag = Schema.is(MismatchedEndTag);
+
 const collect = (input: string) => Effect.runPromise(Sax.collect(input));
 
 describe("Position — lazy lines and columns", () => {
@@ -62,7 +64,7 @@ describe("Position — lazy lines and columns", () => {
 
   test("errors carry a plain position, encoded as before", async () => {
     const error = await Effect.runPromise(Effect.flip(Xml.parse("<a>\n</b>")));
-    assert(error instanceof MismatchedEndTag);
+    assert(isMismatchedEndTag(error));
     expect(error.position).toStrictEqual({ offset: 4, line: 2, column: 1 });
     expect(R.keys(error.position)).toStrictEqual(["offset", "line", "column"]);
     expect(Schema.encodeSync(MismatchedEndTag)(error).position).toStrictEqual({

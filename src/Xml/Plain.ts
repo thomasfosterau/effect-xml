@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import {
   DuplicateAttribute,
   InvalidDocumentStructure,
@@ -43,6 +44,8 @@ import {
   resolveSaxOptions,
   type SaxEvent,
 } from "../Sax.ts";
+
+const isDuplicateAttribute = Schema.is(DuplicateAttribute);
 
 /**
  * An element of a plain tree: its name as written (`prefix:local`), its
@@ -131,7 +134,7 @@ class PlainBuilder implements Visitor {
         const attributes = Arr.isReadonlyArrayEmpty(ev.attributes)
           ? NO_ATTRIBUTES
           : record(ev.name, ev.attributes);
-        if (attributes instanceof DuplicateAttribute) return attributes;
+        if (isDuplicateAttribute(attributes)) return attributes;
         return this.open(ev.name, attributes, ev.selfClosing, ev.span.start);
       }
       case "EndElement":

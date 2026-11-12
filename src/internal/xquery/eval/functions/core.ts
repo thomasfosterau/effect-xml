@@ -9,6 +9,7 @@
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { XQueryError, errorCode } from "../../../../XQuery/Error.ts";
 import { canonicalEncoding } from "../../../../Encoding.ts";
@@ -29,8 +30,11 @@ import { castAtomic, toNumber } from "../cast.ts";
 import { deepEqual } from "../compare.ts";
 import { orElse, raise, succeeds, unwrap } from "../raise.ts";
 import { arrayMember, contextItem, fetchResource } from "../runtime.ts";
+import { collationOf } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, arrayOf, atomOf, bool, int, isEmpty, mapOf, ofNode, str, text } from "./values.ts";
+
+const isQName = Schema.is(QName);
 
 /** How many characters (code points, not UTF-16 units) a string has. */
 const codepoints = (s: string): number => Arr.fromIterable(s).length;
@@ -162,7 +166,14 @@ const sequences: ReadonlyArray<BuiltinSpec> = [
     params: ["item()*", "item()*"],
     result: "xs:boolean",
     impl: (args, call) =>
-      bool(deepEqual(arg(args, 0), arg(args, 1), call.ctx.dyn.implicitTimezone)),
+      bool(
+        deepEqual(
+          arg(args, 0),
+          arg(args, 1),
+          call.ctx.dyn.implicitTimezone,
+          collationOf(undefined, call).compare,
+        ),
+      ),
   },
 ];
 
@@ -448,7 +459,7 @@ const unparsedText = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
 
 const errorQName = (s: Sequence, call: Call): QName => {
   const [q] = s;
-  return q !== undefined && q instanceof AtomicValue && q.value instanceof QName
+  return q !== undefined && q instanceof AtomicValue && isQName(q.value)
     ? q.value
     : raise("XPTY0004", "fn:error's code must be an xs:QName", call.offset);
 };

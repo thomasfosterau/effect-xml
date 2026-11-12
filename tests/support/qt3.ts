@@ -67,16 +67,19 @@ const FEATURES: HashMap.HashMap<string, boolean> = /*#__PURE__*/ HashMap.make(
   ["non_empty_sequence_collection", true],
   // XPath only: a test that depends on it is compiled in the mode (`xpath1Compatibility`).
   ["xpath-1.0-compatibility", true],
+  // UCA collations through `Intl.Collator` (#171): parameters without an
+  // equivalent fall back as `fallback=yes` says, and the stricter fallbacks
+  // (`advanced-uca-fallback`) behave as the specification describes.
+  ["simple-uca-fallback", true],
+  ["advanced-uca-fallback", true],
   // Unsupported (#70): schema awareness, static typing, the namespace axis,
-  // UCA collations, typed data.
+  // typed data.
   ["schemaImport", false],
   ["schemaValidation", false],
   ["schema-location-hint", false],
   ["typedData", false],
   ["staticTyping", false],
   ["namespace-axis", false],
-  ["simple-uca-fallback", false],
-  ["advanced-uca-fallback", false],
   ["non_unicode_codepoint_collation", false],
   // Unsupported for now: candidates for later phases.
   ["serialization", false],
@@ -102,7 +105,10 @@ const SATISFIED: HashMap.HashMap<string, ReadonlyArray<string>> = /*#__PURE__*/ 
   ["format-integer-sequence", ["١", "①", "⑴", "⒈", "Α", "α"]],
 );
 
-/** The collation URIs an environment may declare. */
+/** The UCA collation URIs (with any parameters) an environment may declare. */
+const UCA = "http://www.w3.org/2013/collation/UCA";
+
+/** The other collation URIs an environment may declare. */
 const COLLATIONS: ReadonlyArray<string> = [
   "http://www.w3.org/2005/xpath-functions/collation/codepoint",
   "http://www.w3.org/2005/xpath-functions/collation/html-ascii-case-insensitive",
@@ -643,7 +649,10 @@ const dependencySatisfied = (spec: Spec, d: Dependency): boolean => {
 const environmentNeeds = (environment: Environment): Option.Option<string> => {
   if (environment.schemas > 0 || environment.sources.some((s) => Option.isSome(s.validation)))
     return Option.some("environment needs schema awareness");
-  const collation = Arr.findFirst(environment.collations, (c) => !Arr.contains(COLLATIONS, c.uri));
+  const collation = Arr.findFirst(
+    environment.collations,
+    (c) => !Arr.contains(COLLATIONS, c.uri) && c.uri !== UCA && !c.uri.startsWith(`${UCA}?`),
+  );
   return Option.map(collation, (c) => `environment needs the collation ${c.uri}`);
 };
 

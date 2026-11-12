@@ -111,6 +111,10 @@ import {
 } from "./Node.ts";
 import { maybe } from "../internal/optional.ts";
 
+const isXmlElement = Schema.is(XmlElement);
+const isXmlDocument = Schema.is(XmlDocument);
+const isXmlAttribute = Schema.is(XmlAttribute);
+
 // -----------------------------------------------------------------------------
 // Syntax
 // -----------------------------------------------------------------------------
@@ -697,7 +701,7 @@ class Trees {
       const [top, ...below] = chain;
       return Arr.reduce(below, this.top((top ?? context).element), (at, c) => childAt(at, c.index));
     }
-    if (context instanceof XmlElement) return this.top(context);
+    if (isXmlElement(context)) return this.top(context);
     return this.document(context);
   }
 }
@@ -714,9 +718,8 @@ const itemOf = (trees: Trees, v: Value): Item => {
   if (P.isString(v)) return AtomicValue.string(v);
   if (P.isNumber(v)) return AtomicValue.double(v);
   if (P.isBoolean(v)) return AtomicValue.boolean(v);
-  if (v instanceof Cursor || v instanceof XmlElement || v instanceof XmlDocument)
-    return trees.node(v);
-  if (v instanceof XmlAttribute) return XdmNode.fromAttribute(v);
+  if (v instanceof Cursor || isXmlElement(v) || isXmlDocument(v)) return trees.node(v);
+  if (isXmlAttribute(v)) return XdmNode.fromAttribute(v);
   if (P.isTagged(v, "XmlComment")) return XdmNode.fromComment(v);
   if (P.isTagged(v, "XmlProcessingInstruction")) return XdmNode.fromProcessingInstruction(v);
   return XdmNode.fromText(v.data);
@@ -731,6 +734,7 @@ class XPathDynamic implements Dynamic {
   readonly globals: Array<Sequence | undefined> = [];
   readonly resources = new Resources(false);
   readonly implicitTimezone = 0;
+  readonly defaultLanguage = "en";
   readonly environment: Readonly<Record<string, string>> = {};
   readonly initialContext: Item;
   readonly externals: HashMap.HashMap<string, Sequence>;
@@ -784,7 +788,7 @@ const isTextLike = (n: XmlNode): n is XmlText | XmlCData =>
   P.isTagged(n, "XmlText") || P.isTagged(n, "XmlCData");
 
 const isXPathNode = (dom: XdmNode["dom"]): dom is Extract<XdmNode["dom"], XPathNode> =>
-  dom instanceof XmlAttribute ||
+  isXmlAttribute(dom) ||
   P.isTagged(dom, "XmlElement") ||
   P.isTagged(dom, "XmlComment") ||
   P.isTagged(dom, "XmlProcessingInstruction");
@@ -798,7 +802,7 @@ const domNodes = (n: XdmNode): ReadonlyArray<XPathNode> => {
   }
   const parent = Option.getOrUndefined(n.parent);
   const dom = parent?.dom;
-  if (dom === undefined || !(dom instanceof XmlElement || dom instanceof XmlDocument)) return [];
+  if (dom === undefined || !(isXmlElement(dom) || isXmlDocument(dom))) return [];
   return dom.children.slice(n.domStart, n.domEnd).filter(isTextLike);
 };
 

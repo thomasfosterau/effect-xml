@@ -449,3 +449,16 @@ describe("Html round trips", () => {
     });
   });
 });
+
+describe("Html.parseDocument — <noscript> in <head>, scripting off", () => {
+  test("head content stays in it; anything else closes it", async () => {
+    const d = await doc(
+      `<html><head><noscript><link rel=a><meta charset=utf-8><basefont><bgsound>` +
+        `<style>s</style><noframes>n</noframes><html lang=en><head><noscript><p>x`,
+    );
+    expect(Html.serialize(d)).toBe(
+      `<html lang="en"><head><noscript><link rel="a"><meta charset="utf-8"><basefont><bgsound>` +
+        `<style>s</style><noframes>n</noframes></noscript></head><body><p>x</p></body></html>`,
+    );
+  });
+});

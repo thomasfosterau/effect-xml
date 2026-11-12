@@ -18,8 +18,11 @@
  */
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { QName } from "../../../Name.ts";
 import { ImplementationNamespace, XQueryError, xqueryError } from "../../../XQuery/Error.ts";
+
+const isXQueryError = Schema.is(XQueryError);
 
 /** A resource evaluation needs from the host before it can go on. */
 export interface ResourceRequest {
@@ -94,7 +97,7 @@ export const attempt = <A>(run: () => A): Result.Result<A, XQueryError | Suspend
   try {
     return Result.succeed(run());
   } catch (e) {
-    if (e instanceof XQueryError || e instanceof Suspend) return Result.fail(e);
+    if (isXQueryError(e) || e instanceof Suspend) return Result.fail(e);
     // The engine's own call stack ran out.
     if (e instanceof RangeError && e.message.includes("call stack"))
       return Result.fail(xqueryError("XPDY0130", "the query recursed too deeply"));
@@ -115,7 +118,7 @@ export const catching = <A>(run: () => A, handle: (error: XQueryError) => A): A 
   try {
     return run();
   } catch (e) {
-    if (e instanceof XQueryError) return handle(e);
+    if (isXQueryError(e)) return handle(e);
     throw e;
   }
 };

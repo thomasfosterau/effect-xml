@@ -84,10 +84,16 @@ const ownSchemas = [
   HtmlDocument,
 ] as const;
 
+/** Each own schema with its type guard, built once. */
+const ownSchemaGuards = Arr.map(ownSchemas, (Class) => ({ Class, is: Schema.is(Class) }));
+
 /** The schema that encodes `node`. */
 const schemaOf = (node: Instance): Schema.Codec<unknown, unknown> =>
   Option.getOrElse(
-    Arr.findFirst(ownSchemas, (Class): boolean => node instanceof Class),
+    Option.map(
+      Arr.findFirst(ownSchemaGuards, ({ is }): boolean => is(node)),
+      ({ Class }) => Class,
+    ),
     (): Schema.Codec<unknown, unknown> =>
       node.constructor.name.startsWith("Html") ? Html.HtmlNode : Xml.XmlNode,
   );

@@ -7,6 +7,7 @@
  * Positions and lengths count characters (code points), not UTF-16 units.
  */
 import * as Arr from "effect/Array";
+import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import { AtomicValue } from "../../atomic.ts";
 import { stringValue, type Sequence } from "../../item.ts";
@@ -14,7 +15,14 @@ import { AtomicTypes } from "../../types.ts";
 import { toNumber } from "../cast.ts";
 import { raise, unwrap } from "../raise.ts";
 import { contextItem } from "../runtime.ts";
-import { collate, collationArg, collationNamed, collationOf, type Collation } from "./collation.ts";
+import {
+  collationArg,
+  collationNamed,
+  collationOf,
+  type Anchor,
+  type Collation,
+  type Span,
+} from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { analyzeString, compileRegex, matches, replace, tokenize } from "./regex.ts";
 import { arg, atomOf, atomsOf, bool, chars, int, isEmpty, str, text } from "./values.ts";
@@ -78,17 +86,16 @@ const translate = (s: string, map: string, trans: string): string => {
 /** `fn:contains` and the other substring matching functions, under a collation. */
 const substringMatch = (
   name: string,
-  f: (s: string, sub: string, folded: string, foldedSub: string) => Sequence,
+  anchor: Anchor,
+  f: (s: string, found: Option.Option<Span>) => Sequence,
 ): ReadonlyArray<BuiltinSpec> =>
   [2, 3].map((arity): BuiltinSpec => ({
     name,
     params: arity === 2 ? ["xs:string?", "xs:string?"] : ["xs:string?", "xs:string?", "xs:string"],
     result: name.includes("substring") ? "xs:string" : "xs:boolean",
     impl: (args, call) => {
-      const c = collationArg(args, 2, call);
       const s = text(arg(args, 0));
-      const sub = text(arg(args, 1));
-      return f(s, sub, c.fold(s), c.fold(sub));
+      return f(s, collationArg(args, 2, call).find(s, text(arg(args, 1)), anchor));
     },
   }));
 
@@ -158,23 +165,34 @@ const regexFunctions: ReadonlyArray<BuiltinSpec> = [
 
 const containsToken = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const c = collationArg(args, 2, call);
-  const token = c.fold(text(arg(args, 1)).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, ""));
+  const token = text(arg(args, 1)).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, "");
   return bool(
     token !== "" &&
       atomsOf(arg(args, 0)).some((a) =>
         unwrap(stringValue(a))
           .split(/[\t\n\r ]+/)
-          .some((t) => c.fold(t) === token),
+          .some((t) => c.compare(t, token) === 0),
       ),
   );
 };
 
-/** A collation key: three bytes per code point of the folded string, so keys order as the strings do. */
-const collationKey = (s: string, c: Collation): Sequence => [
+/**
+ * A collation key: three bytes per code point of the string as the collation
+ * folds it, so keys order as the strings do. A collation that is only a
+ * comparison (UCA, over `Intl.Collator`, which gives no sort keys) has none:
+ * `err:FOCH0004`, as F&O allows.
+ */
+const collationKey = (s: string, c: Collation, call: Call): Sequence => [
   new AtomicValue(
     AtomicTypes.base64Binary,
     new Uint8Array(
-      chars(c.fold(s)).flatMap((ch) => {
+      chars(
+        Option.match(c.key, {
+          onNone: () =>
+            raise("FOCH0004", `the collation ${c.uri} cannot produce collation keys`, call.offset),
+          onSome: (key) => key(s),
+        }),
+      ).flatMap((ch) => {
         const n = ch.codePointAt(0) ?? 0;
         return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
       }),
@@ -185,7 +203,7 @@ const collationKey = (s: string, c: Collation): Sequence => [
 const compareStrings = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   if (isEmpty(arg(args, 0)) || isEmpty(arg(args, 1))) return [];
   return int(
-    Math.sign(collate(collationArg(args, 2, call), text(arg(args, 0)), text(arg(args, 1)))),
+    Math.sign(collationArg(args, 2, call).compare(text(arg(args, 0)), text(arg(args, 1)))),
   );
 };
 
@@ -287,17 +305,15 @@ export const strings: ReadonlyArray<BuiltinSpec> = [
     result: "xs:string",
     impl: (args) => str(translate(text(arg(args, 0)), text(arg(args, 1)), text(arg(args, 2)))),
   },
-  ...substringMatch("fn:contains", (_, sub, s, f) => bool(sub === "" || s.includes(f))),
-  ...substringMatch("fn:starts-with", (_, sub, s, f) => bool(sub === "" || s.startsWith(f))),
-  ...substringMatch("fn:ends-with", (_, sub, s, f) => bool(sub === "" || s.endsWith(f))),
-  ...substringMatch("fn:substring-before", (original, _, s, f) => {
-    const i = s.indexOf(f);
-    return str(f === "" || i < 0 ? "" : original.slice(0, i));
-  }),
-  ...substringMatch("fn:substring-after", (original, _, s, f) => {
-    const i = s.indexOf(f);
-    return str(f === "" ? original : i < 0 ? "" : original.slice(i + f.length));
-  }),
+  ...substringMatch("fn:contains", "first", (_, found) => bool(Option.isSome(found))),
+  ...substringMatch("fn:starts-with", "start", (_, found) => bool(Option.isSome(found))),
+  ...substringMatch("fn:ends-with", "end", (_, found) => bool(Option.isSome(found))),
+  ...substringMatch("fn:substring-before", "first", (s, found) =>
+    str(Option.match(found, { onNone: () => "", onSome: (m) => s.slice(0, m.start) })),
+  ),
+  ...substringMatch("fn:substring-after", "first", (s, found) =>
+    str(Option.match(found, { onNone: () => "", onSome: (m) => s.slice(m.end) })),
+  ),
   ...regexFunctions,
   {
     name: "fn:contains-token",
@@ -315,14 +331,14 @@ export const strings: ReadonlyArray<BuiltinSpec> = [
     name: "fn:collation-key",
     params: ["xs:string"],
     result: "xs:base64Binary",
-    impl: (args, call) => collationKey(text(arg(args, 0)), collationOf(undefined, call)),
+    impl: (args, call) => collationKey(text(arg(args, 0)), collationOf(undefined, call), call),
   },
   {
     name: "fn:collation-key",
     params: ["xs:string", "xs:string"],
     result: "xs:base64Binary",
     impl: (args, call) =>
-      collationKey(text(arg(args, 0)), collationNamed(text(arg(args, 1)), call)),
+      collationKey(text(arg(args, 0)), collationNamed(text(arg(args, 1)), call), call),
   },
   {
     name: "fn:default-collation",

@@ -2,6 +2,9 @@
  * Generated XML documents for the differential tests: well-formed elements
  * (attributes, references, ASCII and non-ASCII names, markup around the
  * root) with near misses spliced in, from a seed so a failure reproduces.
+ * The near misses include what `recover: true` reads (a stray `<`, an `&`
+ * that starts no reference, unquoted and valueless attributes, `</` without
+ * a name).
  */
 import * as Arr from "effect/Array";
 
@@ -82,6 +85,22 @@ const pieces = [
   "<![cdata[x]]>",
   "text",
   "\u0001",
+  // What recovery reads (#52).
+  "< ",
+  "a < b",
+  "<=",
+  "AT&T ",
+  "&nbsp;",
+  "&;",
+  "&#xZZ;",
+  "&#65",
+  "</ x>",
+  "</>",
+  "<a x=1>",
+  "<a x=1 y z='<&'/>",
+  "<a x='1'y='2' / >",
+  "<a 1x=2>",
+  "</a junk>",
 ];
 
 const pick = <A>(next: () => number, items: ReadonlyArray<A>): A =>

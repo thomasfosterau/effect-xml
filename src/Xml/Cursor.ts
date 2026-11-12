@@ -52,7 +52,10 @@ const xmlAttribute = (element: XmlElement, local: string): Option.Option<string>
 
 /** Resolve a URI reference against a base, keeping it as written when that isn't possible. */
 const resolveUri = (reference: string, base: Option.Option<string>): string =>
-  URL.parse(reference, Option.getOrUndefined(base))?.href ?? reference;
+  // An absolute reference stands as written (RFC 3986 §5.2.2); `URL` would normalize it.
+  /^[A-Za-z][A-Za-z0-9+.-]*:/.test(reference)
+    ? reference
+    : (URL.parse(reference, Option.getOrUndefined(base))?.href ?? reference);
 
 /** Whether a lookup was given a name (it is no-argument "all elements" otherwise). */
 const hasName = (args: NameArgs | readonly []): args is NameArgs => args[0] !== undefined;

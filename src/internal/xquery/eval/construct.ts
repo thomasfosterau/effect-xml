@@ -182,19 +182,36 @@ const copyElement = (node: XdmNode, element: XmlElement, modes: Modes): XmlEleme
   ]);
 };
 
-/** A copied element placed under a parent with bindings `parent`: what it must declare to keep its own in-scope namespaces. */
-const fixup = (element: XmlElement, parent: Bindings, inherit: boolean): XmlElement => {
+/**
+ * A copied element placed under a parent with bindings `parent`: what it must
+ * declare to keep its own in-scope namespaces. `explicit` is given for a
+ * direct constructor written in the parent's content: the namespaces declared
+ * by the constructors enclosing it.
+ */
+const fixup = (
+  element: XmlElement,
+  parent: Bindings,
+  inherit: boolean,
+  explicit: Bindings | undefined,
+): XmlElement => {
   const own = ownScope(element);
-  const extra = inherit
-    ? prefixOf(element.name) === null &&
-      uriOf(element.name) === null &&
-      lookup(own, "") === undefined &&
-      (lookup(parent, "") ?? "") !== ""
-      ? [declaration("", "")]
-      : []
-    : parent.flatMap(([prefix, uri]) =>
-        uri !== "" && lookup(own, prefix) === undefined ? [declaration(prefix, "")] : [],
-      );
+  const extra = explicit
+    ? // A direct constructor written in the content: only what the enclosing constructors declare is inherited.
+      parent.flatMap(([prefix, uri]) =>
+        uri !== "" && lookup(own, prefix) === undefined && lookup(explicit, prefix) !== uri
+          ? [declaration(prefix, "")]
+          : [],
+      )
+    : inherit
+      ? prefixOf(element.name) === null &&
+        uriOf(element.name) === null &&
+        lookup(own, "") === undefined &&
+        (lookup(parent, "") ?? "") !== ""
+        ? [declaration("", "")]
+        : []
+      : parent.flatMap(([prefix, uri]) =>
+          uri !== "" && lookup(own, prefix) === undefined ? [declaration(prefix, "")] : [],
+        );
   return Arr.isArrayNonEmpty(extra)
     ? withAttributes(element, [...extra, ...element.attributes])
     : element;
@@ -212,8 +229,21 @@ const flattenArrays = (items: Sequence): Sequence =>
       )
     : items;
 
-/** A part of a constructor's content: literal text, or an expression's code. */
-type Part = string | Code;
+/**
+ * A part of a constructor's content: literal text, an expression's code, or
+ * a direct element constructor written as content, whose namespaces are
+ * those of its enclosing declarations and its own names, never those the
+ * parent only has for its names (XQuery 3.1 §3.9.1.4).
+ */
+type Part = string | Code | DirectContent;
+
+/** A direct element constructor written in the content of another. */
+class DirectContent {
+  readonly code: Code;
+  constructor(code: Code) {
+    this.code = code;
+  }
+}
 
 /**
  * The content of an element or document constructor as it is gathered
@@ -225,6 +255,8 @@ class Content {
   readonly attributes: Array<XmlAttribute> = [];
   readonly namespaces: Array<NamespaceBinding> = [];
   readonly children: Array<XmlNode> = [];
+  /** The positions among the children of the direct element constructors written in the content. */
+  readonly direct: Array<number> = [];
   private hasChild = false;
   private readonly modes: Modes;
   /** A document's content: attributes and namespace nodes are type errors. */
@@ -276,7 +308,14 @@ class Content {
       );
   }
 
-  private node(node: XdmNode): void {
+  /** The value of a direct element constructor written as content. */
+  nested(items: Sequence): void {
+    items.forEach((item) => {
+      if (isNode(item)) this.node(item, true);
+    });
+  }
+
+  private node(node: XdmNode, direct = false): void {
     const dom = node.dom;
     const binding = bindingOf(node);
     if (!P.isString(dom) && "value" in dom && "name" in dom) {
@@ -289,8 +328,10 @@ class Content {
     else if (node.kind === "text") this.text(node.stringValue);
     else {
       this.hasChild = true;
-      if (P.isTagged(dom, "XmlElement")) this.children.push(copyElement(node, dom, this.modes));
-      else if (P.isTagged(dom, "XmlComment") || P.isTagged(dom, "XmlProcessingInstruction"))
+      if (P.isTagged(dom, "XmlElement")) {
+        if (direct) this.direct.push(this.children.length);
+        this.children.push(copyElement(node, dom, this.modes));
+      } else if (P.isTagged(dom, "XmlComment") || P.isTagged(dom, "XmlProcessingInstruction"))
         this.children.push(dom);
     }
   }
@@ -307,6 +348,7 @@ const gather = (
   const content = new Content(modes, document, offset);
   parts.forEach((part) => {
     if (P.isString(part)) content.text(part);
+    else if (part instanceof DirectContent) content.nested(part.code(ctx));
     else content.sequence(part(ctx));
   });
   return content;
@@ -356,6 +398,7 @@ const buildElement = (
   content: Content,
   modes: Modes,
   offset: number,
+  explicit: Bindings = declared,
 ): XdmNode => {
   const bindings: Bindings = [...declared];
   content.namespaces.forEach((n) => bind(bindings, n.prefix, n.uri, offset));
@@ -376,8 +419,10 @@ const buildElement = (
     const n = attributeName(a.name, bindings);
     return n === a.name ? a : Nodes.attribute(n, a.value);
   });
-  const children = content.children.map((child) =>
-    isElement(child) ? fixup(child, bindings, modes.inherit) : child,
+  const children = content.children.map((child, i) =>
+    isElement(child)
+      ? fixup(child, bindings, modes.inherit, content.direct.includes(i) ? explicit : undefined)
+      : child,
   );
   const element = Nodes.element(
     name,
@@ -572,7 +617,7 @@ const attributeValue = (
   compileExpr: CompileExpr,
   offset: number,
 ): ((ctx: Ctx) => string) => {
-  const codes = parts.map((p): Part => (isDirText(p) ? p.value : compileExpr(p, scope)));
+  const codes = parts.map((p): string | Code => (isDirText(p) ? p.value : compileExpr(p, scope)));
   if (codes.every(P.isString)) {
     const text = codes.join("");
     return () => text;
@@ -582,14 +627,18 @@ const attributeValue = (
 
 const isDirText = Expr.$is("DirText");
 
+const isDirElement = Expr.$is("DirElement");
+
 /** The content of a direct element: literal text (boundary whitespace dropped unless preserved) and expressions. */
 const contentParts = (
   content: ReadonlyArray<ExprT>,
   scope: Scope,
   modes: Modes,
   compileExpr: CompileExpr,
+  explicit: Bindings,
 ): ReadonlyArray<Part> =>
   content.flatMap((p): ReadonlyArray<Part> => {
+    if (isDirElement(p)) return [new DirectContent(dirElement(p, scope, compileExpr, explicit))];
     if (!isDirText(p)) return [compileExpr(p, scope)];
     return p.boundary && modes.strip ? [] : [p.value];
   });
@@ -598,7 +647,12 @@ const declarations = (namespaces: ReadonlyArray<DirNamespace>): Bindings =>
   namespaces.map((n) => [Option.getOrElse(n.prefix, () => ""), n.uri] as const);
 
 /** A direct element constructor, `<name attr="…">content</name>`. */
-export const dirElement = (e: DirElementT, outer: Scope, compileExpr: CompileExpr): Code => {
+export const dirElement = (
+  e: DirElementT,
+  outer: Scope,
+  compileExpr: CompileExpr,
+  enclosing: Bindings = [],
+): Code => {
   const scope: Scope = { ...outer, statics: elementScope(outer.statics, e.namespaces) };
   const modes = modesOf(scope);
   const written = resolve(scope, e.name, "element");
@@ -611,11 +665,16 @@ export const dirElement = (e: DirElementT, outer: Scope, compileExpr: CompileExp
     };
   });
   const declared = declarations(e.namespaces);
-  const parts = contentParts(e.content, scope, modes, compileExpr);
+  // What the constructors around this one declare, this one's own declarations first.
+  const explicit: Bindings = [
+    ...declared,
+    ...enclosing.filter(([p]) => lookup(declared, p) === undefined),
+  ];
+  const parts = contentParts(e.content, scope, modes, compileExpr, explicit);
   return (ctx) => {
     const attrs = attributes.map((a) => attributeNode(a.name, a.value(ctx)));
     const content = gather(parts, ctx, modes, false, e.offset);
-    return [buildElement(name, declared, attrs, content, modes, e.offset)];
+    return [buildElement(name, declared, attrs, content, modes, e.offset, explicit)];
   };
 };
 

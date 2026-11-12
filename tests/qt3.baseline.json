@@ -82,11 +82,11 @@
     },
     "fn-adjust-date-to-timezone": {
       "runnable": 41,
-      "passing": 39
+      "passing": 41
     },
     "fn-adjust-dateTime-to-timezone": {
       "runnable": 48,
-      "passing": 46
+      "passing": 48
     },
     "fn-adjust-time-to-timezone": {
       "runnable": 42,
@@ -106,11 +106,11 @@
     },
     "fn-avg": {
       "runnable": 239,
-      "passing": 238
+      "passing": 239
     },
     "fn-base-uri": {
       "runnable": 82,
-      "passing": 47
+      "passing": 56
     },
     "fn-boolean": {
       "runnable": 143,
@@ -126,10 +126,10 @@
     },
     "fn-codepoints-to-string": {
       "runnable": 76,
-      "passing": 75
+      "passing": 76
     },
     "fn-collation-key": {
-      "runnable": 21,
+      "runnable": 28,
       "passing": 17
     },
     "fn-collection": {
@@ -137,16 +137,16 @@
       "passing": 26
     },
     "fn-compare": {
-      "runnable": 87,
-      "passing": 66
+      "runnable": 95,
+      "passing": 92
     },
     "fn-concat": {
       "runnable": 96,
       "passing": 96
     },
     "fn-contains": {
-      "runnable": 68,
-      "passing": 51
+      "runnable": 75,
+      "passing": 75
     },
     "fn-contains-token": {
       "runnable": 43,
@@ -189,8 +189,8 @@
       "passing": 31
     },
     "fn-deep-equal": {
-      "runnable": 247,
-      "passing": 245
+      "runnable": 248,
+      "passing": 248
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -198,7 +198,7 @@
     },
     "fn-default-language": {
       "runnable": 5,
-      "passing": 0
+      "passing": 5
     },
     "fn-distinct-values": {
       "runnable": 105,
@@ -229,12 +229,12 @@
       "passing": 29
     },
     "fn-ends-with": {
-      "runnable": 52,
-      "passing": 38
+      "runnable": 55,
+      "passing": 55
     },
     "fn-environment-variable": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-error": {
       "runnable": 97,
@@ -306,7 +306,7 @@
     },
     "fn-function-lookup": {
       "runnable": 618,
-      "passing": 610
+      "passing": 612
     },
     "fn-function-name": {
       "runnable": 25,
@@ -350,7 +350,7 @@
     },
     "fn-in-scope-prefixes": {
       "runnable": 57,
-      "passing": 55
+      "passing": 56
     },
     "fn-index-of": {
       "runnable": 53,
@@ -370,11 +370,11 @@
     },
     "fn-json-doc": {
       "runnable": 68,
-      "passing": 67
+      "passing": 68
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 32
+      "passing": 35
     },
     "fn-lang": {
       "runnable": 46,
@@ -394,7 +394,7 @@
     },
     "fn-local-name-from-QName": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-lower-case": {
       "runnable": 27,
@@ -402,7 +402,7 @@
     },
     "fn-matches": {
       "runnable": 162,
-      "passing": 160
+      "passing": 162
     },
     "fn-matches.re": {
       "runnable": 1003,
@@ -454,7 +454,7 @@
     },
     "fn-namespace-uri-from-QName": {
       "runnable": 16,
-      "passing": 15
+      "passing": 16
     },
     "fn-nilled": {
       "runnable": 34,
@@ -494,7 +494,7 @@
     },
     "fn-parse-json": {
       "runnable": 154,
-      "passing": 153
+      "passing": 154
     },
     "fn-parse-xml": {
       "runnable": 17,
@@ -573,8 +573,8 @@
       "passing": 39
     },
     "fn-starts-with": {
-      "runnable": 60,
-      "passing": 47
+      "runnable": 64,
+      "passing": 64
     },
     "fn-static-base-uri": {
       "runnable": 18,
@@ -582,7 +582,7 @@
     },
     "fn-string": {
       "runnable": 69,
-      "passing": 68
+      "passing": 69
     },
     "fn-string-join": {
       "runnable": 44,
@@ -605,12 +605,12 @@
       "passing": 48
     },
     "fn-substring-after": {
-      "runnable": 50,
-      "passing": 37
+      "runnable": 54,
+      "passing": 54
     },
     "fn-substring-before": {
-      "runnable": 50,
-      "passing": 36
+      "runnable": 53,
+      "passing": 53
     },
     "fn-sum": {
       "runnable": 222,
@@ -678,7 +678,7 @@
     },
     "fn-xml-to-json": {
       "runnable": 137,
-      "passing": 125
+      "passing": 137
     },
     "fn-year-from-date": {
       "runnable": 27,
@@ -806,7 +806,7 @@
     },
     "misc-CombinedErrorCodes": {
       "runnable": 230,
-      "passing": 212
+      "passing": 228
     },
     "misc-ErrorsAndOptimization": {
       "runnable": 7,
@@ -818,7 +818,7 @@
     },
     "misc-JsonTestSuite": {
       "runnable": 318,
-      "passing": 306
+      "passing": 318
     },
     "misc-StaticContext": {
       "runnable": 1,
@@ -829,8 +829,8 @@
       "passing": 17
     },
     "misc-UCACollation": {
-      "runnable": 73,
-      "passing": 73
+      "runnable": 89,
+      "passing": 88
     },
     "misc-XMLEdition": {
       "runnable": 11,
@@ -846,11 +846,11 @@
     },
     "op-add-dayTimeDuration-to-date": {
       "runnable": 25,
-      "passing": 24
+      "passing": 25
     },
     "op-add-dayTimeDuration-to-dateTime": {
       "runnable": 27,
-      "passing": 26
+      "passing": 27
     },
     "op-add-dayTimeDuration-to-time": {
       "runnable": 26,
@@ -862,7 +862,7 @@
     },
     "op-add-yearMonthDuration-to-date": {
       "runnable": 27,
-      "passing": 26
+      "passing": 27
     },
     "op-add-yearMonthDuration-to-dateTime": {
       "runnable": 29,
@@ -962,7 +962,7 @@
     },
     "op-divide-yearMonthDuration": {
       "runnable": 31,
-      "passing": 30
+      "passing": 31
     },
     "op-divide-yearMonthDuration-by-yearMonthDuration": {
       "runnable": 23,
@@ -1078,7 +1078,7 @@
     },
     "op-same-key": {
       "runnable": 28,
-      "passing": 17
+      "passing": 28
     },
     "op-string-equal": {
       "runnable": 15,
@@ -1094,15 +1094,15 @@
     },
     "op-subtract-dateTimes": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dates": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dayTimeDuration-from-date": {
       "runnable": 23,
-      "passing": 22
+      "passing": 23
     },
     "op-subtract-dayTimeDuration-from-dateTime": {
       "runnable": 22,
@@ -1126,11 +1126,11 @@
     },
     "op-subtract-yearMonthDuration-from-dateTime": {
       "runnable": 23,
-      "passing": 22
+      "passing": 23
     },
     "op-subtract-yearMonthDurations": {
       "runnable": 33,
-      "passing": 32
+      "passing": 33
     },
     "op-time-equal": {
       "runnable": 58,
@@ -1146,7 +1146,7 @@
     },
     "op-to": {
       "runnable": 168,
-      "passing": 164
+      "passing": 166
     },
     "op-union": {
       "runnable": 74,
@@ -1226,11 +1226,11 @@
     },
     "prod-CastExpr": {
       "runnable": 2755,
-      "passing": 2740
+      "passing": 2755
     },
     "prod-CastExpr.derived": {
       "runnable": 153,
-      "passing": 141
+      "passing": 153
     },
     "prod-CastExpr.schema": {
       "runnable": 0,
@@ -1238,7 +1238,7 @@
     },
     "prod-CastableExpr": {
       "runnable": 785,
-      "passing": 773
+      "passing": 785
     },
     "prod-Comment": {
       "runnable": 45,
@@ -1258,7 +1258,7 @@
     },
     "prod-CompElemConstructor": {
       "runnable": 95,
-      "passing": 93
+      "passing": 95
     },
     "prod-CompNamespaceConstructor": {
       "runnable": 42,
@@ -1282,7 +1282,7 @@
     },
     "prod-ContextItemDecl": {
       "runnable": 42,
-      "passing": 40
+      "passing": 41
     },
     "prod-ContextItemExpr": {
       "runnable": 45,
@@ -1290,7 +1290,7 @@
     },
     "prod-CopyNamespacesDecl": {
       "runnable": 36,
-      "passing": 35
+      "passing": 36
     },
     "prod-CountClause": {
       "runnable": 13,
@@ -1306,7 +1306,7 @@
     },
     "prod-DefaultCollationDecl": {
       "runnable": 12,
-      "passing": 9
+      "passing": 12
     },
     "prod-DefaultNamespaceDecl": {
       "runnable": 59,
@@ -1318,11 +1318,11 @@
     },
     "prod-DirElemConstructor": {
       "runnable": 69,
-      "passing": 67
+      "passing": 69
     },
     "prod-DirElemContent": {
       "runnable": 115,
-      "passing": 112
+      "passing": 115
     },
     "prod-DirElemContent.namespace": {
       "runnable": 133,
@@ -1394,7 +1394,7 @@
     },
     "prod-GroupByClause": {
       "runnable": 35,
-      "passing": 34
+      "passing": 35
     },
     "prod-IfExpr": {
       "runnable": 42,
@@ -1418,7 +1418,7 @@
     },
     "prod-Lookup": {
       "runnable": 106,
-      "passing": 103
+      "passing": 106
     },
     "prod-MapConstructor": {
       "runnable": 42,
@@ -1426,15 +1426,15 @@
     },
     "prod-MapTest": {
       "runnable": 46,
-      "passing": 43
+      "passing": 46
     },
     "prod-ModuleImport": {
       "runnable": 105,
-      "passing": 103
+      "passing": 104
     },
     "prod-NameTest": {
       "runnable": 127,
-      "passing": 123
+      "passing": 127
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,
@@ -1530,7 +1530,7 @@
     },
     "prod-UnaryLookup": {
       "runnable": 33,
-      "passing": 32
+      "passing": 33
     },
     "prod-UnorderedExpr": {
       "runnable": 26,
@@ -1574,7 +1574,7 @@
     },
     "xs-base64Binary": {
       "runnable": 39,
-      "passing": 37
+      "passing": 39
     },
     "xs-dateTimeStamp": {
       "runnable": 0,
@@ -1692,11 +1692,11 @@
     },
     "fn-adjust-date-to-timezone": {
       "runnable": 41,
-      "passing": 39
+      "passing": 41
     },
     "fn-adjust-dateTime-to-timezone": {
       "runnable": 48,
-      "passing": 46
+      "passing": 48
     },
     "fn-adjust-time-to-timezone": {
       "runnable": 42,
@@ -1716,7 +1716,7 @@
     },
     "fn-avg": {
       "runnable": 238,
-      "passing": 237
+      "passing": 238
     },
     "fn-base-uri": {
       "runnable": 4,
@@ -1736,10 +1736,10 @@
     },
     "fn-codepoints-to-string": {
       "runnable": 70,
-      "passing": 69
+      "passing": 70
     },
     "fn-collation-key": {
-      "runnable": 21,
+      "runnable": 28,
       "passing": 17
     },
     "fn-collection": {
@@ -1747,16 +1747,16 @@
       "passing": 22
     },
     "fn-compare": {
-      "runnable": 87,
-      "passing": 66
+      "runnable": 95,
+      "passing": 92
     },
     "fn-concat": {
       "runnable": 96,
       "passing": 96
     },
     "fn-contains": {
-      "runnable": 60,
-      "passing": 45
+      "runnable": 67,
+      "passing": 67
     },
     "fn-contains-token": {
       "runnable": 36,
@@ -1799,8 +1799,8 @@
       "passing": 31
     },
     "fn-deep-equal": {
-      "runnable": 193,
-      "passing": 191
+      "runnable": 194,
+      "passing": 194
     },
     "fn-default-collation": {
       "runnable": 7,
@@ -1808,7 +1808,7 @@
     },
     "fn-default-language": {
       "runnable": 5,
-      "passing": 0
+      "passing": 5
     },
     "fn-distinct-values": {
       "runnable": 91,
@@ -1839,12 +1839,12 @@
       "passing": 29
     },
     "fn-ends-with": {
-      "runnable": 52,
-      "passing": 38
+      "runnable": 55,
+      "passing": 55
     },
     "fn-environment-variable": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-error": {
       "runnable": 90,
@@ -1916,7 +1916,7 @@
     },
     "fn-function-lookup": {
       "runnable": 611,
-      "passing": 603
+      "passing": 605
     },
     "fn-function-name": {
       "runnable": 22,
@@ -1980,11 +1980,11 @@
     },
     "fn-json-doc": {
       "runnable": 68,
-      "passing": 67
+      "passing": 68
     },
     "fn-json-to-xml": {
       "runnable": 35,
-      "passing": 32
+      "passing": 35
     },
     "fn-lang": {
       "runnable": 38,
@@ -2004,7 +2004,7 @@
     },
     "fn-local-name-from-QName": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-lower-case": {
       "runnable": 27,
@@ -2012,7 +2012,7 @@
     },
     "fn-matches": {
       "runnable": 161,
-      "passing": 159
+      "passing": 161
     },
     "fn-matches.re": {
       "runnable": 1002,
@@ -2064,7 +2064,7 @@
     },
     "fn-namespace-uri-from-QName": {
       "runnable": 12,
-      "passing": 11
+      "passing": 12
     },
     "fn-nilled": {
       "runnable": 13,
@@ -2183,8 +2183,8 @@
       "passing": 33
     },
     "fn-starts-with": {
-      "runnable": 60,
-      "passing": 47
+      "runnable": 64,
+      "passing": 64
     },
     "fn-static-base-uri": {
       "runnable": 5,
@@ -2192,7 +2192,7 @@
     },
     "fn-string": {
       "runnable": 69,
-      "passing": 68
+      "passing": 69
     },
     "fn-string-join": {
       "runnable": 39,
@@ -2215,12 +2215,12 @@
       "passing": 48
     },
     "fn-substring-after": {
-      "runnable": 50,
-      "passing": 37
+      "runnable": 54,
+      "passing": 54
     },
     "fn-substring-before": {
-      "runnable": 50,
-      "passing": 36
+      "runnable": 53,
+      "passing": 53
     },
     "fn-sum": {
       "runnable": 222,
@@ -2288,7 +2288,7 @@
     },
     "fn-xml-to-json": {
       "runnable": 82,
-      "passing": 77
+      "passing": 82
     },
     "fn-year-from-date": {
       "runnable": 27,
@@ -2439,8 +2439,8 @@
       "passing": 17
     },
     "misc-UCACollation": {
-      "runnable": 73,
-      "passing": 73
+      "runnable": 89,
+      "passing": 88
     },
     "misc-XMLEdition": {
       "runnable": 1,
@@ -2688,7 +2688,7 @@
     },
     "op-same-key": {
       "runnable": 11,
-      "passing": 10
+      "passing": 11
     },
     "op-string-equal": {
       "runnable": 9,
@@ -2704,11 +2704,11 @@
     },
     "op-subtract-dateTimes": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dates": {
       "runnable": 30,
-      "passing": 28
+      "passing": 30
     },
     "op-subtract-dayTimeDuration-from-date": {
       "runnable": 21,
@@ -2756,7 +2756,7 @@
     },
     "op-to": {
       "runnable": 166,
-      "passing": 162
+      "passing": 164
     },
     "op-union": {
       "runnable": 20,
@@ -2836,11 +2836,11 @@
     },
     "prod-CastExpr": {
       "runnable": 2737,
-      "passing": 2727
+      "passing": 2737
     },
     "prod-CastExpr.derived": {
       "runnable": 153,
-      "passing": 141
+      "passing": 153
     },
     "prod-CastExpr.schema": {
       "runnable": 0,
@@ -2848,7 +2848,7 @@
     },
     "prod-CastableExpr": {
       "runnable": 780,
-      "passing": 768
+      "passing": 780
     },
     "prod-Comment": {
       "runnable": 27,
@@ -3036,7 +3036,7 @@
     },
     "prod-MapTest": {
       "runnable": 44,
-      "passing": 41
+      "passing": 44
     },
     "prod-ModuleImport": {
       "runnable": 0,
@@ -3184,7 +3184,7 @@
     },
     "xs-base64Binary": {
       "runnable": 39,
-      "passing": 37
+      "passing": 39
     },
     "xs-dateTimeStamp": {
       "runnable": 0,

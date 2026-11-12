@@ -178,6 +178,13 @@ export interface LexerOptions {
    * the next.
    */
   readonly reuse?: boolean;
+  /**
+   * XML: recover where the strict grammars fail at a `<` or `&` that starts
+   * nothing, an unquoted or valueless attribute, or markup out of place at
+   * the top level (see `tokens.ts` and {@link Lexer.placed}). What strict XML
+   * reads is read the same; characters XML does not allow still fail.
+   */
+  readonly recover?: boolean;
 }
 
 /** HTML elements whose contents the tokenizer reads as raw text. */
@@ -367,11 +374,16 @@ export class Lexer {
   /** Whether {@link scanXml} reads the data state's tokens (XML without a DTD). */
   private readonly scans: boolean;
 
+  /** XML: whether to recover (see {@link LexerOptions.recover}). */
+  private readonly recover: boolean;
+
   constructor(options: LexerOptions) {
     this.options = options;
     this.scans = options.mode === "xml" && options.dtd === undefined;
+    this.recover = options.mode === "xml" && options.recover === true;
     this.scanner = {
       entities: options.entities,
+      recover: this.recover,
       span: (from, to) => this.positions.span(this.base + from, this.base + to),
       positions: options.positions ?? true,
       reuse: options.reuse === true && options.positions === false,
@@ -382,7 +394,12 @@ export class Lexer {
       reused: new Reused(),
       marks: freshMarks(),
     };
-    this.grammars = grammars(options.mode, options.entities, options.dtd !== undefined);
+    this.grammars = grammars(
+      options.mode,
+      options.entities,
+      options.dtd !== undefined,
+      this.recover,
+    );
   }
 
   /** Signal end of input and flush any pending output. */
@@ -472,6 +489,7 @@ export class Lexer {
       this.failed = true;
       return [{ _tag: "Fault", error: this.forbiddenCharacter() }];
     }
+    if (this.recover) return this.accept(state.pos, step.filter(this.placed));
     if (this.options.mode === "xml" && step.some(this.misplaced)) {
       this.failed = true;
       // `misplaced` recorded why.
@@ -479,7 +497,12 @@ export class Lexer {
         Option.map(this.misplacement, (error): LexFault => ({ _tag: "Fault", error })),
       );
     }
-    this.cursor = state.pos;
+    return this.accept(state.pos, step);
+  }
+
+  /** Take in the tokens of a step that ends at buffer index `end`: their events. */
+  private accept(end: number, step: ReadonlyArray<Tok>): ReadonlyArray<LexOutput> {
+    this.cursor = end;
     this.retryAt = 0;
     const out = step.map((t) => this.event(t));
     this.compact();
@@ -687,6 +710,34 @@ export class Lexer {
         );
       default:
         return false;
+    }
+  };
+
+  /**
+   * XML, recovering: whether to keep `t`, as {@link misplaced} would accept
+   * it and further. References and CDATA sections outside the root element
+   * are kept, for the tree builder to place (it puts character data before
+   * the root in a synthesized one, and after it under the root). An XML
+   * declaration anywhere but at the very start, and a document type
+   * declaration after the first or after the root element's start, are
+   * dropped: XML5 reads a late `<?xml …?>` as a processing instruction, but
+   * the `xml` target is reserved (§2.6), and the first declaration is the
+   * document's.
+   */
+  // A `switch` and a method built once, as `misplaced`.
+  private readonly placed = (t: Tok): boolean => {
+    switch (t._tag) {
+      case "StartElement":
+      case "EndElement":
+        return !this.misplaced(t);
+      case "Doctype":
+        if (this.prologEnded) return false;
+        this.prologEnded = true;
+        return true;
+      case "XmlDeclaration":
+        return this.base + t.start === 0;
+      default:
+        return true;
     }
   };
 

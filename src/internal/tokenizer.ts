@@ -59,6 +59,7 @@ export class Tokenizer {
       scripting: opts.scripting,
       positions: opts.positions,
       reuse,
+      recover: opts.recover,
     });
     this.expander = dtd === undefined ? undefined : new Expander(dtd, opts.entities);
     this.guard = new Guard(opts.limits, opts.mode === "xml");
@@ -164,9 +165,10 @@ export const runChunks = (
   reuse = false,
 ): SaxError | null => {
   // XML without a DTD, all of it here: read it directly, and with the lexer
-  // only from where that stops (the events up to there are the same).
+  // only from where that stops (the events up to there are the same). Not
+  // when recovering: the direct read's checks are strict XML's.
   let skip = 0;
-  if (last === undefined && opts.mode === "xml" && opts.dtd === "ignore") {
+  if (last === undefined && opts.mode === "xml" && opts.dtd === "ignore" && !opts.recover) {
     const direct = readDirectly(chunks.join(""), opts, f, reuse);
     if (direct === null || !P.hasProperty(direct, "stoppedAfter")) return direct;
     skip = direct.stoppedAfter;

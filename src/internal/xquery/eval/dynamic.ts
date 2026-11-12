@@ -1,7 +1,7 @@
 /**
  * The dynamic context of an evaluation, from the host's options: the
  * external variables' values, the current dateTime (from the `Clock` unless
- * given), the implicit timezone and the environment variables.
+ * given), the implicit timezone, the default language and the environment variables.
  */
 import * as BigDecimal from "effect/BigDecimal";
 import * as Clock from "effect/Clock";
@@ -19,6 +19,7 @@ export interface DynamicOptions {
   readonly implicitTimezone?: number;
   readonly environment?: Readonly<Record<string, string>>;
   readonly currentDateTime?: Date;
+  readonly defaultLanguage?: string;
 }
 
 const clarkKey = (name: string): string => (name.startsWith("{") ? name : `{}${name}`);
@@ -55,6 +56,7 @@ export const dynamicContext = (
         resources: new Resources(canFetch),
         currentDateTime: nowIn(millis, tz),
         implicitTimezone: tz,
+        defaultLanguage: options.defaultLanguage ?? "en",
         environment: options.environment ?? {},
       };
     },

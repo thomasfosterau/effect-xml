@@ -57,14 +57,18 @@ import {
 } from "./construct.ts";
 import { castAtomic } from "./cast.ts";
 import { compatibleArgument, numericOperand } from "./compat.ts";
+import { collationFor } from "./functions/collation.ts";
 import {
+  compareCodepoints,
   generalCompare,
   generalCompareCompatible,
   generalToValue,
   valueCompare,
   atomicDeepEqual,
+  type StringOrder,
   type ValueOp,
 } from "./compare.ts";
+import { codepointCollation } from "../parser/context.ts";
 import type { Statics } from "./functions/define.ts";
 import { lookupBuiltin, paramType, type Builtin } from "./functions/registry.ts";
 import { axisStepCode, filterCode, pathCode } from "./path.ts";
@@ -195,13 +199,21 @@ const optionalAtomic = (s: Sequence, what: string, offset: number): AtomicValue 
   return a;
 };
 
+/** How strings compare under the static context's default collation. */
+const defaultStrings = (scope: Scope, offset: number): StringOrder => {
+  const { defaultCollation, baseUri } = scope.statics.context;
+  return defaultCollation === codepointCollation
+    ? compareCodepoints
+    : collationFor(defaultCollation, baseUri, offset).compare;
+};
+
 const valueComparison =
-  (op: ValueOp, l: Code, r: Code, offset: number): Code =>
+  (op: ValueOp, l: Code, r: Code, offset: number, strings: StringOrder): Code =>
   (ctx) => {
     const a = optionalAtomic(l(ctx), "an operand of a value comparison", offset);
     const b = optionalAtomic(r(ctx), "an operand of a value comparison", offset);
     if (a === undefined || b === undefined) return empty;
-    return toBool(valueCompare(op, a, b, ctx.dyn.implicitTimezone, offset));
+    return toBool(valueCompare(op, a, b, ctx.dyn.implicitTimezone, offset, strings));
   };
 
 const optionalNode = (s: Sequence, offset: number): XdmNode | undefined => {
@@ -223,7 +235,7 @@ const nodeComparison =
   };
 
 /** The longest range `to` builds: a longer one is an implementation limit (`err:XPDY0130`). */
-const MAX_RANGE = 1_000_000n;
+const MAX_RANGE = 2_000_000n;
 
 const rangeBound = (s: Sequence, offset: number): bigint | undefined => {
   const a = optionalAtomic(s, "an operand of `to`", offset);
@@ -293,19 +305,26 @@ const isArithOp = (op: BinaryOp): op is ArithOp =>
 const isValueOp = (op: BinaryOp): op is ValueOp =>
   ["eq", "ne", "lt", "le", "gt", "ge"].includes(op);
 
+/** A general comparison, in XPath 1.0 compatibility mode when the static context says so. */
+const generalComparison = (op: ValueOp, l: Code, r: Code, scope: Scope, offset: number): Code => {
+  const strings = defaultStrings(scope, offset);
+  return scope.statics.context.xpath1Compatibility
+    ? (ctx) =>
+        toBool(
+          generalCompareCompatible(op, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset, strings),
+        )
+    : (ctx) =>
+        toBool(generalCompare(op, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset, strings));
+};
+
 const binary = (e: Extract<ExprT, { readonly _tag: "Binary" }>, scope: Scope): Code => {
   const l = compileExpr(e.left, scope);
   const r = compileExpr(e.right, scope);
   const { op, offset } = e;
   const general = generalToValue(op);
   const compatible = scope.statics.context.xpath1Compatibility;
-  if (general !== undefined && compatible)
-    return (ctx) =>
-      toBool(generalCompareCompatible(general, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset));
-  if (general !== undefined)
-    return (ctx) =>
-      toBool(generalCompare(general, l(ctx), r(ctx), ctx.dyn.implicitTimezone, offset));
-  if (isValueOp(op)) return valueComparison(op, l, r, offset);
+  if (general !== undefined) return generalComparison(general, l, r, scope, offset);
+  if (isValueOp(op)) return valueComparison(op, l, r, offset, defaultStrings(scope, offset));
   if (isArithOp(op) && compatible)
     return (ctx) =>
       arithmetic(
@@ -805,7 +824,16 @@ const lookupIn = (
   if (item instanceof ArrayItem)
     return keys === undefined
       ? item.members.flat()
-      : keys.flatMap((k) => arrayMember(item, k, offset));
+      : // The key is converted as an argument of `array:get` is: an untyped one is cast to xs:integer.
+        keys.flatMap((k) =>
+          arrayMember(
+            item,
+            k.type === AtomicTypes.untypedAtomic
+              ? castAtomic(k, AtomicTypes.integer, undefined, offset)
+              : k,
+            offset,
+          ),
+        );
   return raise("XPTY0004", "a lookup needs a map or an array", offset);
 };
 
@@ -882,13 +910,14 @@ const switchExpr = (e: Extract<ExprT, { readonly _tag: "Switch" }>, scope: Scope
     result: compileExpr(c.result, scope),
   }));
   const fallback = compileExpr(e.default, scope);
+  const strings = defaultStrings(scope, e.offset);
   return (ctx) => {
     const v = optionalAtomic(operand(ctx), "the switch operand", e.offset);
     const same = (o: Code) => {
       const w = optionalAtomic(o(ctx), "a switch case", e.offset);
       return v === undefined || w === undefined
         ? v === w
-        : atomicDeepEqual(v, w, ctx.dyn.implicitTimezone);
+        : atomicDeepEqual(v, w, ctx.dyn.implicitTimezone, strings);
     };
     const hit = cases.find((c) => c.operands.some(same));
     return hit === undefined ? fallback(ctx) : hit.result(ctx);

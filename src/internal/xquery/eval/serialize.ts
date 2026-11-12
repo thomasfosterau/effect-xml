@@ -25,6 +25,7 @@ import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { isValidNCName, QName } from "../../../Name.ts";
 import { XmlDocument, type XmlNode } from "../../../Xml/Node.ts";
 import { serializeSync } from "../../../Xml/Writer.ts";
@@ -46,6 +47,9 @@ import { castAtomic } from "./cast.ts";
 import { raise, unwrap } from "./raise.ts";
 import { maybe } from "../../optional.ts";
 import { uriOf } from "../../qnames.ts";
+
+const isQName = Schema.is(QName);
+const isXmlDocument = Schema.is(XmlDocument);
 
 /** The serialization namespace, of the parameter elements. */
 const OUTPUT_NAMESPACE = "http://www.w3.org/2010/xslt-xquery-serialization";
@@ -239,7 +243,7 @@ const mapValue = (name: string, kind: Kind, value: Sequence, offset: number): Va
     return {
       _tag: "qnames",
       value: converted(atoms, AtomicTypes.QName, name, offset).map((a) =>
-        a.value instanceof QName ? clark(a.value) : typeError(name, offset),
+        isQName(a.value) ? clark(a.value) : typeError(name, offset),
       ),
     };
   if (kind === "boolean" || kind === "standalone") {
@@ -425,7 +429,7 @@ const notSerializable = (what: string, offset: number): never =>
 const domOf = (node: XdmNode, offset: number): XmlNode | XmlDocument => {
   const dom = node.dom;
   if (P.isString(dom)) return textNode(dom);
-  if (dom instanceof XmlDocument) return dom;
+  if (isXmlDocument(dom)) return dom;
   return P.isTagged(dom, "XmlElement") ||
     P.isTagged(dom, "XmlComment") ||
     P.isTagged(dom, "XmlProcessingInstruction")
@@ -626,7 +630,7 @@ const adaptiveAtomic = (a: AtomicValue): string => {
   )
     return `"${s.replace(/"/g, '""')}"`;
   if (a.type === AtomicTypes.boolean) return `${s}()`;
-  if (a.value instanceof QName) return `Q{${uriOf(a.value) ?? ""}}${a.value.local}`;
+  if (isQName(a.value)) return `Q{${uriOf(a.value) ?? ""}}${a.value.local}`;
   if (
     a.type === AtomicTypes.integer ||
     a.type === AtomicTypes.decimal ||

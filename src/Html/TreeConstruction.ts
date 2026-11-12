@@ -1744,31 +1744,10 @@ class HtmlTreeBuilder {
   }
 
   private inHeadNoscriptStart(name: string, attrs: Array<HtmlAttribute>): void {
-    if (
-      name === "basefont" ||
-      name === "bgsound" ||
-      name === "link" ||
-      name === "meta" ||
-      name === "noframes" ||
-      name === "style"
-    ) {
-      this.insertElement(name, attrs);
-      if (
-        isTag(VOID, name) ||
-        name === "meta" ||
-        name === "link" ||
-        name === "basefont" ||
-        name === "bgsound"
-      ) {
-        this.popOpen();
-      }
-      return;
-    }
-    if (name === "html") {
-      this.inBodyStart(name, attrs);
-      return;
-    }
-    if (name === "head" || name === "noscript") return; // ignore
+    // `onStart` handles `html`, `head` and the head-content tags (basefont,
+    // bgsound, link, meta, noframes, style) by the "in head" rules before it
+    // dispatches, so they never reach here.
+    if (name === "noscript") return; // ignore
     // Pop the noscript element and reprocess the token in "in head".
     this.popOpen();
     this.mode = "inHead";

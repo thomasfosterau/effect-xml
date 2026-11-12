@@ -13,6 +13,7 @@ import * as BigDecimal from "effect/BigDecimal";
 import * as HashMap from "effect/HashMap";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { QName } from "../../../Name.ts";
 import { AtomicValue, atomicString } from "../atomic.ts";
 import {
@@ -31,6 +32,8 @@ import { castAtomic, isStringLike, toDecimal, toNumber } from "./cast.ts";
 import { orElse, raise, unwrap } from "./raise.ts";
 import { durationOf, isTemporal, partsOf, timelineSeconds } from "./temporal.ts";
 import { uriOf } from "../../qnames.ts";
+
+const isQName = Schema.is(QName);
 
 /** A value comparison operator. */
 export type ValueOp = "eq" | "ne" | "lt" | "le" | "gt" | "ge";
@@ -120,7 +123,7 @@ const compareTemporal = (a: AtomicValue, b: AtomicValue, implicit: number): numb
 const noOrder = (a: AtomicValue, offset?: number): never =>
   raise("XPTY0004", `xs:${a.type.name} values have no order`, offset);
 
-const isQNameValue = (v: unknown): v is QName => v instanceof QName;
+const isQNameValue = (v: unknown): v is QName => isQName(v);
 
 const incomparable = (a: AtomicValue, b: AtomicValue, offset?: number): never =>
   raise("XPTY0004", `xs:${a.type.name} and xs:${b.type.name} values cannot be compared`, offset);
@@ -211,10 +214,18 @@ export const valueCompare = (
   b: AtomicValue,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean =>
   holds(
     op,
-    compareAtomic(asString(a), asString(b), op !== "eq" && op !== "ne", implicitTimezone, offset),
+    compareAtomic(
+      asString(a),
+      asString(b),
+      op !== "eq" && op !== "ne",
+      implicitTimezone,
+      offset,
+      strings,
+    ),
   );
 
 /**
@@ -227,8 +238,9 @@ export const orderCompare = (
   b: AtomicValue,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): number => {
-  const c = compareAtomic(asString(a), asString(b), true, implicitTimezone, offset);
+  const c = compareAtomic(asString(a), asString(b), true, implicitTimezone, offset, strings);
   return Number.isNaN(c) ? 0 : c;
 };
 
@@ -260,13 +272,17 @@ export const generalCompare = (
   right: Sequence,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean => {
   const xs = unwrap(atomize(left), offset);
   const ys = unwrap(atomize(right), offset);
   return xs.some((x) =>
     ys.some((y) => {
       const [a, b] = generalPair(x, y, offset);
-      return holds(op, compareAtomic(a, b, op !== "eq" && op !== "ne", implicitTimezone, offset));
+      return holds(
+        op,
+        compareAtomic(a, b, op !== "eq" && op !== "ne", implicitTimezone, offset, strings),
+      );
     }),
   );
 };
@@ -299,6 +315,7 @@ export const generalCompareCompatible = (
   right: Sequence,
   implicitTimezone: number,
   offset?: number,
+  strings: StringOrder = compareCodepoints,
 ): boolean => {
   const ordering = op !== "eq" && op !== "ne";
   const lb = singleBoolean(left);
@@ -318,7 +335,7 @@ export const generalCompareCompatible = (
         isNumericType(x.type) || isNumericType(y.type)
           ? [numberOf(x), numberOf(y)]
           : generalPair(x, y, offset);
-      return holds(op, compareAtomic(a, b, ordering, implicitTimezone, offset));
+      return holds(op, compareAtomic(a, b, ordering, implicitTimezone, offset, strings));
     }),
   );
 };
@@ -346,6 +363,19 @@ export const atomicDeepEqual = (
   if (!comparable) return false;
   const c = compareAtomic(x, y, false, implicitTimezone, undefined, strings);
   return c === 0;
+};
+
+/**
+ * A key that values equal as {@link atomicDeepEqual} takes them share, for
+ * grouping a sequence into candidates to compare one by one (`fn:distinct-values`,
+ * `group by`): numbers by their value as a float, strings by the collation's
+ * `bucket` (a form equal strings share), and other values by primitive type.
+ */
+export const equalityBucket = (a: AtomicValue, bucket: (s: string) => string): string => {
+  // Equal numbers of any types round to the same float.
+  if (isNumericType(a.type)) return `n:${String(Math.fround(toNumber(a)))}`;
+  if (isStringLike(a.type) || a.type.primitive === "anyURI") return `s:${bucket(String(a.value))}`;
+  return `t:${a.type.primitive}`;
 };
 
 const nameKey = (n: XdmNode): string =>
