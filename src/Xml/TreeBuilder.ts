@@ -45,8 +45,13 @@ export interface BuildOptions {
    *   leaves the name without a namespace; the namespace well-formedness
    *   checks (reserved prefixes, colons in names) are not applied.
    *
-   * The tokenizer's own failures are not repaired (see {@link Sax.SaxOptions}),
-   * nor are resource limits or encoding errors.
+   * With `Xml.parse` and the other `Xml` parsers, it also has the tokenizer
+   * recover (see `Sax.SaxOptions.recover`): a `<` or `&` that starts nothing
+   * is text, unquoted and valueless attributes are read as HTML reads them,
+   * and references and CDATA sections outside the root go into it. Characters
+   * XML does not allow, resource limits and encoding errors still fail.
+   * `build` repairs only the events it is given: tokenize with `recover` for
+   * the rest.
    */
   readonly recover?: boolean | undefined;
 }

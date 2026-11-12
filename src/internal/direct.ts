@@ -113,6 +113,8 @@ class Pass {
     if (opts.positions) lines.record(input, 0);
     this.ctx = {
       entities: opts.entities,
+      // (Never read with `recover`: see `runChunks`.)
+      recover: false,
       // No CR in the input (see `readDirectly`): offsets are indices.
       span: (from, to) => new LazySpan(lines, from, from, to, to),
       positions: opts.positions,

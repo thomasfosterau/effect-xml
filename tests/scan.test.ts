@@ -87,10 +87,24 @@ describe("the XML scanner", () => {
     );
   });
 
+  test("agrees with the recovering grammars (`recover: true`), whole and chunked", () => {
+    Arr.forEach(docs.slice(0, 1500), (doc) =>
+      Arr.forEach([doc.length, 1, 3], (size) =>
+        expect(
+          located(tokenize(doc, { recover: true }, size)),
+          `${doc} in chunks of ${size}`,
+        ).toStrictEqual(located(tokenize(doc, { recover: true, dtd: "internal" }, size))),
+      ),
+    );
+  });
+
   test("covers documents that parse, and ones that fail", () => {
     const exits = docs.map((doc) => tokenize(doc, {}, doc.length));
     expect(exits.filter(Exit.isSuccess).length).toBeGreaterThan(600);
     expect(exits.filter(Exit.isFailure).length).toBeGreaterThan(750);
+    // Recovery reads most of the ones strict reading fails on.
+    const recovering = docs.map((doc) => tokenize(doc, { recover: true }, doc.length));
+    expect(recovering.filter(Exit.isSuccess).length).toBeGreaterThan(1800);
   });
 
   test("without positions: the same events at the origin, and the same failures", () => {
