@@ -34,7 +34,11 @@ export interface ModuleExports {
 
 /** The host's part of the static context: what a caller may set before compiling. */
 export interface StaticOptions {
-  /** Prefix → namespace URI bindings, added to (and overriding) the predeclared ones. */
+  /**
+   * Prefix → namespace URI bindings, added to (and overriding) the predeclared
+   * ones. The empty prefix binds the default element namespace, unless
+   * `defaultElementNamespace` is given.
+   */
   readonly namespaces?: Readonly<Record<string, string>>;
   /** The default namespace of element and type names (default: none). */
   readonly defaultElementNamespace?: string;
@@ -133,9 +137,11 @@ export const initialContext = (xquery: boolean, options: StaticOptions = {}): St
   xpath1Compatibility: !xquery && options.xpath1Compatibility === true,
   namespaces: HashMap.fromIterable([
     ...predeclared(xquery),
-    ...R.toEntries(options.namespaces ?? {}).filter(([prefix]) => prefix !== "xml"),
+    ...R.toEntries(options.namespaces ?? {}).filter(
+      ([prefix]) => prefix !== "xml" && prefix !== "",
+    ),
   ]),
-  defaultElementNamespace: options.defaultElementNamespace ?? "",
+  defaultElementNamespace: options.defaultElementNamespace ?? options.namespaces?.[""] ?? "",
   defaultFunctionNamespace: options.defaultFunctionNamespace ?? Namespaces.fn,
   variables: HashSet.fromIterable(
     (options.variables ?? []).map((v) => (v.startsWith("{") ? v : `{}${v}`)),

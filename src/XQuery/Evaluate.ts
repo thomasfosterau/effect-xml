@@ -138,6 +138,14 @@ export interface EvaluateOptions {
   readonly environment?: Readonly<Record<string, string>>;
   /** The current dateTime (default: now, from the `Clock`). */
   readonly currentDateTime?: Date;
+  /**
+   * The default language of the dynamic context, an `xs:language` value such
+   * as `en` or `fr-CA`, which `fn:default-language` returns (default `en`).
+   *
+   * @since 0.2.0
+   * @category evaluating
+   */
+  readonly defaultLanguage?: string;
   /** How to compile query text: the static context's options. */
   readonly compile?: CompileOptions;
 }

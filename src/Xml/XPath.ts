@@ -712,6 +712,7 @@ class XPathDynamic implements Dynamic {
   readonly globals: Array<Sequence | undefined> = [];
   readonly resources = new Resources(false);
   readonly implicitTimezone = 0;
+  readonly defaultLanguage = "en";
   readonly environment: Readonly<Record<string, string>> = {};
   readonly initialContext: Item;
   readonly externals: HashMap.HashMap<string, Sequence>;

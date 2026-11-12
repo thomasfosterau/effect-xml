@@ -354,6 +354,19 @@ export const atomicDeepEqual = (
   return c === 0;
 };
 
+/**
+ * A key that values equal as {@link atomicDeepEqual} takes them share, for
+ * grouping a sequence into candidates to compare one by one (`fn:distinct-values`,
+ * `group by`): numbers by their value as a float, strings by their collation
+ * `fold`, and other values by primitive type.
+ */
+export const equalityBucket = (a: AtomicValue, fold: (s: string) => string): string => {
+  // Equal numbers of any types round to the same float.
+  if (isNumericType(a.type)) return `n:${String(Math.fround(toNumber(a)))}`;
+  if (isStringLike(a.type) || a.type.primitive === "anyURI") return `s:${fold(String(a.value))}`;
+  return `t:${a.type.primitive}`;
+};
+
 const nameKey = (n: XdmNode): string =>
   Option.match(n.name, { onNone: () => "", onSome: (q) => `{${q.namespace ?? ""}}${q.local}` });
 

@@ -18,15 +18,16 @@ import type { XmlAttribute, XmlElement } from "../../../../Xml/Node.ts";
 import { attribute, document, element, qname, text as textNode } from "../../../nodes.ts";
 import { quote } from "../../../quote.ts";
 import { AtomicValue, atomicString } from "../../atomic.ts";
-import { ArrayItem, isNode, MapItem, type Sequence } from "../../item.ts";
+import { ArrayItem, atomize, isNode, MapItem, type Sequence } from "../../item.ts";
 import { AtomicTypes } from "../../types.ts";
 import { XdmNode } from "../../node.ts";
 import { Namespaces } from "../../parser/builtins.ts";
 import { castAtomic } from "../cast.ts";
-import { orElse, raise } from "../raise.ts";
-import { callFunction, fetchResource, isCallable } from "../runtime.ts";
+import { catching, orElse, raise, raiseError, unwrap } from "../raise.ts";
+import { arityOf, callFunction, fetchResource, isCallable } from "../runtime.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, mapOf, optionalAtom, text } from "./values.ts";
+import { maybe } from "../../../optional.ts";
 
 // -----------------------------------------------------------------------------
 // Options
@@ -44,14 +45,19 @@ interface Options {
 const badOption = (what: string, call: Call): never =>
   raise("XPTY0004", `the JSON option ${what} has the wrong type`, call.offset);
 
+/** An option's one atomic value: the map's value atomized, as F&O 3.1 §17.4 has options converted. */
+const optionAtom = (v: Sequence, name: string, call: Call): AtomicValue => {
+  const atoms = unwrap(atomize(v), call.offset);
+  const [a] = atoms;
+  return atoms.length === 1 && a !== undefined ? a : badOption(name, call);
+};
+
 const booleanOption = (m: MapItem, name: string, fallback: boolean, call: Call): boolean =>
   Option.match(m.get(AtomicValue.string(name)), {
     onNone: () => fallback,
     onSome: (v) => {
-      const [a] = v;
-      return v.length === 1 && a instanceof AtomicValue && P.isBoolean(a.value)
-        ? a.value
-        : badOption(name, call);
+      const { value } = optionAtom(v, name, call);
+      return P.isBoolean(value) ? value : badOption(name, call);
     },
   });
 
@@ -65,22 +71,20 @@ const optionsOf = (
   const dup = Option.match(m.get(AtomicValue.string("duplicates")), {
     onNone: () => duplicates,
     onSome: (v) => {
-      const [a] = v;
-      const d =
-        a instanceof AtomicValue && v.length === 1
-          ? atomicString(a)
-          : badOption("duplicates", call);
+      const d = atomicString(optionAtom(v, "duplicates", call));
+      // F&O 3.1 §17.4 and §17.5.1: `retain` is for json-to-xml, `use-last` for parse-json.
       return d === "reject" ||
         d === "use-first" ||
-        d === "use-last" ||
-        (allowRetain && d === "retain")
+        (allowRetain && d === "retain") ||
+        (!allowRetain && d === "use-last")
         ? d
         : raise("FOJS0005", `"${d}" is not a value of the duplicates option`, call.offset);
     },
   });
   const fallback = Option.map(m.get(AtomicValue.string("fallback")), (v) => {
     const [f] = v;
-    if (v.length !== 1 || f === undefined || !isCallable(f)) return badOption("fallback", call);
+    if (v.length !== 1 || f === undefined || !isCallable(f) || arityOf(f) !== 1)
+      return badOption("fallback", call);
     return (escaped: string) => text(callFunction(f, [[AtomicValue.string(escaped)]], call.offset));
   });
   const escape = booleanOption(m, "escape", false, call);
@@ -370,7 +374,15 @@ const fetchJson = (href: string, call: Call): string => {
   const base = Option.getOrUndefined(call.statics.baseUri);
   const uri =
     URL.parse(href, base)?.href ?? raise("FOUT1170", `${href} cannot be resolved`, call.offset);
-  const got = fetchResource(call.ctx.dyn, { kind: "text", uri, encoding: undefined }, call.offset);
+  // F&O 3.1 §17.5.4: no encoding is asked for, so bytes that don't decode are
+  // err:FOUT1200 (the encoding cannot be determined), not unparsed-text's FOUT1190.
+  const got = catching(
+    () => fetchResource(call.ctx.dyn, { kind: "text", uri, encoding: undefined }, call.offset),
+    (e) =>
+      e.code.local === "FOUT1190"
+        ? raise("FOUT1200", e.description, call.offset)
+        : raiseError(e, call.offset),
+  );
   return P.isString(got)
     ? got.replace(/^﻿/, "")
     : raise("FOUT1170", `${href} is not a text`, call.offset);
@@ -447,7 +459,12 @@ const jsonToXml = (input: Sequence, options: Options, call: Call): Sequence => {
     [attribute(qname(null, "xmlns", null), Namespaces.fn), ...root.attributes],
     root.children,
   );
-  return [XdmNode.fromDocument(document(null, null, [withNamespace]))];
+  return [
+    XdmNode.fromDocument(
+      document(null, null, [withNamespace]),
+      maybe("baseUri", Option.getOrUndefined(call.statics.baseUri)),
+    ),
+  ];
 };
 
 // -----------------------------------------------------------------------------
@@ -480,7 +497,8 @@ const writeString = (s: string): string =>
 
 /** An escaped string (`escaped="true"`) as JSON: its escapes kept, checked, and other characters written as `writeString` would. */
 const writeEscaped = (s: string, call: Call): string => {
-  if (/\\(?![bfnrt"\\/]|u[0-9a-fA-F]{4})/.test(s))
+  // Escapes are consumed whole, so `\\` is one escape and the backslash after it starts the next.
+  if (s.replace(/\\(?:[bfnrt"\\/]|u[0-9a-fA-F]{4})/g, "").includes("\\"))
     return raise("FOJS0007", `"${s}" has an invalid JSON escape`, call.offset);
   return `"${Arr.fromIterable(s.matchAll(/\\(?:u[0-9a-fA-F]{4}|.)|[^\\]+/gsu))
     .map(([part]) => (part.startsWith("\\") ? part : writeString(part).slice(1, -1)))
@@ -525,10 +543,12 @@ const writeJson = (n: XdmNode, call: Call, inMap: boolean): string => {
   const foreign = n.attributes.some((a) =>
     Option.match(a.name, {
       onNone: () => false,
+      // F&O 3.1 §17.5.3: attributes in no namespace other than these are errors,
+      // as are any in the fn namespace; the three are accepted (and ignored)
+      // wherever they don't apply.
       onSome: (q) =>
-        q.namespace === null &&
-        !(["key", "escaped-key"].includes(q.local) && inMap) &&
-        !(q.local === "escaped" && kind === "string"),
+        q.namespace === Namespaces.fn ||
+        (q.namespace === null && !["key", "escaped-key", "escaped"].includes(q.local)),
     }),
   );
   if (foreign) return invalidXml(`an attribute on ${kind} is not allowed`, call);
@@ -540,12 +560,19 @@ const writeJson = (n: XdmNode, call: Call, inMap: boolean): string => {
     : write(n, call);
 };
 
-/** A map key's string value, its escapes decoded when it has `escaped-key`. */
-const keyValue = (m: XdmNode, call: Call): string => {
+/** A map member's key, compared by `value` and written as `json`. */
+interface JsonKey {
+  readonly value: string;
+  readonly json: string;
+}
+
+/** A map member's key: its string value (for comparing keys) and as JSON, an escaped key (`escaped-key`) keeping its escapes. */
+const keyOf = (m: XdmNode, call: Call): JsonKey => {
   const key = attributeValue(m, "key") ?? "";
-  return isTrue(attributeValue(m, "escaped-key"), call)
-    ? jsonString(writeEscaped(key, call).slice(1, -1), defaults, call)
-    : key;
+  if (!isTrue(attributeValue(m, "escaped-key"), call))
+    return { value: key, json: writeString(key) };
+  const json = writeEscaped(key, call);
+  return { value: jsonString(json.slice(1, -1), defaults, call), json };
 };
 
 /** How each element of the JSON vocabulary is written as JSON. */
@@ -585,19 +612,49 @@ const writers: Writers = {
       .join(",")}]`,
   map: (n, call) => {
     const members = memberElements(n, call);
-    const keys = members.map((m) => keyValue(m, call));
-    if (Arr.dedupe(keys).length !== keys.length)
+    const keys = members.map((m) => keyOf(m, call));
+    if (Arr.dedupe(keys.map((k) => k.value)).length !== keys.length)
       return invalidXml("a map has duplicate keys", call);
-    return `{${members.map((m, i) => `${writeString(keys[i] ?? "")}:${writeJson(m, call, true)}`).join(",")}}`;
+    return `{${members.map((m, i) => `${keys[i]?.json ?? '""'}:${writeJson(m, call, true)}`).join(",")}}`;
   },
 };
 
-const xmlToJson = (input: Sequence, call: Call): Sequence => {
+const opens = (token: string | undefined): boolean => token === "{" || token === "[";
+const closes = (token: string | undefined): boolean => token === "}" || token === "]";
+const line = (depth: number): string => `\n${"  ".repeat(depth)}`;
+
+/**
+ * Compact JSON laid out over lines, two spaces to a level (`indent`): F&O
+ * 3.1 §17.5.3 leaves the layout to the implementation. Strings are copied
+ * whole, so their punctuation is never taken for structure.
+ */
+const indentJson = (compact: string): string => {
+  const pieces = Arr.map(
+    Arr.fromIterable(compact.matchAll(/"(?:[^"\\]|\\.)*"|[{}[\]:,]|[^"{}[\]:,]+/gsu)),
+    ([token]) => token,
+  );
+  const [, laidOut] = Arr.mapAccum(pieces, 0, (depth, token, i) => {
+    // An empty map or array stays `{}` / `[]`.
+    if (opens(token))
+      return closes(pieces[i + 1])
+        ? ([depth, token] as const)
+        : ([depth + 1, token + line(depth + 1)] as const);
+    if (closes(token))
+      return opens(pieces[i - 1])
+        ? ([depth, token] as const)
+        : ([depth - 1, line(depth - 1) + token] as const);
+    if (token === ",") return [depth, token + line(depth)] as const;
+    return [depth, token === ":" ? ": " : token] as const;
+  });
+  return laidOut.join("");
+};
+
+const xmlToJson = (input: Sequence, options: Options, call: Call): Sequence => {
   const [n] = input;
   if (n === undefined) return [];
-  return isNode(n)
-    ? [AtomicValue.string(writeJson(n, call, false))]
-    : invalidXml("not a node", call);
+  if (!isNode(n)) return invalidXml("not a node", call);
+  const compact = writeJson(n, call, false);
+  return [AtomicValue.string(options.indent ? indentJson(compact) : compact)];
 };
 
 /** `fn:json-doc`, with or without its options. */
@@ -658,15 +715,14 @@ export const json: ReadonlyArray<BuiltinSpec> = [
     name: "fn:xml-to-json",
     params: ["node()?"],
     result: "xs:string?",
-    impl: (args, call) => xmlToJson(arg(args, 0), call),
+    impl: (args, call) =>
+      xmlToJson(arg(args, 0), optionsOf(undefined, call, "use-first", false), call),
   },
   {
     name: "fn:xml-to-json",
     params: ["node()?", "map(*)"],
     result: "xs:string?",
-    impl: (args, call) => {
-      optionsOf(arg(args, 1), call, "use-first", false);
-      return xmlToJson(arg(args, 0), call);
-    },
+    impl: (args, call) =>
+      xmlToJson(arg(args, 0), optionsOf(arg(args, 1), call, "use-first", false), call),
   },
 ];

@@ -17,6 +17,7 @@ import { castAtomic, toDecimal, toNumber } from "./cast.ts";
 import { raise, unwrap } from "./raise.ts";
 import {
   daysInMonth,
+  durationInRange,
   durationOf,
   durationValue,
   formatParts,
@@ -258,13 +259,15 @@ const temporalMinus = (
     return noArith("-", a, b, offset);
   const [x, y] = [partsOf(a), partsOf(b)];
   if (Option.isNone(x) || Option.isNone(y)) return noArith("-", a, b, offset);
-  return durationValue(DT, {
-    months: 0n,
-    seconds: BigDecimal.subtract(
-      timelineSeconds(x.value, implicit),
-      timelineSeconds(y.value, implicit),
-    ),
-  });
+  const seconds = BigDecimal.subtract(
+    timelineSeconds(x.value, implicit),
+    timelineSeconds(y.value, implicit),
+  );
+  const difference = { months: 0n, seconds };
+  // A difference beyond the supported durations is a date and time overflow, not a duration one.
+  if (!durationInRange(difference))
+    return raise("FODT0001", "the difference of two dates is beyond the supported range", offset);
+  return durationValue(DT, difference);
 };
 
 const isScalable = (t: AtomicType): boolean => t === YM || t === DT;

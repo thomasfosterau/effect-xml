@@ -17,10 +17,9 @@ import { isValidNCName, QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { isNode, type Sequence } from "../../item.ts";
 import type { NodeKind, XdmNode } from "../../node.ts";
-import { AtomicTypes, isNumericType } from "../../types.ts";
+import { AtomicTypes } from "../../types.ts";
 import { axisNodes, documentOrder } from "../axes.ts";
-import { isStringLike, toNumber } from "../cast.ts";
-import { atomicDeepEqual, deepEqual } from "../compare.ts";
+import { atomicDeepEqual, deepEqual, equalityBucket } from "../compare.ts";
 import { raise } from "../raise.ts";
 import { collate, collationArg, type Collation } from "./collation.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
@@ -66,18 +65,6 @@ const indexOf = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   );
 };
 
-/**
- * A key that values equal under `eq` (with NaN equal to NaN) share: numbers
- * by their value as a float, strings by their collation fold, and other values
- * by primitive type; values with one key are then compared one by one.
- */
-const bucketKey = (a: AtomicValue, c: Collation): string => {
-  // Equal numbers of any types round to the same float.
-  if (isNumericType(a.type)) return `n:${String(Math.fround(toNumber(a)))}`;
-  if (isStringLike(a.type) || a.type.primitive === "anyURI") return `s:${c.fold(String(a.value))}`;
-  return `t:${a.type.primitive}`;
-};
-
 const distinctValues = (args: ReadonlyArray<Sequence>, call: Call): Sequence => {
   const c = collationArg(args, 1, call);
   const tz = call.ctx.dyn.implicitTimezone;
@@ -86,7 +73,7 @@ const distinctValues = (args: ReadonlyArray<Sequence>, call: Call): Sequence => 
     atomsOf(arg(args, 0)),
     HashMap.empty<string, ReadonlyArray<AtomicValue>>(),
     (seen, a) => {
-      const key = bucketKey(a, c);
+      const key = equalityBucket(a, c.fold);
       const bucket = Option.getOrElse(HashMap.get(seen, key), () => []);
       return bucket.some((b) => atomicDeepEqual(a, b, tz, strings))
         ? [seen, []]
@@ -469,11 +456,20 @@ const uriFunctions: ReadonlyArray<BuiltinSpec> = [
   },
 ];
 
+/** The default language of the dynamic context (F&O 3.1 §16.2.5). */
+const defaultLanguage: BuiltinSpec = {
+  name: "fn:default-language",
+  params: [],
+  result: "xs:language",
+  impl: (_, call) => [new AtomicValue(AtomicTypes.language, call.ctx.dyn.defaultLanguage)],
+};
+
 /** The sequence, node, QName and URI functions. */
 export const sequences: ReadonlyArray<BuiltinSpec> = [
   ...sequenceFunctions,
   ...nodeFunctions.filter((b) => !(b.name === "fn:generate-id" && b.params.length === 1)),
   generateIdEmpty,
+  defaultLanguage,
   ...qnameFunctions,
   ...uriFunctions,
 ];
