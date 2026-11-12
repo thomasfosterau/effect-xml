@@ -231,7 +231,7 @@ export class XPathError extends Schema.TaggedError<XPathError, { readonly brand:
   "XPathError",
   {
     expression: Schema.String,
-    offset: Schema.Number,
+    offset: Schema.Int,
     reason: Schema.String,
   },
 ) {

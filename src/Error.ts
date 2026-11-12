@@ -14,9 +14,9 @@ import { isIn, tagSet } from "./internal/tagSet.ts";
 
 /** The `Position` every error carries, as a schema (the `Position` interface's shape). */
 const ErrorPosition = Schema.Struct({
-  offset: Schema.Number,
-  line: Schema.Number,
-  column: Schema.Number,
+  offset: Schema.Int,
+  line: Schema.Int,
+  column: Schema.Int,
 });
 
 /**
@@ -260,7 +260,7 @@ export class LimitExceeded extends Schema.TaggedError<
     "maxEntityExpansion",
     "maxEntityDepth",
   ]),
-  max: Schema.Number,
+  max: Schema.Finite,
   position: Schema.NullOr(ErrorPosition),
 }) {
   override get message(): string {
@@ -295,7 +295,7 @@ export class UnsupportedEncoding extends Schema.TaggedError<
 export class InvalidByteSequence extends Schema.TaggedError<
   InvalidByteSequence,
   { readonly brand: unique symbol }
->()("InvalidByteSequence", { encoding: Schema.String, offset: Schema.Number }) {
+>()("InvalidByteSequence", { encoding: Schema.String, offset: Schema.Int }) {
   override get message(): string {
     return `Invalid ${this.encoding} byte sequence in the input from byte ${this.offset}`;
   }

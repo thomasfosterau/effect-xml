@@ -9,9 +9,9 @@ import * as Schema from "effect/Schema";
 import { showPosition } from "../Position.ts";
 
 const ErrorPosition = Schema.Struct({
-  offset: Schema.Number,
-  line: Schema.Number,
-  column: Schema.Number,
+  offset: Schema.Int,
+  line: Schema.Int,
+  column: Schema.Int,
 });
 
 /**

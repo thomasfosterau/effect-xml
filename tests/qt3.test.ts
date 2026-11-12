@@ -50,7 +50,7 @@ import { reportRequested } from "./support/report.ts";
 /** The engine under test. */
 const ENGINE: Engine = xqueryEngine;
 
-const Counts = Schema.Struct({ runnable: Schema.Number, passing: Schema.Number });
+const Counts = Schema.Struct({ runnable: Schema.Int, passing: Schema.Int });
 const Baseline = Schema.fromJsonString(
   Schema.Struct({
     XQ31: Schema.Record(Schema.String, Counts),

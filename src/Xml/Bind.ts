@@ -13,7 +13,7 @@
  *     repeated elements (wrapped in one element with `wrapper`); a union of
  *     structs is a choice, picked by element name (see {@link named}).
  *   - Leaf values travel as strings, through `Schema.toCodecStringTree`: a
- *     `Schema.Number`, `Schema.Boolean`, `Schema.NumberFromString` or a branded
+ *     `Schema.Finite`, `Schema.Boolean`, `Schema.FiniteFromString` or a branded
  *     or checked string decodes from text with its own transformations and
  *     checks, and validation failures are `SchemaError`s with the field path.
  *   - A field named `_tag` holding a literal (from `Schema.TaggedStruct` or
@@ -184,7 +184,7 @@ export const annotations = {
  *
  * const Item = Schema.Struct({
  *   sku: Schema.String.pipe(Xml.Bind.attribute()),
- *   quantity: Schema.NumberFromString.pipe(Xml.Bind.attribute("qty")),
+ *   quantity: Schema.FiniteFromString.pipe(Xml.Bind.attribute("qty")),
  *   name: Schema.String
  * }).pipe(Xml.Bind.named("item"))
  *
@@ -240,7 +240,7 @@ export const element =
  *
  * const Price = Schema.Struct({
  *   currency: Schema.String.pipe(Xml.Bind.attribute()),
- *   amount: Schema.NumberFromString.pipe(Xml.Bind.text())
+ *   amount: Schema.FiniteFromString.pipe(Xml.Bind.text())
  * }).pipe(Xml.Bind.named("price"))
  *
  * const price = Effect.runSync(Xml.Bind.decode(Price)(`<price currency="EUR">9.5</price>`))
@@ -268,10 +268,10 @@ export const text =
  * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Circle = Schema.TaggedStruct("Circle", {
- *   r: Schema.NumberFromString.pipe(Xml.Bind.attribute())
+ *   r: Schema.FiniteFromString.pipe(Xml.Bind.attribute())
  * }).pipe(Xml.Bind.named("circle"))
  * const Square = Schema.TaggedStruct("Square", {
- *   side: Schema.NumberFromString.pipe(Xml.Bind.attribute())
+ *   side: Schema.FiniteFromString.pipe(Xml.Bind.attribute())
  * }).pipe(Xml.Bind.named("square"))
  * const Drawing = Schema.Struct({
  *   shapes: Schema.Array(Schema.Union([Circle, Square]))
@@ -306,7 +306,7 @@ export class XmlBindError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("XmlBindError", {
   /** The field keys and array indices leading to the problem. */
-  path: Schema.Array(Schema.Union([Schema.String, Schema.Number])),
+  path: Schema.Array(Schema.Union([Schema.String, Schema.Int])),
   reason: Schema.String,
 }) {
   override get message(): string {
@@ -865,7 +865,7 @@ const writeRoot = (plan: Plan, value: Tree): Result.Result<XmlElement, XmlBindEr
  * import { Sax, Xml } from "@thomasfosterau/effect-xml"
  *
  * const Row = Schema.Struct({
- *   r: Schema.NumberFromString.pipe(Xml.Bind.attribute()),
+ *   r: Schema.FiniteFromString.pipe(Xml.Bind.attribute()),
  *   v: Schema.String
  * })
  *
@@ -933,7 +933,7 @@ export interface DecodeOptions extends ParseOptions {
  *   {
  *     isbn: Schema.String.pipe(Xml.Bind.attribute()),
  *     title: Schema.String,
- *     year: Schema.NumberFromString,
+ *     year: Schema.FiniteFromString,
  *     authors: Schema.Array(Author).pipe(Xml.Bind.element("author")),
  *     subtitle: Schema.optional(Schema.String)
  *   },
@@ -1010,7 +1010,7 @@ export interface EncodeOptions extends WriterOptions {
  * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const Note = Schema.Struct({
- *   id: Schema.Number.pipe(Xml.Bind.attribute()),
+ *   id: Schema.Finite.pipe(Xml.Bind.attribute()),
  *   to: Schema.String,
  *   body: Schema.String
  * }).pipe(Xml.Bind.named({ name: "note", namespace: "urn:notes" }))

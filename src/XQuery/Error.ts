@@ -96,7 +96,7 @@ export class XQueryError extends Schema.TaggedError<
 >()("XQueryError", {
   code: QName,
   description: Schema.String,
-  offset: Schema.optional(Schema.Number),
+  offset: Schema.optional(Schema.Int),
   value: Schema.optional(ErrorValue),
 }) {
   override get message(): string {
