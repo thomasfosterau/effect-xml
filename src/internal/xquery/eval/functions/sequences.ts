@@ -469,11 +469,20 @@ const uriFunctions: ReadonlyArray<BuiltinSpec> = [
   },
 ];
 
+/** The default language of the dynamic context (F&O 3.1 §16.2.5). */
+const defaultLanguage: BuiltinSpec = {
+  name: "fn:default-language",
+  params: [],
+  result: "xs:language",
+  impl: (_, call) => [new AtomicValue(AtomicTypes.language, call.ctx.dyn.defaultLanguage)],
+};
+
 /** The sequence, node, QName and URI functions. */
 export const sequences: ReadonlyArray<BuiltinSpec> = [
   ...sequenceFunctions,
   ...nodeFunctions.filter((b) => !(b.name === "fn:generate-id" && b.params.length === 1)),
   generateIdEmpty,
+  defaultLanguage,
   ...qnameFunctions,
   ...uriFunctions,
 ];

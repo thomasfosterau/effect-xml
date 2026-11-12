@@ -1563,7 +1563,7 @@
     "prod-ContextItemDecl": {
       "runnable": 42,
       "syntax": 42,
-      "static": 40
+      "static": 41
     },
     "prod-ContextItemExpr": {
       "runnable": 45,
@@ -1738,7 +1738,7 @@
     "prod-ModuleImport": {
       "runnable": 105,
       "syntax": 105,
-      "static": 104
+      "static": 105
     },
     "prod-NamedFunctionRef": {
       "runnable": 556,

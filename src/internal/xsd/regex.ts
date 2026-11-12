@@ -22,6 +22,26 @@ import { isIn, tagSet } from "../tagSet.ts";
 /** A code point as a `v`-mode escape. */
 const escape = (c: string): string => `\\u{${(c.codePointAt(0) ?? 0).toString(16)}}`;
 
+/**
+ * How the literal characters of a pattern are spelled in the translation:
+ * as themselves, or, to match case-insensitively without the `i` flag, as
+ * the class of their case variants.
+ */
+interface Spelling {
+  /** A character outside a class. */
+  readonly literal: (c: string) => string;
+  /** A character inside a class. */
+  readonly char: (c: string) => string;
+  /** The range `from-to` inside a class. */
+  readonly span: (from: string, to: string) => string;
+}
+
+const exactSpelling: Spelling = {
+  literal: escape,
+  char: escape,
+  span: (from, to) => `${escape(from)}-${escape(to)}`,
+};
+
 /** A class of code point ranges, `[from, to]` inclusive. */
 const ranges = (rs: ReadonlyArray<readonly [number, number]>): string =>
   Arr.map(rs, ([from, to]) =>
@@ -269,6 +289,7 @@ const normalChar = Parser.map(Token.noneOf(".\\?*+{}()|[]"), escape);
 const charClassOf = (
   singleEscape: Parser.Parser<string>,
   classEsc: Parser.Parser<string>,
+  spelling: Spelling = exactSpelling,
 ): Parser.Parser<string> => {
   /** A single character inside a class (escaped or not), as the character itself. */
   const classChar = Parser.alt(singleEscape, Token.noneOf("[]\\-"));
@@ -286,23 +307,23 @@ const charClassOf = (
     ),
     ([from, to]) =>
       Option.match(to, {
-        onNone: () => Parser.succeed(escape(from)),
+        onNone: () => Parser.succeed(spelling.char(from)),
         onSome: (end) =>
           (end.codePointAt(0) ?? 0) < (from.codePointAt(0) ?? 0)
             ? Parser.failMessage(`the range ${from}-${end} is backwards`)
-            : Parser.succeed(`${escape(from)}-${escape(end)}`),
+            : Parser.succeed(spelling.span(from, end)),
       }),
   );
 
   /** A `-` at the start or end of a group stands for itself. */
   const literalDash = Parser.map(
     Parser.terminated(lit("-"), Parser.peek(Parser.alt(lit("]"), lit("-[")))),
-    escape,
+    spelling.char,
   );
 
   const classItems: Parser.Parser<string> = Parser.map(
     Parser.seq(
-      Parser.opt(Parser.map(lit("-"), escape)),
+      Parser.opt(Parser.map(lit("-"), spelling.char)),
       Parser.repeat(Parser.alt(classEsc, classRange, literalDash)),
     ),
     ([dash, items]) => Option.getOrElse(dash, () => "") + items.join(""),
@@ -453,8 +474,6 @@ const xpBlocks = R.fromEntries([...blockList, ...laterBlocks]);
 
 const xpClassEscape = Parser.alt(categoryEscapeOf(xpBlocks), multiCharEscape);
 
-const xpCharClassExpr = charClassOf(xpSingleCharEscape, xpClassEscape);
-
 /** `\1` … `\99`: a back-reference, its digits resolved against the groups closed before it. */
 const backReference: Parser.Parser<Segment> = Parser.map(
   Parser.preceded(
@@ -464,62 +483,153 @@ const backReference: Parser.Parser<Segment> = Parser.map(
   ([first, rest]) => Segment.BackRef({ digits: first + rest }),
 );
 
-const xpAtom: Parser.Parser<ReadonlyArray<Segment>> = Parser.alt(
-  Parser.map(Token.noneOf(".\\?*+{}()|[]^$"), (c) => [src(escape(c))]),
-  Parser.map(Token.oneOf(".^$"), (c) => [
-    Segment.Meta({ char: c === "." ? "." : c === "^" ? "^" : "$" }),
-  ]),
-  Parser.map(xpClassEscape, (c) => [src(c)]),
-  Parser.map(backReference, (b) => [b]),
-  Parser.map(xpSingleCharEscape, (c) => [src(escape(c))]),
-  Parser.map(xpCharClassExpr, (c) => [src(c)]),
-  Parser.map(
-    Parser.delimited(
-      lit("(?:"),
-      Parser.suspend(() => xpRegExp),
-      lit(")"),
-    ),
-    (inner): ReadonlyArray<Segment> => [src("(?:"), ...inner, src(")")],
-  ),
-  Parser.map(
-    Parser.delimited(
-      lit("("),
-      Parser.suspend(() => xpRegExp),
-      lit(")"),
-    ),
-    (inner): ReadonlyArray<Segment> => [
-      Segment.Group({ open: true }),
-      ...inner,
-      Segment.Group({ open: false }),
-    ],
-  ),
-);
+/**
+ * The case variants of the characters that have any: a character is a
+ * variant of another when their lower-case or their upper-case forms are
+ * equal (F&O 3.1 §5.6.1). Built on first use.
+ */
+interface CaseVariants {
+  /** The code points with a case variant, ascending. */
+  readonly cased: ReadonlyArray<number>;
+  /** The code points each of `cased` is a variant of (itself included), by code point. */
+  readonly of: Readonly<Record<string, ReadonlyArray<number>>>;
+}
 
-/** An atom and its quantifier, which may be reluctant (`*?`, `{2,3}?`). */
-const xpPiece: Parser.Parser<ReadonlyArray<Segment>> = Parser.map(
-  Parser.seq(
-    xpAtom,
-    Parser.opt(Parser.seq(Parser.alt(Token.oneOf("?*+"), quantity), Parser.opt(lit("?")))),
-  ),
-  ([a, q]) =>
-    Option.match(q, {
-      onNone: () => a,
-      onSome: ([quantifier, reluctant]) => [
-        src("(?:"),
-        ...a,
-        src(")"),
-        src(quantifier + Option.getOrElse(reluctant, () => "")),
+let caseVariants: CaseVariants | undefined;
+
+interface Cased {
+  readonly cp: number;
+  readonly lower: string;
+  readonly upper: string;
+}
+
+const codePoints = (group: ReadonlyArray<Cased> | undefined): ReadonlyArray<number> =>
+  Arr.map(group ?? [], (f) => f.cp);
+
+const variantsTable = (): CaseVariants => {
+  if (caseVariants !== undefined) return caseVariants;
+  // Every cased character is below U+1F000; the surrogates stand for nothing.
+  const forms = Arr.filterMap(Arr.range(0, 0x1efff), (cp): Result.Result<Cased, void> => {
+    if (cp >= 0xd800 && cp <= 0xdfff) return Result.failVoid;
+    const c = String.fromCodePoint(cp);
+    const lower = c.toLowerCase();
+    const upper = c.toUpperCase();
+    return lower === c && upper === c ? Result.failVoid : Result.succeed({ cp, lower, upper });
+  });
+  const byLower = Arr.groupBy(forms, (f) => f.lower);
+  const byUpper = Arr.groupBy(forms, (f) => f.upper);
+  caseVariants = {
+    cased: Arr.map(forms, (f) => f.cp),
+    of: R.fromEntries(
+      Arr.map(forms, (f) => [
+        String(f.cp),
+        Arr.dedupe([...codePoints(byLower[f.lower]), ...codePoints(byUpper[f.upper])]),
+      ]),
+    ),
+  };
+  return caseVariants;
+};
+
+/** A code point and its case variants, as the escapes of a class's body. */
+const variantEscapes = (cp: number): string => {
+  const variants = variantsTable().of[cp] ?? [cp];
+  return variants.map((v) => `\\u{${v.toString(16)}}`).join("");
+};
+
+/**
+ * Case-insensitive matching spelt out: each literal is the class of its case
+ * variants, and a range adds the variants of the characters in it. Category
+ * escapes stay as they are, which `\p{Lu}` needs (the `i` flag of a `v`-mode
+ * `RegExp` folds them: `m` would match it).
+ */
+const caselessSpelling: Spelling = {
+  literal: (c) => {
+    const cp = c.codePointAt(0) ?? 0;
+    return (variantsTable().of[cp]?.length ?? 1) > 1 ? `[${variantEscapes(cp)}]` : escape(c);
+  },
+  char: (c) => variantEscapes(c.codePointAt(0) ?? 0),
+  span: (from, to) => {
+    const lo = from.codePointAt(0) ?? 0;
+    const hi = to.codePointAt(0) ?? 0;
+    return (
+      exactSpelling.span(from, to) +
+      variantsTable()
+        .cased.filter((cp) => cp >= lo && cp <= hi)
+        .map(variantEscapes)
+        .join("")
+    );
+  },
+};
+
+/** The XPath dialect's grammar, spelling literal characters as `spelling` says. */
+const xpathDialect = (spelling: Spelling): Parser.Parser<ReadonlyArray<Segment>> => {
+  const xpCharClassExpr = charClassOf(xpSingleCharEscape, xpClassEscape, spelling);
+
+  const xpAtom: Parser.Parser<ReadonlyArray<Segment>> = Parser.alt(
+    Parser.map(Token.noneOf(".\\?*+{}()|[]^$"), (c) => [src(spelling.literal(c))]),
+    Parser.map(Token.oneOf(".^$"), (c) => [
+      Segment.Meta({ char: c === "." ? "." : c === "^" ? "^" : "$" }),
+    ]),
+    Parser.map(xpClassEscape, (c) => [src(c)]),
+    Parser.map(backReference, (b) => [b]),
+    Parser.map(xpSingleCharEscape, (c) => [src(spelling.literal(c))]),
+    Parser.map(xpCharClassExpr, (c) => [src(c)]),
+    Parser.map(
+      Parser.delimited(
+        lit("(?:"),
+        Parser.suspend(() => xpRegExp),
+        lit(")"),
+      ),
+      (inner): ReadonlyArray<Segment> => [src("(?:"), ...inner, src(")")],
+    ),
+    Parser.map(
+      Parser.delimited(
+        lit("("),
+        Parser.suspend(() => xpRegExp),
+        lit(")"),
+      ),
+      (inner): ReadonlyArray<Segment> => [
+        Segment.Group({ open: true }),
+        ...inner,
+        Segment.Group({ open: false }),
       ],
-    }),
-);
+    ),
+  );
 
-const xpRegExp: Parser.Parser<ReadonlyArray<Segment>> = Parser.map(
-  Parser.separated(
-    Parser.map(Parser.repeat(xpPiece), (ps) => ps.flat()),
-    lit("|"),
-  ),
-  (branches) => branches.flatMap((b, i) => (i === 0 ? b : [src("|"), ...b])),
-);
+  /** An atom and its quantifier, which may be reluctant (`*?`, `{2,3}?`). */
+  const xpPiece: Parser.Parser<ReadonlyArray<Segment>> = Parser.map(
+    Parser.seq(
+      xpAtom,
+      Parser.opt(Parser.seq(Parser.alt(Token.oneOf("?*+"), quantity), Parser.opt(lit("?")))),
+    ),
+    ([a, q]) =>
+      Option.match(q, {
+        onNone: () => a,
+        onSome: ([quantifier, reluctant]) => [
+          src("(?:"),
+          ...a,
+          src(")"),
+          src(quantifier + Option.getOrElse(reluctant, () => "")),
+        ],
+      }),
+  );
+
+  const xpRegExp: Parser.Parser<ReadonlyArray<Segment>> = Parser.map(
+    Parser.separated(
+      Parser.map(Parser.repeat(xpPiece), (ps) => ps.flat()),
+      lit("|"),
+    ),
+    (branches) => branches.flatMap((b, i) => (i === 0 ? b : [src("|"), ...b])),
+  );
+  return xpRegExp;
+};
+
+const xpExact = xpathDialect(exactSpelling);
+
+const xpCaseless = xpathDialect(caselessSpelling);
+
+/** The categories the `i` flag of a `v`-mode `RegExp` would get wrong: those that case folding doesn't preserve. */
+const casedCategory = /\\[pP]\{L[ult]\}/;
 
 /** How an XPath regular expression is read: the `s`, `m` and `q` flags. */
 export interface XPathRegexOptions {
@@ -529,6 +639,8 @@ export interface XPathRegexOptions {
   readonly multiline: boolean;
   /** `q`: every character of the pattern stands for itself. */
   readonly literal: boolean;
+  /** `i`: matching ignores case. */
+  readonly caseless?: boolean | undefined;
 }
 
 /** An XPath regular expression translated to the source of a `v`-flag `RegExp` (unanchored). */
@@ -538,6 +650,12 @@ export interface XPathRegex {
   readonly groups: number;
   /** The group each group is nested in, by group number (`0` for none): `parents[n - 1]` is group `n`'s. */
   readonly parents: ReadonlyArray<number>;
+  /**
+   * Whether the source already matches case-insensitively, so the `RegExp`
+   * is not to take the `i` flag. A pattern with `\p{Lu}`, `\p{Ll}` or
+   * `\p{Lt}` is translated so, its back-references then matching exactly.
+   */
+  readonly spelledCaseless: boolean;
 }
 
 interface Resolved {
@@ -648,15 +766,22 @@ export const translateXPath = (
       source: Arr.map(Arr.fromIterable(pattern), escape).join(""),
       groups: 0,
       parents: [],
+      spelledCaseless: false,
     });
-  return Result.match(Parser.parse(xpRegExp, pattern), {
+  const spelt = options.caseless === true && casedCategory.test(pattern);
+  return Result.match(Parser.parse(spelt ? xpCaseless : xpExact, pattern), {
     onFailure: (error) => Result.fail(`invalid pattern ${quote(pattern)}: ${error.message}`),
     onSuccess: (segments) =>
       Result.map(
         Arr.reduce(segments, initialResolved, (acc, segment) =>
           Result.flatMap(acc, (state) => resolveSegment(state, segment, options)),
         ),
-        (state) => ({ source: state.out.join(""), groups: state.opened, parents: state.parents }),
+        (state) => ({
+          source: state.out.join(""),
+          groups: state.opened,
+          parents: state.parents,
+          spelledCaseless: spelt,
+        }),
       ),
   });
 };

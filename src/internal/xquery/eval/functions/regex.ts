@@ -44,10 +44,11 @@ const build = (pattern: string, flags: string, offset: number): Regex => {
       dotAll: flags.includes("s"),
       multiline: flags.includes("m"),
       literal,
+      caseless: flags.includes("i"),
     }),
     (reason) => raise("FORX0002", reason, offset),
   );
-  const caseless = flags.includes("i") ? "i" : "";
+  const caseless = flags.includes("i") && !info.spelledCaseless ? "i" : "";
   const make = (jsFlags: string) =>
     Result.getOrElse(
       Result.try(() => new RegExp(info.source, jsFlags)),
