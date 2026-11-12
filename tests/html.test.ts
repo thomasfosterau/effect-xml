@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -12,8 +13,8 @@ describe("Html tokenization (lenient)", () => {
   test("unquoted and boolean attributes", async () => {
     const el = narrowAt(await frag(`<input type=text disabled>`), 0, isElement);
     expect(el.name).toBe("input");
-    expect(el.attribute("type")).toBe("text");
-    expect(el.attribute("disabled")).toBe("");
+    expect(el.attribute("type")).toEqual(Option.some("text"));
+    expect(el.attribute("disabled")).toEqual(Option.some(""));
   });
 
   test("bare '<' is treated as text, not an error", async () => {
@@ -76,8 +77,8 @@ describe("Html lenient tree building", () => {
       isElement,
     );
     expect(svg.namespace).toBe("html");
-    expect(svg.attributes.map((a) => [a.name, a.namespace])).toEqual([["viewbox", null]]);
-    expect(at(svg.elements, 0).attribute("xlink:href")).toBe("u");
+    expect(svg.attributes.map((a) => [a.name, a.namespace])).toEqual([["viewbox", Option.none()]]);
+    expect(at(svg.elements, 0).attribute("xlink:href")).toEqual(Option.some("u"));
   });
 
   test("CDATA becomes text merged with its neighbours; a processing instruction a comment", async () => {

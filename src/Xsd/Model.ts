@@ -64,9 +64,9 @@ export interface ElementParticle {
   /** The key of the declaration in {@link Model.elements}. */
   readonly element: string;
   /** Defaults to 1. */
-  readonly min?: number | undefined;
+  readonly min?: number;
   /** Defaults to 1. */
-  readonly max?: MaxOccurs | undefined;
+  readonly max?: MaxOccurs;
 }
 
 /**
@@ -78,8 +78,8 @@ export interface ElementParticle {
 export interface AnyParticle {
   readonly _tag: "Any";
   readonly wildcard: Wildcard;
-  readonly min?: number | undefined;
-  readonly max?: MaxOccurs | undefined;
+  readonly min?: number;
+  readonly max?: MaxOccurs;
 }
 
 /**
@@ -91,8 +91,8 @@ export interface AnyParticle {
 export interface GroupParticle {
   readonly _tag: "Sequence" | "Choice" | "All";
   readonly particles: ReadonlyArray<Particle>;
-  readonly min?: number | undefined;
-  readonly max?: MaxOccurs | undefined;
+  readonly min?: number;
+  readonly max?: MaxOccurs;
 }
 
 /**
@@ -126,18 +126,18 @@ export type Content =
  * @category models
  */
 export interface Facets {
-  readonly length?: number | undefined;
-  readonly minLength?: number | undefined;
-  readonly maxLength?: number | undefined;
-  readonly patterns?: ReadonlyArray<string> | undefined;
-  readonly enumeration?: ReadonlyArray<string> | undefined;
-  readonly whiteSpace?: "preserve" | "replace" | "collapse" | undefined;
-  readonly minInclusive?: string | undefined;
-  readonly maxInclusive?: string | undefined;
-  readonly minExclusive?: string | undefined;
-  readonly maxExclusive?: string | undefined;
-  readonly totalDigits?: number | undefined;
-  readonly fractionDigits?: number | undefined;
+  readonly length?: number;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly patterns?: ReadonlyArray<string>;
+  readonly enumeration?: ReadonlyArray<string>;
+  readonly whiteSpace?: "preserve" | "replace" | "collapse";
+  readonly minInclusive?: string;
+  readonly maxInclusive?: string;
+  readonly minExclusive?: string;
+  readonly maxExclusive?: string;
+  readonly totalDigits?: number;
+  readonly fractionDigits?: number;
 }
 
 /**
@@ -154,9 +154,9 @@ export interface SimpleType {
   readonly variety: "atomic" | "list" | "union";
   /** The type this one restricts (`anySimpleType` for a list or union defined directly). */
   readonly base: string;
-  readonly itemType?: string | undefined;
-  readonly memberTypes?: ReadonlyArray<string> | undefined;
-  readonly facets?: Facets | undefined;
+  readonly itemType?: string;
+  readonly memberTypes?: ReadonlyArray<string>;
+  readonly facets?: Facets;
 }
 
 /**
@@ -170,9 +170,9 @@ export interface AttributeUse {
   readonly name: string;
   /** The key of its simple type. */
   readonly type: string;
-  readonly required?: boolean | undefined;
-  readonly default?: string | undefined;
-  readonly fixed?: string | undefined;
+  readonly required?: boolean;
+  readonly default?: string;
+  readonly fixed?: string;
 }
 
 /**
@@ -193,14 +193,14 @@ export interface ComplexType {
   readonly _tag: "ComplexType";
   readonly name: string;
   /** The type this one derives from (`anyType` when none is given). */
-  readonly base?: string | undefined;
-  readonly derivation?: "extension" | "restriction" | undefined;
-  readonly abstract?: boolean | undefined;
-  readonly block?: ReadonlyArray<Derivation> | undefined;
+  readonly base?: string;
+  readonly derivation?: "extension" | "restriction";
+  readonly abstract?: boolean;
+  readonly block?: ReadonlyArray<Derivation>;
   /** Character data may appear between child elements. */
-  readonly mixed?: boolean | undefined;
+  readonly mixed?: boolean;
   readonly attributes: ReadonlyArray<AttributeUse>;
-  readonly anyAttribute?: Wildcard | undefined;
+  readonly anyAttribute?: Wildcard;
   readonly content: Content;
 }
 
@@ -225,7 +225,7 @@ export interface IdentityConstraint {
   readonly _tag: "Unique" | "Key" | "KeyRef";
   readonly name: string;
   /** For a `KeyRef`, the name of the key or unique constraint it refers to. */
-  readonly refer?: string | undefined;
+  readonly refer?: string;
   readonly selector: string;
   readonly fields: ReadonlyArray<string>;
   readonly namespaces: Readonly<Record<string, string>>;
@@ -242,14 +242,14 @@ export interface ElementDeclaration {
   readonly name: string;
   /** The key of its type. */
   readonly type: string;
-  readonly nillable?: boolean | undefined;
-  readonly abstract?: boolean | undefined;
-  readonly default?: string | undefined;
-  readonly fixed?: string | undefined;
+  readonly nillable?: boolean;
+  readonly abstract?: boolean;
+  readonly default?: string;
+  readonly fixed?: string;
   /** The head of the substitution group this (global) element belongs to. */
-  readonly substitutionGroup?: string | undefined;
-  readonly block?: ReadonlyArray<Derivation> | undefined;
-  readonly constraints?: ReadonlyArray<IdentityConstraint> | undefined;
+  readonly substitutionGroup?: string;
+  readonly block?: ReadonlyArray<Derivation>;
+  readonly constraints?: ReadonlyArray<IdentityConstraint>;
 }
 
 /**

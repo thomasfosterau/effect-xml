@@ -67,10 +67,11 @@ export const resolveAttributes = (
     // Only a prefixed name can share its expanded name with an earlier one
     // spelt differently. Its key goes with the raw names: it has a space,
     // which no name has, so the two never collide.
+    const namespace = name.namespace;
     if (
-      name.prefix !== null &&
-      name.namespace !== null &&
-      !seen.add(`${name.namespace} ${name.local}`)
+      Option.isSome(name.prefix) &&
+      Option.isSome(namespace) &&
+      !seen.add(`${namespace.value} ${name.local}`)
     )
       return duplicate(a);
     list.push(Nodes.attribute(name, a.value));

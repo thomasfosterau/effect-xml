@@ -19,7 +19,7 @@
  *   Effect.map((doc) => doc.root.attribute("x"))
  * )
  *
- * console.log(Effect.runSync(program)) // "1"
+ * console.log(Effect.runSync(program)) // Option.some("1")
  * ```
  *
  * @since 0.1.0

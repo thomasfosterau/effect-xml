@@ -27,6 +27,7 @@ import {
 import { readDirectly } from "./direct.ts";
 import { hasAsciiNames } from "./entities.ts";
 import { quote } from "./quote.ts";
+import { maybe } from "./optional.ts";
 
 /**
  * One stream's tokenizing: the lexer, the limits, and (with `dtd:
@@ -60,7 +61,7 @@ export class Tokenizer {
     this.lexer = new Lexer({
       mode: opts.mode,
       entities: opts.entities,
-      dtd,
+      ...maybe("dtd", dtd),
       content: false,
       scripting: opts.scripting,
       positions: opts.positions,
@@ -118,7 +119,7 @@ export class Tokenizer {
         : new LimitExceeded({
             limit: over.limit,
             max: over.max,
-            position: this.lexer.tokenPosition(),
+            position: Option.some(this.lexer.tokenPosition()),
           });
       return false;
     }
@@ -217,7 +218,7 @@ export const runChunks = (
  */
 export interface Chunks {
   readonly chunks: ReadonlyArray<string>;
-  readonly failure?: SaxError | undefined;
+  readonly failure?: SaxError;
 }
 
 /**

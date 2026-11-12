@@ -161,7 +161,7 @@ export interface LexerOptions {
    * the grammars without a DTD (and the scanner) until one declares a
    * general entity (see {@link Lexer.afterDoctype}).
    */
-  readonly dtd?: Dtd | undefined;
+  readonly dtd?: Dtd;
   /**
    * With {@link dtd}: read with the DTD-aware grammars from the first token,
    * whatever the DTD declares, as before #99. Only the tests set it, to
@@ -177,18 +177,18 @@ export interface LexerOptions {
    * HTML: the scripting flag. When set, `<noscript>` content is raw text, as
    * a browser with scripting enabled reads it.
    */
-  readonly scripting?: boolean | undefined;
+  readonly scripting?: boolean;
   /**
    * Whether events have positions (default `true`); without, every span is
    * the origin. Faults keep theirs (see {@link Lexer.tokenPosition}).
    */
-  readonly positions?: boolean | undefined;
+  readonly positions?: boolean;
   /**
    * Reuse the scanner's events (see `Context.reuse`; only without
    * positions): for a caller that is done with each event before it reads
    * the next.
    */
-  readonly reuse?: boolean | undefined;
+  readonly reuse?: boolean;
   /**
    * XML: recover where the strict grammars fail at a `<` or `&` that starts
    * nothing, an unquoted or valueless attribute, or markup out of place at
@@ -925,7 +925,7 @@ export class Lexer {
       return new LimitExceeded({
         limit: issue.limit.name,
         max: issue.limit.max,
-        position: this.at(issue.offset),
+        position: Option.some(this.at(issue.offset)),
       });
     }
     if (isEntityIssue(issue)) {

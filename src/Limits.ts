@@ -84,5 +84,5 @@ export const unlimited: Limits = {
  * @since 0.1.0
  * @category limits
  */
-export const resolveLimits = (limits: Partial<Limits> | undefined): Limits =>
+export const resolveLimits = (limits?: Partial<Limits>): Limits =>
   limits === undefined ? defaultLimits : { ...defaultLimits, ...limits };

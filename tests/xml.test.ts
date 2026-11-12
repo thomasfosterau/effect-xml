@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Eq from "effect/Equal";
@@ -5,7 +6,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Sax, Xml } from "../src/index.ts";
-import { at } from "./support/narrow.ts";
+import { at, some } from "./support/narrow.ts";
 
 const parse = (input: string, options?: Xml.ParseOptions) =>
   Effect.runPromise(Xml.parse(input, options));
@@ -16,7 +17,7 @@ const opening = (n: number) =>
 
 /** The namespaces of `elements` and their descendant elements, in document order. */
 const namespacesOf = (elements: ReadonlyArray<Xml.XmlElement>): Array<string | null> =>
-  elements.flatMap((e) => [e.name.namespace].concat(namespacesOf(e.elements)));
+  elements.flatMap((e) => [Option.getOrNull(e.name.namespace)].concat(namespacesOf(e.elements)));
 
 describe("Xml.parse — tree", () => {
   test("builds a typed element tree", async () => {
@@ -27,8 +28,8 @@ describe("Xml.parse — tree", () => {
 
   test("attributes are accessible by name", async () => {
     const doc = await parse(`<x a="1" b="2"/>`);
-    expect(doc.root.attribute("a")).toBe("1");
-    expect(doc.root.attribute("missing")).toBeUndefined();
+    expect(doc.root.attribute("a")).toEqual(Option.some("1"));
+    expect(doc.root.attribute("missing")).toEqual(Option.none());
   });
 
   test("textContent concatenates descendants", async () => {
@@ -47,31 +48,34 @@ describe("Xml.parse — tree", () => {
 
   test("captures declaration and doctype", async () => {
     const doc = await parse(`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE r><r/>`);
-    expect(doc.declaration).toMatchObject({ version: "1.0", encoding: "UTF-8" });
-    expect(doc.doctype?.name).toBe("r");
+    expect(some(doc.declaration)).toMatchObject({
+      version: "1.0",
+      encoding: Option.some("UTF-8"),
+    });
+    expect(Option.map(doc.doctype, (d) => d.name)).toEqual(Option.some("r"));
   });
 });
 
 describe("Xml.parse — namespaces", () => {
   test("resolves prefixes to URIs", async () => {
     const doc = await parse(`<svg xmlns="http://svg" xmlns:x="http://x"><x:rect/></svg>`);
-    expect(doc.root.name.namespace).toBe("http://svg");
+    expect(doc.root.name.namespace).toEqual(Option.some("http://svg"));
     const rect = at(doc.root.elements, 0);
-    expect(rect.name.namespace).toBe("http://x");
-    expect(rect.name.prefix).toBe("x");
+    expect(rect.name.namespace).toEqual(Option.some("http://x"));
+    expect(rect.name.prefix).toEqual(Option.some("x"));
   });
 
   test("default namespace does not apply to attributes", async () => {
     const doc = await parse(`<a xmlns="http://d" k="v"/>`);
     const k = doc.root.attributes.find((a) => a.name.local === "k");
     assert.isDefined(k);
-    expect(k.name.namespace).toBeNull();
+    expect(k.name.namespace).toEqual(Option.none());
   });
 
   test("can be disabled", async () => {
     const doc = await parse(`<x:a xmlns:x="http://x"/>`, { namespaces: false });
-    expect(doc.root.name.namespace).toBeNull();
-    expect(doc.root.name.prefix).toBe("x");
+    expect(doc.root.name.namespace).toEqual(Option.none());
+    expect(doc.root.name.prefix).toEqual(Option.some("x"));
   });
 
   const XML = "http://www.w3.org/XML/1998/namespace";
@@ -166,7 +170,7 @@ describe("Xml.parse — namespaces", () => {
       `<foo xmlns:xml="${XML}" xml:lang="en" xmlns:a="urn:x" xmlns:b="urn:y">` +
         `<bar a:attr="1" b:attr="2" attr="3"/></foo>`,
     );
-    expect(doc.root.attribute("xml:lang")).toBe("en");
+    expect(doc.root.attribute("xml:lang")).toEqual(Option.some("en"));
   });
 
   test("one raw name in several namespaces resolves to each", async () => {
@@ -176,7 +180,7 @@ describe("Xml.parse — namespaces", () => {
       `<r><p:e xmlns:p="urn:a"/><p:e xmlns:p="urn:b"/><p:e xmlns:p="urn:a"/>` +
         `<e/><e xmlns="urn:c"/><e/></r>`,
     );
-    expect(doc.root.elements.map((e) => e.name.namespace)).toEqual([
+    expect(doc.root.elements.map((e) => Option.getOrNull(e.name.namespace))).toEqual([
       "urn:a",
       "urn:b",
       "urn:a",
@@ -200,9 +204,9 @@ describe("Xml.parse — namespaces", () => {
     const doc = await parse(`<r>${children.join("")}<p:e0 xmlns:p="urn:9"/></r>`);
     const elements = doc.root.elements;
     expect(elements).toHaveLength(n + 1);
-    expect(at(elements, 4).name.namespace).toBe("urn:1");
+    expect(at(elements, 4).name.namespace).toEqual(Option.some("urn:1"));
     expect(at(elements, 4).name.local).toBe("e4");
-    expect(at(elements, n).name.namespace).toBe("urn:9");
+    expect(at(elements, n).name.namespace).toEqual(Option.some("urn:9"));
   });
 
   test('xmlns="" undeclares the default namespace: no namespace is null (#109)', async () => {
@@ -220,9 +224,9 @@ describe("Xml.parse — namespaces", () => {
     const doc = await parse(
       `<?xml version="1.1"?><a xmlns:p="urn:p"><p:b xmlns:p="urn:q"/><c xmlns:p=""/></a>`,
     );
-    expect(at(doc.root.elements, 0).name.namespace).toBe("urn:q");
+    expect(at(doc.root.elements, 0).name.namespace).toEqual(Option.some("urn:q"));
     // The undeclaring element itself is in no namespace, as is its unprefixed name.
-    expect(at(doc.root.elements, 1).name.namespace).toBe(null);
+    expect(at(doc.root.elements, 1).name.namespace).toEqual(Option.none());
     const r = await Effect.runPromise(
       Effect.result(Xml.parse(`<?xml version="1.1"?><a xmlns:p="urn:p"><p:b xmlns:p=""/></a>`)),
     );
@@ -258,7 +262,7 @@ describe("Xml — Schema integration", () => {
 
   test("attribute values are normalized: literal whitespace becomes spaces, references stay", async () => {
     const doc = await Effect.runPromise(Xml.parse(`<a v="x\ty\r\nz&#10;&#9;!"/>`));
-    expect(doc.root.attribute("v")).toBe("x y z\n\t!");
+    expect(doc.root.attribute("v")).toEqual(Option.some("x y z\n\t!"));
   });
 
   test("Schema rejects malformed node data", () => {

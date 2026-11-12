@@ -640,7 +640,7 @@ export interface XPathRegexOptions {
   /** `q`: every character of the pattern stands for itself. */
   readonly literal: boolean;
   /** `i`: matching ignores case. */
-  readonly caseless?: boolean | undefined;
+  readonly caseless?: boolean;
 }
 
 /** An XPath regular expression translated to the source of a `v`-flag `RegExp` (unanchored). */

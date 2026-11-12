@@ -42,7 +42,7 @@ import {
 
 type Res<A> = Result.Result<A, XsdSchemaError>;
 
-const schemaError = (reason: string) => new XsdSchemaError({ reason, location: null });
+const schemaError = (reason: string) => new XsdSchemaError({ reason, location: Option.none() });
 
 /** An attribute a complex type declares, ready to check. */
 export interface AttributeRule {

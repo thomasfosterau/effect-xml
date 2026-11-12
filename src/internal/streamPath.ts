@@ -63,7 +63,7 @@ export interface StepLevel {
    * For each positional step, how many of this element's children have
    * passed its test and each of its predicates so far.
    */
-  counts?: Array<Array<number> | undefined> | undefined;
+  counts?: Array<Array<number> | undefined>;
 }
 
 /** No steps: shared by every level that matches none, so most elements allocate nothing. */
@@ -78,8 +78,8 @@ export type ExpandedName = Pick<QName, "local" | "namespace">;
 /** Whether `name` passes an element test. */
 const namePasses = (t: ElementTest, name: ExpandedName): boolean =>
   P.isTagged(t, "Name")
-    ? name.local === t.local && name.namespace === t.namespace
-    : (t.namespace === undefined || name.namespace === t.namespace) &&
+    ? name.local === t.local && Option.getOrNull(name.namespace) === t.namespace
+    : (t.namespace === undefined || Option.getOrNull(name.namespace) === t.namespace) &&
       (t.local === undefined || name.local === t.local);
 
 /** `a ∪ b`, both ascending; `a` itself when `b` adds nothing. */
@@ -177,10 +177,10 @@ export const matchesAll = <P>(steps: ReadonlyArray<MatchStep<P>>, level: StepLev
 // -----------------------------------------------------------------------------
 
 /** A name already resolved: `Q{uri}local`. */
-const resolvedName = (namespace: string | null, local: string): EQName => ({
+const resolvedName = (namespace: Option.Option<string>, local: string): EQName => ({
   prefix: Option.none(),
   local,
-  uri: Option.some(namespace ?? ""),
+  uri: Option.orElseSome(namespace, () => ""),
   offset: 0,
 });
 
@@ -207,7 +207,7 @@ const nodeTest = (t: XPathNodeTest): NodeTestT =>
       NodeTest.Wildcard({
         wildcard: {
           prefix: Option.none(),
-          uri: n.namespace === undefined ? Option.none() : Option.some(n.namespace ?? ""),
+          uri: n.namespace === undefined ? Option.none() : Option.orElseSome(n.namespace, () => ""),
           local: Option.none(),
           offset: 0,
         },

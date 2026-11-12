@@ -46,18 +46,19 @@ export interface ResourceResolver {
    * the import's location hints); optional: without it, a query that imports
    * a module it was not compiled with fails with `err:XQST0059`.
    */
-  readonly module?:
-    | ((
-        uri: string,
-        locations: ReadonlyArray<string>,
-      ) => Effect.Effect<ReadonlyArray<ModuleSource>, XQueryError>)
-    | undefined;
+  readonly module?: (
+    uri: string,
+    locations: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<ModuleSource>, XQueryError>;
   /** The document node of the document at `uri`. */
   readonly document: (uri: string) => Effect.Effect<XdmNode, XQueryError>;
   /** The collection at `uri`; `""` is the default collection. */
   readonly collection: (uri: string) => Effect.Effect<Sequence, XQueryError>;
   /** The text of the resource at `uri`, decoded with `encoding` if one is given. */
-  readonly text: (uri: string, encoding: string | undefined) => Effect.Effect<string, XQueryError>;
+  readonly text: (
+    uri: string,
+    encoding: Option.Option<string>,
+  ) => Effect.Effect<string, XQueryError>;
 }
 
 /**
@@ -89,13 +90,13 @@ export class Resolver extends Context.Service<Resolver, ResourceResolver>()(
  * @category resolving
  */
 export interface StaticResources {
-  readonly documents?: Readonly<Record<string, XdmNode>> | undefined;
+  readonly documents?: Readonly<Record<string, XdmNode>>;
   /** Collections by URI; `""` is the default collection. */
-  readonly collections?: Readonly<Record<string, Sequence>> | undefined;
-  readonly texts?: Readonly<Record<string, string>> | undefined;
+  readonly collections?: Readonly<Record<string, Sequence>>;
+  readonly texts?: Readonly<Record<string, string>>;
 }
 
-const find = <A>(table: Readonly<Record<string, A>> | undefined, uri: string, code: string) =>
+const find = <A>(uri: string, code: string, table?: Readonly<Record<string, A>>) =>
   Effect.fromOption(Option.fromUndefinedOr(table?.[uri])).pipe(
     Effect.mapError(() =>
       xqueryError(code, `${uri === "" ? "the default collection" : uri} is not available`),
@@ -109,9 +110,9 @@ const find = <A>(table: Readonly<Record<string, A>> | undefined, uri: string, co
  * @category resolving
  */
 export const staticResolver = (resources: StaticResources): ResourceResolver => ({
-  document: (uri) => find(resources.documents, uri, "FODC0002"),
-  collection: (uri) => find(resources.collections, uri, "FODC0002"),
-  text: (uri) => find(resources.texts, uri, "FOUT1170"),
+  document: (uri) => find(uri, "FODC0002", resources.documents),
+  collection: (uri) => find(uri, "FODC0002", resources.collections),
+  text: (uri) => find(uri, "FOUT1170", resources.texts),
 });
 
 /**
@@ -122,24 +123,24 @@ export const staticResolver = (resources: StaticResources): ResourceResolver => 
  */
 export interface EvaluateOptions {
   /** The context item: an item, or a parsed document or element (made a node). */
-  readonly context?: Item | XmlDocument | XmlElement | undefined;
+  readonly context?: Item | XmlDocument | XmlElement;
   /**
    * External variables' values, by Clark name (`{uri}local`, or a bare
    * `local` for a name in no namespace). A single item stands for a sequence
    * of one. Compiling query text declares these names; a compiled
    * {@link Query} must have been compiled with them in `variables`.
    */
-  readonly variables?: Readonly<Record<string, Sequence | Item>> | undefined;
+  readonly variables?: Readonly<Record<string, Sequence | Item>>;
   /** The implicit timezone, in minutes east of UTC (default 0). */
-  readonly implicitTimezone?: number | undefined;
+  readonly implicitTimezone?: number;
   /**
    * The environment variables `fn:environment-variable` and
    * `fn:available-environment-variables` see, by name (default: none; the
    * process environment is never read).
    */
-  readonly environment?: Readonly<Record<string, string>> | undefined;
+  readonly environment?: Readonly<Record<string, string>>;
   /** The current dateTime (default: now, from the `Clock`). */
-  readonly currentDateTime?: Date | undefined;
+  readonly currentDateTime?: Date;
   /**
    * The default language of the dynamic context, an `xs:language` value such
    * as `en` or `fr-CA`, which `fn:default-language` returns (default `en`).
@@ -149,7 +150,7 @@ export interface EvaluateOptions {
    */
   readonly defaultLanguage?: string;
   /** How to compile query text: the static context's options. */
-  readonly compile?: CompileOptions | undefined;
+  readonly compile?: CompileOptions;
 }
 
 const isDocument = /*#__PURE__*/ Schema.is(XmlDocumentSchema);
@@ -253,7 +254,7 @@ export const evaluate = (
   Effect.gen(function* () {
     const variables = options.variables ?? {};
     const compiled: Query = P.isString(query)
-      ? yield* compileText(query, options.compile, R.keys(variables))
+      ? yield* compileText(query, R.keys(variables), options.compile)
       : query;
     const resolver = yield* Effect.serviceOption(Resolver);
     const withModules = yield* loadModules(compiled, resolver);
@@ -308,16 +309,14 @@ const loadModules = (
     load === undefined ? Effect.succeed({}) : fetchModules(load, query.unresolvedImports, {})
   ).pipe(
     Effect.flatMap((modules) =>
-      Effect.fromResult(compile(query.source, { ...query.options, modules })),
+      Effect.fromResult(
+        compile(query.source, { ...Option.getOrUndefined(query.options), modules }),
+      ),
     ),
   );
 };
 
-const compileText = (
-  text: string,
-  options: CompileOptions | undefined,
-  names: ReadonlyArray<string>,
-) =>
+const compileText = (text: string, names: ReadonlyArray<string>, options?: CompileOptions) =>
   Effect.fromResult(
     compile(text, { ...options, variables: [...(options?.variables ?? []), ...names] }),
   );

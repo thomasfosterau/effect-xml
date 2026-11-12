@@ -2,6 +2,7 @@
  * The values a schema-aware parse produces.
  */
 import type * as BigDecimal from "effect/BigDecimal";
+import type * as Option from "effect/Option";
 import type { XmlElement } from "../Xml/Node.ts";
 
 /**
@@ -28,14 +29,19 @@ export type SimpleValue =
   | ReadonlyArray<SimpleValue>;
 
 /**
- * The value of an element: a simple value, `null` when the element is nil
- * (`xsi:nil="true"`), a DOM element when a wildcard matched it, or a record
- * for a complex type.
+ * The value of an element: a simple value, a DOM element when a wildcard
+ * matched it, or a record for a complex type. The value of an element
+ * declared `nillable` is an `Option` of its value: `Option.none()` when the
+ * element is nil (`xsi:nil="true"`), `Option.some(value)` otherwise.
  *
  * @since 0.1.0
  * @category models
  */
-export type XsdValue = SimpleValue | null | XmlElement | XsdRecord;
+export type XsdValue =
+  | SimpleValue
+  | XmlElement
+  | XsdRecord
+  | Option.Option<SimpleValue | XmlElement | XsdRecord>;
 
 /**
  * The value of a complex type: its attributes and child elements by property name.

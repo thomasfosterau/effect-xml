@@ -217,7 +217,7 @@ const streamSelect = (path: string) =>
         Sax.tokenize(),
         Sax.select(path),
         Stream.runCollect,
-        Effect.map((c) => Array.from(c, (b) => b.attribute("n"))),
+        Effect.map((c) => Array.from(c, (b) => Option.getOrUndefined(b.attribute("n")))),
       ),
     ),
   );

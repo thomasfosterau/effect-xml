@@ -70,7 +70,10 @@ const annotationOf = (type: Option.Option<EQName>, resolve: Resolve): string | u
   );
 
 const nameOf = (node: XdmNode): string =>
-  Option.match(node.name, { onNone: () => "", onSome: (q) => `{${q.namespace ?? ""}}${q.local}` });
+  Option.match(node.name, {
+    onNone: () => "",
+    onSome: (q) => `{${Option.getOrElse(q.namespace, () => "")}}${q.local}`,
+  });
 
 /** Whether a type annotation named in a kind test admits untyped nodes of `kind`. */
 const admitsUntyped = (

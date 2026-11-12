@@ -13,6 +13,7 @@ import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import { isReference, resolveReference } from "../../../uri.ts";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { isNode, type Sequence } from "../../item.ts";
@@ -37,6 +38,7 @@ import {
   str,
   text,
 } from "./values.ts";
+import { uriOf } from "../../../qnames.ts";
 
 const isQName = Schema.is(QName);
 
@@ -190,20 +192,25 @@ const outermost = (s: Sequence): Sequence => {
 
 const fnNamespace = "http://www.w3.org/2005/xpath-functions";
 
-const eqName = (q: QName): string => `Q{${q.namespace ?? ""}}${q.local}`;
+const eqName = (q: QName): string => `Q{${uriOf(q) ?? ""}}${q.local}`;
 
 /** Whether two nodes have the same kind and name, as `fn:path` counts siblings. */
 const sameKindAndName = (a: XdmNode, b: XdmNode): boolean =>
   a.kind === b.kind &&
-  Option.makeEquivalence(
-    (x: QName, y: QName) => x.namespace === y.namespace && x.local === y.local,
-  )(a.name, b.name);
+  Option.makeEquivalence((x: QName, y: QName) => uriOf(x) === uriOf(y) && x.local === y.local)(
+    a.name,
+    b.name,
+  );
 
 /** How each kind of node is written as a step of `fn:path`, given its name and its position among its like siblings. */
 const pathSteps: Readonly<Record<NodeKind, (name: QName | undefined, nth: number) => string>> = {
   element: (name, nth) => `${name === undefined ? "" : eqName(name)}[${nth}]`,
   attribute: (name) =>
-    name === undefined ? "@" : name.namespace === null ? `@${name.local}` : `@${eqName(name)}`,
+    name === undefined
+      ? "@"
+      : Option.isNone(name.namespace)
+        ? `@${name.local}`
+        : `@${eqName(name)}`,
   text: (_, nth) => `text()[${nth}]`,
   comment: (_, nth) => `comment()[${nth}]`,
   "processing-instruction": (name, nth) => `processing-instruction(${name?.local ?? ""})[${nth}]`,
@@ -325,9 +332,9 @@ const resolveQName = (lexical: string, element: XdmNode, call: Call): Sequence =
   return [
     AtomicValue.qname(
       new QName({
-        prefix: prefix === "" ? null : prefix,
+        prefix: prefix === "" ? Option.none() : Option.some(prefix),
         local,
-        namespace: uri === undefined || uri === "" ? null : uri,
+        namespace: uri === undefined || uri === "" ? Option.none() : Option.some(uri),
       }),
     ),
   ];
@@ -351,9 +358,9 @@ const qnameFunctions: ReadonlyArray<BuiltinSpec> = [
     result: "xs:NCName?",
     impl: (args) => {
       const q = qnameArg(arg(args, 0));
-      return q === undefined || q.prefix === null
+      return q === undefined || Option.isNone(q.prefix)
         ? []
-        : [new AtomicValue(AtomicTypes.NCName, q.prefix)];
+        : [new AtomicValue(AtomicTypes.NCName, q.prefix.value)];
     },
   },
   {
@@ -371,7 +378,7 @@ const qnameFunctions: ReadonlyArray<BuiltinSpec> = [
     result: "xs:anyURI?",
     impl: (args) => {
       const q = qnameArg(arg(args, 0));
-      return q === undefined ? [] : [AtomicValue.anyURI(q.namespace ?? "")];
+      return q === undefined ? [] : [AtomicValue.anyURI(uriOf(q) ?? "")];
     },
   },
   {
@@ -407,15 +414,17 @@ const isAbsolute = (uri: string): boolean => /^[A-Za-z][A-Za-z0-9+.-]*:/.test(ur
 const resolveUri = (relative: string, base: string | undefined, call: Call): Sequence => {
   if (/[\s<>"{}|\\^`]/.test(relative.trim()) || relative.includes("%%"))
     return raise("FORG0002", `${relative} is not a valid URI reference`, call.offset);
+  if (!isReference(relative.trim()))
+    return raise("FORG0002", `${relative} is not a valid URI reference`, call.offset);
   if (isAbsolute(relative)) return [AtomicValue.anyURI(relative)];
   if (base === undefined)
     return raise("FONS0005", "there is no base URI to resolve against", call.offset);
   if (!isAbsolute(base) || base.includes("#"))
     return raise("FORG0002", `${base} is not an absolute URI`, call.offset);
-  const resolved = URL.parse(relative, base);
-  return resolved === null
-    ? raise("FORG0002", `${relative} cannot be resolved against ${base}`, call.offset)
-    : [AtomicValue.anyURI(resolved.href)];
+  return Option.match(resolveReference(relative.trim(), base), {
+    onNone: () => raise("FORG0002", `${relative} cannot be resolved against ${base}`, call.offset),
+    onSome: (resolved) => [AtomicValue.anyURI(resolved)],
+  });
 };
 
 const uriFunctions: ReadonlyArray<BuiltinSpec> = [

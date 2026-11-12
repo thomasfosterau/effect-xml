@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Eq from "effect/Equal";
@@ -43,7 +44,7 @@ describe("Html.parseDocument — structure", () => {
 
   test("captures doctype", async () => {
     const d = await doc(`<!DOCTYPE html><p>x</p>`);
-    expect(d.doctype?.name).toBe("html");
+    expect(Option.map(d.doctype, (dt) => dt.name)).toEqual(Option.some("html"));
   });
 
   test("auto-closes <p> on block-level start tags", async () => {
@@ -182,16 +183,16 @@ describe("Html.parseDocument — foreign content", () => {
     const xml = a.attributes.find((x) => x.name === "lang");
     assert.isDefined(xlink);
     assert.isDefined(xml);
-    expect(xlink.namespace).toBe("xlink");
-    expect(xlink.prefix).toBe("xlink");
+    expect(xlink.namespace).toEqual(Option.some("xlink"));
+    expect(xlink.prefix).toEqual(Option.some("xlink"));
     expect(xlink.qualifiedName).toBe("xlink:href");
-    expect(a.attribute("xlink:href")).toBe("u");
-    expect(xml.namespace).toBe("xml");
+    expect(a.attribute("xlink:href")).toEqual(Option.some("u"));
+    expect(xml.namespace).toEqual(Option.some("xml"));
     // The XML DOM places them in their namespace URIs.
     const converted = Html.toXml(a);
     const href = converted.attributes.find((x) => x.name.local === "href");
-    expect(href?.name.namespace).toBe(Html.XLINK_NS);
-    expect(href?.name.prefix).toBe("xlink");
+    expect(href?.name.namespace).toEqual(Option.some(Html.XLINK_NS));
+    expect(href?.name.prefix).toEqual(Option.some("xlink"));
   });
 
   test("breakout tags return to HTML content", async () => {
@@ -227,10 +228,10 @@ describe("Html.parseDocument — template", () => {
 
   test("only HTML templates have contents", async () => {
     const d = await doc(`<template></template><svg><template><g/></template></svg>`);
-    expect(tpl(d.documentElement).content?.children).toEqual([]);
+    expect(Option.map(tpl(d.documentElement).content, (c) => c.children)).toEqual(Option.some([]));
     const svgTemplate = htmlDescendantOrFail(child(d.documentElement, "body"), "template");
     expect(svgTemplate.namespace).toBe("svg");
-    expect(svgTemplate.content).toBeNull();
+    expect(svgTemplate.content).toEqual(Option.none());
     expect(names(svgTemplate.children)).toEqual(["g"]);
   });
 
@@ -317,7 +318,9 @@ describe("Html.parseDocument — document mode", () => {
 
   test("the DOCTYPE's absent identifiers are empty strings", async () => {
     const d = await doc("<!DOCTYPE html>");
-    expect(d.doctype).toEqual(new Html.HtmlDoctype({ name: "html", publicId: "", systemId: "" }));
+    expect(d.doctype).toEqual(
+      Option.some(new Html.HtmlDoctype({ name: "html", publicId: "", systemId: "" })),
+    );
   });
 });
 
@@ -444,5 +447,18 @@ describe("Html round trips", () => {
         Html.toXml(a).root.elements.find((e) => e.name.local === "body")?.children,
       );
     });
+  });
+});
+
+describe("Html.parseDocument — <noscript> in <head>, scripting off", () => {
+  test("head content stays in it; anything else closes it", async () => {
+    const d = await doc(
+      `<html><head><noscript><link rel=a><meta charset=utf-8><basefont><bgsound>` +
+        `<style>s</style><noframes>n</noframes><html lang=en><head><noscript><p>x`,
+    );
+    expect(Html.serialize(d)).toBe(
+      `<html lang="en"><head><noscript><link rel="a"><meta charset="utf-8"><basefont><bgsound>` +
+        `<style>s</style><noframes>n</noframes></noscript></head><body><p>x</p></body></html>`,
+    );
   });
 });

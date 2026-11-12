@@ -32,6 +32,7 @@ import {
 } from "../serialize.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, contextNode, isEmpty, optionalNode, str, text } from "./values.ts";
+import { maybe } from "../../../optional.ts";
 
 /** `fn:parse-xml` or `fn:parse-xml-fragment`: the text parsed, at the static base URI. */
 const parseXml =
@@ -44,7 +45,7 @@ const parseXml =
         kind,
         uri: text(arg(args, 0)),
         encoding: undefined,
-        base: Option.getOrUndefined(call.statics.baseUri),
+        ...maybe("base", Option.getOrUndefined(call.statics.baseUri)),
       },
       call.offset,
     );
@@ -72,7 +73,7 @@ const xmlId = (element: XdmNode): string | undefined =>
     .find((a) =>
       Option.match(a.name, {
         onNone: () => false,
-        onSome: (q) => q.namespace === Namespaces.xml && q.local === "id",
+        onSome: (q) => Option.contains(q.namespace, Namespaces.xml) && q.local === "id",
       }),
     )
     ?.stringValue.trim()

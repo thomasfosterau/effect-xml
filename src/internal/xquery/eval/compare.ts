@@ -31,6 +31,7 @@ import { AtomicTypes, derivesFrom, isNumericType, type AtomicType } from "../typ
 import { castAtomic, isStringLike, toDecimal, toNumber } from "./cast.ts";
 import { orElse, raise, unwrap } from "./raise.ts";
 import { durationOf, isTemporal, partsOf, timelineSeconds } from "./temporal.ts";
+import { uriOf } from "../../qnames.ts";
 
 const isQName = Schema.is(QName);
 
@@ -138,11 +139,7 @@ const compareOther = (
   const y = b.value;
   if (P.isBoolean(x) && P.isBoolean(y)) return Number(x) - Number(y);
   if (isQNameValue(x) && isQNameValue(y) && a.type.primitive === b.type.primitive)
-    return ordering
-      ? noOrder(a, offset)
-      : x.namespace === y.namespace && x.local === y.local
-        ? 0
-        : 1;
+    return ordering ? noOrder(a, offset) : uriOf(x) === uriOf(y) && x.local === y.local ? 0 : 1;
   if (x instanceof Uint8Array && y instanceof Uint8Array && a.type.primitive === b.type.primitive)
     return bytesCompare(x, y);
   return incomparable(a, b, offset);
@@ -382,7 +379,7 @@ export const equalityBucket = (a: AtomicValue, bucket: (s: string) => string): s
 };
 
 const nameKey = (n: XdmNode): string =>
-  Option.match(n.name, { onNone: () => "", onSome: (q) => `{${q.namespace ?? ""}}${q.local}` });
+  Option.match(n.name, { onNone: () => "", onSome: (q) => `{${uriOf(q) ?? ""}}${q.local}` });
 
 /** The children deep-equal compares: elements and text (comments and processing instructions don't count). */
 const significant = (n: XdmNode): Sequence =>

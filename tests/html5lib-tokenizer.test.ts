@@ -10,6 +10,7 @@
  * the count. Set `HTML5LIB_REPORT=1` to list the failing tests.
  */
 /// <reference types="vite-plus/client" />
+import * as Option from "effect/Option";
 import { describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
@@ -114,7 +115,13 @@ const tokens = (input: string): Array<Token> =>
         CData: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
         Comment: (ev): ReadonlyArray<Token> => [["Comment", ev.data]],
         Doctype: (ev): ReadonlyArray<Token> => [
-          ["DOCTYPE", ev.name, ev.publicId, ev.systemId, !ev.forceQuirks],
+          [
+            "DOCTYPE",
+            ev.name,
+            Option.getOrNull(ev.publicId),
+            Option.getOrNull(ev.systemId),
+            !ev.forceQuirks,
+          ],
         ],
         ProcessingInstruction: (): ReadonlyArray<Token> => [],
         XmlDeclaration: (): ReadonlyArray<Token> => [],
