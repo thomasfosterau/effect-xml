@@ -26,6 +26,7 @@ import { Xml } from "../src/index.ts";
 import * as Fixtures from "./support/fixtures.ts";
 import { reportRequested } from "./support/report.ts";
 import { canonical, readManifest, type XmlconfTest } from "./support/xmlconf.ts";
+import { maybe } from "./support/maybe.ts";
 
 const FIXTURES = new URL("./fixtures/xmlconf/", import.meta.url);
 
@@ -59,7 +60,7 @@ const check = (count: Count | null, passed: boolean, failure: string): Check => 
 const run = Effect.fnUntraced(function* (t: XmlconfTest) {
   const bytes = yield* Fixtures.readBytes(FIXTURES, t.uri);
   const exit = yield* Effect.exit(
-    Xml.parseBytes(bytes, { dtd: "internal", namespaces: t.namespaces }),
+    Xml.parseBytes(bytes, { dtd: "internal", ...maybe("namespaces", t.namespaces) }),
   );
   // A defect (thrown, not a typed failure) never counts as a pass.
   if (Exit.isFailure(exit) && !Cause.hasFails(exit.cause))

@@ -156,7 +156,7 @@ export interface LexerOptions {
   /** Named entity table. */
   readonly entities: Record<string, string>;
   /** Declared entities, for XML with `dtd: "internal"`. */
-  readonly dtd?: Dtd | undefined;
+  readonly dtd?: Dtd;
   /**
    * XML: the input is content (an entity's replacement text), not a
    * document, so references and CDATA sections may appear at its top level.
@@ -166,18 +166,18 @@ export interface LexerOptions {
    * HTML: the scripting flag. When set, `<noscript>` content is raw text, as
    * a browser with scripting enabled reads it.
    */
-  readonly scripting?: boolean | undefined;
+  readonly scripting?: boolean;
   /**
    * Whether events have positions (default `true`); without, every span is
    * the origin. Faults keep theirs (see {@link Lexer.tokenPosition}).
    */
-  readonly positions?: boolean | undefined;
+  readonly positions?: boolean;
   /**
    * Reuse the scanner's events (see `Context.reuse`; only without
    * positions): for a caller that is done with each event before it reads
    * the next.
    */
-  readonly reuse?: boolean | undefined;
+  readonly reuse?: boolean;
   /**
    * XML: recover where the strict grammars fail at a `<` or `&` that starts
    * nothing, an unquoted or valueless attribute, or markup out of place at

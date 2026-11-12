@@ -100,7 +100,7 @@ export interface SniffOptions {
    * An external encoding hint, such as the `charset` of a `Content-Type`. It
    * overrides the document's own declaration, but not a byte order mark.
    */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
 }
 
 const bomOf = (b: Uint8Array): (Detected & { readonly encoding: Family }) | null => {
@@ -512,9 +512,9 @@ const concat = (a: Uint8Array, b: Uint8Array): Uint8Array => {
  */
 export interface DecodeOptions extends SniffOptions {
   /** `"xml"` (default) sniffs per XML 1.0 Appendix F and decodes strictly; `"html"` per WHATWG, leniently. */
-  readonly mode?: "xml" | "html" | undefined;
+  readonly mode?: "xml" | "html";
   /** Fail with {@link LimitExceeded} once the input is longer than this many bytes. */
-  readonly maxTotalBytes?: number | undefined;
+  readonly maxTotalBytes?: number;
 }
 
 /** @internal The decoding state machine behind {@link decode}. */

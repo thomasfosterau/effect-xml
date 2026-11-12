@@ -27,10 +27,8 @@ const generate = Command.make(
       Flag.withDescription("The TypeScript module to write"),
     ),
     importFrom: Flag.String("import-from").pipe(
-      Flag.withDescription(
-        'The module the generated code imports the library from (default "@thomasfosterau/effect-xml")',
-      ),
-      Flag.optional,
+      Flag.withDescription("The module the generated code imports the library from"),
+      Flag.withDefault("@thomasfosterau/effect-xml"),
     ),
     roots: Flag.String("root").pipe(
       Flag.withDescription(
@@ -53,7 +51,7 @@ const generate = Command.make(
     const outcome = yield* run({
       schema: input.schema,
       out: input.out,
-      importFrom: input.importFrom._tag === "Some" ? input.importFrom.value : undefined,
+      importFrom: input.importFrom,
       roots: input.roots,
       remote: input.remote,
       check: input.check,

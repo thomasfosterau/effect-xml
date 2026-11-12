@@ -24,6 +24,7 @@ import {
 import type { StaticError } from "./errors.ts";
 import { parseXQuery } from "./parse.ts";
 import { analyzeModule, exportsOf } from "./prolog-check.ts";
+import { maybe } from "../../optional.ts";
 
 /** A library module, analysed: its tree, target namespace and static context. */
 export interface LibraryModule {
@@ -97,7 +98,7 @@ const load = (
               return Result.succeed(undefined);
             const base: StaticOptions = {
               ...options,
-              baseUri: source.location ?? options?.baseUri,
+              ...maybe("baseUri", source.location ?? options?.baseUri),
             };
             return Result.flatMap(load(parsed, base, loaded), (exports) => {
               // Imports of modules still loading (a cycle) are opaque to this one.

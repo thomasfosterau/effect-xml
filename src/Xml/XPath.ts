@@ -109,6 +109,7 @@ import {
   type XmlProcessingInstruction,
   type XmlText,
 } from "./Node.ts";
+import { maybe } from "../internal/optional.ts";
 
 const isXmlElement = Schema.is(XmlElement);
 const isXmlDocument = Schema.is(XmlDocument);
@@ -252,14 +253,14 @@ export class XPathError extends Schema.TaggedError<XPathError, { readonly brand:
  */
 export interface CompileOptions {
   /** Prefix → namespace URI bindings for the name tests. `xml` is always bound. */
-  readonly namespaces?: Readonly<Record<string, string>> | undefined;
+  readonly namespaces?: Readonly<Record<string, string>>;
   /** The namespace of unprefixed element names (default: none, as in XPath 1.0). */
-  readonly defaultNamespace?: string | undefined;
+  readonly defaultNamespace?: string;
   /**
    * The variables the expression may read (`$name`), whose values
    * evaluation is given: names in no namespace, or Clark names (`{uri}local`).
    */
-  readonly variables?: ReadonlyArray<string> | undefined;
+  readonly variables?: ReadonlyArray<string>;
 }
 
 /**
@@ -317,9 +318,9 @@ const dynamicError = (expression: string, e: XQueryError): XPathError =>
   });
 
 const staticOptions = (options: CompileOptions | undefined) => ({
-  namespaces: options?.namespaces,
-  defaultElementNamespace: options?.defaultNamespace,
-  variables: options?.variables,
+  ...maybe("namespaces", options?.namespaces),
+  ...maybe("defaultElementNamespace", options?.defaultNamespace),
+  ...maybe("variables", options?.variables),
   xpath1Compatibility: true,
 });
 
@@ -642,7 +643,7 @@ export interface EvaluateOptions {
    * declared: a value or a sequence of values (a node-set). A number is an
    * `xs:double`, as XPath 1.0's numbers are.
    */
-  readonly variables?: Readonly<Record<string, Value | ReadonlyArray<Value>>> | undefined;
+  readonly variables?: Readonly<Record<string, Value | ReadonlyArray<Value>>>;
 }
 
 /** The XDM trees of one evaluation, by the DOM element at their top: one tree per DOM tree. */

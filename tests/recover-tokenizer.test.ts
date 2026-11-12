@@ -26,7 +26,7 @@ const textOf = (input: string) => success(recoverResult(`<a>${input}</a>`)).root
 /** The tag of a recovering parse's failure. */
 const failureTag = (input: string) => failure(recoverResult(input))._tag;
 /** A recovering parse's failure under `limits`. */
-const limited = (input: string, limits: Xml.ParseOptions["limits"]) =>
+const limited = (input: string, limits: NonNullable<Xml.ParseOptions["limits"]>) =>
   failure(Effect.runSync(Effect.result(Xml.parse(input, { recover: true, limits }))));
 const events = (input: string, options?: Sax.SaxOptions) =>
   Effect.runSync(Sax.collect(input, { recover: true, ...options }));

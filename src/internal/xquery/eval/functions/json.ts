@@ -27,6 +27,7 @@ import { catching, orElse, raise, raiseError, unwrap } from "../raise.ts";
 import { arityOf, callFunction, fetchResource, isCallable } from "../runtime.ts";
 import type { BuiltinSpec, Call } from "./define.ts";
 import { arg, mapOf, optionalAtom, text } from "./values.ts";
+import { maybe } from "../../../optional.ts";
 
 // -----------------------------------------------------------------------------
 // Options
@@ -459,9 +460,10 @@ const jsonToXml = (input: Sequence, options: Options, call: Call): Sequence => {
     root.children,
   );
   return [
-    XdmNode.fromDocument(document(null, null, [withNamespace]), {
-      baseUri: Option.getOrUndefined(call.statics.baseUri),
-    }),
+    XdmNode.fromDocument(
+      document(null, null, [withNamespace]),
+      maybe("baseUri", Option.getOrUndefined(call.statics.baseUri)),
+    ),
   ];
 };
 

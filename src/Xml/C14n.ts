@@ -34,7 +34,7 @@ const isXmlDocument = Schema.is(XmlDocument);
  */
 export interface C14nOptions {
   /** Keep comments ("with comments"); default `false`. */
-  readonly comments?: boolean | undefined;
+  readonly comments?: boolean;
 }
 
 /**

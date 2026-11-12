@@ -28,7 +28,7 @@ import type { XmlDocument } from "./Node.ts";
  */
 export interface BuildOptions {
   /** Resolve namespace prefixes to URIs (default `true`). When false, names keep their prefixes but `namespace` is `null`. */
-  readonly namespaces?: boolean | undefined;
+  readonly namespaces?: boolean;
   /**
    * Repair the document instead of failing on a well-formedness error
    * (default `false`), XML5-style:
@@ -53,7 +53,7 @@ export interface BuildOptions {
    * `build` repairs only the events it is given: tokenize with `recover` for
    * the rest.
    */
-  readonly recover?: boolean | undefined;
+  readonly recover?: boolean;
 }
 
 /**

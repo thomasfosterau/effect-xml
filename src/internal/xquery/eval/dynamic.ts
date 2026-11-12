@@ -15,10 +15,10 @@ import { formatParts, partsAt } from "./temporal.ts";
 
 /** What the host sets of the dynamic context (`XQuery.EvaluateOptions` but the context item and compile options). */
 export interface DynamicOptions {
-  readonly variables?: Readonly<Record<string, Sequence | Item>> | undefined;
-  readonly implicitTimezone?: number | undefined;
-  readonly environment?: Readonly<Record<string, string>> | undefined;
-  readonly currentDateTime?: Date | undefined;
+  readonly variables?: Readonly<Record<string, Sequence | Item>>;
+  readonly implicitTimezone?: number;
+  readonly environment?: Readonly<Record<string, string>>;
+  readonly currentDateTime?: Date;
   readonly defaultLanguage?: string;
 }
 

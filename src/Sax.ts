@@ -26,6 +26,7 @@ import type { AttrName, TagName } from "./Name.ts";
 import type { Position, Span } from "./Position.ts";
 import { resolveLimits, type Limits } from "./Limits.ts";
 import * as Encoding from "./Encoding.ts";
+import { maybe } from "./internal/optional.ts";
 
 // -----------------------------------------------------------------------------
 // Public event model
@@ -178,15 +179,15 @@ export interface SaxOptions {
    * into raw-text mode inside `<script>`/`<style>` and rcdata inside
    * `<title>`/`<textarea>`.
    */
-  readonly mode?: "xml" | "html" | undefined;
+  readonly mode?: "xml" | "html";
   /** Named entity table. Defaults to the XML predefined set (or the HTML subset in html mode). */
-  readonly entities?: Record<string, string> | undefined;
+  readonly entities?: Record<string, string>;
   /** How to treat whitespace in text nodes. */
-  readonly whitespace?: "preserve" | "collapse" | undefined;
+  readonly whitespace?: "preserve" | "collapse";
   /** Drop `Text` events that contain only whitespace (after the whitespace policy). */
-  readonly dropWhitespaceOnlyText?: boolean | undefined;
+  readonly dropWhitespaceOnlyText?: boolean;
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
-  readonly limits?: Partial<Limits> | undefined;
+  readonly limits?: Partial<Limits>;
   /**
    * What to do with a DOCTYPE internal subset (XML only). `"ignore"` (the
    * default) reads past it. `"internal"` interprets it: internal general
@@ -195,12 +196,12 @@ export interface SaxOptions {
    * External and parameter entities are never fetched; referring to one is
    * an error.
    */
-  readonly dtd?: "ignore" | "internal" | undefined;
+  readonly dtd?: "ignore" | "internal";
   /**
    * HTML only: the scripting flag (default `false`). When set, `<noscript>`
    * content is raw text, as a browser with scripting enabled reads it.
    */
-  readonly scripting?: boolean | undefined;
+  readonly scripting?: boolean;
   /**
    * Whether events carry their positions (default `true`). With `false`,
    * every event's (and attribute's) `span` is the origin, and tokenizing is
@@ -210,7 +211,7 @@ export interface SaxOptions {
    *
    * @since 0.1.0
    */
-  readonly positions?: boolean | undefined;
+  readonly positions?: boolean;
   /**
    * Read malformed XML the way XML5 does instead of failing on it (default
    * `false`).
@@ -369,14 +370,14 @@ export interface SaxBytesOptions extends SaxOptions {
    * overrides the document's own declaration (or `<meta charset>`), but not a
    * byte order mark.
    */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
 }
 
 /** @internal The decoding options that match a set of SAX options. */
 export const decodeOptions = (options: SaxBytesOptions | undefined): Encoding.DecodeOptions => ({
   mode: options?.mode ?? "xml",
   maxTotalBytes: resolveLimits(options?.limits).maxTotalBytes,
-  encoding: options?.encoding,
+  ...maybe("encoding", options?.encoding),
 });
 
 /**
@@ -498,7 +499,7 @@ export interface ForEachOptions extends SaxBytesOptions {
    * XML without `dtd: "internal"` or `recover`; otherwise reading is strict
    * (or recovering). Default `true`.
    */
-  readonly strict?: boolean | undefined;
+  readonly strict?: boolean;
 }
 
 /**

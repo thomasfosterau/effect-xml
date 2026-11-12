@@ -10,6 +10,7 @@ import type { XmlElement } from "../Xml/Node.ts";
 import { parse } from "../Xml/Xml.ts";
 import { XsdSchemaError } from "./Error.ts";
 import { XS, type Model } from "./Model.ts";
+import { maybe } from "../internal/optional.ts";
 
 /**
  * Where {@link compile} finds the documents a schema includes and imports.
@@ -26,11 +27,11 @@ import { XS, type Model } from "./Model.ts";
  */
 export interface CompileOptions<E = never, R = never> {
   /** The location of the schema being compiled, which relative locations are resolved against. */
-  readonly location?: string | undefined;
+  readonly location?: string;
   /** Schema documents known up front, by location. */
-  readonly documents?: Readonly<Record<string, string>> | undefined;
+  readonly documents?: Readonly<Record<string, string>>;
   /** Fetch a schema document by its resolved location. */
-  readonly resolve?: ((location: string) => Effect.Effect<string, E, R>) | undefined;
+  readonly resolve?: (location: string) => Effect.Effect<string, E, R>;
 }
 
 const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -142,7 +143,7 @@ export const compile = <E = never, R = never>(
           Effect.map((doc) => ({
             location: pending.location,
             root: doc.root,
-            chameleon: pending.chameleon,
+            ...maybe("chameleon", pending.chameleon),
           })),
         ),
     );

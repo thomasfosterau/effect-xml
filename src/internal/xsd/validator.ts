@@ -198,13 +198,13 @@ type Event<Tag extends SaxEvent["_tag"]> = Extract<SaxEvent, { readonly _tag: Ta
 
 export interface ValidatorOptions {
   /** The expanded name the document element must have. */
-  readonly root?: string | undefined;
+  readonly root?: string;
   /**
    * The elements to stream out: each one matching these steps is emitted
    * (see {@link Validator.drain}) once it is complete, instead of becoming
    * part of its parent's value.
    */
-  readonly select?: ReadonlyArray<StreamStep> | undefined;
+  readonly select?: ReadonlyArray<StreamStep>;
 }
 
 export class Validator {

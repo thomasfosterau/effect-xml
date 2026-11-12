@@ -76,24 +76,24 @@ export type PlainNode = PlainElement | string;
  */
 export interface PlainOptions {
   /** Named entity table override. */
-  readonly entities?: Record<string, string> | undefined;
+  readonly entities?: Record<string, string>;
   /** Whitespace handling for text (default `"preserve"`). */
-  readonly whitespace?: "preserve" | "collapse" | undefined;
+  readonly whitespace?: "preserve" | "collapse";
   /** Drop whitespace-only text (default `false`). */
-  readonly dropWhitespaceOnlyText?: boolean | undefined;
+  readonly dropWhitespaceOnlyText?: boolean;
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
-  readonly limits?: Partial<Limits> | undefined;
+  readonly limits?: Partial<Limits>;
   /** Interpret the DOCTYPE internal subset (see `Sax.SaxOptions.dtd`); default `"ignore"`. */
-  readonly dtd?: "ignore" | "internal" | undefined;
+  readonly dtd?: "ignore" | "internal";
   /** Bytes only: an external encoding hint (see `Sax.SaxBytesOptions.encoding`). */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
   /**
    * With `false`, read leniently, as `Sax.forEach` does (see
    * `Sax.ForEachOptions.strict`): about twice as fast again, for documents
    * known to be well-formed. A well-formed document gives the same tree;
    * tags must still balance and there must be one root. Default `true`.
    */
-  readonly strict?: boolean | undefined;
+  readonly strict?: boolean;
 }
 
 /** The children, or attributes, of the (many) elements with none: shared (never written to). */

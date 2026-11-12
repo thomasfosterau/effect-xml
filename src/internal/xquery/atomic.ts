@@ -126,7 +126,7 @@ export interface LexicalOptions {
    * `xs:QName` and `xs:NOTATION` values; without it only unprefixed names in
    * no namespace can be read.
    */
-  readonly resolve?: ((prefix: string) => string | undefined) | undefined;
+  readonly resolve?: (prefix: string) => string | undefined;
 }
 
 const invalidLexical = (lexical: string, type: AtomicType, reason: string): XQueryError =>

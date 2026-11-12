@@ -42,6 +42,7 @@ import { Namespaces, QName } from "../Name.ts";
 import { XmlAttribute, XmlCData, XmlElement, XmlText, type XmlNode } from "./Node.ts";
 import { serialize, type SerializationError, type WriterOptions } from "./Writer.ts";
 import { parse, type ParseOptions } from "./Xml.ts";
+import { maybe } from "../internal/optional.ts";
 
 const isXmlText = Schema.is(XmlText);
 const isXmlCData = Schema.is(XmlCData);
@@ -75,13 +76,13 @@ export const ElementNameId = "@thomasfosterau/effect-xml/Xml/Bind/name";
 export interface FieldBinding {
   readonly node: "attribute" | "element" | "text";
   /** The XML name, if not the field's key. `xml:lang`-style names are in the `xml:` namespace. */
-  readonly name?: string | undefined;
+  readonly name?: string;
   /** The namespace URI (`null` for none). Left out, see the module docs. */
-  readonly namespace?: string | null | undefined;
+  readonly namespace?: string | null;
   /** The prefix to write the name with (the `Writer` picks one if a namespaced attribute has none). */
-  readonly prefix?: string | undefined;
+  readonly prefix?: string;
   /** For elements: the name of one element wrapping the field's elements. */
-  readonly wrapper?: string | undefined;
+  readonly wrapper?: string;
 }
 
 /**
@@ -93,9 +94,9 @@ export interface FieldBinding {
 export interface ElementName {
   readonly name: string;
   /** The namespace URI (`null` for none). Left out, the name matches in any namespace. */
-  readonly namespace?: string | null | undefined;
+  readonly namespace?: string | null;
   /** The prefix to write the name with (default: none, declaring a default namespace). */
-  readonly prefix?: string | undefined;
+  readonly prefix?: string;
 }
 
 /**
@@ -105,9 +106,9 @@ export interface ElementName {
  * @category annotations
  */
 export interface NameOptions {
-  readonly name?: string | undefined;
-  readonly namespace?: string | null | undefined;
-  readonly prefix?: string | undefined;
+  readonly name?: string;
+  readonly namespace?: string | null;
+  readonly prefix?: string;
 }
 
 /**
@@ -118,7 +119,7 @@ export interface NameOptions {
  */
 export interface ElementOptions extends NameOptions {
   /** Wrap the field's elements in one element with this name (`<tags><tag/>…</tags>`). */
-  readonly wrapper?: string | undefined;
+  readonly wrapper?: string;
 }
 
 const toOptions = (nameOrOptions: string | ElementOptions | undefined): ElementOptions =>
@@ -126,10 +127,10 @@ const toOptions = (nameOrOptions: string | ElementOptions | undefined): ElementO
 
 const fieldBinding = (node: FieldBinding["node"], options: ElementOptions): FieldBinding => ({
   node,
-  name: options.name,
-  namespace: options.namespace,
-  prefix: options.prefix,
-  wrapper: options.wrapper,
+  ...maybe("name", options.name),
+  ...maybe("namespace", options.namespace),
+  ...maybe("prefix", options.prefix),
+  ...maybe("wrapper", options.wrapper),
 });
 
 /**
@@ -169,8 +170,8 @@ export const annotations = {
     const options = toOptions(nameOrOptions);
     const name: ElementName = {
       name: options.name ?? "",
-      namespace: options.namespace,
-      prefix: options.prefix,
+      ...maybe("namespace", options.namespace),
+      ...maybe("prefix", options.prefix),
     };
     return { [ElementNameId]: name };
   },
@@ -386,10 +387,10 @@ interface Resolved {
 const isFieldBinding = /*#__PURE__*/ Schema.is(
   Schema.Struct({
     node: Schema.Literals(["attribute", "element", "text"]),
-    name: Schema.optional(Schema.String),
-    namespace: Schema.optional(Schema.NullOr(Schema.String)),
-    prefix: Schema.optional(Schema.String),
-    wrapper: Schema.optional(Schema.String),
+    name: Schema.optionalKey(Schema.String),
+    namespace: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    prefix: Schema.optionalKey(Schema.String),
+    wrapper: Schema.optionalKey(Schema.String),
   }),
 );
 
@@ -397,8 +398,8 @@ const isFieldBinding = /*#__PURE__*/ Schema.is(
 const isElementName = /*#__PURE__*/ Schema.is(
   Schema.Struct({
     name: Schema.String,
-    namespace: Schema.optional(Schema.NullOr(Schema.String)),
-    prefix: Schema.optional(Schema.String),
+    namespace: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    prefix: Schema.optionalKey(Schema.String),
   }),
 );
 
@@ -425,10 +426,10 @@ const mergeField = (
     ? (outer ?? inner)
     : {
         node: outer.node,
-        name: over(outer.name, inner.name),
-        namespace: over(outer.namespace, inner.namespace),
-        prefix: over(outer.prefix, inner.prefix),
-        wrapper: over(outer.wrapper, inner.wrapper),
+        ...maybe("name", over(outer.name, inner.name)),
+        ...maybe("namespace", over(outer.namespace, inner.namespace)),
+        ...maybe("prefix", over(outer.prefix, inner.prefix)),
+        ...maybe("wrapper", over(outer.wrapper, inner.wrapper)),
       };
 
 const resolve = (ast: SchemaAST.AST, outer?: Omit<Resolved, "ast">): Resolved => {
@@ -931,7 +932,7 @@ export const decodeElement = <S extends Schema.Top>(
  */
 export interface DecodeOptions extends ParseOptions {
   /** Options for the schema decode (`errors: "all"`, `onExcessProperty`, …). */
-  readonly schemaOptions?: SchemaAST.ParseOptions | undefined;
+  readonly schemaOptions?: SchemaAST.ParseOptions;
 }
 
 /**
@@ -1016,7 +1017,7 @@ export const encodeElement = <S extends Schema.Top>(
  */
 export interface EncodeOptions extends WriterOptions {
   /** Options for the schema encode. */
-  readonly schemaOptions?: SchemaAST.ParseOptions | undefined;
+  readonly schemaOptions?: SchemaAST.ParseOptions;
 }
 
 /**

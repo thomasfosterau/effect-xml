@@ -63,7 +63,7 @@ export interface StepLevel {
    * For each positional step, how many of this element's children have
    * passed its test and each of its predicates so far.
    */
-  counts?: Array<Array<number> | undefined> | undefined;
+  counts?: Array<Array<number> | undefined>;
 }
 
 /** No steps: shared by every level that matches none, so most elements allocate nothing. */

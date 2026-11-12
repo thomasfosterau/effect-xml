@@ -79,7 +79,7 @@ const inherit = (element: XmlElement, from: Inherited): Inherited => {
  */
 export interface CursorOptions {
   /** The base URI of the document, which `xml:base` values resolve against. */
-  readonly base?: string | undefined;
+  readonly base?: string;
 }
 
 /**
