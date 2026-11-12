@@ -78,7 +78,7 @@ export default defineConfig({
     },
     rules: {
       "eslint/no-unused-vars": [
-        "warn",
+        "error",
         {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
