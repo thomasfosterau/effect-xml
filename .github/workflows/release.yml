@@ -85,11 +85,21 @@ jobs:
           run-install: |
             - args: ["--frozen-lockfile", "--ignore-scripts"]
       - name: Create or update the version PR
+        id: version
         uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           script: pnpm run version
           commit-message: "chore: version packages"
           pr-title: "chore: version packages"
+      # Changesets has no assignee setting; the version sub-action reports the
+      # PR it created or updated as `pr-number`.
+      - name: Assign the owner to the version PR
+        if: steps.version.outputs.pr-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.version.outputs.pr-number }}
+        run: gh pr edit "$PR_NUMBER" --add-assignee thomasfosterau
 
   publish:
     name: Publish to npm
