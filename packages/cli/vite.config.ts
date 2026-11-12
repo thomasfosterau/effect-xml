@@ -6,8 +6,14 @@
  */
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
+import * as Option from "effect/Option";
+import * as R from "effect/Record";
 
-const maxWorkers = process.env.VITEST_MAX_WORKERS;
+// The worker count CI pins (`VITEST_MAX_WORKERS`), as a `test` member only
+// when it is set: vitest's own default applies otherwise.
+const workers = R.getSomes({
+  maxWorkers: Option.map(Option.fromNullishOr(process.env.VITEST_MAX_WORKERS), Number),
+});
 
 /** Tests resolve the library to its sources, as `tsconfig.json` does. */
 const library = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
@@ -49,6 +55,6 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
-    ...(maxWorkers === undefined ? {} : { maxWorkers: Number(maxWorkers) }),
+    ...workers,
   },
 });

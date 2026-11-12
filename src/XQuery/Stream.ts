@@ -235,7 +235,7 @@ export const compileStream = (
  * @since 0.1.0
  * @category streaming
  */
-export interface StreamOptions extends Omit<EvaluateOptions, "context"> {}
+export type StreamOptions = Omit<EvaluateOptions, "context">;
 
 /** A match as an XDM node, under copies of its ancestors that keep only their names and attributes. */
 const nodeOf = (match: Match): XdmNode => {

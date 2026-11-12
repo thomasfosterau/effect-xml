@@ -123,10 +123,9 @@ const nameTypes = (model: Model): Readonly<Record<string, string>> => {
 const quoted = (normalized: string): Option.Option<string> => Option.some(quote(normalized));
 
 /** How an enumerated value of each kind is written as a TypeScript literal, where it can be. */
-interface Literals extends R.ReadonlyRecord<
-  string,
-  (normalized: string) => Option.Option<string>
-> {}
+interface Literals {
+  readonly [key: string]: (normalized: string) => Option.Option<string>;
+}
 
 const literals: Literals = {
   string: quoted,
