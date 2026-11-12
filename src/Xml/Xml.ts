@@ -46,7 +46,7 @@ export interface ParseOptions extends BuildOptions {
   readonly strict?: boolean;
 }
 
-const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
+const saxOptions = (options?: ParseOptions): Sax.SaxOptions => ({
   ...options,
   mode: "xml",
   recover: options?.recover === true,
@@ -61,7 +61,7 @@ const saxOptions = (options: ParseOptions | undefined): Sax.SaxOptions => ({
  * import { Xml } from "@thomasfosterau/effect-xml"
  *
  * const doc = Effect.runSync(Xml.parse(`<order id="7"><item>Widget</item></order>`))
- * console.log(doc.root.attribute("id")) // "7"
+ * console.log(doc.root.attribute("id")) // Option.some("7")
  * console.log(doc.root.textContent) // "Widget"
  * ```
  *
@@ -112,7 +112,7 @@ export interface ParseBytesOptions extends ParseOptions {
   readonly encoding?: string;
 }
 
-const bytesOptions = (options: ParseBytesOptions | undefined): Sax.SaxBytesOptions => ({
+const bytesOptions = (options?: ParseBytesOptions): Sax.SaxBytesOptions => ({
   ...options,
   mode: "xml",
 });

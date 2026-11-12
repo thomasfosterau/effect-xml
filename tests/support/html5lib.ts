@@ -102,7 +102,7 @@ const htmlNsPrefix = (ns: HtmlNamespace): string =>
 // Namespaced (foreign) attributes serialize as "prefix local"; html5lib sorts
 // attributes by that displayed name.
 const htmlAttrName = (a: HtmlAttribute): string =>
-  a.prefix !== null ? `${a.prefix} ${a.name}` : a.name;
+  Option.match(a.prefix, { onNone: () => a.name, onSome: (prefix) => `${prefix} ${a.name}` });
 
 const byHtmlAttrName: Order.Order<HtmlAttribute> = Order.mapInput(Order.String, htmlAttrName);
 
@@ -122,12 +122,13 @@ const serializeHtmlNode = (node: HtmlNode, depth: number): ReadonlyArray<string>
       ...serializeHtmlChildren(el.children, depth + 1),
       // A template's contents are a separate fragment, which html5lib writes
       // as a "content" child.
-      ...(el.content === null
-        ? []
-        : [
-            `| ${indent(depth + 1)}content`,
-            ...serializeHtmlChildren(el.content.children, depth + 2),
-          ]),
+      ...Option.match(el.content, {
+        onNone: () => [],
+        onSome: (content) => [
+          `| ${indent(depth + 1)}content`,
+          ...serializeHtmlChildren(content.children, depth + 2),
+        ],
+      }),
     ],
     HtmlText: (t) => [`| ${indent(depth)}"${t.data}"`],
     HtmlComment: (c) => [`| ${indent(depth)}<!-- ${c.data} -->`],
@@ -145,7 +146,7 @@ export const serializeFragment = (nodes: ReadonlyArray<HtmlNode>): string =>
 /** Serialize a parsed document into html5lib's `#document` notation. */
 export const serializeTree = (doc: HtmlDocument): string =>
   [
-    ...(doc.doctype ? [serializeHtmlDoctype(doc.doctype)] : []),
+    ...Option.toArray(Option.map(doc.doctype, serializeHtmlDoctype)),
     ...serializeHtmlChildren(doc.children, 0),
   ].join("\n");
 
@@ -156,10 +157,13 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
 
 const nsPrefix = (uri: QName["namespace"]): string =>
-  uri === SVG_NS ? "svg " : uri === MATHML_NS ? "math " : "";
+  Option.contains(uri, SVG_NS) ? "svg " : Option.contains(uri, MATHML_NS) ? "math " : "";
 
 const attrName = (a: XmlAttribute): string =>
-  a.name.prefix !== null ? `${a.name.prefix} ${a.name.local}` : a.name.local;
+  Option.match(a.name.prefix, {
+    onNone: () => a.name.local,
+    onSome: (prefix) => `${prefix} ${a.name.local}`,
+  });
 
 const byAttrName: Order.Order<XmlAttribute> = Order.mapInput(Order.String, attrName);
 
@@ -177,7 +181,7 @@ const serializeNode = (node: XmlNode, depth: number): ReadonlyArray<string> =>
         (a) => `| ${indent(depth + 1)}${attrName(a)}="${a.value}"`,
       ),
       // `Html.toXml` makes a template's contents its children.
-      ...(el.name.local === "template" && el.name.namespace === HTML_NS
+      ...(el.name.local === "template" && Option.contains(el.name.namespace, HTML_NS)
         ? [`| ${indent(depth + 1)}content`, ...serializeChildren(el.children, depth + 2)]
         : serializeChildren(el.children, depth + 1)),
     ],
@@ -191,8 +195,8 @@ const serializeNode = (node: XmlNode, depth: number): ReadonlyArray<string> =>
 
 const serializeDoctype = (d: XmlDoctype): string =>
   `| <!DOCTYPE ${d.name}` +
-  (d.publicId !== null || d.systemId !== null
-    ? ` "${d.publicId ?? ""}" "${d.systemId ?? ""}"`
+  (Option.isSome(d.publicId) || Option.isSome(d.systemId)
+    ? ` "${Option.getOrElse(d.publicId, () => "")}" "${Option.getOrElse(d.systemId, () => "")}"`
     : "") +
   ">";
 
@@ -203,6 +207,6 @@ export const serializeXmlFragment = (nodes: ReadonlyArray<XmlNode>): string =>
 /** Serialize an XML document converted from a parsed document into html5lib's notation. */
 export const serializeXmlTree = (doc: XmlDocument): string =>
   [
-    ...(doc.doctype ? [serializeDoctype(doc.doctype)] : []),
+    ...Option.toArray(Option.map(doc.doctype, serializeDoctype)),
     ...serializeChildren(doc.children, 0),
   ].join("\n");

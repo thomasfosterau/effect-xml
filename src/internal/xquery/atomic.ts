@@ -152,9 +152,10 @@ const qnameFrom = (
     new AtomicValue(
       type,
       new QName({
-        prefix: prefix === "" ? null : prefix,
+        prefix: prefix === "" ? Option.none() : Option.some(prefix),
         local: s.slice(colon + 1),
-        namespace: namespace === undefined || namespace === "" ? null : namespace,
+        namespace:
+          namespace === undefined || namespace === "" ? Option.none() : Option.some(namespace),
       }),
     ),
   );

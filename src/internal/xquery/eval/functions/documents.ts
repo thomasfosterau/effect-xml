@@ -73,7 +73,7 @@ const xmlId = (element: XdmNode): string | undefined =>
     .find((a) =>
       Option.match(a.name, {
         onNone: () => false,
-        onSome: (q) => q.namespace === Namespaces.xml && q.local === "id",
+        onSome: (q) => Option.contains(q.namespace, Namespaces.xml) && q.local === "id",
       }),
     )
     ?.stringValue.trim()

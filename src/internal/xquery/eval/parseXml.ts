@@ -10,6 +10,7 @@
  * parses it here, and evaluation runs again with the document at hand.
  */
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { parse } from "../../../Xml/Xml.ts";
 import { xqueryError, type XQueryError } from "../../../XQuery/Error.ts";
 import { document } from "../../nodes.ts";
@@ -55,7 +56,7 @@ export const parseXmlRequest = (request: ResourceRequest): Effect.Effect<Sequenc
       ),
     ),
     Effect.map((doc): Sequence => [
-      XdmNode.fromDocument(document(null, null, doc.root.children), options),
+      XdmNode.fromDocument(document(Option.none(), Option.none(), doc.root.children), options),
     ]),
   );
 };

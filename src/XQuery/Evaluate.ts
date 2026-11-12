@@ -55,7 +55,10 @@ export interface ResourceResolver {
   /** The collection at `uri`; `""` is the default collection. */
   readonly collection: (uri: string) => Effect.Effect<Sequence, XQueryError>;
   /** The text of the resource at `uri`, decoded with `encoding` if one is given. */
-  readonly text: (uri: string, encoding: string | undefined) => Effect.Effect<string, XQueryError>;
+  readonly text: (
+    uri: string,
+    encoding: Option.Option<string>,
+  ) => Effect.Effect<string, XQueryError>;
 }
 
 /**
@@ -93,7 +96,7 @@ export interface StaticResources {
   readonly texts?: Readonly<Record<string, string>>;
 }
 
-const find = <A>(table: Readonly<Record<string, A>> | undefined, uri: string, code: string) =>
+const find = <A>(uri: string, code: string, table?: Readonly<Record<string, A>>) =>
   Effect.fromOption(Option.fromUndefinedOr(table?.[uri])).pipe(
     Effect.mapError(() =>
       xqueryError(code, `${uri === "" ? "the default collection" : uri} is not available`),
@@ -107,9 +110,9 @@ const find = <A>(table: Readonly<Record<string, A>> | undefined, uri: string, co
  * @category resolving
  */
 export const staticResolver = (resources: StaticResources): ResourceResolver => ({
-  document: (uri) => find(resources.documents, uri, "FODC0002"),
-  collection: (uri) => find(resources.collections, uri, "FODC0002"),
-  text: (uri) => find(resources.texts, uri, "FOUT1170"),
+  document: (uri) => find(uri, "FODC0002", resources.documents),
+  collection: (uri) => find(uri, "FODC0002", resources.collections),
+  text: (uri) => find(uri, "FOUT1170", resources.texts),
 });
 
 /**
@@ -251,7 +254,7 @@ export const evaluate = (
   Effect.gen(function* () {
     const variables = options.variables ?? {};
     const compiled: Query = P.isString(query)
-      ? yield* compileText(query, options.compile, R.keys(variables))
+      ? yield* compileText(query, R.keys(variables), options.compile)
       : query;
     const resolver = yield* Effect.serviceOption(Resolver);
     const withModules = yield* loadModules(compiled, resolver);
@@ -306,16 +309,14 @@ const loadModules = (
     load === undefined ? Effect.succeed({}) : fetchModules(load, query.unresolvedImports, {})
   ).pipe(
     Effect.flatMap((modules) =>
-      Effect.fromResult(compile(query.source, { ...query.options, modules })),
+      Effect.fromResult(
+        compile(query.source, { ...Option.getOrUndefined(query.options), modules }),
+      ),
     ),
   );
 };
 
-const compileText = (
-  text: string,
-  options: CompileOptions | undefined,
-  names: ReadonlyArray<string>,
-) =>
+const compileText = (text: string, names: ReadonlyArray<string>, options?: CompileOptions) =>
   Effect.fromResult(
     compile(text, { ...options, variables: [...(options?.variables ?? []), ...names] }),
   );

@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import { Sax } from "../src/index.ts";
@@ -75,7 +76,11 @@ describe("Sax.tokenize — special constructs", () => {
   test("xml declaration is parsed into fields", async () => {
     const evs = await collect(`<?xml version="1.1" encoding="UTF-8" standalone="yes"?><a/>`);
     const decl = evs.find(Sax.isXmlDeclaration);
-    expect(decl).toMatchObject({ version: "1.1", encoding: "UTF-8", standalone: true });
+    expect(decl).toMatchObject({
+      version: "1.1",
+      encoding: Option.some("UTF-8"),
+      standalone: Option.some(true),
+    });
   });
 
   test("doctype with public/system ids", async () => {
@@ -83,15 +88,19 @@ describe("Sax.tokenize — special constructs", () => {
     const dt = evs.find(Sax.isDoctype);
     expect(dt).toMatchObject({
       name: "html",
-      publicId: "-//W3C//DTD XHTML 1.0//EN",
-      systemId: "x.dtd",
+      publicId: Option.some("-//W3C//DTD XHTML 1.0//EN"),
+      systemId: Option.some("x.dtd"),
     });
   });
 
   test("xml declaration defaults, single quotes and standalone=no", async () => {
     const evs = await collect(`<?xml version='1.0' standalone='no' ?><a/>`);
     const decl = evs.find(Sax.isXmlDeclaration);
-    expect(decl).toMatchObject({ version: "1.0", encoding: null, standalone: false });
+    expect(decl).toMatchObject({
+      version: "1.0",
+      encoding: Option.none(),
+      standalone: Option.some(false),
+    });
   });
 
   test("targets that only start with xml are ordinary processing instructions", async () => {
@@ -107,9 +116,9 @@ describe("Sax.tokenize — special constructs", () => {
     const evs = await collect(`<!DOCTYPE r SYSTEM "r.dtd" [<!ENTITY a "]>">]><r/>`);
     expect(evs.find(Sax.isDoctype)).toMatchObject({
       name: "r",
-      publicId: null,
-      systemId: "r.dtd",
-      internalSubset: `<!ENTITY a "]>">`,
+      publicId: Option.none(),
+      systemId: Option.some("r.dtd"),
+      internalSubset: Option.some(`<!ENTITY a "]>">`),
     });
     // Nothing after the DOCTYPE leaks out as text.
     expect(evs.filter(Sax.isText)).toEqual([]);

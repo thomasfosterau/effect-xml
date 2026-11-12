@@ -878,7 +878,7 @@ export class Lexer {
       return new LimitExceeded({
         limit: issue.limit.name,
         max: issue.limit.max,
-        position: this.at(issue.offset),
+        position: Option.some(this.at(issue.offset)),
       });
     }
     if (isEntityIssue(issue)) {

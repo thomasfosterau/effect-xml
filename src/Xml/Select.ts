@@ -53,7 +53,7 @@ import type { XPathError, CompileOptions, Path } from "./XPath.ts";
  *   Stream.runCollect
  * )
  *
- * console.log(Effect.runSync(visible)) // ["1", "3"]
+ * console.log(Effect.runSync(visible)) // [Option.some("1"), Option.some("3")]
  * ```
  *
  * @since 0.1.0

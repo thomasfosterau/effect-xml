@@ -23,7 +23,7 @@ const fetchWith = (
     ? Effect.map(resolver.document(request.uri), (node): Sequence => [node])
     : request.kind === "collection"
       ? resolver.collection(request.uri)
-      : resolver.text(request.uri, request.encoding);
+      : resolver.text(request.uri, Option.fromUndefinedOr(request.encoding));
 
 /** What a {@link Suspend} asked for, fetched (or parsed) and cached in `resources`. */
 export const fetchFor = (

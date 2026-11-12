@@ -69,9 +69,9 @@ export type SaxEvent = Data.TaggedEnum<{
   };
   Doctype: {
     readonly name: string;
-    readonly publicId: string | null;
-    readonly systemId: string | null;
-    readonly internalSubset: string | null;
+    readonly publicId: Option.Option<string>;
+    readonly systemId: Option.Option<string>;
+    readonly internalSubset: Option.Option<string>;
     /**
      * The WHATWG tokenizer's force-quirks flag (HTML mode): set by a DOCTYPE
      * without a name, a bogus one, a missing or unterminated identifier, or
@@ -82,8 +82,8 @@ export type SaxEvent = Data.TaggedEnum<{
   };
   XmlDeclaration: {
     readonly version: string;
-    readonly encoding: string | null;
-    readonly standalone: boolean | null;
+    readonly encoding: Option.Option<string>;
+    readonly standalone: Option.Option<boolean>;
     readonly span: Span;
   };
 }>;
@@ -266,7 +266,7 @@ export interface ResolvedOptions {
 }
 
 /** @internal */
-export const resolveSaxOptions = (options: SaxOptions | undefined): ResolvedOptions => {
+export const resolveSaxOptions = (options?: SaxOptions): ResolvedOptions => {
   const mode = options?.mode ?? "xml";
   return {
     mode,
@@ -374,7 +374,7 @@ export interface SaxBytesOptions extends SaxOptions {
 }
 
 /** @internal The decoding options that match a set of SAX options. */
-export const decodeOptions = (options: SaxBytesOptions | undefined): Encoding.DecodeOptions => ({
+export const decodeOptions = (options?: SaxBytesOptions): Encoding.DecodeOptions => ({
   mode: options?.mode ?? "xml",
   maxTotalBytes: resolveLimits(options?.limits).maxTotalBytes,
   ...maybe("encoding", options?.encoding),

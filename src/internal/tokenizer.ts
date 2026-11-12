@@ -111,7 +111,7 @@ export class Tokenizer {
         : new LimitExceeded({
             limit: over.limit,
             max: over.max,
-            position: this.lexer.tokenPosition(),
+            position: Option.some(this.lexer.tokenPosition()),
           });
       return false;
     }

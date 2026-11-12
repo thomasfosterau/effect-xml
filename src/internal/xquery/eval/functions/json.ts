@@ -461,7 +461,7 @@ const jsonToXml = (input: Sequence, options: Options, call: Call): Sequence => {
   );
   return [
     XdmNode.fromDocument(
-      document(null, null, [withNamespace]),
+      document(Option.none(), Option.none(), [withNamespace]),
       maybe("baseUri", Option.getOrUndefined(call.statics.baseUri)),
     ),
   ];
@@ -475,7 +475,10 @@ const invalidXml = (what: string, call: Call): never =>
   raise("FOJS0006", `the XML is not a JSON representation: ${what}`, call.offset);
 
 const isFn = (n: XdmNode): boolean =>
-  Option.match(n.name, { onNone: () => false, onSome: (q) => q.namespace === Namespaces.fn });
+  Option.match(n.name, {
+    onNone: () => false,
+    onSome: (q) => Option.contains(q.namespace, Namespaces.fn),
+  });
 
 const localName = (n: XdmNode): string =>
   Option.match(n.name, { onNone: () => "", onSome: (q) => q.local });
@@ -509,7 +512,7 @@ const attributeValue = (n: XdmNode, local: string): string | undefined =>
   n.attributes.find((a) =>
     Option.match(a.name, {
       onNone: () => false,
-      onSome: (q) => q.local === local && q.namespace === null,
+      onSome: (q) => q.local === local && Option.isNone(q.namespace),
     }),
   )?.stringValue;
 
@@ -547,8 +550,8 @@ const writeJson = (n: XdmNode, call: Call, inMap: boolean): string => {
       // as are any in the fn namespace; the three are accepted (and ignored)
       // wherever they don't apply.
       onSome: (q) =>
-        q.namespace === Namespaces.fn ||
-        (q.namespace === null && !["key", "escaped-key", "escaped"].includes(q.local)),
+        Option.contains(q.namespace, Namespaces.fn) ||
+        (Option.isNone(q.namespace) && !["key", "escaped-key", "escaped"].includes(q.local)),
     }),
   );
   if (foreign) return invalidXml(`an attribute on ${kind} is not allowed`, call);

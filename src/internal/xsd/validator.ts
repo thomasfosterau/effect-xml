@@ -126,6 +126,9 @@ class Frame {
   }
 }
 
+/** The value of an element that is not nillable (a nillable one's is an `Option` of it). */
+type Content = Exclude<XsdValue, Option.Option<unknown>>;
+
 /** The attributes of an element that isn't built as a DOM element: none, never written to. */
 const noAttributes: ReadonlyArray<XmlAttribute> = [];
 
@@ -444,7 +447,7 @@ export class Validator {
     const level = advance(
       this.steps,
       Option.flatMap(Option.fromUndefinedOr(parent), (p) => p.level),
-      opening.name,
+      { local: opening.name.local, namespace: Option.fromNullOr(opening.name.namespace) },
       () =>
         Nodes.element(
           toQName(opening.name),
@@ -921,7 +924,8 @@ export class Validator {
     if (frame === undefined) return new UnexpectedEndTag({ tagName: raw, position });
     if (frame.raw !== raw)
       return new MismatchedEndTag({ expected: frame.raw, actual: raw, position });
-    let value: XsdValue = null;
+    // A skipped element's DOM is kept instead (see `close`).
+    let value: XsdValue = Option.none();
     if (frame.type !== undefined) {
       const completed = this.complete(frame, position);
       if (Result.isFailure(completed)) return completed.failure;
@@ -948,7 +952,10 @@ export class Validator {
     if (!frame.nil) Option.map(content, (checker) => this.types.set(element, { checker, context }));
     if (P.isTagged(type, "Simple")) return;
     Arr.forEach(element.attributes, (attribute) => {
-      const key = clark(attribute.name.namespace ?? "", attribute.name.local);
+      const key = clark(
+        Option.getOrElse(attribute.name.namespace, () => ""),
+        attribute.name.local,
+      );
       const checker = Option.orElse(
         Option.map(R.get(type.attributes, key), (rule) => rule.checker),
         () =>
@@ -1000,11 +1007,27 @@ export class Validator {
     else deliver(parent, frame, kept);
   }
 
-  /** Check that an element's content is complete, and build its value. */
+  /**
+   * Check that an element's content is complete, and build its value: a
+   * nillable element's is an `Option`, none when it is nil.
+   */
   private complete(frame: Frame, position: Position): Result.Result<XsdValue, Failure> {
-    const type = frame.type;
     const decl = frame.decl;
-    if (type === undefined || decl === undefined) return Result.succeed(null);
+    // Skipped content has no value: `close` keeps its DOM element instead.
+    if (frame.type === undefined || decl === undefined) return Result.succeed(Option.none());
+    if (decl.nillable !== true) return this.contentValue(frame, frame.type, decl, position);
+    return frame.nil
+      ? Result.succeed(Option.none())
+      : Result.map(this.contentValue(frame, frame.type, decl, position), Option.some);
+  }
+
+  /** The value of a complete element that is not nil. */
+  private contentValue(
+    frame: Frame,
+    type: TypeRuntime,
+    decl: ElementDeclaration,
+    position: Position,
+  ): Result.Result<Content, Failure> {
     if (P.isTagged(type, "Complex")) {
       const state = frame.state;
       if (Option.isSome(type.automaton) && state !== undefined && !state.nullable)
@@ -1016,7 +1039,6 @@ export class Validator {
           ),
         );
     }
-    if (frame.nil) return Result.succeed(null);
     if (P.isTagged(type, "Simple")) return this.simpleContent(frame, decl, type.checker, position);
     const props = frame.props;
     if (frame.xsiType !== undefined) props["$type"] = frame.xsiType;
@@ -1033,7 +1055,7 @@ export class Validator {
     decl: ElementDeclaration,
     checker: SimpleChecker,
     position: Position,
-  ): Result.Result<XsdValue, Failure> {
+  ): Result.Result<SimpleValue, Failure> {
     const text = frame.text === "" ? (decl.fixed ?? decl.default ?? "") : frame.text;
     const v = this.value(checker, text, frame.bindings, position);
     if (Result.isFailure(v)) return Result.fail(this.invalid("InvalidValue", v.failure, position));
