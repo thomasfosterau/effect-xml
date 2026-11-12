@@ -33,6 +33,12 @@ export type ScanResult = LexEvent | typeof Incomplete | typeof Fallback;
 export interface Context {
   /** The named entities (the predefined ones, or a replacement table). */
   readonly entities: Record<string, string>;
+  /**
+   * Whether the grammars it stands in for recover (`recover: true`): then a
+   * `<` that opens no markup is text, so text is read only up to a `<` that
+   * does (see {@link text}).
+   */
+  readonly recover: boolean;
   /** The span of buffer indices `[from, to)` (the lexer's lazy spans). */
   readonly span: (from: number, to: number) => Span;
   /** Whether events have positions (without, every span is {@link NO_SPAN}). */
@@ -269,6 +275,10 @@ const skipName = (buf: string, i: number, end: number): number => {
 /** Can `c` start a name as the tag grammars read one (any non-ASCII character can)? */
 const startsName = (c: number): boolean => c >= 128 || is(c, NAME_START);
 
+/** Does a `<` followed by `c` open markup: a name, `/`, `!` or `?`? */
+const opensMarkup = (c: number): boolean =>
+  startsName(c) || c === SLASH || c === BANG || c === QUESTION;
+
 /**
  * The end of a name whose first character is at `i`, taking non-ASCII
  * characters in too. With `check`, -1 when one of those makes it no XML
@@ -314,6 +324,28 @@ export const scanXml = (buf: string, pos: number, partial: boolean, ctx: Context
 const text = (buf: string, pos: number, partial: boolean, ctx: Context): ScanResult => {
   const to = mark(buf, ctx, M_LT, pos);
   if (to === buf.length && partial) return Incomplete;
+  return ctx.recover && to < buf.length
+    ? recoveringText(buf, pos, to, partial, ctx)
+    : textTo(buf, pos, to, ctx);
+};
+
+/**
+ * Recovering, text up to a `<` at `to`: the text goes on past a `<` that
+ * opens no markup, which the grammar reads.
+ */
+const recoveringText = (
+  buf: string,
+  pos: number,
+  to: number,
+  partial: boolean,
+  ctx: Context,
+): ScanResult => {
+  if (to + 1 >= buf.length) return partial ? Incomplete : Fallback;
+  return opensMarkup(buf.charCodeAt(to + 1)) ? textTo(buf, pos, to, ctx) : Fallback;
+};
+
+/** The text from `pos` to `to`, the next `<` (or the end of a complete input). */
+const textTo = (buf: string, pos: number, to: number, ctx: Context): ScanResult => {
   // A `]]>` in text is an error (§2.4); the grammar reports it.
   if (mark(buf, ctx, M_CDATA_END, pos) + 3 <= to) return Fallback;
   let data = buf.slice(pos, to);

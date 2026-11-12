@@ -138,7 +138,23 @@ Xml.serializeDocument(doc); // <a><b>one</b><c>two</c></a>
 - Character data before the root opens a synthesized `<root>` element, and a document with no element gets an empty one.
 - A repeated attribute keeps its first value, and a prefix with no binding leaves the name without a namespace. The Namespaces in XML checks are not applied.
 
-The repairs happen in the tree builder. Tokenizer errors (an unescaped `<` or `&`, an unquoted attribute value), resource limits and encoding errors still fail.
+The tokenizer recovers too, where the strict reading fails (as XML5 does, without HTML's named references or raw text), so documents from the wild read: feeds with `AT&T` in a title, query strings in a link, `&nbsp;` or unquoted attributes.
+
+```ts
+import * as Effect from "effect/Effect";
+import { Xml } from "@thomasfosterau/effect-xml";
+
+const doc = Effect.runSync(Xml.parse(`<p class=note>AT&T <b>bold`, { recover: true }));
+Xml.serializeDocument(doc); // <p class="note">AT&amp;T <b>bold</b></p>
+```
+
+- A `<` that opens no markup (one not followed by a name, `/`, `!` or `?`: `a < b`) is text.
+- An `&` that starts no well-formed reference (`AT&T`, `&#xZZ;`, `&;`), or one to an entity nobody declared (`&nbsp;`), is text, as written. HTML's named references are not expanded: this is XML.
+- In a start tag, an unquoted value runs to whitespace or `>` (`<a href=x.html>`, as HTML reads it), a valueless attribute (`<td nowrap>`) has the value `""`, `<` and `&` in a value are as in text, attributes need no whitespace between them, a stray `/` is ignored, and an attribute whose name is not an XML `Name` is dropped.
+- In an end tag, anything after the name is ignored. `</` followed by anything but a name is a comment up to the next `>` (a bogus comment, as in XML5 and HTML), `</>` is dropped, and a `</` that ends the input is text. `<!` that starts no comment, CDATA section or DOCTYPE is a bogus comment too, and `]]>` in text is text.
+- References and CDATA sections outside the root go into the recovered tree (before the root, into the synthesized `<root>`; after it, under the root). An XML declaration anywhere but at the very start, and a second DOCTYPE or one after the root's start, are dropped: the first declaration is the document's, and the `xml` PI target is reserved.
+
+A document strict XML reads is read the same with `recover`. Characters XML does not allow still fail, written out or as a well-formed character reference (`&#0;`), as do resource limits, encoding errors, markup the input ends inside of, comments with `--` in them and malformed declarations; and nothing in a DTD entity's replacement text is recovered from. A recovery is silent: nothing reports it. `Sax.tokenize`, `Sax.forEach` and `Sax.collect` take `recover` too, for the recovered events without the tree builder's repairs.
 
 The XML tree builder is strict: it enforces matched tags, a single root and unique attributes, and resolves namespace prefixes into `QName.namespace` (the default namespace does not apply to attributes, per Namespaces in XML §6.2). With namespace processing on (the default, and always in `Sax.select`), it also enforces the constraints of Namespaces in XML 1.0: names are `QName`s, no two attributes share an expanded name (`DuplicateAttribute`), the reserved `xml` and `xmlns` prefixes and namespaces are used only as allowed, `xmlns:p=""` is accepted only in an XML 1.1 document, and processing instruction targets and entity and notation names have no colon (`InvalidNamespace`).
 
@@ -653,7 +669,7 @@ Each error carries a human-readable `message`, and a `position` (`offset` / `lin
 | `whitespace` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `"preserve"` | or `"collapse"` (runs of whitespace become one space, trimmed) |
 | `dropWhitespaceOnlyText` | `Sax`, `Xml`, `Html` (not `parseDocument`) | `false` | drop text events / nodes that are only whitespace |
 | `namespaces` | `Xml` | `true` | resolve prefixes to URIs; when `false`, names keep their prefix and `namespace` is `null` |
-| `recover` | `Xml` | `false` | repair a malformed document instead of failing (see [Recovering from malformed XML](#recovering-from-malformed-xml)) |
+| `recover` | `Xml`, `Sax` (XML mode) | `false` | repair a malformed document instead of failing (see [Recovering from malformed XML](#recovering-from-malformed-xml)); `Sax` recovers in the tokenizer only |
 | `limits` | all | see [Resource limits](#resource-limits) | the limits left out keep their defaults |
 | `dtd` | `Sax`, `Xml` | `"ignore"` | `"internal"` interprets the internal subset (see [DTD internal subset](#dtd-internal-subset-opt-in)) |
 | `encoding` | the `*Bytes` entry points | detected | an external encoding hint; overrides the declaration, not a BOM |
