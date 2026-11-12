@@ -5,8 +5,8 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as R from "effect/Record";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { localOf, namespaceOf } from "../internal/xsd/components.ts";
@@ -18,7 +18,7 @@ import * as Sax from "../Sax.ts";
 import type { CompileOptions, Path, XPathError } from "../Xml/XPath.ts";
 import type { XsdSchemaError, XsdValidationError } from "./Error.ts";
 import type { Model } from "./Model.ts";
-import type { Validated, XsdValue } from "./Value.ts";
+import { XsdValue as XsdValueSchema, type Validated, type XsdValue } from "./Value.ts";
 import { maybe } from "../internal/optional.ts";
 
 /**
@@ -311,58 +311,102 @@ export const parseBytesStream =
     input.pipe(Sax.tokenizeBytes(saxOptions(options)), decode(model, options));
 
 /**
- * Streams of a parser's repeated root children: each property streams out
- * the typed values of one child element of the document element (see
- * {@link select}), typed by `S`'s property of the same name.
+ * A child element of the document element that a {@link Parser} streams:
+ * its expanded name, and the schema its values decode through.
  *
- * @since 0.1.0
+ * @since 0.2.0
  * @category parsing
  */
-export type Streams<S> = {
-  readonly [K in keyof S]: <E, R>(
-    events: Stream.Stream<Sax.SaxEvent, E, R>,
-  ) => Stream.Stream<S[K], E | XsdError | XPathError, R>;
-};
+export interface Child<S extends Schema.Top = Schema.Top> {
+  /** The child's expanded name (`{namespace}local`). */
+  readonly element: string;
+  /** The schema each child's value is decoded with. */
+  readonly schema: S;
+}
 
 /**
- * A parser for documents whose root is one global element, producing values
- * of type `A`, with a typed stream per child element named in `S`.
+ * The children a {@link Parser} streams, by name.
+ *
+ * @since 0.2.0
+ * @category parsing
+ */
+export type Children<C = Record<string, Child>> = { readonly [K in keyof C]: Child };
+
+/**
+ * What a parser's decoding fails with: the {@link XsdError} of parsing and
+ * validating, or the `SchemaError` of a value its schema does not describe.
+ *
+ * @since 0.2.0
+ * @category errors
+ */
+export type ParserError = XsdError | Schema.SchemaError;
+
+/**
+ * A parser for documents whose root is one global element, decoding the
+ * root's value through the schema `S`, with a typed stream per child
+ * element named in `C`.
+ *
+ * Every method validates against the model first, then decodes the valid
+ * value with `Schema.decodeUnknownEffect(schema)`: a value the schema does
+ * not describe (a schema written for another model, say) fails with a
+ * `Schema.SchemaError`, never as a value of the wrong type.
  *
  * @since 0.1.0
  * @category parsing
  */
-export interface Parser<A, S = Record<string, never>> {
+export interface Parser<S extends Schema.Top, C extends Children<C> = Record<string, never>> {
   /** The root element's expanded name. */
   readonly element: string;
-  readonly parse: (input: string, options?: ParseOptions) => Effect.Effect<A, XsdError>;
-  readonly parseBytes: (input: Uint8Array, options?: ParseOptions) => Effect.Effect<A, XsdError>;
+  /** The schema the root's value is decoded with. */
+  readonly schema: S;
+  readonly parse: (
+    input: string,
+    options?: ParseOptions,
+  ) => Effect.Effect<S["Type"], ParserError, S["DecodingServices"]>;
+  readonly parseBytes: (
+    input: Uint8Array,
+    options?: ParseOptions,
+  ) => Effect.Effect<S["Type"], ParserError, S["DecodingServices"]>;
   readonly parseStream: (
     options?: ParseOptions,
-  ) => <E, R>(input: Stream.Stream<string, E, R>) => Effect.Effect<A, E | XsdError, R>;
+  ) => <E, R>(
+    input: Stream.Stream<string, E, R>,
+  ) => Effect.Effect<S["Type"], E | ParserError, R | S["DecodingServices"]>;
   readonly parseBytesStream: (
     options?: ParseOptions,
-  ) => <E, R>(input: Stream.Stream<Uint8Array, E, R>) => Effect.Effect<A, E | XsdError, R>;
+  ) => <E, R>(
+    input: Stream.Stream<Uint8Array, E, R>,
+  ) => Effect.Effect<S["Type"], E | ParserError, R | S["DecodingServices"]>;
   readonly decode: <E, R>(
     events: Stream.Stream<Sax.SaxEvent, E, R>,
-  ) => Effect.Effect<A, E | XsdError, R>;
+  ) => Effect.Effect<S["Type"], E | ParserError, R | S["DecodingServices"]>;
   /**
    * Stream out the values of the elements matching `path` (see
-   * {@link select}), typed `B`: the caller's claim about the type of the
-   * elements the path selects.
+   * {@link select}), each decoded with `schema`.
    */
-  readonly stream: <B = XsdValue>(
+  readonly stream: <B extends Schema.Top>(
     path: string | Path,
+    schema: B,
     options?: CompileOptions,
   ) => <E, R>(
     events: Stream.Stream<Sax.SaxEvent, E, R>,
-  ) => Stream.Stream<B, E | XsdError | XPathError, R>;
+  ) => Stream.Stream<B["Type"], E | ParserError | XPathError, R | B["DecodingServices"]>;
   /**
-   * A stream per child element passed to {@link parser}: `streams.line`
-   * streams out each `line` child of the document element, as
-   * `stream("/order/line")` does. `Xsd.generate` writes one for every child
-   * element of a root that can occur more than once.
+   * The stream of a child named in {@link parser}'s `streams`:
+   * `streams("line")` streams out each `line` child of the document element,
+   * decoded with its schema, as `stream("/order/line", Line)` does.
+   * `Xsd.generate` names one for every child element of a root that can
+   * occur more than once.
    */
-  readonly streams: Streams<S>;
+  readonly streams: <K extends keyof C>(
+    child: K,
+  ) => <E, R>(
+    events: Stream.Stream<Sax.SaxEvent, E, R>,
+  ) => Stream.Stream<
+    C[K]["schema"]["Type"],
+    E | ParserError | XPathError,
+    R | C[K]["schema"]["DecodingServices"]
+  >;
 }
 
 /** The path step for an expanded name under `prefix`, with the namespace it binds. */
@@ -382,59 +426,119 @@ const childPath = (
   return [`/${r}/${c}`, { ...rootNs, ...childNs }];
 };
 
-/**
- * A parser for documents rooted at the global element `element` (an expanded
- * name), whose values are typed `A`.
- *
- * `streams` names child elements of the document element (property to
- * expanded name) to stream out one at a time, typed by `S`: see
- * {@link Parser.streams}.
- *
- * `A` is the caller's claim about the values the element's type produces;
- * `Xsd.generate` writes these types from the same model, so a generated
- * module's parsers are typed correctly by construction.
- *
- * @since 0.1.0
- * @category parsing
- */
-export const parser = <A = XsdValue, S = Record<string, never>>(
+/** A parser whose root values go through `value`: a schema's decoder, or nothing for {@link XsdValue}. */
+const make = <S extends Schema.Top, C extends Children<C>>(
   model: Model,
   element: string,
-  streams?: { readonly [K in keyof S]: string },
-): Parser<A, S> => {
+  schema: S,
+  value: (v: XsdValue) => Effect.Effect<S["Type"], Schema.SchemaError, S["DecodingServices"]>,
+  children: C,
+): Parser<S, C> => {
   const rooted = (options?: ParseOptions): ParseOptions => ({
     ...options,
     root: element,
   });
-  // SAFETY: validation against `element`'s declaration builds exactly the
-  // values its type describes; `A` is that description, written by the caller
-  // (or by `Xsd.generate`) from the same model.
-  const value = (v: Validated): A => v.value as A;
+  const root = (v: Validated) => value(v.value);
   const stream =
-    <B = XsdValue>(path: string | Path, options?: CompileOptions) =>
-    <E, R>(events: Stream.Stream<Sax.SaxEvent, E, R>) =>
-      Stream.map(
-        select(model, path, { ...options, root: element })(events),
-        // SAFETY: as for `value`: `B` is the caller's description of the
-        // type of the elements `path` selects, from the same model.
-        (v) => v as B,
+    <B extends Schema.Top>(path: string | Path, of: B, options?: CompileOptions) =>
+    <E, R>(events: Stream.Stream<Sax.SaxEvent, E, R>) => {
+      const decodeOf = Schema.decodeUnknownEffect(of);
+      return Stream.mapEffect(select(model, path, { ...options, root: element })(events), (v) =>
+        decodeOf(v),
       );
-  // SAFETY: one entry per key of `streams`, which the signature ties to the
-  // keys of `S`; each streams the child its type `S[K]` describes.
-  const named = R.map(streams ?? {}, (child: string) => {
-    const [path, namespaces] = childPath(element, child);
-    return stream(path, { namespaces });
-  }) as Streams<S>;
+    };
   return {
     element,
-    parse: (input, options) => Effect.map(parse(model, input, rooted(options)), value),
-    parseBytes: (input, options) => Effect.map(parseBytes(model, input, rooted(options)), value),
+    schema,
+    parse: (input, options) => Effect.flatMap(parse(model, input, rooted(options)), root),
+    parseBytes: (input, options) => Effect.flatMap(parseBytes(model, input, rooted(options)), root),
     parseStream: (options) => (input) =>
-      Effect.map(parseStream(model, rooted(options))(input), value),
+      Effect.flatMap(parseStream(model, rooted(options))(input), root),
     parseBytesStream: (options) => (input) =>
-      Effect.map(parseBytesStream(model, rooted(options))(input), value),
-    decode: (events) => Effect.map(decode(model, { root: element })(events), value),
+      Effect.flatMap(parseBytesStream(model, rooted(options))(input), root),
+    decode: (events) => Effect.flatMap(decode(model, { root: element })(events), root),
     stream,
-    streams: named,
+    streams: (name) => {
+      const child = children[name];
+      const [path, namespaces] = childPath(element, child.element);
+      return stream(path, child.schema, { namespaces });
+    },
   };
 };
+
+/**
+ * A parser for documents rooted at the global element `element` (an
+ * expanded name), decoding its value with `schema`.
+ *
+ * Validation builds the value the model's declaration of `element`
+ * describes, as an {@link XsdValue}; `Schema.decodeUnknownEffect(schema)`
+ * then turns it into `schema`'s type, failing with a `Schema.SchemaError`
+ * where it does not match. The module `Xsd.generate` writes has a schema for
+ * every type and a parser for every global element, made from the same
+ * model, so its parsers decode every valid document; a schema written by
+ * hand may describe part of a value (the properties it leaves out are
+ * dropped).
+ *
+ * `streams` names child elements of the document element to stream out one
+ * at a time, each with the schema of its values: see {@link Parser.streams}.
+ *
+ * Without a schema the parser's values are the {@link XsdValue}s validation
+ * builds, as they are, with no decoding pass.
+ *
+ * @example
+ * ```ts
+ * import * as Effect from "effect/Effect"
+ * import * as Schema from "effect/Schema"
+ * import * as Stream from "effect/Stream"
+ * import { Sax, Xsd } from "@thomasfosterau/effect-xml"
+ *
+ * const model = Effect.runSync(
+ *   Xsd.compile(`
+ *     <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+ *       <xs:element name="order">
+ *         <xs:complexType>
+ *           <xs:sequence>
+ *             <xs:element name="item" type="xs:string" maxOccurs="unbounded"/>
+ *           </xs:sequence>
+ *           <xs:attribute name="id" type="xs:int" use="required"/>
+ *         </xs:complexType>
+ *       </xs:element>
+ *     </xs:schema>`)
+ * )
+ *
+ * const Order = Schema.Struct({ id: Schema.Int, item: Schema.Array(Schema.String) })
+ * const order = Xsd.parser(model, "order", Order, {
+ *   item: { element: "item", schema: Schema.String }
+ * })
+ *
+ * const input = `<order id="7"><item>Tea</item><item>Milk</item></order>`
+ * console.log(Effect.runSync(order.parse(input))) // { id: 7, item: [ 'Tea', 'Milk' ] }
+ *
+ * const items = Sax.tokenizeString(input).pipe(order.streams("item"), Stream.runCollect)
+ * console.log(Effect.runSync(items)) // [ 'Tea', 'Milk' ]
+ *
+ * // A schema that does not describe the model's values fails to decode.
+ * const wrong = Xsd.parser(model, "order", Schema.Struct({ id: Schema.String }))
+ * console.log(Effect.runSync(Effect.flip(wrong.parse(input)))._tag) // SchemaError
+ * ```
+ *
+ * @since 0.1.0
+ * @category parsing
+ */
+export function parser(model: Model, element: string): Parser<typeof XsdValueSchema>;
+export function parser<S extends Schema.Top, const C extends Children<C> = Record<string, never>>(
+  model: Model,
+  element: string,
+  schema: S,
+  streams?: C,
+): Parser<S, C>;
+export function parser(
+  model: Model,
+  element: string,
+  schema?: Schema.Top,
+  streams?: Children,
+): Parser<Schema.Top, Children> {
+  return schema === undefined
+    ? make(model, element, XsdValueSchema, Effect.succeed, {})
+    : make(model, element, schema, Schema.decodeUnknownEffect(schema), streams ?? {});
+}

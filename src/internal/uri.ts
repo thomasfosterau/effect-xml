@@ -19,14 +19,14 @@ interface Parts {
 }
 
 const split = (uri: string): Parts => {
-  // SAFETY: the pattern matches every string (all its groups are optional or total).
-  const m = parts.exec(uri) as RegExpExecArray;
+  // The pattern matches every string (all its groups are optional or total).
+  const m = parts.exec(uri);
   return {
-    scheme: m[1],
-    authority: m[2],
-    path: m[3] ?? "",
-    query: m[4],
-    fragment: m[5],
+    scheme: m?.[1],
+    authority: m?.[2],
+    path: m?.[3] ?? "",
+    query: m?.[4],
+    fragment: m?.[5],
   };
 };
 

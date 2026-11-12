@@ -16,7 +16,11 @@
     "bench/size.ts",
     "vite.config.ts"
   ],
-  "ignoreExports": [{ "file": "src/Xsd/Validate.ts", "exports": ["select"] }],
+  "ignoreExports": [
+    { "file": "src/Xsd/Validate.ts", "exports": ["select"] },
+    { "file": "{examples,tests}/xsd/*.generated.ts", "exports": ["*"] }
+  ],
+  "duplicates": { "ignore": ["{examples,tests}/xsd/*.generated.ts"] },
   "ignorePatterns": ["**/dist/**", "**/docs/**", "**/coverage/**", "tests/fixtures/**"],
   "ignoreDependencies": [
     "@types/node",

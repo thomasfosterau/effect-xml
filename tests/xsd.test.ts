@@ -11,6 +11,7 @@ import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
 import { Sax, Xml, Xsd } from "../src/index.ts";
 import * as Example from "../examples/xsd/order.generated.ts";
+import * as Features from "./xsd/features.generated.ts";
 import { splitEvery } from "./support/chunks.ts";
 
 const isXsdValidationError = Schema.is(Xsd.XsdValidationError);
@@ -40,7 +41,7 @@ const invalid = (model: Xsd.Model, doc: string, options?: Xsd.ParseOptions) => {
 };
 
 /** The error, failing the test unless it is a validation error. */
-const validation = (e: Xsd.XsdError): Xsd.XsdValidationError => {
+const validation = (e: Xsd.ParserError): Xsd.XsdValidationError => {
   assert(isXsdValidationError(e), `expected a validation error, got ${e.message}`);
   return e;
 };
@@ -778,7 +779,7 @@ describe("Xsd.parse — well-formedness and roots", () => {
   });
 
   test("a parser accepts only its own root", () => {
-    const b = Xsd.parser<number>(model, "b");
+    const b = Xsd.parser(model, "b", Schema.Int);
     expect(Effect.runSync(b.parse(`<b>4</b>`))).toBe(4);
     const e = validation(Effect.runSync(Effect.flip(b.parse(`<a>x</a>`))));
     expect(e.reason).toBe("the document element is <a>, not <b>");
@@ -799,11 +800,13 @@ describe("Xsd streaming", () => {
   });
 
   test("a parser's streams, for children in no namespace", () => {
-    const parser = Xsd.parser<Xsd.XsdRecord, { readonly n: number }>(model, "r", { n: "n" });
+    const parser = Xsd.parser(model, "r", Xsd.XsdRecord, {
+      n: { element: "n", schema: Schema.Int },
+    });
     const ns = Effect.runSync(
       Stream.fromIterable(splitEvery(doc, 7)).pipe(
         Sax.tokenize(),
-        parser.streams.n,
+        parser.streams("n"),
         Stream.runCollect,
       ),
     );
@@ -931,18 +934,16 @@ describe("Xsd.select", () => {
   });
 
   test("the parent's array stays empty and a single child is left out", () => {
-    const parser = Xsd.parser<Xsd.XsdRecord>(model, "{urn:s}sheet");
+    const parser = Xsd.parser(model, "{urn:s}sheet");
     const doc = sheet(`<head n="1"/>${rows(2)}`);
-    const run = (path: string) =>
+    const run = <A>(path: string, of: Schema.Codec<A>) =>
       Effect.runSync(
-        Stream.make(doc).pipe(
-          Sax.tokenize(),
-          parser.stream<{ readonly r: number }>(path, ns),
-          Stream.runCollect,
-        ),
+        Stream.make(doc).pipe(Sax.tokenize(), parser.stream(path, of, ns), Stream.runCollect),
       );
-    expect(run("s:sheet/s:row").map((r) => r.r)).toEqual([1, 2]);
-    expect(run("s:sheet/s:head")).toEqual([{ n: 1 }]);
+    // A schema may describe part of a value: `c` is dropped.
+    const row = Schema.Struct({ r: Schema.Int });
+    expect(run("s:sheet/s:row", row)).toEqual([{ r: 1 }, { r: 2 }]);
+    expect(run("s:sheet/s:head", Schema.Struct({ n: Schema.Int }))).toEqual([{ n: 1 }]);
   });
 
   test("fails at the first violation, after emitting what came before it", () => {
@@ -1016,34 +1017,34 @@ describe("Xsd.generate", () => {
   );
   const source = Effect.runSync(Xsd.generate(model, { importFrom: "pkg" }));
 
-  test("types, the model and parsers", () => {
-    expect(source).toContain(`import type * as BigDecimal from "effect/BigDecimal";`);
-    expect(source).toContain(`import type { Xml } from "pkg";`);
-    expect(source).toContain(`import type * as Option from "effect/Option";`);
-    expect(source).toContain(`export type Colour = "red" | "blue";`);
+  test("schemas, their types, the model and parsers", () => {
+    expect(source).toContain(`import * as Schema from "effect/Schema";`);
+    expect(source).toContain(`import { Xml, Xsd } from "pkg";`);
+    // The types are the schemas' types, so no type-only import is needed.
+    expect(source).not.toContain(`import type`);
+    expect(source).toContain(`export const Colour = Schema.Literals(["red", "blue"]);`);
+    expect(source).toContain(`export type Colour = typeof Colour.Type;`);
     expect(source).toContain(
-      `export interface Base {\n  /** The attribute id. */\n  readonly id: bigint;\n}`,
+      `export const Base = Schema.Struct({\n  /** The attribute id. */\n  "id": Schema.BigInt,\n});`,
     );
-    expect(source).toContain(`readonly price: BigDecimal.BigDecimal;`);
-    expect(source).toContain(`readonly colour: ReadonlyArray<Colour>;`);
-    expect(source).toContain(`readonly "first-name"?: string;`);
-    expect(source).toContain(`readonly $any: ReadonlyArray<Xml.XmlElement>;`);
+    expect(source).toContain(`export type Base = typeof Base.Type;`);
+    expect(source).toContain(`  "price": Schema.BigDecimal,`);
+    expect(source).toContain(`  "colour": Schema.Array(Colour),`);
+    expect(source).toContain(`  "first-name": Schema.optionalKey(Schema.String),`);
+    expect(source).toContain(`  "$any": Schema.Array(Schema.toType(Xml.XmlElement)),`);
     expect(source).toContain(`export const model: Xsd.Model = {`);
-    // `model` is taken by the module itself, so the parser for <model> is numbered.
+    // `model` is taken by the module itself, so the parser for <model> is
+    // numbered; the derived type comes first in the union, as the base's
+    // schema would take its values too.
     expect(source).toContain(
-      `export const model2 = Xsd.parser<Option.Option<Base | (Derived & { readonly $type: "{urn:t}Derived" })>>(model, "{urn:t}model");`,
+      `export const model2 = Xsd.parser(model, "{urn:t}model", Schema.Option(Schema.Union([Schema.Struct({ ...Derived.fields, "$type": Schema.Literal("{urn:t}Derived") }), Base])));`,
     );
     // A root with repeated children gets a stream for each.
     expect(source).toContain(
       [
-        `export const thing = Xsd.parser<`,
-        `  Thing,`,
-        `  {`,
-        `    /** Streams the <colour> children (colour). */`,
-        `    readonly colour: Colour;`,
-        `  }`,
-        `>(model, "{urn:t}thing", {`,
-        `  colour: "colour",`,
+        `export const thing = Xsd.parser(model, "{urn:t}thing", Thing, {`,
+        `  /** Streams the <colour> children (colour). */`,
+        `  colour: { element: "colour", schema: Colour },`,
         `});`,
       ].join("\n"),
     );
@@ -1059,17 +1060,21 @@ describe("Xsd.generate", () => {
         <xs:simpleType name="Ratio"><xs:restriction base="xs:decimal"><xs:enumeration value="0.5"/></xs:restriction></xs:simpleType>
         <xs:simpleType name="Spaced"><xs:restriction base="xs:token"><xs:enumeration value=" a  b "/></xs:restriction></xs:simpleType>
         <xs:simpleType name="Words"><xs:list itemType="Spaced"/></xs:simpleType>
-        <xs:simpleType name="Either"><xs:union memberTypes="Level Yes"/></xs:simpleType>`),
+        <xs:simpleType name="Either"><xs:union memberTypes="Level Yes"/></xs:simpleType>
+        <xs:simpleType name="Mixed"><xs:union memberTypes="Level xs:double"/></xs:simpleType>`),
     );
     const out = Effect.runSync(Xsd.generate(enums));
-    expect(out).toContain(`export type Level = 1 | 2;`);
-    expect(out).toContain(`export type Big = 10n;`);
-    expect(out).toContain(`export type Yes = true;`);
-    expect(out).toContain(`export type Day = "2024-01-01";`);
-    expect(out).toContain(`export type Ratio = BigDecimal.BigDecimal;`);
-    expect(out).toContain(`export type Spaced = "a b";`);
-    expect(out).toContain(`export type Words = ReadonlyArray<"a b">;`);
-    expect(out).toContain(`export type Either = 1 | 2 | true;`);
+    expect(out).toContain(`export const Level = Schema.Literals([1, 2]);`);
+    expect(out).toContain(`export const Big = Schema.Literal(10n);`);
+    expect(out).toContain(`export const Yes = Schema.Literal(true);`);
+    expect(out).toContain(`export const Day = Schema.Literal("2024-01-01");`);
+    expect(out).toContain(`export const Ratio = Schema.BigDecimal;`);
+    expect(out).toContain(`export const Spaced = Schema.Literal("a b");`);
+    expect(out).toContain(`export const Words = Schema.Array(Schema.Literal("a b"));`);
+    expect(out).toContain(`export const Either = Schema.Literals([1, 2, true]);`);
+    expect(out).toContain(
+      `export const Mixed = Schema.Union([Schema.Literals([1, 2]), Schema.Number]);`,
+    );
   });
 
   test("an invalid model fails", () => {
@@ -1140,7 +1145,7 @@ describe("the generated example (examples/xsd)", () => {
         `<order xmlns="urn:example:order" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" number="1">
            <customer xsi:type="Person"><name>A</name></customer><placed>2026-01-01T00:00:00Z</placed>
            ${orderLine("a", 1)}${orderLine("b", 2)}</order>`,
-      ).pipe(Example.order.streams.line, Stream.runCollect),
+      ).pipe(Example.order.streams("line"), Stream.runCollect),
     );
     const typed: ReadonlyArray<Example.Line> = Array.from(lines);
     expect(Arr.map(typed, (l) => [l.id, l.quantity])).toEqual([
@@ -1163,5 +1168,74 @@ describe("the generated example (examples/xsd)", () => {
       ),
     );
     expect(e.rule).toBe("IdentityConstraint");
+  });
+});
+
+const featuresDoc = (body: string, attributes = "") =>
+  `<features xmlns="urn:features" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:o="urn:o" ${attributes}>${body}</features>`;
+
+describe("the generated features module (tests/xsd)", () => {
+  const SOURCES = import.meta.glob<string>("./xsd/features.*", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  });
+  const xsd = SOURCES["./xsd/features.xsd"] ?? "";
+  const generated = SOURCES["./xsd/features.generated.ts"] ?? "";
+  const tree = `<tree label="root"><node label="a"><node xsi:type="Weighted" weight="0.5"/></node></tree>`;
+
+  test("is what the generator writes today", () => {
+    const source = Effect.runSync(
+      Xsd.generate(compile(xsd), { importFrom: "../../src/index.ts", source: "features.xsd" }),
+    );
+    // Regenerate with the CLI (packages/cli): effect-xml-xsd generate tests/xsd/features.xsd -o tests/xsd/features.generated.ts --import-from ../../src/index.ts
+    expect(source).toBe(generated);
+  });
+
+  test("recursive types, substitution groups, nil, lists, unions, mixed content and wildcards", () => {
+    const parsed: Features.Features = Effect.runSync(
+      Features.features.parse(
+        featuresDoc(
+          `${tree}<item sku="i"/><item sku="j" xsi:type="Special"><reason>r</reason></item><special sku="s"><reason>q</reason></special>
+           <note xsi:nil="true"/><words> a  b </words><setting>2</setting><setting>true</setting>
+           <data>0aFF</data><prose>one <em>two</em> three</prose><extra><any>x</any></extra>`,
+          `o:flag="on"`,
+        ),
+      ),
+    );
+    const [inner] = parsed.tree.node;
+    assert(inner !== undefined);
+    expect(inner.label).toBe("a");
+    const [weighted] = inner.node;
+    assert(weighted !== undefined && "$type" in weighted);
+    expect(weighted.$type).toBe("{urn:features}Weighted");
+    expect(BigDecimal.format(weighted.weight)).toBe("0.5");
+    // A value of the derived type keeps its own properties.
+    expect(parsed.item).toEqual([
+      { sku: "i" },
+      { sku: "j", reason: "r", $type: "{urn:features}Special" },
+    ]);
+    expect(parsed.special).toEqual([{ sku: "s", reason: "q" }]);
+    expect(parsed.note).toEqual(Option.none());
+    expect(parsed.words).toEqual(["a", "b"]);
+    expect(parsed.setting).toEqual([2, true]);
+    expect(parsed.data).toEqual(new Uint8Array([0x0a, 0xff]));
+    expect(parsed.prose).toEqual({ em: ["two"], $text: "one  three" });
+    expect(parsed.$attributes).toEqual({ "{urn:o}flag": "on" });
+  });
+
+  test("a recursive type's parser and the streams of its children", () => {
+    const node: Features.Node = Effect.runSync(
+      Features.node.parse(`<node xmlns="urn:features"><node/><node label="b"/></node>`),
+    );
+    expect(node).toEqual({ node: [{ node: [] }, { label: "b", node: [] }] });
+    const settings: ReadonlyArray<Features.Setting> = Array.from(
+      Effect.runSync(
+        Sax.tokenizeString(
+          featuresDoc(`${tree}<item sku="i"/><words/><setting>1</setting><setting>false</setting>`),
+        ).pipe(Features.features.streams("setting"), Stream.runCollect),
+      ),
+    );
+    expect(settings).toEqual([1, false]);
   });
 });

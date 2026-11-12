@@ -9,10 +9,11 @@
  * `dtd: "internal"` (as SAX and DOM, and as a DOM with a DOCTYPE that
  * declares entities the worksheet references), with
  * streaming selection of rows, and validated against a schema for the
- * worksheet (as events, and as typed values), queried with XPath
+ * worksheet (as events, as values, and as values decoded through the schemas
+ * `Xsd.generate` writes), queried with XPath
  * (`XQuery.evaluate` over the parsed DOM), and queried with `XQuery.stream`
  * against parsing and evaluating the same query over the DOM. A generated product catalog is
- * validated against a schema that uses substitution groups, derivation,
+ * validated (and decoded) against a schema that uses substitution groups, derivation,
  * choices and facets, which the worksheet's schema does not. HTML is measured with
  * `Html.parseDocument` and `Html.parseFragment` on a generated page that
  * exercises formatting elements, implied end tags, tables, foreign content,
@@ -29,6 +30,7 @@ import * as Option from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as Order from "effect/Order";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Html, Sax, Xml, Xsd, XQuery } from "../src/index.ts";
 
@@ -206,6 +208,24 @@ await time("effect-xml XSD events (Xsd.validate)", () =>
 await time("effect-xml XSD values (Xsd.parse)", () =>
   Effect.runPromise(Effect.asVoid(Xsd.parse(model, input))),
 );
+// The schemas `Xsd.generate` writes for the worksheet: the same values,
+// decoded through them (one more pass over the value tree).
+const Cell = Schema.Struct({
+  r: Schema.optionalKey(Schema.String),
+  s: Schema.Int,
+  t: Schema.Literals(["b", "n", "e", "s", "str", "inlineStr"]),
+  v: Schema.optionalKey(Schema.String),
+});
+const Row = Schema.Struct({
+  r: Schema.optionalKey(Schema.Int),
+  spans: Schema.optionalKey(Schema.String),
+  c: Schema.Array(Cell),
+});
+const Worksheet = Schema.Struct({ sheetData: Schema.Struct({ row: Schema.Array(Row) }) });
+const worksheet = Xsd.parser(model, `{${SML}}worksheet`, Worksheet);
+await time("effect-xml XSD typed values (Xsd.parser)", () =>
+  Effect.runPromise(Effect.asVoid(worksheet.parse(input))),
+);
 
 // XPath over the parsed worksheet: the even rows' cell values. Compiled
 // once; each run evaluates it against a fresh XDM view of the same DOM (so
@@ -362,6 +382,39 @@ const catalogModel = await Effect.runPromise(Xsd.compile(catalogSchema));
 await time(
   "effect-xml XSD catalog (Xsd.parse)",
   () => Effect.runPromise(Effect.asVoid(Xsd.parse(catalogModel, catalog))),
+  5,
+  catalog.length,
+);
+// The catalog's generated schemas, as for the worksheet.
+const productFields = {
+  sku: Schema.String,
+  stock: Schema.BigInt,
+  title: Schema.String,
+  price: Schema.BigDecimal,
+  released: Schema.optionalKey(Schema.String),
+  tags: Schema.optionalKey(Schema.Array(Schema.String)),
+};
+const Book = Schema.Struct({
+  ...productFields,
+  pages: Schema.optionalKey(Schema.BigInt),
+  isbn: Schema.optionalKey(Schema.String),
+  issn: Schema.optionalKey(Schema.String),
+  author: Schema.Array(Schema.String),
+});
+const Disc = Schema.Struct({
+  ...productFields,
+  rating: Schema.optionalKey(Schema.Literals(["G", "PG", "M", "R"])),
+  track: Schema.Array(Schema.Struct({ n: Schema.Int, $value: Schema.String })),
+});
+const Catalog = Schema.Struct({
+  updated: Schema.optionalKey(Schema.String),
+  book: Schema.Array(Book),
+  disc: Schema.Array(Disc),
+});
+const catalogParser = Xsd.parser(catalogModel, `{${CAT}}catalog`, Catalog);
+await time(
+  "effect-xml XSD catalog typed (Xsd.parser)",
+  () => Effect.runPromise(Effect.asVoid(catalogParser.parse(catalog))),
   5,
   catalog.length,
 );
