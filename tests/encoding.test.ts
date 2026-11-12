@@ -1,4 +1,5 @@
-import { assert, describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as P from "effect/Predicate";
@@ -34,13 +35,14 @@ const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt
 const concat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => concatBytes(parts);
 
 const rootText = (bytes: Uint8Array, options?: Xml.ParseBytesOptions) =>
-  Effect.runPromise(Xml.parseBytes(bytes, options).pipe(Effect.map((d) => d.root.textContent)));
+  Xml.parseBytes(bytes, options).pipe(Effect.map((d) => d.root.textContent));
 
-const failure = async <E>(effect: Effect.Effect<unknown, E>): Promise<E> => {
-  const r = await Effect.runPromise(Effect.result(effect));
-  assert(Result.isFailure(r), "expected failure");
-  return r.failure;
-};
+const failure = <E>(effect: Effect.Effect<unknown, E>) =>
+  Effect.gen(function* () {
+    const r = yield* Effect.result(effect);
+    assert(Result.isFailure(r), "expected failure");
+    return r.failure;
+  });
 
 /** Split bytes into chunks of `size`, to exercise chunk boundaries inside sequences. */
 const chunks = splitBytes;
@@ -49,12 +51,10 @@ const text = "héllo wörld — 𝄞 ✓";
 
 /** The SAX events of a byte stream delivered as `parts`. */
 const tokenizeParts = (parts: ReadonlyArray<Uint8Array>) =>
-  Effect.runPromise(
-    Stream.fromIterable(parts).pipe(
-      Sax.tokenizeBytes(),
-      Stream.runCollect,
-      Effect.map((c) => Arr.fromIterable(c)),
-    ),
+  Stream.fromIterable(parts).pipe(
+    Sax.tokenizeBytes(),
+    Stream.runCollect,
+    Effect.map((c) => Arr.fromIterable(c)),
   );
 
 /** An HTML page with `charset` in its head and `café` in its body, as source text. */
@@ -63,119 +63,154 @@ const htmlPage = (charset: string) =>
 
 /** Parse an HTML document from bytes and serialize its document element. */
 const para = (bytes: Uint8Array, options?: Html.HtmlBytesOptions) =>
-  Effect.runPromise(
-    Html.parseDocumentBytes(bytes, options).pipe(
-      Effect.map((d) => Html.serialize(d.documentElement)),
-    ),
+  Html.parseDocumentBytes(bytes, options).pipe(
+    Effect.map((d) => Html.serialize(d.documentElement)),
   );
 
 describe("XML encoding detection (Appendix F)", () => {
-  test("UTF-8 without BOM or declaration", async () => {
-    expect(await rootText(utf8(`<a>${text}</a>`))).toBe(text);
-  });
+  it.effect("UTF-8 without BOM or declaration", () =>
+    Effect.gen(function* () {
+      expect(yield* rootText(utf8(`<a>${text}</a>`))).toBe(text);
+    }),
+  );
 
-  test("UTF-8 with BOM", async () => {
-    expect(await rootText(concat(new Uint8Array([0xef, 0xbb, 0xbf]), utf8(`<a>${text}</a>`)))).toBe(
-      text,
-    );
-  });
+  it.effect("UTF-8 with BOM", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* rootText(concat(new Uint8Array([0xef, 0xbb, 0xbf]), utf8(`<a>${text}</a>`))),
+      ).toBe(text);
+    }),
+  );
 
   [true, false].forEach((little) => {
     const name = little ? "LE" : "BE";
-    test(`UTF-16${name} with BOM`, async () => {
-      const doc = `<?xml version="1.0" encoding="UTF-16"?><a>${text}</a>`;
-      expect(await rootText(utf16(doc, little, true))).toBe(text);
-    });
-
-    test(`UTF-16${name} without BOM, recognised from the first bytes`, async () => {
-      const doc = `<?xml version="1.0" encoding="UTF-16"?><a>${text}</a>`;
-      expect(await rootText(utf16(doc, little, false))).toBe(text);
-    });
-
-    test(`UTF-32${name} with and without BOM`, async () => {
-      const doc = `<?xml version="1.0" encoding="UTF-32"?><a>${text}</a>`;
-      expect(await rootText(utf32(doc, little, true))).toBe(text);
-      expect(await rootText(utf32(doc, little, false))).toBe(text);
-    });
-  });
-
-  test("ISO-8859-1 from the declaration, decoded exactly (not as windows-1252)", async () => {
-    const doc = latin1(`<?xml version="1.0" encoding="ISO-8859-1"?><a>caf\xe9 \x80</a>`);
-    expect(await rootText(doc)).toBe("café \x80");
-  });
-
-  test("a legacy multi-byte encoding from the declaration", async () => {
-    // "日本" in Shift_JIS.
-    const doc = concat(
-      utf8(`<?xml version='1.0' encoding='Shift_JIS'?><a>`),
-      new Uint8Array([0x93, 0xfa, 0x96, 0x7b]),
-      utf8(`</a>`),
+    it.effect(`UTF-16${name} with BOM`, () =>
+      Effect.gen(function* () {
+        const doc = `<?xml version="1.0" encoding="UTF-16"?><a>${text}</a>`;
+        expect(yield* rootText(utf16(doc, little, true))).toBe(text);
+      }),
     );
-    expect(await rootText(doc)).toBe("日本");
-  });
 
-  test("an external hint overrides the declaration but not the BOM", async () => {
-    const doc = latin1(`<?xml version="1.0" encoding="UTF-8"?><a>caf\xe9</a>`);
-    expect(await rootText(doc, { encoding: "iso-8859-1" })).toBe("café");
-    const bom = utf16(`<a>x</a>`, true, true);
-    expect(await rootText(bom, { encoding: "iso-8859-1" })).toBe("x");
-  });
-
-  test("invalid UTF-8 is a typed failure, not U+FFFD", async () => {
-    const e = await failure(
-      Xml.parseBytes(concat(utf8("<a>"), new Uint8Array([0xc3, 0x28]), utf8("</a>"))),
+    it.effect(`UTF-16${name} without BOM, recognised from the first bytes`, () =>
+      Effect.gen(function* () {
+        const doc = `<?xml version="1.0" encoding="UTF-16"?><a>${text}</a>`;
+        expect(yield* rootText(utf16(doc, little, false))).toBe(text);
+      }),
     );
-    expect(e._tag).toBe("InvalidByteSequence");
-  });
 
-  test("bytes outside US-ASCII are a typed failure when ASCII is declared", async () => {
-    const e = await failure(
-      Xml.parseBytes(latin1(`<?xml version="1.0" encoding="US-ASCII"?><a>\xe9</a>`)),
+    it.effect(`UTF-32${name} with and without BOM`, () =>
+      Effect.gen(function* () {
+        const doc = `<?xml version="1.0" encoding="UTF-32"?><a>${text}</a>`;
+        expect(yield* rootText(utf32(doc, little, true))).toBe(text);
+        expect(yield* rootText(utf32(doc, little, false))).toBe(text);
+      }),
     );
-    assert(P.isTagged(e, "InvalidByteSequence"), "expected InvalidByteSequence");
-    expect(e.offset).toBe(44);
   });
 
-  test("an unknown encoding is UnsupportedEncoding", async () => {
-    const e = await failure(Xml.parseBytes(utf8(`<?xml version="1.0" encoding="x-no-such"?><a/>`)));
-    expect(e._tag).toBe("UnsupportedEncoding");
-  });
+  it.effect("ISO-8859-1 from the declaration, decoded exactly (not as windows-1252)", () =>
+    Effect.gen(function* () {
+      const doc = latin1(`<?xml version="1.0" encoding="ISO-8859-1"?><a>caf\xe9 \x80</a>`);
+      expect(yield* rootText(doc)).toBe("café \x80");
+    }),
+  );
 
-  test("a declaration contradicting the BOM is UnsupportedEncoding", async () => {
-    const doc = concat(
-      new Uint8Array([0xef, 0xbb, 0xbf]),
-      utf8(`<?xml version="1.0" encoding="UTF-16"?><a/>`),
-    );
-    expect((await failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding");
-  });
+  it.effect("a legacy multi-byte encoding from the declaration", () =>
+    Effect.gen(function* () {
+      // "日本" in Shift_JIS.
+      const doc = concat(
+        utf8(`<?xml version='1.0' encoding='Shift_JIS'?><a>`),
+        new Uint8Array([0x93, 0xfa, 0x96, 0x7b]),
+        utf8(`</a>`),
+      );
+      expect(yield* rootText(doc)).toBe("日本");
+    }),
+  );
 
-  test("a declaration contradicting the first bytes of big-endian UTF-16 is UnsupportedEncoding", async () => {
-    const doc = utf16(`<?xml version="1.0" encoding="UTF-8"?><a/>`, false, true);
-    expect((await failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding");
-    expect(
-      Encoding.sniffXml(utf16(`<?xml version="1.0" encoding="UTF-16"?><a/>`, false, false), true),
-    ).toEqual({
-      encoding: "utf-16be",
-      bomLength: 0,
-      source: "declaration",
-    });
-  });
+  it.effect("an external hint overrides the declaration but not the BOM", () =>
+    Effect.gen(function* () {
+      const doc = latin1(`<?xml version="1.0" encoding="UTF-8"?><a>caf\xe9</a>`);
+      expect(yield* rootText(doc, { encoding: "iso-8859-1" })).toBe("café");
+      const bom = utf16(`<a>x</a>`, true, true);
+      expect(yield* rootText(bom, { encoding: "iso-8859-1" })).toBe("x");
+    }),
+  );
 
-  test("a UTF-8 byte order mark with another declared encoding is UnsupportedEncoding", async () => {
-    const doc = concat(
-      new Uint8Array([0xef, 0xbb, 0xbf]),
-      utf8(`<?xml version="1.0" encoding="ISO-8859-1"?><a/>`),
-    );
-    expect((await failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding");
-  });
+  it.effect("invalid UTF-8 is a typed failure, not U+FFFD", () =>
+    Effect.gen(function* () {
+      const e = yield* failure(
+        Xml.parseBytes(concat(utf8("<a>"), new Uint8Array([0xc3, 0x28]), utf8("</a>"))),
+      );
+      expect(e._tag).toBe("InvalidByteSequence");
+    }),
+  );
 
-  test("EBCDIC is reported as unsupported", async () => {
-    expect(
-      (await failure(Xml.parseBytes(new Uint8Array([0x4c, 0x6f, 0xa7, 0x94, 0x40]))))._tag,
-    ).toBe("UnsupportedEncoding");
-  });
+  it.effect("bytes outside US-ASCII are a typed failure when ASCII is declared", () =>
+    Effect.gen(function* () {
+      const e = yield* failure(
+        Xml.parseBytes(latin1(`<?xml version="1.0" encoding="US-ASCII"?><a>\xe9</a>`)),
+      );
+      assert(P.isTagged(e, "InvalidByteSequence"), "expected InvalidByteSequence");
+      expect(e.offset).toBe(44);
+    }),
+  );
 
-  test("sniffXml reports how the encoding was found", () => {
+  it.effect("an unknown encoding is UnsupportedEncoding", () =>
+    Effect.gen(function* () {
+      const e = yield* failure(
+        Xml.parseBytes(utf8(`<?xml version="1.0" encoding="x-no-such"?><a/>`)),
+      );
+      expect(e._tag).toBe("UnsupportedEncoding");
+    }),
+  );
+
+  it.effect("a declaration contradicting the BOM is UnsupportedEncoding", () =>
+    Effect.gen(function* () {
+      const doc = concat(
+        new Uint8Array([0xef, 0xbb, 0xbf]),
+        utf8(`<?xml version="1.0" encoding="UTF-16"?><a/>`),
+      );
+      expect((yield* failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding");
+    }),
+  );
+
+  it.effect(
+    "a declaration contradicting the first bytes of big-endian UTF-16 is UnsupportedEncoding",
+    () =>
+      Effect.gen(function* () {
+        const doc = utf16(`<?xml version="1.0" encoding="UTF-8"?><a/>`, false, true);
+        expect((yield* failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding");
+        expect(
+          Encoding.sniffXml(
+            utf16(`<?xml version="1.0" encoding="UTF-16"?><a/>`, false, false),
+            true,
+          ),
+        ).toEqual({
+          encoding: "utf-16be",
+          bomLength: 0,
+          source: "declaration",
+        });
+      }),
+  );
+
+  it.effect("a UTF-8 byte order mark with another declared encoding is UnsupportedEncoding", () =>
+    Effect.gen(function* () {
+      const doc = concat(
+        new Uint8Array([0xef, 0xbb, 0xbf]),
+        utf8(`<?xml version="1.0" encoding="ISO-8859-1"?><a/>`),
+      );
+      expect((yield* failure(Xml.parseBytes(doc)))._tag).toBe("UnsupportedEncoding");
+    }),
+  );
+
+  it.effect("EBCDIC is reported as unsupported", () =>
+    Effect.gen(function* () {
+      expect(
+        (yield* failure(Xml.parseBytes(new Uint8Array([0x4c, 0x6f, 0xa7, 0x94, 0x40]))))._tag,
+      ).toBe("UnsupportedEncoding");
+    }),
+  );
+
+  it("sniffXml reports how the encoding was found", () => {
     expect(Encoding.sniffXml(utf8(`<a/>`), true)).toEqual({
       encoding: "utf-8",
       bomLength: 0,
@@ -189,7 +224,7 @@ describe("XML encoding detection (Appendix F)", () => {
     expect(Encoding.sniffXml(utf8(`<?xml version="1.0" enc`), false)).toBe(Encoding.NeedMore);
   });
 
-  test("sniffXml reads a declaration that runs past its first 4096 characters", () => {
+  it("sniffXml reads a declaration that runs past its first 4096 characters", () => {
     const declaration = `<?xml version="1.0"${" ".repeat(5000)}encoding="windows-1252"?>`;
     expect(Encoding.sniffXml(utf8(`${declaration}<a/>`), true)).toEqual({
       encoding: "windows-1252",
@@ -218,16 +253,20 @@ describe("streaming byte input", () => {
     ["UTF-32LE", utf32(`<?xml version="1.0"?><a b="${text}">${text}</a>`, true, false)],
   ];
 
-  test.each(cases)("%s: every chunk size gives the same events", async (_name, bytes) => {
-    const whole = await tokenizeParts([bytes]);
-    expect(whole).toContainEqual(expect.objectContaining({ _tag: "Text", data: text }));
-    const chunked = await Promise.all(
-      Arr.range(1, 9).map((size) => tokenizeParts(chunks(bytes, size))),
-    );
-    expect(chunked).toStrictEqual(Arr.replicate(whole, 9));
-  });
+  it.effect.each(cases)("%s: every chunk size gives the same events", ([_name, bytes]) =>
+    Effect.gen(function* () {
+      const whole = yield* tokenizeParts([bytes]);
+      expect(whole).toContainEqual(expect.objectContaining({ _tag: "Text", data: text }));
+      const chunked = yield* Effect.forEach(
+        Arr.range(1, 9),
+        (size) => tokenizeParts(chunks(bytes, size)),
+        { concurrency: 1 },
+      );
+      expect(chunked).toStrictEqual(Arr.replicate(whole, 9));
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     ["UTF-8", utf8(`<?xml version="1.0"?><a>${text}</a>`)],
     ["UTF-16 with a BOM", utf16(`<a>${text}</a>`, true, true)],
     ["UTF-32", utf32(`<?xml version="1.0" encoding="UTF-32"?><a>${text}</a>`, false, false)],
@@ -237,64 +276,78 @@ describe("streaming byte input", () => {
     ["an odd trailing UTF-16 byte", concat(utf16("<a/>", false, true), new Uint8Array([0x3c]))],
     ["an unknown declared encoding", utf8(`<?xml version="1.0" encoding="x-no-such"?><a/>`)],
     ["a tiny input", utf8("<a")],
-  ])("Xml.parseBytes matches parseBytesStream on one chunk: %s", async (_what, bytes) => {
-    const whole = await Effect.runPromise(Effect.result(Xml.parseBytes(bytes)));
-    const streamed = await Effect.runPromise(
-      Effect.result(Stream.make(bytes).pipe(Xml.parseBytesStream())),
-    );
-    expect(whole).toStrictEqual(streamed);
-  });
+  ] as const)("Xml.parseBytes matches parseBytesStream on one chunk: %s", ([_what, bytes]) =>
+    Effect.gen(function* () {
+      const whole = yield* Effect.result(Xml.parseBytes(bytes));
+      const streamed = yield* Effect.result(Stream.make(bytes).pipe(Xml.parseBytesStream()));
+      expect(whole).toStrictEqual(streamed);
+    }),
+  );
 
-  test("Xml.parseBytesStream", async () => {
-    const doc = await Effect.runPromise(
-      Stream.fromIterable(chunks(utf16(`<a>${text}</a>`, false, true), 3)).pipe(
+  it.effect("Xml.parseBytesStream", () =>
+    Effect.gen(function* () {
+      const doc = yield* Stream.fromIterable(chunks(utf16(`<a>${text}</a>`, false, true), 3)).pipe(
         Xml.parseBytesStream(),
-      ),
-    );
-    expect(doc.root.textContent).toBe(text);
-  });
+      );
+      expect(doc.root.textContent).toBe(text);
+    }),
+  );
 });
 
 describe("HTML encoding sniffing (WHATWG)", () => {
-  test("defaults to windows-1252", async () => {
-    expect(await para(latin1(htmlPage("")))).toContain("café");
-  });
+  it.effect("defaults to windows-1252", () =>
+    Effect.gen(function* () {
+      expect(yield* para(latin1(htmlPage("")))).toContain("café");
+    }),
+  );
 
-  test("<meta charset> in the first 1024 bytes", async () => {
-    const doc = concat(utf8(`<!doctype html><meta charset="utf-8"><p>`), utf8("café"));
-    expect(await para(doc)).toContain("café");
-  });
+  it.effect("<meta charset> in the first 1024 bytes", () =>
+    Effect.gen(function* () {
+      const doc = concat(utf8(`<!doctype html><meta charset="utf-8"><p>`), utf8("café"));
+      expect(yield* para(doc)).toContain("café");
+    }),
+  );
 
-  test("<meta http-equiv content-type>", async () => {
-    const doc = utf8(`<meta http-equiv="Content-Type" content="text/html; charset=utf-8"><p>café`);
-    expect(await para(doc)).toContain("café");
-  });
+  it.effect("<meta http-equiv content-type>", () =>
+    Effect.gen(function* () {
+      const doc = utf8(
+        `<meta http-equiv="Content-Type" content="text/html; charset=utf-8"><p>café`,
+      );
+      expect(yield* para(doc)).toContain("café");
+    }),
+  );
 
-  test("a meta tag inside a comment is ignored", async () => {
-    const doc = latin1(`<!-- <meta charset="utf-8"> --><p>caf\xe9`);
-    expect(await para(doc)).toContain("café");
-  });
+  it.effect("a meta tag inside a comment is ignored", () =>
+    Effect.gen(function* () {
+      const doc = latin1(`<!-- <meta charset="utf-8"> --><p>caf\xe9`);
+      expect(yield* para(doc)).toContain("café");
+    }),
+  );
 
-  test("the BOM beats the transport hint, which beats <meta>", async () => {
-    const doc = latin1(`<meta charset="utf-8"><p>caf\xe9`);
-    expect(await para(doc, { encoding: "iso-8859-1" })).toContain("café");
-    const bom = concat(new Uint8Array([0xef, 0xbb, 0xbf]), utf8(`<p>café`));
-    expect(await para(bom, { encoding: "iso-8859-1" })).toContain("café");
-  });
+  it.effect("the BOM beats the transport hint, which beats <meta>", () =>
+    Effect.gen(function* () {
+      const doc = latin1(`<meta charset="utf-8"><p>caf\xe9`);
+      expect(yield* para(doc, { encoding: "iso-8859-1" })).toContain("café");
+      const bom = concat(new Uint8Array([0xef, 0xbb, 0xbf]), utf8(`<p>café`));
+      expect(yield* para(bom, { encoding: "iso-8859-1" })).toContain("café");
+    }),
+  );
 
-  test("invalid bytes decode to U+FFFD", async () => {
-    const doc = concat(utf8(`<meta charset="utf-8"><p>`), new Uint8Array([0xff]));
-    expect(await para(doc)).toContain("�");
-  });
+  it.effect("invalid bytes decode to U+FFFD", () =>
+    Effect.gen(function* () {
+      const doc = concat(utf8(`<meta charset="utf-8"><p>`), new Uint8Array([0xff]));
+      expect(yield* para(doc)).toContain("�");
+    }),
+  );
 
-  test("streaming with a meta charset after the first chunk", async () => {
-    const doc = utf8(`<!doctype html><meta charset="utf-8"><p>${"x".repeat(2000)}café</p>`);
-    const out = await Effect.runPromise(
-      Stream.fromIterable(chunks(doc, 7)).pipe(
+  it.effect("streaming with a meta charset after the first chunk", () =>
+    Effect.gen(function* () {
+      const doc = utf8(`<!doctype html><meta charset="utf-8"><p>${"x".repeat(2000)}café</p>`);
+      const out = yield* Stream.fromIterable(chunks(doc, 7)).pipe(
         Html.parseDocumentBytesStream(),
         Effect.map((d) => d.documentElement.textContent),
-      ),
-    );
-    expect(out.endsWith("café")).toBe(true);
-  });
+      );
+      expect(out.endsWith("café")).toBe(true);
+    }),
+  );
 });

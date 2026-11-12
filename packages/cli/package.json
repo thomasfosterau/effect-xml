@@ -40,5 +40,8 @@
     "@thomasfosterau/effect-parse": "catalog:",
     "@thomasfosterau/effect-xml": "workspace:^",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:"
   }
 }

@@ -1,5 +1,6 @@
 import * as Option from "effect/Option";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
@@ -30,14 +31,15 @@ const sheet =
 const nested = `<a xmlns:p="urn:p"><s n="1">x<s n="2"><t>one</t><s n="3"><t>two</t></s></s><![CDATA[y]]><t>three</t></s><b><s n="4"/></b></a>`;
 
 /** An item in a form that compares by value: its adaptive serialization, and a node's kind. */
-const canonical = (item: XQuery.Item): string => {
-  const kind = XQuery.isNode(item) ? `${item.kind} ` : "";
-  const out = Effect.runSync(
-    XQuery.evaluate("serialize($x, map { 'method': 'adaptive' })", { variables: { x: item } }),
-  );
-  const [s] = out;
-  return kind + (s !== undefined && XQuery.isAtomic(s) ? XQuery.atomicString(s) : "?");
-};
+const canonical = (item: XQuery.Item) =>
+  Effect.gen(function* () {
+    const kind = XQuery.isNode(item) ? `${item.kind} ` : "";
+    const out = yield* XQuery.evaluate("serialize($x, map { 'method': 'adaptive' })", {
+      variables: { x: item },
+    });
+    const [s] = out;
+    return kind + (s !== undefined && XQuery.isAtomic(s) ? XQuery.atomicString(s) : "?");
+  });
 
 /** The `err:` local name of an error from a stream, which must be an `XQueryError`. */
 const codeOf = (error: { readonly _tag: string }): string =>
@@ -46,9 +48,13 @@ const codeOf = (error: { readonly _tag: string }): string =>
     : "not an XQueryError";
 
 const viaDom = (doc: string, query: string, options: XQuery.StreamOptions = {}) =>
-  Effect.runSync(
-    XQuery.evaluate(query, { ...options, context: Effect.runSync(Xml.parse(doc)) }),
-  ).map(canonical);
+  Effect.gen(function* () {
+    return yield* Effect.forEach(
+      yield* XQuery.evaluate(query, { ...options, context: yield* Xml.parse(doc) }),
+      canonical,
+      { concurrency: 1 },
+    );
+  });
 
 const streamed = (
   chunks: ReadonlyArray<string>,
@@ -59,26 +65,25 @@ const streamed = (
     Sax.tokenize(),
     XQuery.stream(query, options),
     Stream.runCollect,
-    Effect.map((items) => Array.from(items, canonical)),
+    Effect.flatMap((items) => Effect.forEach(items, canonical, { concurrency: 1 })),
   );
 
 const sizes = [1, 2, 3, 5, 8, 13, 64, Infinity];
 
 /** Streamed results for every chunk size equal the DOM evaluation's. */
-const expectSame = async (doc: string, query: string, options: XQuery.StreamOptions = {}) => {
-  const expected = viaDom(doc, query, options);
-  await Effect.runPromise(
-    Effect.forEach(
+const expectSame = (doc: string, query: string, options: XQuery.StreamOptions = {}) =>
+  Effect.gen(function* () {
+    const expected = yield* viaDom(doc, query, options);
+    yield* Effect.forEach(
       sizes,
       (size) =>
         streamed(size === Infinity ? [doc] : splitEvery(doc, size), query, options).pipe(
           Effect.map((items) => expect(items).toEqual(expected)),
         ),
       { concurrency: 1, discard: true },
-    ),
-  );
-  return expected;
-};
+    );
+    return expected;
+  });
 
 const notStreamable = (query: string) => {
   const error = failure(
@@ -91,14 +96,12 @@ const notStreamable = (query: string) => {
 };
 
 const streamingB = (doc: string) =>
-  Effect.runPromise(
-    Effect.result(Stream.make(doc).pipe(Sax.tokenize(), XQuery.stream("//b"), Stream.runCollect)),
-  );
+  Effect.result(Stream.make(doc).pipe(Sax.tokenize(), XQuery.stream("//b"), Stream.runCollect));
 
 const withNs = { compile: { namespaces } };
 
 describe("XQuery.stream", () => {
-  test.each([
+  it.effect.each([
     "//x:row",
     "/x:worksheet/x:sheetData/x:row/@r",
     "x:worksheet/x:sheetData/x:row[@r > 2]",
@@ -129,12 +132,14 @@ describe("XQuery.stream", () => {
     "//x:row/x:c[x:v > 3]/@r",
     "//x:row[@r = (1, 3)]",
     ".//x:row[3]/x:c/@r",
-  ])("%s", async (query) => {
-    const expected = await expectSame(sheet, query, withNs);
-    expect(expected.length).toBeGreaterThan(0);
-  });
+  ])("%s", (query) =>
+    Effect.gen(function* () {
+      const expected = yield* expectSame(sheet, query, withNs);
+      expect(expected.length).toBeGreaterThan(0);
+    }),
+  );
 
-  test.each([
+  it.effect.each([
     "//s",
     "//s/@n",
     "//s/t",
@@ -147,45 +152,49 @@ describe("XQuery.stream", () => {
     "/a/s/descendant-or-self::s/@n",
     "//s[t]//t",
     "//s[t]/descendant::t ! string()",
-  ])("nested matches: %s", async (query) => {
-    await expectSame(nested, query);
-  });
+  ])("nested matches: %s", (query) => expectSame(nested, query));
 
-  test("variables, XPath queries and a prolog", async () => {
-    await expectSame(sheet, "//x:row[@r = $n]/x:c/@r", {
-      ...withNs,
-      variables: { n: XQuery.AtomicValue.integer(4n) },
-    });
-    const xpath = success(XQuery.XPath.compile("//x:row[@r > 4]/@r", { namespaces }));
-    const viaXPath = await Effect.runPromise(streamed([sheet], xpath));
-    expect(viaXPath).toEqual(viaDom(sheet, "//x:row[@r > 4]/@r", withNs));
-    const prolog = `declare namespace x = "${X}";
+  it.effect("variables, XPath queries and a prolog", () =>
+    Effect.gen(function* () {
+      yield* expectSame(sheet, "//x:row[@r = $n]/x:c/@r", {
+        ...withNs,
+        variables: { n: XQuery.AtomicValue.integer(4n) },
+      });
+      const xpath = success(XQuery.XPath.compile("//x:row[@r > 4]/@r", { namespaces }));
+      const viaXPath = yield* streamed([sheet], xpath);
+      expect(viaXPath).toEqual(yield* viaDom(sheet, "//x:row[@r > 4]/@r", withNs));
+      const prolog = `declare namespace x = "${X}";
       declare variable $twice := 2;
       declare function local:f($row) { $row/@r * $twice };
       //x:row ! local:f(.)`;
-    expect(await expectSame(sheet, prolog)).toEqual(["2", "4", "6", "8", "10", "12"]);
-  });
+      expect(yield* expectSame(sheet, prolog)).toEqual(["2", "4", "6", "8", "10", "12"]);
+    }),
+  );
 
-  test("a compiled stream query runs on any number of streams", async () => {
-    const compiled = success(XQuery.compileStream("//x:row/@r", { namespaces }));
-    const first = await Effect.runPromise(streamed([sheet], compiled));
-    const second = await Effect.runPromise(streamed(splitEvery(sheet, 3), compiled));
-    expect(second).toEqual(first);
-    expect(first).toHaveLength(6);
-  });
+  it.effect("a compiled stream query runs on any number of streams", () =>
+    Effect.gen(function* () {
+      const compiled = success(XQuery.compileStream("//x:row/@r", { namespaces }));
+      const first = yield* streamed([sheet], compiled);
+      const second = yield* streamed(splitEvery(sheet, 3), compiled);
+      expect(second).toEqual(first);
+      expect(first).toHaveLength(6);
+    }),
+  );
 
-  test("resources come through the Resolver", async () => {
-    const lookup = XQuery.XdmNode.fromDocument(Effect.runSync(Xml.parse("<k>!</k>")));
-    const resolver = XQuery.staticResolver({ documents: { "urn:k": lookup } });
-    const out = await Effect.runPromise(
-      streamed([sheet], "//x:row[@r < 3] ! concat(@r, doc('urn:k')/k)", withNs).pipe(
-        Effect.provideService(XQuery.Resolver, resolver),
-      ),
-    );
-    expect(out).toEqual(['"1!"', '"2!"']);
-  });
+  it.effect("resources come through the Resolver", () =>
+    Effect.gen(function* () {
+      const lookup = XQuery.XdmNode.fromDocument(yield* Xml.parse("<k>!</k>"));
+      const resolver = XQuery.staticResolver({ documents: { "urn:k": lookup } });
+      const out = yield* streamed(
+        [sheet],
+        "//x:row[@r < 3] ! concat(@r, doc('urn:k')/k)",
+        withNs,
+      ).pipe(Effect.provideService(XQuery.Resolver, resolver));
+      expect(out).toEqual(['"1!"', '"2!"']);
+    }),
+  );
 
-  test.each([
+  it.each([
     "//x:row[last()]",
     "count(//x:row)",
     "//x:row/..",
@@ -209,58 +218,64 @@ describe("XQuery.stream", () => {
     expect(error.description.length).toBeGreaterThan(0);
   });
 
-  test("the error says where", () => {
+  it("the error says where", () => {
     expect(notStreamable("//x:row[last()]").offset).toBe(8);
     expect(notStreamable("//x:row/..").offset).toBe(8);
   });
 
-  test("a query that isn't streamable fails the stream", async () => {
-    const r = await Effect.runPromise(Effect.result(streamed([sheet], "//x:row[last()]", withNs)));
-    expect(codeOf(failure(r))).toBe("NotStreamable");
-    const syntax = await Effect.runPromise(Effect.result(streamed([sheet], "//x:row[")));
-    expect(codeOf(failure(syntax))).toBe("XPST0003");
-  });
+  it.effect("a query that isn't streamable fails the stream", () =>
+    Effect.gen(function* () {
+      const r = yield* Effect.result(streamed([sheet], "//x:row[last()]", withNs));
+      expect(codeOf(failure(r))).toBe("NotStreamable");
+      const syntax = yield* Effect.result(streamed([sheet], "//x:row["));
+      expect(codeOf(failure(syntax))).toBe("XPST0003");
+    }),
+  );
 
-  test("dynamic errors fail the stream after the items before them", async () => {
-    const seen: Array<string> = [];
-    const r = await Effect.runPromise(
-      Effect.result(
+  it.effect("dynamic errors fail the stream after the items before them", () =>
+    Effect.gen(function* () {
+      const seen: Array<string> = [];
+      const r = yield* Effect.result(
         Stream.make(`<a><b n="1"/><b n="2"/><b n="x"/><b n="3"/></a>`).pipe(
           Sax.tokenize(),
           XQuery.stream("//b ! xs:integer(@n)"),
-          Stream.runForEach((item) => Effect.sync(() => seen.push(canonical(item)))),
+          Stream.runForEach((item) =>
+            Effect.flatMap(canonical(item), (s) => Effect.sync(() => seen.push(s))),
+          ),
         ),
-      ),
-    );
-    expect(codeOf(failure(r))).toBe("FORG0001");
-    expect(seen).toEqual(["1", "2"]);
-  });
+      );
+      expect(codeOf(failure(r))).toBe("FORG0001");
+      expect(seen).toEqual(["1", "2"]);
+    }),
+  );
 
-  test("errors in selection predicates fail the stream", async () => {
-    const r = await Effect.runPromise(
-      Effect.result(
+  it.effect("errors in selection predicates fail the stream", () =>
+    Effect.gen(function* () {
+      const r = yield* Effect.result(
         Stream.make(`<a><b n="1"/><b n="x"/></a>`).pipe(
           Sax.tokenize(),
           XQuery.stream("//b[xs:integer(@n) > 0]/@n"),
           Stream.runCollect,
         ),
-      ),
-    );
-    expect(codeOf(failure(r))).toBe("FORG0001");
-  });
+      );
+      expect(codeOf(failure(r))).toBe("FORG0001");
+    }),
+  );
 
-  test("well-formedness errors still surface", async () => {
-    expect(failure(await streamingB(`<a><b></a>`))._tag).toBe("MismatchedEndTag");
-    expect(failure(await streamingB(`<a><b/>`))._tag).toBe("InvalidDocumentStructure");
-    expect(failure(await streamingB(`<a><q:b/></a>`))._tag).toBe("UnboundNamespacePrefix");
-  });
+  it.effect("well-formedness errors still surface", () =>
+    Effect.gen(function* () {
+      expect(failure(yield* streamingB(`<a><b></a>`))._tag).toBe("MismatchedEndTag");
+      expect(failure(yield* streamingB(`<a><b/>`))._tag).toBe("InvalidDocumentStructure");
+      expect(failure(yield* streamingB(`<a><q:b/></a>`))._tag).toBe("UnboundNamespacePrefix");
+    }),
+  );
 
-  test("a large sheet streams through", async () => {
-    const rows = 20_000;
-    const big = `<sheet>${Array.from({ length: rows }, (_, i) => `<row r="${i}"><v>${i}</v></row>`).join("")}</sheet>`;
-    let total = 0n;
-    await Effect.runPromise(
-      Stream.make(big).pipe(
+  it.effect("a large sheet streams through", () =>
+    Effect.gen(function* () {
+      const rows = 20_000;
+      const big = `<sheet>${Array.from({ length: rows }, (_, i) => `<row r="${i}"><v>${i}</v></row>`).join("")}</sheet>`;
+      let total = 0n;
+      yield* Stream.make(big).pipe(
         Sax.tokenize(),
         XQuery.stream("//row ! xs:integer(v)"),
         Stream.runForEach((item) =>
@@ -268,12 +283,12 @@ describe("XQuery.stream", () => {
             if (XQuery.isAtomic(item) && P.isBigInt(item.value)) total += item.value;
           }),
         ),
-      ),
-    );
-    expect(total).toBe(BigInt((rows * (rows - 1)) / 2));
-  });
+      );
+      expect(total).toBe(BigInt((rows * (rows - 1)) / 2));
+    }),
+  );
 
-  test("compileStream takes a compiled query", () => {
+  it("compileStream takes a compiled query", () => {
     const query = success(XQuery.compile("//row ! string(@r)"));
     expect(Result.isSuccess(XQuery.compileStream(query))).toBe(true);
   });

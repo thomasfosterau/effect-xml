@@ -13,12 +13,12 @@
  * freely, but a regression fails the build. Raise a baseline whenever a change
  * improves it. Set `XMLCONF_REPORT=1` to list the failing tests.
  */
-import { afterAll, describe, expect, test } from "vite-plus/test";
+import { expect } from "vite-plus/test";
+import { layer } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -92,33 +92,32 @@ const tally = (checks: ReadonlyArray<Check>, passing: boolean): Record<Count, nu
   };
 };
 
-/** One runtime for the file's fixture services (the file system), provided once. */
-const runtime = ManagedRuntime.make(Fixtures.layer);
-afterAll(() => runtime.dispose());
-
-describe("W3C XML conformance", () => {
-  test("meets the pass-count baselines", async () => {
-    const checks = await runtime.runPromise(
-      readManifest(FIXTURES).pipe(
-        Effect.flatMap((tests) => Effect.forEach(tests, run, { concurrency: 8 })),
-        Effect.map(Arr.flatten),
-      ),
-    );
-    const passed = tally(checks, true);
-    const totals = tally(checks, false);
-    const failures = checks.filter((c) => !c.passed).map((c) => c.failure);
-    await Effect.runPromise(
+/**
+ * The file's fixture services (the file system), built once for the block.
+ * The report prints to the real console, so the test services are left out.
+ */
+layer(Fixtures.layer, { excludeTestServices: true })("W3C XML conformance", (it) => {
+  it.effect(
+    "meets the pass-count baselines",
+    () =>
       Effect.gen(function* () {
+        const checks = yield* readManifest(FIXTURES).pipe(
+          Effect.flatMap((tests) => Effect.forEach(tests, run, { concurrency: 8 })),
+          Effect.map(Arr.flatten),
+        );
+        const passed = tally(checks, true);
+        const totals = tally(checks, false);
+        const failures = checks.filter((c) => !c.passed).map((c) => c.failure);
         if (yield* reportRequested("XMLCONF_REPORT")) yield* Console.log(failures.join("\n"));
         yield* Console.log(
           `xmlconf: not-wf ${passed.notWf}/${totals.notWf}, valid ${passed.valid}/${totals.valid}, ` +
             `invalid ${passed.invalid}/${totals.invalid}, output ${passed.output}/${totals.output}`,
         );
+        expect(passed.notWf).toBeGreaterThanOrEqual(BASELINE.notWf);
+        expect(passed.valid).toBeGreaterThanOrEqual(BASELINE.valid);
+        expect(passed.invalid).toBeGreaterThanOrEqual(BASELINE.invalid);
+        expect(passed.output).toBeGreaterThanOrEqual(BASELINE.output);
       }),
-    );
-    expect(passed.notWf).toBeGreaterThanOrEqual(BASELINE.notWf);
-    expect(passed.valid).toBeGreaterThanOrEqual(BASELINE.valid);
-    expect(passed.invalid).toBeGreaterThanOrEqual(BASELINE.invalid);
-    expect(passed.output).toBeGreaterThanOrEqual(BASELINE.output);
-  }, 120_000);
+    120_000,
+  );
 });

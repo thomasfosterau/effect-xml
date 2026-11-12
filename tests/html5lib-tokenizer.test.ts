@@ -11,7 +11,8 @@
  */
 /// <reference types="vite-plus/client" />
 import * as Option from "effect/Option";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -22,7 +23,7 @@ import * as Order from "effect/Order";
 import * as P from "effect/Predicate";
 import * as R from "effect/Record";
 import * as Schema from "effect/Schema";
-import { Sax } from "../src/index.ts";
+import { Sax, type SaxError } from "../src/index.ts";
 import { reportRequested } from "./support/report.ts";
 
 /** Every `.test` fixture's text, keyed by its path relative to this file. */
@@ -101,31 +102,33 @@ const attributesOf = (attributes: ReadonlyArray<Sax.Attribute>): Record<string, 
   R.fromEntries(attributes.toReversed().map((a) => [a.name, a.value] as const));
 
 /** Our events in html5lib's token format, with adjacent character tokens merged. */
-const tokens = (input: string): Array<Token> =>
-  mergeCharacters(
-    Effect.runSync(Sax.collect(input, { mode: "html" })).flatMap(
-      Match.valueTags({
-        StartElement: (ev): ReadonlyArray<Token> => [
-          ev.selfClosing
-            ? ["StartTag", ev.name, attributesOf(ev.attributes), true]
-            : ["StartTag", ev.name, attributesOf(ev.attributes)],
-        ],
-        EndElement: (ev): ReadonlyArray<Token> => [["EndTag", ev.name]],
-        Text: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
-        CData: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
-        Comment: (ev): ReadonlyArray<Token> => [["Comment", ev.data]],
-        Doctype: (ev): ReadonlyArray<Token> => [
-          [
-            "DOCTYPE",
-            ev.name,
-            Option.getOrNull(ev.publicId),
-            Option.getOrNull(ev.systemId),
-            !ev.forceQuirks,
+const tokens = (input: string): Effect.Effect<Array<Token>, SaxError> =>
+  Effect.map(Sax.collect(input, { mode: "html" }), (events) =>
+    mergeCharacters(
+      events.flatMap(
+        Match.valueTags({
+          StartElement: (ev): ReadonlyArray<Token> => [
+            ev.selfClosing
+              ? ["StartTag", ev.name, attributesOf(ev.attributes), true]
+              : ["StartTag", ev.name, attributesOf(ev.attributes)],
           ],
-        ],
-        ProcessingInstruction: (): ReadonlyArray<Token> => [],
-        XmlDeclaration: (): ReadonlyArray<Token> => [],
-      }),
+          EndElement: (ev): ReadonlyArray<Token> => [["EndTag", ev.name]],
+          Text: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
+          CData: (ev): ReadonlyArray<Token> => [["Character", ev.data]],
+          Comment: (ev): ReadonlyArray<Token> => [["Comment", ev.data]],
+          Doctype: (ev): ReadonlyArray<Token> => [
+            [
+              "DOCTYPE",
+              ev.name,
+              Option.getOrNull(ev.publicId),
+              Option.getOrNull(ev.systemId),
+              !ev.forceQuirks,
+            ],
+          ],
+          ProcessingInstruction: (): ReadonlyArray<Token> => [],
+          XmlDeclaration: (): ReadonlyArray<Token> => [],
+        }),
+      ),
     ),
   );
 
@@ -145,28 +148,30 @@ const runnable: ReadonlyArray<readonly [file: string, test: TokenizerTest]> = Ar
 });
 
 /** Why a test fails, if it does. */
-const failure = (file: string, t: TokenizerTest): string | null => {
-  const want = expected(t.output);
-  const got = Effect.runSync(Effect.exit(Effect.sync(() => tokens(t.input))));
-  if (Exit.isFailure(got)) return `${file}: ${t.description}: threw ${String(got.cause)}`;
-  return Eq.equals(got.value, want)
-    ? null
-    : `${file}: ${t.description}: ${encodeTokens(got.value)} ≠ ${encodeTokens(want)}`;
-};
+const failure = (file: string, t: TokenizerTest): Effect.Effect<Option.Option<string>> =>
+  Effect.map(Effect.exit(tokens(t.input)), (got) => {
+    const want = expected(t.output);
+    if (Exit.isFailure(got))
+      return Option.some(`${file}: ${t.description}: threw ${String(got.cause)}`);
+    return Eq.equals(got.value, want)
+      ? Option.none()
+      : Option.some(
+          `${file}: ${t.description}: ${encodeTokens(got.value)} ≠ ${encodeTokens(want)}`,
+        );
+  });
 
 describe("html5lib tokenizer conformance", () => {
-  test("meets the pass-count baseline", async () => {
-    const failures = runnable.flatMap(([file, t]) => {
-      const why = failure(file, t);
-      return why === null ? [] : [why];
-    });
-    const passed = runnable.length - failures.length;
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        if (yield* reportRequested("HTML5LIB_REPORT")) yield* Console.log(failures.join("\n"));
-        yield* Console.log(`html5lib tokenizer: ${passed}/${runnable.length}`);
-      }),
-    );
-    expect(passed).toBeGreaterThanOrEqual(BASELINE);
-  });
+  // The report goes to the real console, which `it.effect` replaces.
+  it.live("meets the pass-count baseline", () =>
+    Effect.gen(function* () {
+      const results = yield* Effect.forEach(runnable, ([file, t]) => failure(file, t), {
+        concurrency: 1,
+      });
+      const failures = Arr.getSomes(results);
+      const passed = runnable.length - failures.length;
+      if (yield* reportRequested("HTML5LIB_REPORT")) yield* Console.log(failures.join("\n"));
+      yield* Console.log(`html5lib tokenizer: ${passed}/${runnable.length}`);
+      expect(passed).toBeGreaterThanOrEqual(BASELINE);
+    }),
+  );
 });

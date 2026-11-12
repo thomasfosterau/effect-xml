@@ -36,28 +36,33 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        // The severities below keep every Effect rule visible in the editor,
-        // but a "warning" still fails the patched tsc by default — this flag
-        // is what actually makes warnings non-blocking in the check task.
-        "ignoreEffectWarningsInTscExitCode": true,
+        // Every Effect rule is an error: a finding fails the check. The one
+        // rule that is off, `unstableApiUsage`, is the owner's decision: the
+        // library is platform-neutral, but the CLI needs `effect/cli`,
+        // `FileSystem` and `Path`, which are unstable modules, and the tests
+        // use `@effect/vitest`; the rule can't be scoped to the code that
+        // may use them (and neither can oxlint's `effecttsgo/unstable-api-usage`,
+        // which `vite.config.ts` turns off for the same reason).
         "diagnosticSeverity": {
-          "asyncFunction": "warning",
-          "extendsNativeError": "warning",
-          "globalConsole": "warning",
-          "globalConsoleInEffect": "warning",
-          "globalDate": "warning",
-          "globalDateInEffect": "warning",
-          "globalRandom": "warning",
-          "globalRandomInEffect": "warning",
-          "globalTimers": "warning",
-          "globalTimersInEffect": "warning",
+          "asyncFunction": "error",
+          "extendsNativeError": "error",
+          "globalConsole": "error",
+          "globalConsoleInEffect": "error",
+          "globalDate": "error",
+          "globalDateInEffect": "error",
+          "globalRandom": "error",
+          "globalRandomInEffect": "error",
+          "globalTimers": "error",
+          "globalTimersInEffect": "error",
           "instanceOfSchema": "error",
-          "newPromise": "warning",
-          "nodeBuiltinImport": "warning",
-          "preferSchemaOverJson": "warning",
-          "processEnv": "warning",
-          "processEnvInEffect": "warning",
-          "unsafeEffectTypeAssertion": "warning"
+          "newPromise": "error",
+          "nodeBuiltinImport": "error",
+          "globalJson": "error",
+          "globalJsonInEffect": "error",
+          "processEnv": "error",
+          "processEnvInEffect": "error",
+          "unsafeEffectTypeAssertion": "error",
+          "unstableApiUsage": "off"
         }
       }
     ]

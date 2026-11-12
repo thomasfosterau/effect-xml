@@ -17,7 +17,8 @@
  */
 
 import { defineConfig } from "vite-plus";
-import * as Option from "effect/Option";
+import * as Config from "effect/Config";
+import * as Effect from "effect/Effect";
 import * as R from "effect/Record";
 import { recommended } from "@effect/tsgo/oxlint-presets";
 import effect from "@enfect/oxlint";
@@ -33,7 +34,7 @@ const cacheInputs = [{ auto: true }, "!node_modules/**", "!docs/**", "pnpm-lock.
 // The worker count CI pins (`VITEST_MAX_WORKERS`), as a `test` member only
 // when it is set: vitest's own default applies otherwise.
 const workers = R.getSomes({
-  maxWorkers: Option.map(Option.fromNullishOr(process.env.VITEST_MAX_WORKERS), Number),
+  maxWorkers: Effect.runSync(Config.option(Config.Number("VITEST_MAX_WORKERS"))),
 });
 
 /**
@@ -140,6 +141,15 @@ export default defineConfig({
         "error",
         { assertFunctionNames: ["expect", "expect*", "assert", "assert*", "rejects"] },
       ],
+      // `@effect/vitest`'s `it.effect` / `it.live` are test blocks (also on the
+      // `it` a `layer(...)` block hands its callback); the rule only knows
+      // vitest's own.
+      "vitest/no-standalone-expect": [
+        "error",
+        {
+          additionalTestBlockFunctions: ["it.effect", "it.live", "it.effect.each", "it.live.each"],
+        },
+      ],
       // Vitest's `expect(value, message)` takes the failure message second.
       "vitest/valid-expect": ["error", { maxArgs: 2 }],
       // Adoption allowances (#61): sites that predate the `suspicious`
@@ -156,22 +166,31 @@ export default defineConfig({
       // 1 site: the CLI bin (`packages/cli/src/main.ts`), the application
       // entry point the rule's own message exempts (it provides the composed
       // platform layer once, to `NodeRuntime.runMain`). The tests provide
-      // their layers through one `ManagedRuntime` per file. src/ has none;
-      // a site there is a defect (#80).
+      // their layers with `@effect/vitest`'s `layer`, and src/ has none; a
+      // site there is a defect (#80).
       "effecttsgo/strict-effect-provide": "warn",
+      // Off, the owner's decision: `effect/cli`, `FileSystem` and `Path` are
+      // unstable modules the CLI needs, `@effect/vitest` is what the tests
+      // run on, and the rule can't be scoped to them (oxlint applies no
+      // `overrides` to type-aware rules). The Effect language service's
+      // `unstableApiUsage` is off in `tsconfig.base.json` for the same reason.
+      "effecttsgo/unstable-api-usage": "off",
     },
     overrides: [
       // Build/test configs are evaluated by Vite and Vitest in bare Node,
-      // before any Effect runtime exists — there is no `Config` provider to
-      // read from and no `FileSystem` service to call, so `process.env` and
-      // `node:*` are the only things that work there. The Effect preset's
-      // service rules have no satisfiable fix in these files.
+      // before any Effect runtime exists: nothing here runs inside one, so
+      // the one value read from the environment (the worker count) is read
+      // through `Config` and run once, at the top level, which is the entry
+      // point `effect-run-in-body` sends execution to. There is no
+      // `FileSystem` service to call, so `node:*` is the only thing that
+      // works for the rest. The Effect preset's service rules have no
+      // satisfiable fix in these files.
       {
-        files: ["vite.config.ts"],
+        files: ["vite.config.ts", "packages/*/vite.config.ts"],
         rules: {
+          "effect/effect-run-in-body": "off",
           "effect/avoid-node-imports": "off",
           "effect/avoid-sync-fs": "off",
-          "effect/avoid-process-env": "off",
           "effect/use-console-service": "off",
           "effect/use-filesystem-service": "off",
           "effect/use-path-service": "off",
@@ -399,39 +418,12 @@ export default defineConfig({
           "effect/avoid-try-catch": "off",
         },
       },
-      // The benchmark is a standalone program, like a build script: it times
-      // runs in loops, prints a table, runs its effects at the top level
-      // (it is the entry point), and imports optional third-party parsers
-      // that may not be installed (a failed dynamic import means "skip").
-      {
-        files: ["bench/**/*.ts"],
-        rules: {
-          "effect/imperative-loops": "off",
-          "effect/effect-run-in-body": "off",
-          "effect/use-console-service": "off",
-          "effect/avoid-try-catch": "off",
-          "effect/avoid-any": "off",
-          "effect/no-unknown-returns": "off",
-          // Runs are timed one after another on purpose; in parallel they
-          // would measure each other.
-          "eslint/no-await-in-loop": "off",
-        },
-      },
       // The example is a program: its one `Effect.runPromise` IS the entry
       // point the rule sends execution to (no platform runtime is a
       // dependency of this library to run it with instead).
       {
         files: ["examples/**/*.ts"],
         rules: {
-          "effect/effect-run-in-body": "off",
-        },
-      },
-      // Test fixtures are the seams under test, not domain code.
-      {
-        files: ["tests/**/*.ts", "packages/*/tests/**/*.ts"],
-        rules: {
-          // A test IS the boundary the rule sends execution to: each case
-          // runs its program with `Effect.runPromise` / `runSync`.
           "effect/effect-run-in-body": "off",
         },
       },

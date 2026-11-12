@@ -1,4 +1,5 @@
-import { assert, describe, expect, test } from "vite-plus/test";
+import { assert, describe, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
@@ -16,13 +17,14 @@ import { at } from "./support/narrow.ts";
 const options = { dtd: "internal" } as const;
 
 const parseOk = (input: string, extra?: Xml.ParseOptions) =>
-  Effect.runSync(Xml.parse(input, { ...options, ...extra }));
+  Xml.parse(input, { ...options, ...extra });
 
-const parseErr = (input: string, extra?: Xml.ParseOptions) => {
-  const r = Effect.runSync(Effect.result(Xml.parse(input, { ...options, ...extra })));
-  assert(Result.isFailure(r), "expected a parse error");
-  return r.failure;
-};
+const parseErr = (input: string, extra?: Xml.ParseOptions) =>
+  Effect.gen(function* () {
+    const r = yield* Effect.result(Xml.parse(input, { ...options, ...extra }));
+    assert(Result.isFailure(r), "expected a parse error");
+    return r.failure;
+  });
 
 /** Each node as a small object: an element's name, or the kind and data of the rest. */
 const outline = (nodes: ReadonlyArray<Xml.XmlNode>) =>
@@ -46,11 +48,9 @@ const charByChar = (input: string) =>
 
 /** Parse `chunks` as a stream and serialize the document element. */
 const serializeChunks = (chunks: ReadonlyArray<string>) =>
-  Effect.runPromise(
-    Stream.fromIterable(chunks).pipe(
-      Xml.parseStream(options),
-      Effect.map((d) => Xml.serialize(d.root)),
-    ),
+  Stream.fromIterable(chunks).pipe(
+    Xml.parseStream(options),
+    Effect.map((d) => Xml.serialize(d.root)),
   );
 
 /** A billion-laughs document: ten levels of entities, each ten of the one below, over `body`. */
@@ -71,8 +71,9 @@ const chain = (n: number, open: string, close: string) =>
   ).join("")}]>`;
 
 describe("dtd: internal", () => {
-  test("internal entities, including markup", () => {
-    const doc = parseOk(`<!DOCTYPE r [
+  it.effect("internal entities, including markup", () =>
+    Effect.gen(function* () {
+      const doc = yield* parseOk(`<!DOCTYPE r [
   <!ENTITY name "World">
   <!ENTITY greeting "Hello &name;">
   <!ENTITY markup "<b xmlns='urn:b'>bold</b>">
@@ -81,84 +82,103 @@ describe("dtd: internal", () => {
   <!ATTLIST r kind CDATA "default" tok NMTOKEN #IMPLIED>
 ]>
 <r tok="  a  " a="&greeting;">&greeting;! &markup; &amp2;</r>`);
-    expect(Option.map(doc.doctype, (d) => d.name)).toEqual(Option.some("r"));
-    const attrs = attributesOf(doc.root);
-    expect(attrs).toEqual({ tok: "a", a: "Hello World", kind: "default" });
-    expect(outline(doc.root.children)).toEqual([
-      { XmlText: "Hello World! " },
-      { element: "b", namespace: "urn:b" },
-      { XmlText: " &" },
-    ]);
-    expect(at(doc.root.elements, 0).textContent).toBe("bold");
-  });
+      expect(Option.map(doc.doctype, (d) => d.name)).toEqual(Option.some("r"));
+      const attrs = attributesOf(doc.root);
+      expect(attrs).toEqual({ tok: "a", a: "Hello World", kind: "default" });
+      expect(outline(doc.root.children)).toEqual([
+        { XmlText: "Hello World! " },
+        { element: "b", namespace: "urn:b" },
+        { XmlText: " &" },
+      ]);
+      expect(at(doc.root.elements, 0).textContent).toBe("bold");
+    }),
+  );
 
-  test("the default is to ignore the subset", () => {
-    const e = parseErr(`<!DOCTYPE a [<!ENTITY x "y">]><a>&x;</a>`, { dtd: "ignore" });
-    expect(e._tag).toBe("InvalidEntity");
-    expect(
-      Effect.runSync(Xml.parse(`<!DOCTYPE a [<!ATTLIST a k CDATA "v">]><a/>`)).root.attributes,
-    ).toEqual([]);
-  });
+  it.effect("the default is to ignore the subset", () =>
+    Effect.gen(function* () {
+      const e = yield* parseErr(`<!DOCTYPE a [<!ENTITY x "y">]><a>&x;</a>`, { dtd: "ignore" });
+      expect(e._tag).toBe("InvalidEntity");
+      expect(
+        (yield* Xml.parse(`<!DOCTYPE a [<!ATTLIST a k CDATA "v">]><a/>`)).root.attributes,
+      ).toEqual([]);
+    }),
+  );
 
-  test("predefined entities can't be redeclared, and the first declaration wins", () => {
-    const doc = parseOk(
-      `<!DOCTYPE a [<!ENTITY lt "x"><!ENTITY e "1"><!ENTITY e "2">]><a>&lt;&e;</a>`,
-    );
-    expect(doc.root.textContent).toBe("<1");
-  });
+  it.effect("predefined entities can't be redeclared, and the first declaration wins", () =>
+    Effect.gen(function* () {
+      const doc = yield* parseOk(
+        `<!DOCTYPE a [<!ENTITY lt "x"><!ENTITY e "1"><!ENTITY e "2">]><a>&lt;&e;</a>`,
+      );
+      expect(doc.root.textContent).toBe("<1");
+    }),
+  );
 
-  test("attribute defaults: CDATA kept, tokenized types collapsed, specified values win", () => {
-    const doc = parseOk(
-      `<!DOCTYPE a [<!ATTLIST a c CDATA " x  y " t NMTOKENS " x  y " f CDATA #FIXED "fixed" r CDATA #REQUIRED>]>` +
-        `<a t=" p   q "/>`,
-    );
-    const attrs = attributesOf(doc.root);
-    expect(attrs).toEqual({ t: "p q", c: " x  y ", f: "fixed" });
-  });
+  it.effect("attribute defaults: CDATA kept, tokenized types collapsed, specified values win", () =>
+    Effect.gen(function* () {
+      const doc = yield* parseOk(
+        `<!DOCTYPE a [<!ATTLIST a c CDATA " x  y " t NMTOKENS " x  y " f CDATA #FIXED "fixed" r CDATA #REQUIRED>]>` +
+          `<a t=" p   q "/>`,
+      );
+      const attrs = attributesOf(doc.root);
+      expect(attrs).toEqual({ t: "p q", c: " x  y ", f: "fixed" });
+    }),
+  );
 
-  test("ATTLIST names may contain colons anywhere (XML 1.0 Name)", () => {
-    const doc = parseOk(`<!DOCTYPE a [<!ATTLIST a : CDATA "x" p:q CDATA "y">]><a/>`, {
-      namespaces: false,
-    });
-    expect(doc.root.attributes.map((a) => [a.name.qualified, a.value])).toEqual([
-      [":", "x"],
-      ["p:q", "y"],
-    ]);
-  });
+  it.effect("ATTLIST names may contain colons anywhere (XML 1.0 Name)", () =>
+    Effect.gen(function* () {
+      const doc = yield* parseOk(`<!DOCTYPE a [<!ATTLIST a : CDATA "x" p:q CDATA "y">]><a/>`, {
+        namespaces: false,
+      });
+      expect(doc.root.attributes.map((a) => [a.name.qualified, a.value])).toEqual([
+        [":", "x"],
+        ["p:q", "y"],
+      ]);
+    }),
+  );
 
-  test("entities in attribute values are normalized", () => {
-    // A character reference in an entity value is expanded when the entity is
-    // declared, so its tab is literal by the time it is normalized (§3.3.3);
-    // an escaped one (&#38;#9;) is still a reference then, and survives.
-    const doc = parseOk(`<!DOCTYPE a [<!ENTITY ws "a&#9;b&#38;#9;c\td">]><a v="&ws;"/>`);
-    expect(doc.root.attribute("v")).toEqual(Option.some("a b\tc d"));
-  });
+  it.effect("entities in attribute values are normalized", () =>
+    Effect.gen(function* () {
+      // A character reference in an entity value is expanded when the entity is
+      // declared, so its tab is literal by the time it is normalized (§3.3.3);
+      // an escaped one (&#38;#9;) is still a reference then, and survives.
+      const doc = yield* parseOk(`<!DOCTYPE a [<!ENTITY ws "a&#9;b&#38;#9;c\td">]><a v="&ws;"/>`);
+      expect(doc.root.attribute("v")).toEqual(Option.some("a b\tc d"));
+    }),
+  );
 
-  test("entity references inside markup entities, and nested markup", () => {
-    const doc = parseOk(
-      `<!DOCTYPE a [<!ENTITY n "inner"><!ENTITY i "<i>&n;</i>"><!ENTITY b "<b>&i; &lt;x&gt;</b>">]><a>&b;&b;</a>`,
-    );
-    expect(Xml.serialize(doc.root)).toBe(
-      "<a><b><i>inner</i> &lt;x&gt;</b><b><i>inner</i> &lt;x&gt;</b></a>",
-    );
-  });
+  it.effect("entity references inside markup entities, and nested markup", () =>
+    Effect.gen(function* () {
+      const doc = yield* parseOk(
+        `<!DOCTYPE a [<!ENTITY n "inner"><!ENTITY i "<i>&n;</i>"><!ENTITY b "<b>&i; &lt;x&gt;</b>">]><a>&b;&b;</a>`,
+      );
+      expect(Xml.serialize(doc.root)).toBe(
+        "<a><b><i>inner</i> &lt;x&gt;</b><b><i>inner</i> &lt;x&gt;</b></a>",
+      );
+    }),
+  );
 
-  test("streaming, at every chunk size", async () => {
-    const input = `<!DOCTYPE a [<!ENTITY m "<m k='&v;'/>"><!ENTITY v "val">]><a>&m;-&v;</a>`;
-    const whole = await serializeChunks([input]);
-    expect(whole).toBe(`<a><m k="val"/>-val</a>`);
-    const chunked = await Promise.all(
-      Arr.range(1, 12).map((size) => serializeChunks(splitEvery(input, size))),
-    );
-    expect(chunked).toEqual(Arr.replicate(whole, 12));
-  });
+  it.effect("streaming, at every chunk size", () =>
+    Effect.gen(function* () {
+      const input = `<!DOCTYPE a [<!ENTITY m "<m k='&v;'/>"><!ENTITY v "val">]><a>&m;-&v;</a>`;
+      const whole = yield* serializeChunks([input]);
+      expect(whole).toBe(`<a><m k="val"/>-val</a>`);
+      const chunked = yield* Effect.forEach(
+        Arr.range(1, 12),
+        (size) => serializeChunks(splitEvery(input, size)),
+        { concurrency: 1 },
+      );
+      expect(chunked).toEqual(Arr.replicate(whole, 12));
+    }),
+  );
 
-  test("events from a markup entity carry the reference's span", () => {
-    const evs = Effect.runSync(Sax.collect(`<!DOCTYPE a [<!ENTITY m "<m/>">]><a>&m;</a>`, options));
-    const m = Arr.findFirst(evs, (e) => Sax.isStartElement(e) && e.name === "m");
-    assert(Option.isSome(m), "expected an <m> start tag");
-    expect(m.value.span.start.offset).toBe(`<!DOCTYPE a [<!ENTITY m "<m/>">]><a>`.length);
-  });
+  it.effect("events from a markup entity carry the reference's span", () =>
+    Effect.gen(function* () {
+      const evs = yield* Sax.collect(`<!DOCTYPE a [<!ENTITY m "<m/>">]><a>&m;</a>`, options);
+      const m = Arr.findFirst(evs, (e) => Sax.isStartElement(e) && e.name === "m");
+      assert(Option.isSome(m), "expected an <m> start tag");
+      expect(m.value.span.start.offset).toBe(`<!DOCTYPE a [<!ENTITY m "<m/>">]><a>`.length);
+    }),
+  );
 
   const rejects: ReadonlyArray<readonly [string, string, SaxError["_tag"]]> = [
     ["undefined entity", "<a>&nope;</a>", "InvalidEntity"],
@@ -201,10 +221,15 @@ describe("dtd: internal", () => {
     ["a malformed declaration", `<!DOCTYPE a [<!ENTITY>]><a/>`, "MalformedDeclaration"],
     ["garbage in the subset", `<!DOCTYPE a [ junk ]><a/>`, "MalformedDeclaration"],
   ];
-  test.each(rejects)("rejects %s", (_what, input, tag) => expect(parseErr(input)._tag).toBe(tag));
+  it.effect.each(rejects)("rejects %s", ([_what, input, tag]) =>
+    Effect.gen(function* () {
+      return expect((yield* parseErr(input))._tag).toBe(tag);
+    }),
+  );
 
-  test("the declaration grammar accepts every well-formed form", () => {
-    const doc = parseOk(`<!DOCTYPE a [
+  it.effect("the declaration grammar accepts every well-formed form", () =>
+    Effect.gen(function* () {
+      const doc = yield* parseOk(`<!DOCTYPE a [
   <!ELEMENT a EMPTY>
   <!ELEMENT b ANY>
   <!ELEMENT c (#PCDATA)>
@@ -225,8 +250,9 @@ describe("dtd: internal", () => {
   <?t?>
   <!-- a comment -->
 ]><a/>`);
-    expect(doc.root.attribute("e")).toEqual(Option.some("1"));
-  });
+      expect(doc.root.attribute("e")).toEqual(Option.some("1"));
+    }),
+  );
 
   const malformed: ReadonlyArray<readonly [string, string]> = [
     ["ELEMENT without a name", `<!ELEMENT (a)>`],
@@ -274,65 +300,88 @@ describe("dtd: internal", () => {
     ["a PI without a space before its data", `<?pi+?>`],
     ["-- in a comment", `<!-- a -- b -->`],
   ];
-  test.each(malformed)("rejects %s in the subset", (_what, decl) => {
-    expect(parseErr(`<!DOCTYPE a [${decl}]><a/>`)._tag).toBe("MalformedDeclaration");
-  });
-
-  test.each([`<!-- a -- b -->`, `<?xml version="1.0"?>`, `<?pi+?>`])(
-    "rejects %s in the subset when it is ignored too",
-    (decl) => {
-      expect(parseErr(`<!DOCTYPE a [${decl}]><a/>`, { dtd: "ignore" })._tag).toBe(
-        "MalformedDeclaration",
-      );
-    },
+  it.effect.each(malformed)("rejects %s in the subset", ([_what, decl]) =>
+    Effect.gen(function* () {
+      expect((yield* parseErr(`<!DOCTYPE a [${decl}]><a/>`))._tag).toBe("MalformedDeclaration");
+    }),
   );
 
-  test("external entities are reported as such", () => {
-    const e = parseErr(`<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>`);
-    expect(e.message).toContain(`external entity "x" is not supported`);
-  });
+  it.effect.each([`<!-- a -- b -->`, `<?xml version="1.0"?>`, `<?pi+?>`])(
+    "rejects %s in the subset when it is ignored too",
+    (decl) =>
+      Effect.gen(function* () {
+        expect((yield* parseErr(`<!DOCTYPE a [${decl}]><a/>`, { dtd: "ignore" }))._tag).toBe(
+          "MalformedDeclaration",
+        );
+      }),
+  );
 
-  test("documents lexed at once each read their own DTD", () => {
-    // The `dtd: "internal"` grammars are shared; interleaving two streams'
-    // tokens must still resolve each document's entities from its own subset.
-    const one = `<!DOCTYPE r [<!ENTITY e "one"><!ENTITY m "<b/>">]><r a="&e;">&e; &m;</r>`;
-    const two = `<!DOCTYPE r [<!ENTITY e "two"><!ENTITY m "<i/>">]><r a="&e;">&e; &m;</r>`;
-    const [left, right] = Arr.unzip(
-      Effect.runSync(Stream.runCollect(Stream.zip(charByChar(one), charByChar(two)))),
-    );
-    expect(left).toEqual(Effect.runSync(Stream.runCollect(charByChar(one))));
-    expect(right).toEqual(Effect.runSync(Stream.runCollect(charByChar(two))));
-    expect(right.filter(Sax.isText).map((t) => t.data)).toEqual(["two "]);
-    expect(right.filter(Sax.isStartElement).map((e) => e.name)).toEqual(["r", "i"]);
-  });
+  it.effect("external entities are reported as such", () =>
+    Effect.gen(function* () {
+      const e = yield* parseErr(`<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>`);
+      expect(e.message).toContain(`external entity "x" is not supported`);
+    }),
+  );
+
+  it.effect("documents lexed at once each read their own DTD", () =>
+    Effect.gen(function* () {
+      // The `dtd: "internal"` grammars are shared; interleaving two streams'
+      // tokens must still resolve each document's entities from its own subset.
+      const one = `<!DOCTYPE r [<!ENTITY e "one"><!ENTITY m "<b/>">]><r a="&e;">&e; &m;</r>`;
+      const two = `<!DOCTYPE r [<!ENTITY e "two"><!ENTITY m "<i/>">]><r a="&e;">&e; &m;</r>`;
+      const [left, right] = Arr.unzip(
+        yield* Stream.runCollect(Stream.zip(charByChar(one), charByChar(two))),
+      );
+      expect(left).toEqual(yield* Stream.runCollect(charByChar(one)));
+      expect(right).toEqual(yield* Stream.runCollect(charByChar(two)));
+      expect(right.filter(Sax.isText).map((t) => t.data)).toEqual(["two "]);
+      expect(right.filter(Sax.isStartElement).map((e) => e.name)).toEqual(["r", "i"]);
+    }),
+  );
 
   describe("hostile documents", () => {
-    test("billion laughs, as text and as markup", () => {
-      expect(limit(parseErr(laughs("ha")))).toBe("maxEntityExpansion");
-      expect(limit(parseErr(laughs("<b/>")))).toBe("maxEntityExpansion");
-    });
+    it.effect("billion laughs, as text and as markup", () =>
+      Effect.gen(function* () {
+        expect(limit(yield* parseErr(laughs("ha")))).toBe("maxEntityExpansion");
+        expect(limit(yield* parseErr(laughs("<b/>")))).toBe("maxEntityExpansion");
+      }),
+    );
 
-    test("deep entity nesting", () => {
-      expect(parseOk(`${chain(60, "<b>", "</b>")}<a>&e0;</a>`).root.children).toHaveLength(1);
-      expect(limit(parseErr(`${chain(2000, "<b>", "</b>")}<a>&e0;</a>`))).toBe("maxEntityDepth");
-      expect(limit(parseErr(`${chain(2000, "x", "")}<a b="&e0;"/>`))).toBe("maxEntityDepth");
-      expect(limit(parseErr(`${chain(2000, "x", "")}<a>&e0;</a>`))).toBe("maxEntityDepth");
-    });
+    it.effect("deep entity nesting", () =>
+      Effect.gen(function* () {
+        expect(
+          (yield* parseOk(`${chain(60, "<b>", "</b>")}<a>&e0;</a>`)).root.children,
+        ).toHaveLength(1);
+        expect(limit(yield* parseErr(`${chain(2000, "<b>", "</b>")}<a>&e0;</a>`))).toBe(
+          "maxEntityDepth",
+        );
+        expect(limit(yield* parseErr(`${chain(2000, "x", "")}<a b="&e0;"/>`))).toBe(
+          "maxEntityDepth",
+        );
+        expect(limit(yield* parseErr(`${chain(2000, "x", "")}<a>&e0;</a>`))).toBe("maxEntityDepth");
+      }),
+    );
 
-    test("the budget is configurable", () => {
-      const doc = `<!DOCTYPE a [<!ENTITY e "0123456789">]><a>&e;&e;&e;</a>`;
-      expect(parseOk(doc, { limits: { maxEntityExpansion: 30 } }).root.textContent.length).toBe(30);
-      expect(limit(parseErr(doc, { limits: { maxEntityExpansion: 29 } }))).toBe(
-        "maxEntityExpansion",
-      );
-    });
+    it.effect("the budget is configurable", () =>
+      Effect.gen(function* () {
+        const doc = `<!DOCTYPE a [<!ENTITY e "0123456789">]><a>&e;&e;&e;</a>`;
+        expect(
+          (yield* parseOk(doc, { limits: { maxEntityExpansion: 30 } })).root.textContent.length,
+        ).toBe(30);
+        expect(limit(yield* parseErr(doc, { limits: { maxEntityExpansion: 29 } }))).toBe(
+          "maxEntityExpansion",
+        );
+      }),
+    );
 
-    test("many references to entities with markup parse in linear time", () => {
-      const entities = Array.from({ length: 3000 }, (_, i) => `<!ENTITY e${i} "<b/>">`).join("");
-      const start = performance.now();
-      const doc = parseOk(`<!DOCTYPE a [${entities}]><a>${"&e0;".repeat(20_000)}</a>`);
-      expect(doc.root.children).toHaveLength(20_000);
-      expect(performance.now() - start).toBeLessThan(5_000);
-    });
+    it.effect("many references to entities with markup parse in linear time", () =>
+      Effect.gen(function* () {
+        const entities = Array.from({ length: 3000 }, (_, i) => `<!ENTITY e${i} "<b/>">`).join("");
+        const start = performance.now();
+        const doc = yield* parseOk(`<!DOCTYPE a [${entities}]><a>${"&e0;".repeat(20_000)}</a>`);
+        expect(doc.root.children).toHaveLength(20_000);
+        expect(performance.now() - start).toBeLessThan(5_000);
+      }),
+    );
   });
 });
