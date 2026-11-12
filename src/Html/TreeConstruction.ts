@@ -93,6 +93,10 @@ const mkElement = (name: string, attrs: Array<HtmlAttribute>, ns: string = HTML_
 
 const isElementNode = (node: MNode): node is MElement => node._tag === "MElement";
 
+/** Are all of `children` final nodes (none a working element)? */
+const isFrozen = (children: ReadonlyArray<MNode>): children is ReadonlyArray<HtmlNode> =>
+  !Arr.some(children, isElementNode);
+
 const detach = (node: MElement): void => {
   const p = node.parent;
   if (p === null) return;
@@ -2972,9 +2976,10 @@ const freeze = (root: MNode): HtmlNode => {
       positions[depth] = 0;
       continue;
     }
-    // SAFETY: the walk above found no working element left in `children`:
-    // each was replaced by its final node when it was done (below).
-    const done = freezeElement(el, children as ReadonlyArray<HtmlNode>);
+    // The walk above found no working element left in `children`: each was
+    // replaced by its final node when it was done (below).
+    if (!isFrozen(children)) break;
+    const done = freezeElement(el, children);
     depth--;
     const parent = elements[depth];
     if (parent === undefined) return done;

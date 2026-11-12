@@ -515,7 +515,7 @@ export class XdmNode {
         Option.match(parentCursor, {
           onNone: () =>
             Cursor.root(c.node, maybe("base", Option.getOrUndefined(this.tree.baseUri))),
-          onSome: (cursor) => cursor.at(c.dom),
+          onSome: (cursor) => cursor.at(c.node, c.dom),
         }),
       );
     }

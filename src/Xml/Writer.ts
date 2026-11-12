@@ -187,10 +187,10 @@ export function* events(node: XmlNode | XmlDocument): Generator<WriterEvent> {
  * @since 0.1.0
  * @category errors
  */
-export class SerializationError extends Schema.TaggedError<SerializationError>()(
-  "SerializationError",
-  { reason: Schema.String },
-) {
+export class SerializationError extends Schema.TaggedError<
+  SerializationError,
+  { readonly brand: unique symbol }
+>()("SerializationError", { reason: Schema.String }) {
   override get message(): string {
     return `Cannot serialize: ${this.reason}`;
   }

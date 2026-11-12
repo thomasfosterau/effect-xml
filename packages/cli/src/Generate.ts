@@ -47,10 +47,10 @@ export interface GenerateOptions {
  * @since 0.1.0
  * @category errors
  */
-export class RemoteLocationRefused extends Schema.TaggedError<RemoteLocationRefused>()(
-  "RemoteLocationRefused",
-  { location: Schema.String },
-) {
+export class RemoteLocationRefused extends Schema.TaggedError<
+  RemoteLocationRefused,
+  { readonly brand: unique symbol }
+>()("RemoteLocationRefused", { location: Schema.String }) {
   override get message(): string {
     return `the schema document ${this.location} is remote; pass --remote to fetch it`;
   }
@@ -63,7 +63,10 @@ export class RemoteLocationRefused extends Schema.TaggedError<RemoteLocationRefu
  * @since 0.1.0
  * @category errors
  */
-export class StaleOutput extends Schema.TaggedError<StaleOutput>()("StaleOutput", {
+export class StaleOutput extends Schema.TaggedError<
+  StaleOutput,
+  { readonly brand: unique symbol }
+>()("StaleOutput", {
   path: Schema.String,
 }) {
   override get message(): string {

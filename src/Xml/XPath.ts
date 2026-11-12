@@ -228,11 +228,14 @@ export type Expr =
  * @since 0.1.0
  * @category errors
  */
-export class XPathError extends Schema.TaggedError<XPathError>()("XPathError", {
-  expression: Schema.String,
-  offset: Schema.Number,
-  reason: Schema.String,
-}) {
+export class XPathError extends Schema.TaggedError<XPathError, { readonly brand: unique symbol }>()(
+  "XPathError",
+  {
+    expression: Schema.String,
+    offset: Schema.Int,
+    reason: Schema.String,
+  },
+) {
   override get message(): string {
     return `Invalid XPath ${quote(this.expression)} at offset ${this.offset}: ${this.reason}`;
   }
@@ -816,7 +819,7 @@ const cursorAt = (node: XdmNode, element: XmlElement, context: Context): Cursor 
   return chain
     .slice(0, -1)
     .toReversed()
-    .reduce((c, below) => c.at(below.node.domStart), base);
+    .reduce((c, below) => c.at(below.element, below.node.domStart), base);
 };
 
 /**

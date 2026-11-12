@@ -119,7 +119,8 @@ const compareDecimals = (a: SimpleValue, b: SimpleValue): Option.Option<-1 | 0 |
     ? Option.some(BigDecimal.Order(a, b))
     : Option.none();
 
-const isList = (v: SimpleValue): v is ReadonlyArray<SimpleValue> => Arr.isArray(v);
+/** Is this value a list (`xs:list`) value? */
+export const isList = (v: SimpleValue): v is ReadonlyArray<SimpleValue> => Arr.isArray(v);
 
 /** Equality of typed values (lists item by item, bytes byte by byte). */
 export const equalValues = (a: SimpleValue, b: SimpleValue): boolean => {
