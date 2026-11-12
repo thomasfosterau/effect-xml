@@ -13,6 +13,7 @@ import * as HashSet from "effect/HashSet";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import { isReference, resolveReference } from "../../../uri.ts";
 import { isValidNCName, QName } from "../../../../Name.ts";
 import { AtomicValue } from "../../atomic.ts";
 import { isNode, type Sequence } from "../../item.ts";
@@ -413,15 +414,17 @@ const isAbsolute = (uri: string): boolean => /^[A-Za-z][A-Za-z0-9+.-]*:/.test(ur
 const resolveUri = (relative: string, base: string | undefined, call: Call): Sequence => {
   if (/[\s<>"{}|\\^`]/.test(relative.trim()) || relative.includes("%%"))
     return raise("FORG0002", `${relative} is not a valid URI reference`, call.offset);
+  if (!isReference(relative.trim()))
+    return raise("FORG0002", `${relative} is not a valid URI reference`, call.offset);
   if (isAbsolute(relative)) return [AtomicValue.anyURI(relative)];
   if (base === undefined)
     return raise("FONS0005", "there is no base URI to resolve against", call.offset);
   if (!isAbsolute(base) || base.includes("#"))
     return raise("FORG0002", `${base} is not an absolute URI`, call.offset);
-  const resolved = URL.parse(relative, base);
-  return resolved === null
-    ? raise("FORG0002", `${relative} cannot be resolved against ${base}`, call.offset)
-    : [AtomicValue.anyURI(resolved.href)];
+  return Option.match(resolveReference(relative.trim(), base), {
+    onNone: () => raise("FORG0002", `${relative} cannot be resolved against ${base}`, call.offset),
+    onSome: (resolved) => [AtomicValue.anyURI(resolved)],
+  });
 };
 
 const uriFunctions: ReadonlyArray<BuiltinSpec> = [

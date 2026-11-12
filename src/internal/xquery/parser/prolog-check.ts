@@ -44,6 +44,7 @@ import {
   scopeOf,
   show,
 } from "./analyze.ts";
+import { hasScheme, isReference, resolveReference } from "../../uri.ts";
 import type { Arity } from "./builtins.ts";
 import { Namespaces } from "./builtins.ts";
 import {
@@ -530,11 +531,29 @@ const declaration =
             defaultCollation: uri,
           }),
         ),
-      BaseURI: ({ uri, offset }) =>
-        setter(fold, "base-uri", "XQST0032", "the base URI", offset, (c) => ({
-          ...c,
-          baseUri: Option.some(uri),
-        })),
+      BaseURI: ({ uri, offset }) => {
+        // The literal is an xs:anyURI: whitespace collapsed. A relative one is resolved against
+        // the base URI the host gave; with none, the static base URI could not be absolute.
+        const written = normalizeUri(uri);
+        const absoluteBase = Option.match(fold.context.baseUri, {
+          onNone: () => (hasScheme(written) ? Option.some(written) : Option.none()),
+          onSome: (base) =>
+            hasScheme(written) ? Option.some(written) : resolveReference(written, base),
+        });
+        return setter(
+          withErrors(
+            fold,
+            Option.isSome(absoluteBase) || !isReference(written)
+              ? none
+              : fail("XPST0001", `the base URI "${written}" is not absolute`, offset),
+          ),
+          "base-uri",
+          "XQST0032",
+          "the base URI",
+          offset,
+          (c) => ({ ...c, baseUri: Option.some(Option.getOrElse(absoluteBase, () => written)) }),
+        );
+      },
       Construction: ({ preserve, offset }) =>
         setter(fold, "construction", "XQST0067", "construction", offset, (c) => ({
           ...c,
