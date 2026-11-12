@@ -19,7 +19,7 @@ import * as HashMap from "effect/HashMap";
 import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { isEnter, preorder } from "../tree.ts";
 import { Namespaces, QName } from "../../Name.ts";
 import { Cursor } from "../../Xml/Cursor.ts";
@@ -104,10 +104,10 @@ type Content =
 /** How many trees have been made: each new tree's place in the order between trees. */
 let trees = 0;
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
 const isTextLike = (node: XmlNode): node is Extract<XmlNode, { readonly data: string }> =>
-  Predicate.isTagged(node, "XmlText") || Predicate.isTagged(node, "XmlCData");
+  P.isTagged(node, "XmlText") || P.isTagged(node, "XmlCData");
 
 /** Whether an attribute is a namespace declaration (`xmlns`, `xmlns:p`), which XDM does not count as one. */
 const isNamespaceDeclaration = (a: XmlAttribute): boolean =>
@@ -117,7 +117,7 @@ const isNamespaceDeclaration = (a: XmlAttribute): boolean =>
 const appendText = (out: Array<Content>, data: string, dom: number): Array<Content> => {
   if (data === "") return out;
   const last = out.at(-1);
-  if (last !== undefined && Predicate.isTagged(last, "text"))
+  if (last !== undefined && P.isTagged(last, "text"))
     out[out.length - 1] = { _tag: "text", data: last.data + data, dom: last.dom, end: dom + 1 };
   else out.push({ _tag: "text", data, dom, end: dom + 1 });
   return out;
@@ -143,11 +143,11 @@ const childContents = (nodes: ReadonlyArray<XmlNode>): ReadonlyArray<Content> =>
  * would build its handlers for every child.
  */
 const appendChild = (out: Array<Content>, node: XmlNode, dom: number): Array<Content> => {
-  if (Predicate.isTagged(node, "XmlElement")) return push(out, { _tag: "element", node, dom });
-  if (Predicate.isTagged(node, "XmlText") || Predicate.isTagged(node, "XmlCData"))
+  if (P.isTagged(node, "XmlElement")) return push(out, { _tag: "element", node, dom });
+  if (P.isTagged(node, "XmlText") || P.isTagged(node, "XmlCData"))
     return appendText(out, node.data, dom);
-  if (Predicate.isTagged(node, "XmlComment")) return push(out, { _tag: "comment", node, dom });
-  return Predicate.isTagged(node, "XmlProcessingInstruction")
+  if (P.isTagged(node, "XmlComment")) return push(out, { _tag: "comment", node, dom });
+  return P.isTagged(node, "XmlProcessingInstruction")
     ? push(out, { _tag: "processing-instruction", node, dom })
     : out;
 };
@@ -358,9 +358,7 @@ export class XdmNode {
     if (Option.isSome(this.childCache)) return this.childCache.value;
     const c = this.content;
     const contents =
-      Predicate.isTagged(c, "document") || Predicate.isTagged(c, "element")
-        ? childContents(c.node.children)
-        : [];
+      P.isTagged(c, "document") || P.isTagged(c, "element") ? childContents(c.node.children) : [];
     const children = contents.map(
       (content, i) => new XdmNode(this.tree, Option.some(this), CHILDREN, i, content),
     );
@@ -372,7 +370,7 @@ export class XdmNode {
   get attributes(): ReadonlyArray<XdmNode> {
     if (Option.isSome(this.attributeCache)) return this.attributeCache.value;
     const c = this.content;
-    const declared = Predicate.isTagged(c, "element")
+    const declared = P.isTagged(c, "element")
       ? c.node.attributes.filter((a) => !isNamespaceDeclaration(a))
       : [];
     const attributes = declared.map(
@@ -403,11 +401,9 @@ export class XdmNode {
     // Read on every name test of a path step: tag guards, not a `Match`
     // table, which made name tests a fifth of an XPath query's time.
     const c = this.content;
-    if (Predicate.isTagged(c, "element") || Predicate.isTagged(c, "attribute"))
-      return Option.some(c.node.name);
-    if (Predicate.isTagged(c, "processing-instruction"))
-      return Option.some(QName.simple(c.node.target));
-    if (Predicate.isTagged(c, "namespace") && c.binding.prefix !== "")
+    if (P.isTagged(c, "element") || P.isTagged(c, "attribute")) return Option.some(c.node.name);
+    if (P.isTagged(c, "processing-instruction")) return Option.some(QName.simple(c.node.target));
+    if (P.isTagged(c, "namespace") && c.binding.prefix !== "")
       return Option.some(QName.simple(c.binding.prefix));
     return Option.none();
   }
@@ -420,11 +416,11 @@ export class XdmNode {
   get stringValue(): string {
     // Read whenever a node is atomized: tag guards, as for `name`.
     const c = this.content;
-    if (Predicate.isTagged(c, "element")) return c.node.textContent;
-    if (Predicate.isTagged(c, "attribute")) return c.node.value;
-    if (Predicate.isTagged(c, "text")) return c.data;
-    if (Predicate.isTagged(c, "namespace")) return c.binding.uri;
-    if (Predicate.isTagged(c, "document")) return textUnder(c.node.children);
+    if (P.isTagged(c, "element")) return c.node.textContent;
+    if (P.isTagged(c, "attribute")) return c.node.value;
+    if (P.isTagged(c, "text")) return c.data;
+    if (P.isTagged(c, "namespace")) return c.binding.uri;
+    if (P.isTagged(c, "document")) return textUnder(c.node.children);
     return c.node.data;
   }
 
@@ -442,8 +438,8 @@ export class XdmNode {
     | string
     | NamespaceBinding {
     const c = this.content;
-    if (Predicate.isTagged(c, "text")) return c.data;
-    if (Predicate.isTagged(c, "namespace")) return c.binding;
+    if (P.isTagged(c, "text")) return c.data;
+    if (P.isTagged(c, "namespace")) return c.binding;
     return c.node;
   }
 
@@ -456,21 +452,21 @@ export class XdmNode {
    */
   get domStart(): number {
     const c = this.content;
-    return Predicate.hasProperty(c, "dom") && Option.isSome(this.up) ? c.dom : -1;
+    return P.hasProperty(c, "dom") && Option.isSome(this.up) ? c.dom : -1;
   }
 
   /** @internal Where the node's DOM content ends among its parent's DOM `children` (exclusive); -1 as for {@link domStart}. */
   get domEnd(): number {
     const c = this.content;
     if (Option.isNone(this.up)) return -1;
-    if (Predicate.isTagged(c, "text")) return c.end;
-    return Predicate.hasProperty(c, "dom") ? c.dom + 1 : -1;
+    if (P.isTagged(c, "text")) return c.end;
+    return P.hasProperty(c, "dom") ? c.dom + 1 : -1;
   }
 
   /** The element this node stands for, if it is an element node. */
   get element(): Option.Option<XmlElement> {
     const c = this.content;
-    return Predicate.isTagged(c, "element") ? Option.some(c.node) : Option.none();
+    return P.isTagged(c, "element") ? Option.some(c.node) : Option.none();
   }
 
   /** The root of the tree: a document node, or a parentless element. */
@@ -511,13 +507,13 @@ export class XdmNode {
   /** An element's cursor, which resolves what it inherits (`xml:base`, `xml:lang`). */
   private get cursor(): Option.Option<Cursor> {
     const c = this.content;
-    if (!Predicate.isTagged(c, "element")) return Option.none();
+    if (!P.isTagged(c, "element")) return Option.none();
     if (Option.isNone(this.cursorCache)) {
       const parentCursor = Option.flatMap(this.up, (parent) => parent.cursor);
       this.cursorCache = Option.some(
         Option.match(parentCursor, {
           onNone: () => Cursor.root(c.node, { base: Option.getOrUndefined(this.tree.baseUri) }),
-          onSome: (cursor) => cursor.at(c.dom),
+          onSome: (cursor) => cursor.at(c.node, c.dom),
         }),
       );
     }

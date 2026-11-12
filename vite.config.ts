@@ -100,10 +100,6 @@ export default defineConfig({
       // fires on every `as`, including the branded-name casts the parser's
       // hot path makes after validating once. Stays visible as a warning.
       "effect/casting-awareness": "warn",
-      // Hard-codes abbreviations (`Arr`, `P`, `R`, …) with no options, so it is
-      // unsatisfiable under the full-name convention (`import { Option } from
-      // "effect"`) this family shares with its consumers.
-      "effect/prefer-namespace-imports": "off",
 
       // ---- Effect preset: rules this library's public surface cuts across --
       // `prefer-option-over-null` fires on the `string | null` members of the
@@ -146,15 +142,16 @@ export default defineConfig({
       // the line so the rule is back at `error`.
       // Type-aware (tsgolint) rules. oxlint applies `overrides` to none of
       // them, so each relaxation here is global and counted.
-      // 14 sites (13 in src/, 1 in tests), each with a `SAFETY:` comment: the
-      // branded-name casts (`unsafeTagName` / `unsafeAttrName`, the lexer's
-      // event → SaxEvent narrowing in `convert.ts`), a parse failure's
-      // `unknown` cause, the caller-described value types of `Xsd.parser`. The hot-path
-      // sites stay casts for the reason given for `convert.ts` below. A new
-      // site is a defect (#80).
+      // 3 sites, all in `Xsd.parser` (`src/Xsd/Validate.ts`): the value types
+      // `A` / `B` and `Streams<S>` are the caller's description of what a
+      // schema's type produces (written by `Xsd.generate` from the same
+      // model), so no runtime check can establish them. A new site is a
+      // defect (#80).
       "typescript/no-unsafe-type-assertion": "warn",
-      // 3 sites, each an entry point the rule's own message exempts: the CLI
-      // bin (`packages/cli/src/main.ts`) and two test programs. src/ has none;
+      // 1 site: the CLI bin (`packages/cli/src/main.ts`), the application
+      // entry point the rule's own message exempts (it provides the composed
+      // platform layer once, to `NodeRuntime.runMain`). The tests provide
+      // their layers through one `ManagedRuntime` per file. src/ has none;
       // a site there is a defect (#80).
       "effecttsgo/strict-effect-provide": "warn",
     },

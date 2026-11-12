@@ -7,8 +7,8 @@ import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as MutableHashSet from "effect/MutableHashSet";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import { XsdSchemaError } from "../../Xsd/Error.ts";
 import type {
@@ -40,7 +40,7 @@ import {
   type SimpleValue,
 } from "./datatypes.ts";
 
-type R<A> = Result.Result<A, XsdSchemaError>;
+type Res<A> = Result.Result<A, XsdSchemaError>;
 
 const schemaError = (reason: string) => new XsdSchemaError({ reason, location: null });
 
@@ -82,8 +82,8 @@ const schemaContext = { resolve: () => undefined };
 export class Runtime {
   readonly model: Model;
   readonly substitutes: (head: string) => ReadonlyArray<readonly [string, string]>;
-  private readonly checkers = MutableHashMap.empty<string, R<SimpleChecker>>();
-  private readonly runtimes = MutableHashMap.empty<string, R<TypeRuntime>>();
+  private readonly checkers = MutableHashMap.empty<string, Res<SimpleChecker>>();
+  private readonly runtimes = MutableHashMap.empty<string, Res<TypeRuntime>>();
   private readonly inProgress = MutableHashSet.empty<string>();
 
   constructor(model: Model) {
@@ -92,11 +92,11 @@ export class Runtime {
   }
 
   element(key: string): Option.Option<ElementDeclaration> {
-    return Record.get(this.model.elements, key);
+    return R.get(this.model.elements, key);
   }
 
   /** The checker for a simple type, compiled on first use. */
-  checker(key: string): R<SimpleChecker> {
+  checker(key: string): Res<SimpleChecker> {
     return Option.getOrElse(MutableHashMap.get(this.checkers, key), () => {
       if (MutableHashSet.has(this.inProgress, key))
         return Result.fail(schemaError(`the simple type ${key} is defined in terms of itself`));
@@ -108,14 +108,14 @@ export class Runtime {
     });
   }
 
-  private buildChecker(key: string): R<SimpleChecker> {
+  private buildChecker(key: string): Res<SimpleChecker> {
     return Option.match(builtinChecker(key), {
       onSome: Result.succeed,
       onNone: () =>
-        Option.match(Record.get(this.model.types, key), {
+        Option.match(R.get(this.model.types, key), {
           onNone: () => Result.fail(schemaError(`no simple type named ${key} is defined`)),
           onSome: (def) =>
-            Predicate.isTagged(def, "SimpleType")
+            P.isTagged(def, "SimpleType")
               ? this.buildSimple(def)
               : Result.fail(
                   schemaError(`${key} is a complex type where a simple type is required`),
@@ -124,8 +124,8 @@ export class Runtime {
     });
   }
 
-  private buildSimple(def: SimpleType): R<SimpleChecker> {
-    const own = (checker: SimpleChecker): R<SimpleChecker> =>
+  private buildSimple(def: SimpleType): Res<SimpleChecker> {
+    const own = (checker: SimpleChecker): Res<SimpleChecker> =>
       def.facets === undefined
         ? Result.succeed(checker)
         : Result.mapError(restrict(checker, def.facets), (reason) =>
@@ -142,9 +142,9 @@ export class Runtime {
   }
 
   /** The compiled form of a type, on first use. */
-  type(key: string): R<TypeRuntime> {
+  type(key: string): Res<TypeRuntime> {
     return Option.getOrElse(MutableHashMap.get(this.runtimes, key), () => {
-      const out: R<TypeRuntime> = Option.match(typeOf(this.model, key), {
+      const out: Res<TypeRuntime> = Option.match(typeOf(this.model, key), {
         onNone: () =>
           Result.map(this.checker(key), (checker): TypeRuntime => ({
             _tag: "Simple",
@@ -152,7 +152,7 @@ export class Runtime {
             checker,
           })),
         onSome: (def) =>
-          Predicate.isTagged(def, "SimpleType")
+          P.isTagged(def, "SimpleType")
             ? Result.map(this.checker(key), (checker): TypeRuntime => ({
                 _tag: "Simple",
                 key,
@@ -165,7 +165,7 @@ export class Runtime {
     });
   }
 
-  private attributeRule(use: AttributeUse, slot: AttributeSlot): R<AttributeRule> {
+  private attributeRule(use: AttributeUse, slot: AttributeSlot): Res<AttributeRule> {
     return Result.flatMap(this.checker(use.type), (checker) => {
       if (use.fixed === undefined)
         return Result.succeed({ use, checker, slot, fixed: Option.none() });
@@ -179,10 +179,10 @@ export class Runtime {
     });
   }
 
-  private complex(key: string, def: ComplexType): R<TypeRuntime> {
+  private complex(key: string, def: ComplexType): Res<TypeRuntime> {
     const layout = layoutOf(this.substitutes, def);
     const content = def.content;
-    const simple: R<Option.Option<SimpleChecker>> = Predicate.isTagged(content, "Simple")
+    const simple: Res<Option.Option<SimpleChecker>> = P.isTagged(content, "Simple")
       ? Result.map(this.checker(content.type), Option.some)
       : Result.succeed(Option.none());
     const rules = Result.all(
@@ -194,7 +194,7 @@ export class Runtime {
       _tag: "Complex",
       key,
       def,
-      automaton: Predicate.isTagged(content, "Elements")
+      automaton: P.isTagged(content, "Elements")
         ? Option.some(
             new Automaton(content.particle, this.substitutes, allows, (element) =>
               Option.match(this.element(element), { onNone: () => element, onSome: (d) => d.name }),
@@ -202,7 +202,7 @@ export class Runtime {
           )
         : Option.none(),
       simple: checker,
-      attributes: Record.fromEntries(Arr.map(attributeRules, (r) => [r.use.name, r] as const)),
+      attributes: R.fromEntries(Arr.map(attributeRules, (r) => [r.use.name, r] as const)),
       implied: Arr.filter(
         attributeRules,
         (r) => r.use.required === true || r.use.default !== undefined || r.use.fixed !== undefined,

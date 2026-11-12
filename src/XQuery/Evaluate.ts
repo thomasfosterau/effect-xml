@@ -7,8 +7,8 @@ import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Record from "effect/Record";
+import * as P from "effect/Predicate";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
@@ -213,8 +213,8 @@ export const evaluate = (
 ): Effect.Effect<Sequence, XQueryError> =>
   Effect.gen(function* () {
     const variables = options.variables ?? {};
-    const compiled: Query = Predicate.isString(query)
-      ? yield* compileText(query, options.compile, Record.keys(variables))
+    const compiled: Query = P.isString(query)
+      ? yield* compileText(query, options.compile, R.keys(variables))
       : query;
     const resolver = yield* Effect.serviceOption(Resolver);
     const withModules = yield* loadModules(compiled, resolver);

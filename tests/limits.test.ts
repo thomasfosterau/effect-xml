@@ -1,6 +1,6 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Html, Limits, Sax, Xml, type LimitExceeded, type SaxError } from "../src/index.ts";
@@ -16,7 +16,7 @@ const limitFailure = async (
   expect(performance.now() - start).toBeLessThan(budgetMs);
   assert(Result.isFailure(r), "expected failure");
   expect(r.failure._tag).toBe("LimitExceeded");
-  assert(Predicate.isTagged(r.failure, "LimitExceeded"));
+  assert(P.isTagged(r.failure, "LimitExceeded"));
   return r.failure;
 };
 

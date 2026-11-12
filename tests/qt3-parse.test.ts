@@ -17,12 +17,13 @@
  * `QT3_REPORT=1` lists the disagreements and prints the counts as a new
  * baseline.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { afterAll, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
-import * as Record from "effect/Record";
+import * as R from "effect/Record";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { XQuery } from "../src/index.ts";
@@ -65,6 +66,9 @@ interface Expected {
 }
 
 /** No accepted outcome: the start of a union. */
+/** No module sources yet: the fold over a query's modules starts here. */
+const noModules: Record<string, ReadonlyArray<XQuery.ModuleSource>> = {};
+
 const nothing: Expected = { codes: [], value: false };
 
 /** The outcomes an assertion tree accepts: `any-of` is a union; anything but an error is a value. */
@@ -116,7 +120,7 @@ const optionsOf = (
   environment: Environment,
   modules: Readonly<Record<string, ReadonlyArray<XQuery.ModuleSource>>>,
 ): XQuery.CompileOptions => ({
-  namespaces: Record.fromEntries(environment.namespaces.map((b) => [b.prefix, b.uri] as const)),
+  namespaces: R.fromEntries(environment.namespaces.map((b) => [b.prefix, b.uri] as const)),
   variables: [
     ...environment.params.filter((p) => !p.declared).map((p) => clark(environment, p.name)),
     ...environment.sources.flatMap((s) =>
@@ -228,12 +232,10 @@ const runSpec = (spec: Spec, tests: ReadonlyArray<TestCase>) =>
             spec,
             t,
             query,
-            Arr.reduce(
-              modules,
-              // SAFETY: an empty record is a record of any value type.
-              {} as Record<string, ReadonlyArray<XQuery.ModuleSource>>,
-              (acc, m) => ({ ...acc, [m.uri]: [...(acc[m.uri] ?? []), m.source] }),
-            ),
+            Arr.reduce(modules, noModules, (acc, m) => ({
+              ...acc,
+              [m.uri]: [...(acc[m.uri] ?? []), m.source],
+            })),
           ),
         ),
       ),
@@ -241,7 +243,7 @@ const runSpec = (spec: Spec, tests: ReadonlyArray<TestCase>) =>
   );
 
 const countsBySet = (verdicts: ReadonlyArray<Verdict>): Record<string, Counts> =>
-  Arr.reduce(verdicts, Record.empty<string, Counts>(), (counts, v) => {
+  Arr.reduce(verdicts, R.empty<string, Counts>(), (counts, v) => {
     const c = counts[v.set] ?? { runnable: 0, syntax: 0, static: 0 };
     return {
       ...counts,
@@ -259,7 +261,7 @@ const shortfalls = (
   baseline: Readonly<Record<string, Counts>>,
   counts: Readonly<Record<string, Counts>>,
 ): ReadonlyArray<string> =>
-  Record.toEntries(baseline).flatMap(([set, want]) => {
+  R.toEntries(baseline).flatMap(([set, want]) => {
     const got = counts[set] ?? { runnable: 0, syntax: 0, static: 0 };
     return (["runnable", "syntax", "static"] as const).flatMap((k) =>
       got[k] < want[k] ? [`${spec} ${set}: ${k} ${got[k]}, baseline ${want[k]}`] : [],
@@ -267,16 +269,20 @@ const shortfalls = (
   });
 
 const sum = (counts: Record<string, Counts>): Counts =>
-  Arr.reduce(Record.values(counts), { runnable: 0, syntax: 0, static: 0 }, (a, c) => ({
+  Arr.reduce(R.values(counts), { runnable: 0, syntax: 0, static: 0 }, (a, c) => ({
     runnable: a.runnable + c.runnable,
     syntax: a.syntax + c.syntax,
     static: a.static + c.static,
   }));
 
+/** One runtime for the file's fixture services (the file system), provided once. */
+const runtime = ManagedRuntime.make(Fixtures.layer);
+afterAll(() => runtime.dispose());
+
 describe("W3C QT3 parse-only pass", () => {
   test("meets the per-test-set parse baselines", async () => {
     const started = performance.now();
-    const { baseline, results } = await Effect.runPromise(
+    const { baseline, results } = await runtime.runPromise(
       Effect.gen(function* () {
         const want = yield* readBaseline;
         const sets = yield* readCatalog();
@@ -287,10 +293,10 @@ describe("W3C QT3 parse-only pass", () => {
           { concurrency: 1 },
         );
         return { baseline: want, results: verdicts };
-      }).pipe(Effect.provide(Fixtures.layer)),
+      }),
     );
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    const counts = Record.fromEntries(
+    const counts = R.fromEntries(
       results.map(([spec, verdicts]) => [spec, countsBySet(verdicts)] as const),
     );
     const report = Effect.runSync(reportRequested("QT3_REPORT"));

@@ -16,7 +16,7 @@
 import * as Arr from "effect/Array";
 import * as MutableHashMap from "effect/MutableHashMap";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import type { MaxOccurs, Particle, Wildcard } from "../../Xsd/Model.ts";
 
 /** A term: an element declaration or a wildcard, numbered in document order. */
@@ -205,17 +205,17 @@ export class Automaton {
   ): State {
     const min = particle.min ?? 1;
     const max = particle.max ?? 1;
-    if (Predicate.isTagged(particle, "Element") || Predicate.isTagged(particle, "Any")) {
+    if (P.isTagged(particle, "Element") || P.isTagged(particle, "Any")) {
       const index = terms.length;
       terms.push(
-        Predicate.isTagged(particle, "Element")
+        P.isTagged(particle, "Element")
           ? { kind: "element", index, element: particle.element, name: nameOf(particle.element) }
           : { kind: "any", index, wildcard: particle.wildcard },
       );
       return this.repeat(this.term(index), min, max);
     }
     const parts = Arr.map(particle.particles, (p) => this.build(p, terms, nameOf));
-    if (Predicate.isTagged(particle, "All")) {
+    if (P.isTagged(particle, "All")) {
       // An `all` member occurs at most once; whether it must is the member's own bound.
       const members = Arr.map(particle.particles, (p, i) => ({
         body: this.unbound(parts[i] ?? this.empty),
@@ -230,7 +230,7 @@ export class Automaton {
         max,
       );
     }
-    const body = Predicate.isTagged(particle, "Sequence")
+    const body = P.isTagged(particle, "Sequence")
       ? Arr.reduceRight(parts, this.epsilon, (rest, p) => this.seq(p, rest))
       : this.alt(parts);
     return this.repeat(body, min, max);

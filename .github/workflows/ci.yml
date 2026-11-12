@@ -38,7 +38,15 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: $/.github/actions/setup
+      # Installs the catalog's vite-plus pin (`version-file`), the Node.js it
+      # resolves (the latest LTS release: never a pre-release) and the pnpm
+      # from `packageManager`, restores the dependency cache, and runs
+      # `vp install --frozen-lockfile` with install scripts.
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          version-file: pnpm-workspace.yaml
+          cache: true
       - name: Restore the Vite+ task cache
         uses: actions/cache@v6.1.0
         with:
@@ -47,18 +55,18 @@ jobs:
           restore-keys: |
             vp-task-v1-${{ runner.os }}-
       - name: Format and lint
-        run: pnpm exec vp check
+        run: vp check
       - name: Type gate (src + tests + example)
-        run: pnpm exec vp run check
+        run: vp run check
       - name: Unit tests (incl. the html5lib conformance gate)
-        run: pnpm exec vp run test:unit
+        run: vp run test:unit
       - name: Build
-        run: pnpm exec vp run build
+        run: vp run build
       # Bundles Sax.forEach and Xml.parse from dist/ against their size budgets.
       - name: Bundle size
-        run: pnpm exec vp run size
+        run: vp run size
       # Type-checks AND runs every JSDoc @example against the built dist/.
       - name: Verify documentation examples (docgen)
-        run: pnpm exec vp run docgen
+        run: vp run docgen
       - name: Audit
         run: pnpm audit --audit-level high

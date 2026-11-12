@@ -15,7 +15,7 @@
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import {
   DuplicateAttribute,
@@ -186,7 +186,7 @@ class PlainBuilder implements Visitor {
 
   /** The position of a step's `at`. */
   private where(at: Position | number): Position {
-    return Predicate.isNumber(at) ? positionAt(this.input, at) : at;
+    return P.isNumber(at) ? positionAt(this.input, at) : at;
   }
 
   private open(
@@ -207,7 +207,7 @@ class PlainBuilder implements Visitor {
     const attributes = this.attributes.pop();
     const from = this.froms.pop();
     if (open === undefined || attributes === undefined || from === undefined) {
-      return new UnexpectedEndTag({ name, position: this.where(at) });
+      return new UnexpectedEndTag({ tagName: name, position: this.where(at) });
     }
     if (open !== name) {
       return new MismatchedEndTag({ expected: open, actual: name, position: this.where(at) });
@@ -229,7 +229,7 @@ class PlainBuilder implements Visitor {
     }
     const last = this.count - 1;
     const prev = this.nodes[last];
-    if (last >= (this.froms.at(-1) ?? 0) && Predicate.isString(prev)) {
+    if (last >= (this.froms.at(-1) ?? 0) && P.isString(prev)) {
       this.nodes[last] = prev + data;
     } else {
       this.nodes[this.count++] = data;
@@ -350,7 +350,7 @@ export const parsePlain = (
   options?: PlainOptions,
 ): Effect.Effect<PlainElement, SaxError> =>
   Effect.suspend(() => {
-    const chunks: Chunks = Predicate.isString(input)
+    const chunks: Chunks = P.isString(input)
       ? { chunks: [input] }
       : decodeChunks(input, decodeOptions({ ...options, mode: "xml" }));
     const opts = resolveSaxOptions({ ...options, mode: "xml" });

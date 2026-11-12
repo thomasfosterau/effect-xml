@@ -45,16 +45,14 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6.1.1
-      - name: Setup Node.js
-        uses: actions/setup-node@v7.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version: 22.x
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+          version-file: pnpm-workspace.yaml
+          node-version: "24"
+          cache: true
+          run-install: |
+            - args: ["--frozen-lockfile", "--ignore-scripts"]
       - name: Select mode
         id: mode
         uses: changesets/action/select-mode@v2.1.2
@@ -78,16 +76,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6.1.1
-      - name: Setup Node.js
-        uses: actions/setup-node@v7.1.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version: 22.x
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+          version-file: pnpm-workspace.yaml
+          node-version: "24"
+          cache: true
+          run-install: |
+            - args: ["--frozen-lockfile", "--ignore-scripts"]
       - name: Create or update the version PR
         uses: changesets/action/version@v2.1.2
         with:
@@ -138,35 +134,30 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # Installs the pnpm version pinned by the package.json "packageManager"
-      # field. Must run before setup-node so its pnpm cache can find the store.
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6.1.1
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7.1.0
-        with:
-          # The engines floor's major (`"node": ">=22"`), pinned rather than
-          # `latest`, which can resolve to a pre-release: the publish runs on
-          # a stable Node.
-          node-version: 22.x
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-
-      # No npm upgrade: pnpm 11 publishes natively (libnpmpublish; it no
-      # longer shells out to `npm publish`) and performs the OIDC trusted
-      # publishing exchange itself, so the npm bundled with Node is never on
-      # the publish path. See PUBLISHING.md.
-
-      # --ignore-scripts stops a compromised dependency from running install
+      # Installs the catalog's vite-plus pin, Node.js and the pnpm pinned by
+      # the package.json "packageManager" field, then the dependencies.
+      #
+      # Node 24, pinned rather than `latest` (which can resolve to a
+      # pre-release): its bundled npm is at least 11.5.1, the first with
+      # trusted publishing, should anything on the publish path reach npm.
+      # pnpm 11 publishes natively (libnpmpublish) and performs the OIDC
+      # trusted publishing exchange itself. See PUBLISHING.md.
+      #
+      # `--ignore-scripts` stops a compromised dependency from running install
       # scripts in the privileged publish job (the Shai-Hulud vector). It also
       # skips this workspace's own `prepare` (git hooks + the tsc/oxlint
       # patch), neither of which the `vp pack` build needs. It only holds
       # because `pnpm_config_verify_deps_before_run` is off for this job (see
       # the job `env` above); otherwise a later `pnpm run` could re-install
       # with scripts.
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          version-file: pnpm-workspace.yaml
+          node-version: "24"
+          cache: true
+          run-install: |
+            - args: ["--frozen-lockfile", "--ignore-scripts"]
 
       # Once the version PR has merged (no changesets remain), this runs `pnpm
       # run release`, which builds the package, publishes it with `pnpm publish

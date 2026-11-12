@@ -1,6 +1,6 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
+import * as Eq from "effect/Equal";
 import { Html, Sax, Xml } from "../src/index.ts";
 import {
   at,
@@ -415,7 +415,7 @@ describe("Html round trips", () => {
     const firsts = await docs();
     const agains = await Promise.all(firsts.map((first) => doc(Html.serialize(first))));
     expect(agains.map((d) => Html.serialize(d))).toEqual(firsts.map((d) => Html.serialize(d)));
-    firsts.forEach((first, i) => expect(Equal.equals(agains[i], first)).toBe(true));
+    firsts.forEach((first, i) => expect(Eq.equals(agains[i], first)).toBe(true));
   });
 
   // WHATWG serializing HTML fragments: no extra U+000A is written for these
@@ -437,7 +437,7 @@ describe("Html round trips", () => {
     as.forEach((a, i) => {
       const b = at(bs, i);
       expect(a).not.toBe(b);
-      expect(Equal.equals(Html.toXml(a), Html.toXml(b))).toBe(true);
+      expect(Eq.equals(Html.toXml(a), Html.toXml(b))).toBe(true);
       // Every node converts the same alone as inside its document.
       const body = child(a.documentElement, "body");
       expect(Html.toXml(body.children)).toEqual(

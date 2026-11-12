@@ -23,7 +23,7 @@ import * as HashSet from "effect/HashSet";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import { isValidNCName, QName } from "../../../Name.ts";
 import { XmlDocument, type XmlNode } from "../../../Xml/Node.ts";
@@ -418,11 +418,11 @@ const notSerializable = (what: string, offset: number): never =>
 /** The DOM a node stands for, for the writer: a text node's data as a text node. */
 const domOf = (node: XdmNode, offset: number): XmlNode | XmlDocument => {
   const dom = node.dom;
-  if (Predicate.isString(dom)) return textNode(dom);
+  if (P.isString(dom)) return textNode(dom);
   if (dom instanceof XmlDocument) return dom;
-  return Predicate.isTagged(dom, "XmlElement") ||
-    Predicate.isTagged(dom, "XmlComment") ||
-    Predicate.isTagged(dom, "XmlProcessingInstruction")
+  return P.isTagged(dom, "XmlElement") ||
+    P.isTagged(dom, "XmlComment") ||
+    P.isTagged(dom, "XmlProcessingInstruction")
     ? dom
     : notSerializable(`an ${node.kind} node`, offset);
 };

@@ -26,7 +26,7 @@
 import * as Arr from "effect/Array";
 import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import { isEnter, preorder } from "../internal/tree.ts";
 import { Namespaces } from "../Name.ts";
 import { isNamed, nameOf, type NameArgs, type XmlElement, type XmlNode } from "./Node.ts";
@@ -53,7 +53,7 @@ const resolveUri = (reference: string, base: string | null): string =>
 /** Whether a lookup was given a name (it is no-argument "all elements" otherwise). */
 const hasName = (args: NameArgs | readonly []): args is NameArgs => args[0] !== undefined;
 
-const isElement = (node: XmlNode): node is XmlElement => Predicate.isTagged(node, "XmlElement");
+const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlElement");
 
 const inherit = (element: XmlElement, from: Inherited): Inherited => {
   const lang = xmlAttribute(element, "lang");
@@ -137,25 +137,25 @@ export class Cursor {
     return this.ancestors.at(-1) ?? this;
   }
 
-  /** @internal A cursor at the child at `index` of this element's `children`, which must be an element. */
-  at(index: number): Cursor {
-    // SAFETY: callers pass the index of an element child (`childElements`, `child`).
-    return new Cursor(this.element.children[index] as XmlElement, this, index, this.inherited);
+  /** @internal A cursor at `child`, the element at `index` of this element's `children`. */
+  at(child: XmlElement, index: number): Cursor {
+    return new Cursor(child, this, index, this.inherited);
   }
 
   /** The child elements, or those with a name. */
   childElements(...args: NameArgs | readonly []): ReadonlyArray<Cursor> {
     const name = hasName(args) ? nameOf(args) : null;
     return Arr.flatMap(this.element.children, (c, i) =>
-      isElement(c) && (name === null || isNamed(c.name, name)) ? [this.at(i)] : [],
+      isElement(c) && (name === null || isNamed(c.name, name)) ? [this.at(c, i)] : [],
     );
   }
 
   /** The first child element with this name. */
   child(...args: NameArgs): Option.Option<Cursor> {
     const name = nameOf(args);
-    const i = this.element.children.findIndex((c) => isElement(c) && isNamed(c.name, name));
-    return i === -1 ? Option.none() : Option.some(this.at(i));
+    return Arr.findFirst(this.element.children, (c, i) =>
+      isElement(c) && isNamed(c.name, name) ? Option.some(this.at(c, i)) : Option.none(),
+    );
   }
 
   /** The descendant elements (not this one), or those with a name, in document order. */

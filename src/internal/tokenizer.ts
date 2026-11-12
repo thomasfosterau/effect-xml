@@ -7,7 +7,7 @@
  */
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Encoding from "../Encoding.ts";
 import { LimitExceeded, MalformedDeclaration, type SaxError } from "../Error.ts";
 import type { Position } from "../Position.ts";
@@ -167,7 +167,7 @@ export const runChunks = (
   let skip = 0;
   if (last === undefined && opts.mode === "xml" && opts.dtd === "ignore") {
     const direct = readDirectly(chunks.join(""), opts, f, reuse);
-    if (direct === null || !Predicate.hasProperty(direct, "stoppedAfter")) return direct;
+    if (direct === null || !P.hasProperty(direct, "stoppedAfter")) return direct;
     skip = direct.stoppedAfter;
   }
   const tokenizer = new Tokenizer(opts, reuse);
@@ -209,7 +209,7 @@ export interface Chunks {
 export const decodeChunks = (input: Uint8Array, options: Encoding.DecodeOptions): Chunks => {
   const decoder = new Encoding.ByteDecoder(options);
   const first = decoder.write(input);
-  if (!Predicate.isString(first)) return { chunks: [], failure: first };
+  if (!P.isString(first)) return { chunks: [], failure: first };
   const rest = decoder.end();
-  return Predicate.isString(rest) ? { chunks: [first, rest] } : { chunks: [first], failure: rest };
+  return P.isString(rest) ? { chunks: [first, rest] } : { chunks: [first], failure: rest };
 };

@@ -52,6 +52,7 @@ import {
   scanXml,
 } from "./scan.ts";
 import { declarationContexts } from "./declarations.ts";
+import { type AttrName, type TagName, unsafeAttrName, unsafeTagName } from "../Name.ts";
 import { drive } from "./drive.ts";
 import { quote } from "./quote.ts";
 import type { Dtd } from "./dtd.ts";
@@ -62,7 +63,7 @@ import { grammars, type Grammars, Issue, type RawKind, type Tok } from "./tokens
 // -----------------------------------------------------------------------------
 
 interface LexAttribute {
-  readonly name: string;
+  readonly name: AttrName;
   readonly value: string;
   readonly span: Span;
 }
@@ -70,12 +71,12 @@ interface LexAttribute {
 export type LexEvent =
   | {
       readonly _tag: "StartElement";
-      readonly name: string;
+      readonly name: TagName;
       readonly attributes: ReadonlyArray<LexAttribute>;
       readonly selfClosing: boolean;
       readonly span: Span;
     }
-  | { readonly _tag: "EndElement"; readonly name: string; readonly span: Span }
+  | { readonly _tag: "EndElement"; readonly name: TagName; readonly span: Span }
   | { readonly _tag: "Text"; readonly data: string; readonly span: Span }
   | { readonly _tag: "CData"; readonly data: string; readonly span: Span }
   | { readonly _tag: "Comment"; readonly data: string; readonly span: Span }
@@ -143,6 +144,7 @@ const isEndTag = (t: Tok): t is Extract<Tok, { readonly _tag: "EndElement" }> =>
 const isStartTag = (t: Tok): t is Extract<Tok, { readonly _tag: "StartElement" }> =>
   t._tag === "StartElement";
 const isEntityIssue = Issue.$is("Entity");
+const isCharIssue = Issue.$is("Char");
 
 // -----------------------------------------------------------------------------
 // Options
@@ -376,7 +378,7 @@ export class Lexer {
       end: 0,
       count: 0,
       inside: false,
-      names: Arr.allocate<string>(NAME_SLOTS),
+      names: Arr.allocate<Context["names"][number]>(NAME_SLOTS),
       reused: new Reused(),
       marks: freshMarks(),
     };
@@ -736,12 +738,12 @@ export class Lexer {
         // The tag's start offset first: offsets are computed moving forward.
         const start = this.positions.offsetAt(this.base + t.start);
         const attributes = t.attributes.map((a): LexAttribute => ({
-          name: a.name,
+          name: unsafeAttrName(a.name),
           value: a.value,
           span: this.span(a),
         }));
         return {
-          name: t.name,
+          name: unsafeTagName(t.name),
           attributes,
           selfClosing: t.selfClosing,
           span: this.scanner.positions
@@ -757,7 +759,7 @@ export class Lexer {
         };
       }
       case "EndElement":
-        return { name: t.name, span: this.span(t), _tag: "EndElement" };
+        return { name: unsafeTagName(t.name), span: this.span(t), _tag: "EndElement" };
       case "Text":
         return { data: t.data, span: this.span(t), _tag: "Text" };
       case "CData":
@@ -818,17 +820,17 @@ export class Lexer {
     this.positions.anchor(this.base + this.cursor);
     // The grammar may have stumbled over the character itself.
     if (this.forbidden !== -1 && this.forbidden <= this.base + at) return this.forbiddenCharacter();
-    // SAFETY: every grammar here fails with an `Issue` (its error type `P<A>`);
-    // the parse state's failure record stores causes as `unknown`.
-    const issue = failure.hasCause ? (failure.cause as Issue) : undefined;
-    if (issue !== undefined && isEntityIssue(issue) && issue.limit !== undefined) {
+    // Every grammar here fails with an `Issue` (its error type `P<A>`); the
+    // parse state's failure record stores causes as `unknown`.
+    const issue: unknown = failure.hasCause ? failure.cause : undefined;
+    if (isEntityIssue(issue) && issue.limit !== undefined) {
       return new LimitExceeded({
         limit: issue.limit.name,
         max: issue.limit.max,
         position: this.at(issue.offset),
       });
     }
-    if (issue !== undefined && isEntityIssue(issue)) {
+    if (isEntityIssue(issue)) {
       return new InvalidEntity({
         reference: issue.reference,
         position: this.at(issue.offset),
@@ -841,7 +843,7 @@ export class Lexer {
         context: "parsing markup",
       });
     }
-    if (issue !== undefined) {
+    if (isCharIssue(issue)) {
       return new UnexpectedCharacter({
         char: charAt(this.buf, issue.offset),
         position: this.at(issue.offset),

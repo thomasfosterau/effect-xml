@@ -1,6 +1,6 @@
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Sax, Xml } from "../src/index.ts";
@@ -15,7 +15,7 @@ describe("typed errors", () => {
   test("mismatched end tag", async () => {
     const e = await parseError(`<a></b>`);
     expect(e._tag).toBe("MismatchedEndTag");
-    assert(Predicate.isTagged(e, "MismatchedEndTag"));
+    assert(P.isTagged(e, "MismatchedEndTag"));
     expect(e.expected).toBe("a");
     expect(e.actual).toBe("b");
   });
@@ -44,15 +44,15 @@ describe("typed errors", () => {
     "an unclosed attribute quote in %s is reported where the input ends (#157)",
     async (input, offset) => {
       const fromParse = await parseError(input);
-      assert(Predicate.isTagged(fromParse, "UnexpectedEndOfInput"));
+      assert(P.isTagged(fromParse, "UnexpectedEndOfInput"));
       expect(fromParse.position.offset).toBe(offset);
       const fromDtd = await parseError(input, { dtd: "internal" });
-      assert(Predicate.isTagged(fromDtd, "UnexpectedEndOfInput"));
+      assert(P.isTagged(fromDtd, "UnexpectedEndOfInput"));
       expect(fromDtd.position.offset).toBe(offset);
       const chunked = await Effect.runPromise(
         Stream.fromIterable(input).pipe(Sax.tokenize(), Stream.runDrain, Effect.flip),
       );
-      assert(Predicate.isTagged(chunked, "UnexpectedEndOfInput"));
+      assert(P.isTagged(chunked, "UnexpectedEndOfInput"));
       expect(chunked.position.offset).toBe(offset);
     },
   );
@@ -94,7 +94,7 @@ describe("typed errors", () => {
   test("unbound namespace prefix", async () => {
     const e = await parseError(`<x:a/>`);
     expect(e._tag).toBe("UnboundNamespacePrefix");
-    assert(Predicate.isTagged(e, "UnboundNamespacePrefix"));
+    assert(P.isTagged(e, "UnboundNamespacePrefix"));
     expect(e.prefix).toBe("x");
   });
 
@@ -127,7 +127,7 @@ describe("typed errors", () => {
             Effect.result,
             Effect.map((r) => {
               assert(
-                Result.isFailure(r) && Predicate.isTagged(r.failure, "MalformedDeclaration"),
+                Result.isFailure(r) && P.isTagged(r.failure, "MalformedDeclaration"),
                 `expected MalformedDeclaration for ${input}`,
               );
               expect(r.failure.message).toContain(`at ${at}: ${detail}`);

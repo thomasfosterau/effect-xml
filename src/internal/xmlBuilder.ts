@@ -225,7 +225,7 @@ export class Builder {
     if (ns !== null || this.recover) return this.names.name(parsed, ns);
     this.failure = new UnboundNamespacePrefix({
       prefix: parsed.prefix,
-      name: raw,
+      qualifiedName: raw,
       position: at.start,
     });
     return undefined;
@@ -471,7 +471,7 @@ export class Builder {
       return null;
     }
     const frame = this.stack.pop();
-    if (frame === undefined) return new UnexpectedEndTag({ name: rawName, position: at.start });
+    if (frame === undefined) return new UnexpectedEndTag({ tagName: rawName, position: at.start });
     if (frame.bindings.size > 0) this.popScope();
     if (frame.rawName !== rawName) {
       return new MismatchedEndTag({ expected: frame.rawName, actual: rawName, position: at.start });

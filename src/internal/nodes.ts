@@ -24,7 +24,7 @@
  * keeps validating; only parser-internal code whose inputs are well-typed by
  * construction uses these.
  */
-import * as Predicate from "effect/Predicate";
+import * as P from "effect/Predicate";
 import type * as Schema from "effect/Schema";
 import {
   HtmlAttribute,
@@ -215,7 +215,7 @@ export const htmlText = (data: string): HtmlText => {
  * would walk the whole prototype chain of every node that is not text).
  */
 const isHtmlTextNode = (node: { readonly _tag: string }): node is HtmlText =>
-  Predicate.isTagged(node, "HtmlText");
+  P.isTagged(node, "HtmlText");
 
 /**
  * Append text to a list of nodes as the HTML parsers do, merging it into the
