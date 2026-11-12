@@ -112,11 +112,12 @@ export default defineConfig({
       // caller forward an optional of its own into. A bare `null` in an
       // internal return type is still a finding to read.
       "effect/prefer-option-over-null": "warn",
-      "typescript/no-explicit-any": "off",
       "typescript/no-empty-object-type": "off",
       "typescript/ban-ts-comment": "off",
       "unicorn/no-empty-file": "off",
       "vite-plus/prefer-vite-plus-imports": "error",
+      // On explicitly: no preset this config extends turns them on.
+      "typescript/no-explicit-any": "error",
 
       // ---- oxlint plugins (`suspicious` / `perf` categories) ---------------
       // `_tag` is the discriminant of every Effect tagged union and error
