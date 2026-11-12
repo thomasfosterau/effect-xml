@@ -6,8 +6,8 @@ name: CI
 # Nothing here needs a database, a stage or a credential, so every PR runs
 # the whole gate — Dependabot's included: the job holds a read-only token, no
 # secrets and no OIDC, checks out without persisting credentials, and every
-# third-party action is pinned to a commit SHA (Dependabot's
-# `github-actions` updates keep the pins current).
+# action is locked to its commit by .github/workflows/actions.lock
+# (Dependabot's `github-actions` updates keep the tags current).
 
 on:
   pull_request:
@@ -35,12 +35,12 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=2048
       VITEST_MAX_WORKERS: 2
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
       - name: Restore the Vite+ task cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: node_modules/.vite/task-cache
           key: vp-task-v1-${{ runner.os }}-${{ github.sha }}
