@@ -17,6 +17,8 @@
  */
 
 import { defineConfig } from "vite-plus";
+import * as Option from "effect/Option";
+import * as R from "effect/Record";
 import { recommended } from "@effect/tsgo/oxlint-presets";
 import effect from "@enfect/oxlint";
 
@@ -28,7 +30,11 @@ import effect from "@enfect/oxlint";
  */
 const cacheInputs = [{ auto: true }, "!node_modules/**", "!docs/**", "pnpm-lock.yaml"];
 
-const maxWorkers = process.env.VITEST_MAX_WORKERS;
+// The worker count CI pins (`VITEST_MAX_WORKERS`), as a `test` member only
+// when it is set: vitest's own default applies otherwise.
+const workers = R.getSomes({
+  maxWorkers: Option.map(Option.fromNullishOr(process.env.VITEST_MAX_WORKERS), Number),
+});
 
 /**
  * A task of the command-line package (`packages/cli`), which the root's
@@ -78,13 +84,12 @@ export default defineConfig({
     },
     rules: {
       "eslint/no-unused-vars": [
-        "warn",
+        "error",
         {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
         },
       ],
-      "eslint/prefer-const": "warn",
       // The `Buffer` global is typed `any` wherever a consumer loads
       // @cloudflare/workers-types next to @types/node, so every call on it is
       // unchecked there. Use Uint8Array / TextEncoder / DataView instead.
@@ -102,21 +107,21 @@ export default defineConfig({
       "effect/casting-awareness": "warn",
 
       // ---- Effect preset: rules this library's public surface cuts across --
-      // `prefer-option-over-null` fires on the `string | null` members of the
-      // published data types (`SaxEvent.Doctype` / `XmlDeclaration`,
-      // `XmlDoctype`, `QName.prefix` / `.namespace`). They are the XML
-      // infoset's "no value", encoded through `Schema.NullOr` as JSON-safe
-      // `null`, so turning them into `Option` would break every consumer and
-      // every encoded document. It also fires on `?: T | undefined`, the only
-      // spelling of an optional member `exactOptionalPropertyTypes` lets a
-      // caller forward an optional of its own into. A bare `null` in an
-      // internal return type is still a finding to read.
+      // `prefer-option-over-null`: the public API spells absence as `Option`
+      // (AGENTS.md, Conventions), but `src/internal/**` still returns and
+      // stores `null` / `undefined` on its per-token paths, where an
+      // `Option` per token measurably costs throughput, and the hand-written
+      // `*Encoded` wire shapes of the DOM keep `T | null` (their encoded
+      // JSON). It stays a warning so those sites stay visible; a new one in
+      // a public module is still a finding to read.
       "effect/prefer-option-over-null": "warn",
-      "typescript/no-explicit-any": "off",
-      "typescript/no-empty-object-type": "off",
-      "typescript/ban-ts-comment": "off",
-      "unicorn/no-empty-file": "off",
       "vite-plus/prefer-vite-plus-imports": "error",
+      // On explicitly: no preset this config extends turns them on.
+      "eslint/prefer-const": "error",
+      "unicorn/no-empty-file": "error",
+      "typescript/ban-ts-comment": "error",
+      "typescript/no-empty-object-type": "error",
+      "typescript/no-explicit-any": "error",
 
       // ---- oxlint plugins (`suspicious` / `perf` categories) ---------------
       // `_tag` is the discriminant of every Effect tagged union and error
@@ -170,9 +175,6 @@ export default defineConfig({
           "effect/use-console-service": "off",
           "effect/use-filesystem-service": "off",
           "effect/use-path-service": "off",
-          // `...(process.env.X ? { x } : {})` is how a vitest option is left
-          // unset under `exactOptionalPropertyTypes`.
-          "effect/no-conditional-empty-object-spread": "off",
         },
       },
       // The WHATWG tree constructor keeps three loops that ARE the spec's
@@ -540,7 +542,7 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
-    ...(maxWorkers === undefined ? {} : { maxWorkers: Number(maxWorkers) }),
+    ...workers,
     coverage: {
       provider: "istanbul",
       // `json` writes coverage-final.json, the Istanbul map `fallow audit`

@@ -23,6 +23,7 @@ import { Name as NameGrammar, Nmtoken } from "../names.ts";
 import { quote } from "../quote.ts";
 import { translate } from "./regex.ts";
 import type { SimpleValue } from "../../Xsd/Value.ts";
+import { maybe } from "../optional.ts";
 
 export type { SimpleValue };
 
@@ -62,10 +63,10 @@ export interface SimpleChecker {
    */
   readonly primitive: string;
   /** For a list, its item type; for a union, its member types. */
-  readonly item?: SimpleChecker | undefined;
-  readonly members?: ReadonlyArray<SimpleChecker> | undefined;
+  readonly item?: SimpleChecker;
+  readonly members?: ReadonlyArray<SimpleChecker>;
   /** The most derived enumeration, as lexical forms. */
-  readonly enumeration?: ReadonlyArray<string> | undefined;
+  readonly enumeration?: ReadonlyArray<string>;
   /** Check an already whitespace-normalized lexical form. */
   readonly check: (normalized: string, context: ValueContext) => Result.Result<SimpleValue, string>;
   /** Compare two values of this type: `None` when they are incomparable. */
@@ -425,11 +426,11 @@ interface Builtin {
   readonly base: string;
   readonly kind: Kind;
   readonly whiteSpace: WhiteSpace;
-  readonly identity?: Identity | undefined;
+  readonly identity?: Identity;
   readonly check: SimpleChecker["check"];
   readonly compare: SimpleChecker["compare"];
   /** A list of `item` (a built-in name), at least one long. */
-  readonly listOf?: string | undefined;
+  readonly listOf?: string;
 }
 
 const stringLike = (
@@ -468,7 +469,9 @@ const temporalType = (name: string): Builtin => ({
 const two = (bits: bigint) => 2n ** bits;
 
 /** Every built-in simple type, by local name in the XSD namespace. */
-interface Builtins extends R.ReadonlyRecord<string, Builtin> {}
+interface Builtins {
+  readonly [key: string]: Builtin;
+}
 
 const builtins: Builtins = {
   anySimpleType: stringLike("anyType", "preserve"),
@@ -759,7 +762,7 @@ export const restrict = (
       return {
         ...base,
         whiteSpace: facets.whiteSpace ?? base.whiteSpace,
-        enumeration: facets.enumeration ?? base.enumeration,
+        ...maybe("enumeration", facets.enumeration ?? base.enumeration),
         check: (normalized, context) => {
           const checked = base.check(normalized, context);
           return Result.isFailure(checked)

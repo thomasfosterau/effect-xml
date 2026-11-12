@@ -49,20 +49,21 @@ import { anyTypeDefinition } from "./components.ts";
 import { builtinBase, isBuiltinSimple } from "./datatypes.ts";
 import { translate } from "./regex.ts";
 import { isIn, tagSet } from "../tagSet.ts";
+import { maybe } from "../optional.ts";
 
 /** A schema document, as the reader sees it. */
 export interface SchemaDocument {
-  /** Where it was loaded from, for messages (`null` for the entry given as text). */
-  readonly location: string | null;
+  /** Where it was loaded from, for messages (none for the entry given as text). */
+  readonly location: Option.Option<string>;
   readonly root: XmlElement;
   /** The namespace a chameleon include puts it in, when it has none of its own. */
-  readonly chameleon?: string | undefined;
+  readonly chameleon?: string;
 }
 
 type Res<A> = Result.Result<A, XsdSchemaError>;
 
 interface DocContext {
-  readonly location: string | null;
+  readonly location: Option.Option<string>;
   readonly tns: string;
   readonly chameleon: boolean;
   readonly elementQualified: boolean;
@@ -93,20 +94,20 @@ const scopeOf = (
   parent: Readonly<Record<string, string>>,
 ): Readonly<Record<string, string>> =>
   Arr.reduce(el.attributes, parent, (scope, a) =>
-    a.name.namespace === Namespaces.xmlns
+    Option.contains(a.name.namespace, Namespaces.xmlns)
       ? { ...scope, [a.name.local]: a.value }
-      : a.name.prefix === null && a.name.local === "xmlns"
+      : Option.isNone(a.name.prefix) && a.name.local === "xmlns"
         ? { ...scope, "": a.value }
         : scope,
   );
 
 const isXs = (node: Node, ...locals: ReadonlyArray<string>): boolean =>
-  node.el.name.namespace === XS && locals.includes(node.el.name.local);
+  Option.contains(node.el.name.namespace, XS) && locals.includes(node.el.name.local);
 
 /** The XSD child elements of a node (annotations and foreign elements left out). */
 const kids = (node: Node): ReadonlyArray<Node> =>
   Arr.filterMap(node.el.elements, (el) =>
-    el.name.namespace === XS && el.name.local !== "annotation"
+    Option.contains(el.name.namespace, XS) && el.name.local !== "annotation"
       ? Result.succeed({ el, ns: scopeOf(el, node.ns), doc: node.doc })
       : Result.failVoid,
   );
@@ -115,7 +116,7 @@ const kid = (node: Node, ...locals: ReadonlyArray<string>): Option.Option<Node> 
   Arr.findFirst(kids(node), (k) => isXs(k, ...locals));
 
 const attr = (node: Node, name: string): Option.Option<string> =>
-  node.el.attributeNS(null, name).pipe(Option.map((v) => v.trim()));
+  node.el.attributeNS(Option.none(), name).pipe(Option.map((v) => v.trim()));
 
 const flag = (node: Node, name: string): boolean =>
   Option.match(attr(node, name), { onNone: () => false, onSome: (v) => v === "true" || v === "1" });
@@ -165,8 +166,8 @@ const occurs = (node: Node): Res<{ readonly min: number; readonly max: MaxOccurs
 
 /** `min` / `max` as the model writes them: left out when they are the default 1. */
 const bounds = (b: { readonly min: number; readonly max: MaxOccurs }) => ({
-  min: b.min === 1 ? undefined : b.min,
-  max: b.max === 1 ? undefined : b.max,
+  ...maybe("min", b.min === 1 ? undefined : b.min),
+  ...maybe("max", b.max === 1 ? undefined : b.max),
 });
 
 const unsupported = tagSet(
@@ -427,7 +428,7 @@ const identityConstraint = (node: Node): Res<IdentityConstraint> =>
     const constraint: IdentityConstraint = {
       _tag: tag,
       name: clark(node.doc.tns, local.value),
-      refer: Option.getOrUndefined(refer),
+      ...maybe("refer", Option.getOrUndefined(refer)),
       selector: selector.value,
       fields,
       namespaces: R.filter(node.ns, (_, prefix) => prefix !== ""),
@@ -464,7 +465,7 @@ const constraintsOf = (node: Node): Res<ReadonlyArray<IdentityConstraint>> =>
   );
 
 /** An attribute of a schema element, as written (`attr` trims it). */
-const rawAttr = (n: Node, name: string) => n.el.attributeNS(null, name);
+const rawAttr = (n: Node, name: string) => n.el.attributeNS(Option.none(), name);
 
 /**
  * Compile a set of schema documents (the entry and everything it includes and
@@ -495,7 +496,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
   const indexDocument = (doc: SchemaDocument): Res<void> => {
     const context = contextOf(doc);
     const root: Node = { el: doc.root, ns: scopeOf(doc.root, {}), doc: context };
-    if (root.el.name.namespace !== XS || root.el.name.local !== "schema")
+    if (!Option.contains(root.el.name.namespace, XS) || root.el.name.local !== "schema")
       return fail(context, `the document element is <${root.el.name.qualified}>, not xs:schema`);
     return Result.gen(function* () {
       yield* Result.all(
@@ -582,7 +583,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
       : Result.succeed(
           Arr.filterMap(children, (k) =>
             isXs(k, "enumeration")
-              ? Result.succeed(k.el.attribute("value") ?? "")
+              ? Result.succeed(Option.getOrElse(k.el.attribute("value"), () => ""))
               : Result.failVoid,
           ),
         );
@@ -618,13 +619,16 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
       const facets: Facets = {
         ...numeric,
         ...ranges,
-        patterns: Arr.isReadonlyArrayEmpty(patterns) ? undefined : patterns,
-        enumeration: Arr.isReadonlyArrayEmpty(enumerated) ? undefined : enumerated,
-        whiteSpace: Option.getOrUndefined(
-          Option.filter(
-            whiteSpace,
-            (ws): ws is "preserve" | "replace" | "collapse" =>
-              ws === "preserve" || ws === "replace" || ws === "collapse",
+        ...maybe("patterns", Arr.isReadonlyArrayEmpty(patterns) ? undefined : patterns),
+        ...maybe("enumeration", Arr.isReadonlyArrayEmpty(enumerated) ? undefined : enumerated),
+        ...maybe(
+          "whiteSpace",
+          Option.getOrUndefined(
+            Option.filter(
+              whiteSpace,
+              (ws): ws is "preserve" | "replace" | "collapse" =>
+                ws === "preserve" || ws === "replace" || ws === "collapse",
+            ),
           ),
         ),
       };
@@ -777,9 +781,9 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
       );
       const out: AttributeUse = {
         ...base,
-        required: use === "required" ? true : undefined,
-        fixed: Option.getOrUndefined(fixedValue),
-        default: Option.getOrUndefined(defaultValue),
+        ...maybe("required", use === "required" ? true : undefined),
+        ...maybe("fixed", Option.getOrUndefined(fixedValue)),
+        ...maybe("default", Option.getOrUndefined(defaultValue)),
       };
       return Option.some(out);
     });
@@ -899,8 +903,8 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
       const header = {
         _tag: "ComplexType" as const,
         name: key,
-        abstract: flag(node, "abstract") ? true : undefined,
-        block: block(node),
+        ...maybe("abstract", flag(node, "abstract") ? true : undefined),
+        ...maybe("block", block(node)),
       };
       const simple = kid(node, "simpleContent");
       if (Option.isSome(simple)) return yield* simpleContent(simple.value, header);
@@ -912,11 +916,11 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
       const particle = yield* ownParticle(node);
       const def: ComplexType = {
         ...header,
-        mixed: mixed ? true : undefined,
+        ...maybe("mixed", mixed ? true : undefined),
         base: anyType,
         derivation: "restriction",
         attributes: own.uses,
-        anyAttribute: own.wildcard,
+        ...maybe("anyAttribute", own.wildcard),
         content: contentOf(particle, mixed),
       };
       return def;
@@ -959,8 +963,10 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
       how === "extension"
         ? [...base.attributes, ...own.uses]
         : deriveAttributes(base.attributes, own),
-    anyAttribute:
+    ...maybe(
+      "anyAttribute",
       how === "extension" ? combineWildcards(base.anyAttribute, own.wildcard, unite) : own.wildcard,
+    ),
   });
 
   /** The content type of a simple content restriction: the base's, restricted by the facets given. */
@@ -1003,7 +1009,7 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
         );
       const def: ComplexType = {
         ...header,
-        mixed: mixed ? true : undefined,
+        ...maybe("mixed", mixed ? true : undefined),
         ...inherit(baseKey, how, base, own),
         content,
       };
@@ -1118,14 +1124,14 @@ export const read = (documents: ReadonlyArray<SchemaDocument>): Res<Model> => {
       const decl: ElementDeclaration = {
         name,
         type,
-        nillable: flag(node, "nillable") ? true : undefined,
-        abstract: optionalFlag(node, "abstract"),
+        ...maybe("nillable", flag(node, "nillable") ? true : undefined),
+        ...maybe("abstract", optionalFlag(node, "abstract")),
         // Values are kept as written: the element's type decides their whitespace.
-        fixed: Option.getOrUndefined(node.el.attributeNS(null, "fixed")),
-        default: Option.getOrUndefined(node.el.attributeNS(null, "default")),
-        substitutionGroup: Option.getOrUndefined(head),
-        block: blocked,
-        constraints: Arr.isReadonlyArrayEmpty(constraints) ? undefined : constraints,
+        ...maybe("fixed", Option.getOrUndefined(node.el.attributeNS(Option.none(), "fixed"))),
+        ...maybe("default", Option.getOrUndefined(node.el.attributeNS(Option.none(), "default"))),
+        ...maybe("substitutionGroup", Option.getOrUndefined(head)),
+        ...maybe("block", blocked),
+        ...maybe("constraints", Arr.isReadonlyArrayEmpty(constraints) ? undefined : constraints),
       };
       return decl;
     });

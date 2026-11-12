@@ -31,6 +31,8 @@ import type {
   XmlNode,
   XmlProcessingInstruction,
 } from "../../Xml/Node.ts";
+import { maybe } from "../optional.ts";
+import { prefixOf, uriOf } from "../qnames.ts";
 
 /**
  * The seven kinds of XDM node.
@@ -76,9 +78,9 @@ interface Tree {
  */
 export interface NodeOptions {
   /** The document URI (`fn:document-uri`); also the base URI unless `baseUri` is given. */
-  readonly documentUri?: string | undefined;
+  readonly documentUri?: string;
   /** The base URI that `xml:base` attributes resolve against (`fn:base-uri`). */
-  readonly baseUri?: string | undefined;
+  readonly baseUri?: string;
 }
 
 /** Which of its parent's lists a node is in; also their order in document order. */
@@ -111,7 +113,7 @@ const isTextLike = (node: XmlNode): node is Extract<XmlNode, { readonly data: st
 
 /** Whether an attribute is a namespace declaration (`xmlns`, `xmlns:p`), which XDM does not count as one. */
 const isNamespaceDeclaration = (a: XmlAttribute): boolean =>
-  a.name.prefix === "xmlns" || (a.name.prefix === null && a.name.local === "xmlns");
+  prefixOf(a.name) === "xmlns" || (prefixOf(a.name) === null && a.name.local === "xmlns");
 
 /** Append the data of the DOM text or CDATA node at `dom`, merging it into a text node just before it. */
 const appendText = (out: Array<Content>, data: string, dom: number): Array<Content> => {
@@ -490,7 +492,7 @@ export class XdmNode {
       onSome: (cursor) => cursor.base,
       onNone: () =>
         Option.match(this.up, {
-          onNone: () => this.tree.baseUri,
+          onNone: () => (this.kind === "document" ? this.tree.baseUri : Option.none()),
           onSome: (parent) => parent.baseUri,
         }),
     });
@@ -512,7 +514,8 @@ export class XdmNode {
       const parentCursor = Option.flatMap(this.up, (parent) => parent.cursor);
       this.cursorCache = Option.some(
         Option.match(parentCursor, {
-          onNone: () => Cursor.root(c.node, { base: Option.getOrUndefined(this.tree.baseUri) }),
+          onNone: () =>
+            Cursor.root(c.node, maybe("base", Option.getOrUndefined(this.tree.baseUri))),
           onSome: (cursor) => cursor.at(c.node, c.dom),
         }),
       );
@@ -524,13 +527,14 @@ export class XdmNode {
 /** The bindings an element itself makes or uses: declarations, then its name's and its attributes' namespaces. */
 const ownBindings = (element: XmlElement): ReadonlyArray<readonly [string, string]> => [
   ...element.attributes.flatMap((a): ReadonlyArray<readonly [string, string]> =>
-    isNamespaceDeclaration(a) ? [[a.name.prefix === null ? "" : a.name.local, a.value]] : [],
+    isNamespaceDeclaration(a) ? [[prefixOf(a.name) === null ? "" : a.name.local, a.value]] : [],
   ),
   ...[element.name, ...element.attributes.map((a) => a.name)].flatMap(
-    (name): ReadonlyArray<readonly [string, string]> =>
-      name.namespace === null || name.prefix === "xmlns" || name.prefix === "xml"
-        ? []
-        : [[name.prefix ?? "", name.namespace]],
+    (name): ReadonlyArray<readonly [string, string]> => {
+      const uri = uriOf(name);
+      const prefix = prefixOf(name);
+      return uri === null || prefix === "xmlns" || prefix === "xml" ? [] : [[prefix ?? "", uri]];
+    },
   ),
 ];
 

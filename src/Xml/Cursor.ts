@@ -17,7 +17,7 @@
  *   Xml.parse(`<list xml:lang="en" xml:base="items/"><item xml:lang="fr" xml:base="a.xml"/></list>`)
  * )
  * const root = Xml.cursor(doc.root, { base: "http://example.org/doc.xml" })
- * for (const item of root.descendants(null, "item")) {
+ * for (const item of root.descendants(Option.none(), "item")) {
  *   console.log(Option.getOrNull(item.lang)) // "fr": the nearest xml:lang
  *   console.log(Option.getOrNull(item.base)) // "http://example.org/items/a.xml"
  * }
@@ -28,30 +28,36 @@ import * as Iterable from "effect/Iterable";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import { isEnter, preorder } from "../internal/tree.ts";
+import { resolveReference } from "../internal/uri.ts";
 import { Namespaces } from "../Name.ts";
 import { isNamed, nameOf, type NameArgs, type XmlElement, type XmlNode } from "./Node.ts";
 
 /** The values an element inherits from its ancestors. */
 interface Inherited {
-  readonly lang: string | null;
+  readonly lang: Option.Option<string>;
   readonly space: "default" | "preserve";
-  readonly base: string | null;
+  readonly base: Option.Option<string>;
 }
 
-const xmlAttribute = (element: XmlElement, local: string): string | undefined =>
-  element.attributes.find(
-    (a) =>
-      a.name.local === local &&
-      (a.name.namespace === Namespaces.xml ||
-        (a.name.namespace === null && a.name.prefix === "xml")),
-  )?.value;
+const xmlAttribute = (element: XmlElement, local: string): Option.Option<string> =>
+  Option.map(
+    Arr.findFirst(
+      element.attributes,
+      (a) =>
+        a.name.local === local &&
+        (Option.contains(a.name.namespace, Namespaces.xml) ||
+          (Option.isNone(a.name.namespace) && Option.contains(a.name.prefix, "xml"))),
+    ),
+    (a) => a.value,
+  );
 
 /** Resolve a URI reference against a base, keeping it as written when that isn't possible. */
-const resolveUri = (reference: string, base: string | null): string =>
-  // An absolute reference stands as written (RFC 3986 §5.2.2); `URL` would normalize it.
-  /^[A-Za-z][A-Za-z0-9+.-]*:/.test(reference)
-    ? reference
-    : (URL.parse(reference, base ?? undefined)?.href ?? reference);
+const resolveUri = (reference: string, base: Option.Option<string>): string =>
+  // RFC 3986 §5.2.2 on the text as written; `URL` would normalize and encode it.
+  Option.getOrElse(
+    Option.flatMap(base, (b) => resolveReference(reference, b)),
+    () => reference,
+  );
 
 /** Whether a lookup was given a name (it is no-argument "all elements" otherwise). */
 const hasName = (args: NameArgs | readonly []): args is NameArgs => args[0] !== undefined;
@@ -60,14 +66,20 @@ const isElement = (node: XmlNode): node is XmlElement => P.isTagged(node, "XmlEl
 
 const inherit = (element: XmlElement, from: Inherited): Inherited => {
   const lang = xmlAttribute(element, "lang");
-  const space = xmlAttribute(element, "space");
+  const space = Option.getOrUndefined(xmlAttribute(element, "space"));
   const base = xmlAttribute(element, "base");
   return {
     // `xml:lang=""` undoes an inherited language.
-    lang: lang === undefined ? from.lang : lang === "" ? null : lang,
+    lang: Option.match(lang, {
+      onNone: () => from.lang,
+      onSome: (l) => (l === "" ? Option.none() : Option.some(l)),
+    }),
     // Values other than these two are errors; they leave the inherited value.
     space: space === "default" || space === "preserve" ? space : from.space,
-    base: base === undefined ? from.base : resolveUri(base, from.base),
+    base: Option.match(base, {
+      onNone: () => from.base,
+      onSome: (b) => Option.some(resolveUri(b, from.base)),
+    }),
   };
 };
 
@@ -79,7 +91,7 @@ const inherit = (element: XmlElement, from: Inherited): Inherited => {
  */
 export interface CursorOptions {
   /** The base URI of the document, which `xml:base` values resolve against. */
-  readonly base?: string | undefined;
+  readonly base?: string;
 }
 
 /**
@@ -92,12 +104,17 @@ export class Cursor {
   private readonly inherited: Inherited;
   /** The element. */
   readonly element: XmlElement;
-  /** The parent element's cursor, or `null` at the top. */
-  readonly parent: Cursor | null;
+  /** The parent element's cursor, or `Option.none()` at the top. */
+  readonly parent: Option.Option<Cursor>;
   /** This element's index in its parent's `children` (0 at the top). */
   readonly index: number;
 
-  private constructor(element: XmlElement, parent: Cursor | null, index: number, from: Inherited) {
+  private constructor(
+    element: XmlElement,
+    parent: Option.Option<Cursor>,
+    index: number,
+    from: Inherited,
+  ) {
     this.element = element;
     this.parent = parent;
     this.index = index;
@@ -106,16 +123,16 @@ export class Cursor {
 
   /** A cursor at `element`, as the top of the tree. */
   static root(element: XmlElement, options?: CursorOptions): Cursor {
-    return new Cursor(element, null, 0, {
-      lang: null,
+    return new Cursor(element, Option.none(), 0, {
+      lang: Option.none(),
       space: "default",
-      base: options?.base ?? null,
+      base: Option.fromUndefinedOr(options?.base),
     });
   }
 
   /** The nearest `xml:lang`, if any (none after an `xml:lang=""`). */
   get lang(): Option.Option<string> {
-    return Option.fromNullishOr(this.inherited.lang);
+    return this.inherited.lang;
   }
 
   /** The nearest valid `xml:space`, or `"default"`. */
@@ -125,14 +142,12 @@ export class Cursor {
 
   /** The base URI: every `xml:base` on the way down, resolved against the document's base. */
   get base(): Option.Option<string> {
-    return Option.fromNullishOr(this.inherited.base);
+    return this.inherited.base;
   }
 
   /** The ancestors' cursors, nearest first. */
   get ancestors(): ReadonlyArray<Cursor> {
-    return Arr.unfold(this.parent, (c) =>
-      c === null ? Option.none() : Option.some([c, c.parent] as const),
-    );
+    return Arr.unfold(this.parent, (c) => Option.map(c, (p) => [p, p.parent] as const));
   }
 
   /** The top of the tree this cursor is in. */
@@ -142,7 +157,7 @@ export class Cursor {
 
   /** @internal A cursor at `child`, the element at `index` of this element's `children`. */
   at(child: XmlElement, index: number): Cursor {
-    return new Cursor(child, this, index, this.inherited);
+    return new Cursor(child, Option.some(this), index, this.inherited);
   }
 
   /** The child elements, or those with a name. */

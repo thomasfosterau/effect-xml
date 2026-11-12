@@ -128,6 +128,7 @@ import {
   signatureOf,
   singleItemType,
 } from "./seqtype.ts";
+import { uriOf } from "../../qnames.ts";
 
 const empty: Sequence = [];
 const bool = (b: boolean): Sequence => [AtomicValue.boolean(b)];
@@ -533,9 +534,9 @@ const callUser = (
 
 const qnameOf = (n: ExpandedName, written: EQName): QName =>
   new QName({
-    prefix: Option.getOrNull(written.prefix),
+    prefix: written.prefix,
     local: n.local,
-    namespace: n.uri === "" ? null : n.uri,
+    namespace: n.uri === "" ? Option.none() : Option.some(n.uri),
   });
 
 /** Call a built-in with arguments converted to its parameter types. */
@@ -885,9 +886,9 @@ const lookupFunction = (
 ): Option.Option<Closure> => {
   if (arity < 0 || arity > MAX_ARITY) return Option.none();
   const written: EQName = {
-    prefix: Option.fromNullishOr(name.prefix),
+    prefix: name.prefix,
     local: name.local,
-    uri: Option.some(name.namespace ?? ""),
+    uri: Option.orElseSome(name.namespace, () => ""),
     offset,
   };
   const statics = functionStatics(scope);
@@ -903,7 +904,7 @@ const lookupFunction = (
     },
     (e) =>
       ["XPST0017", "XPST0051", "XPST0080", "XQST0052"].includes(e.code.local) &&
-      e.code.namespace === Namespaces.err
+      Option.contains(e.code.namespace, Namespaces.err)
         ? Option.none()
         : raiseError(e),
   );
@@ -1168,7 +1169,7 @@ const errorTest = (
   NodeTest.$match(t, {
     Name: ({ name }) => {
       const n = resolve(scope, name, "other");
-      return (code: QName) => code.local === n.local && (code.namespace ?? "") === n.uri;
+      return (code: QName) => code.local === n.local && (uriOf(code) ?? "") === n.uri;
     },
     Wildcard: ({ wildcard }) => {
       const local = Option.getOrUndefined(wildcard.local);
@@ -1187,7 +1188,7 @@ const errorTest = (
       );
       return (code: QName) =>
         (local === undefined || code.local === local) &&
-        (uri === undefined || (code.namespace ?? "") === uri);
+        (uri === undefined || (uriOf(code) ?? "") === uri);
     },
     Kind: () => () => false,
   });

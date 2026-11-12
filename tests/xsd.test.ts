@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as BigDecimal from "effect/BigDecimal";
@@ -49,6 +50,7 @@ const rule = (model: Xsd.Model, doc: string) => validation(invalid(model, doc)).
 const isRecord = (v: Xsd.XsdValue): v is Xsd.XsdRecord =>
   P.isObject(v) &&
   !Arr.isArray(v) &&
+  !Option.isOption(v) &&
   !isXmlElement(v) &&
   !(v instanceof Uint8Array) &&
   !BigDecimal.isBigDecimal(v);
@@ -529,10 +531,9 @@ describe("Xsd.parse — derivation and substitution", () => {
   });
 
   test("xsi:type selects a derived type", () => {
-    expect(value(model, `<any ${XSI} xsi:type="Square" side="4"/>`)).toEqual({
-      side: 4,
-      $type: "Square",
-    });
+    expect(value(model, `<any ${XSI} xsi:type="Square" side="4"/>`)).toEqual(
+      Option.some({ side: 4, $type: "Square" }),
+    );
     expect(rule(model, `<any/>`)).toBe("InvalidType");
     expect(
       rule(model, `<any ${XSI} xsi:type="xs:int" xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`),
@@ -542,7 +543,9 @@ describe("Xsd.parse — derivation and substitution", () => {
   });
 
   test("xsi:nil", () => {
-    expect(value(model, `<any ${XSI} xsi:type="Circle" xsi:nil="true" r="1"/>`)).toBeNull();
+    expect(value(model, `<any ${XSI} xsi:type="Circle" xsi:nil="true" r="1"/>`)).toEqual(
+      Option.none(),
+    );
     // An abstract type can't govern an element, even a nil one.
     expect(rule(model, `<any ${XSI} xsi:nil="true"/>`)).toBe("InvalidType");
     expect(rule(model, `<circle ${XSI} xsi:nil="true" r="1"/>`)).toBe("Nil");
@@ -917,7 +920,7 @@ describe("Xsd.select", () => {
       ),
     );
     // Selecting the document element emits the whole value.
-    expect(record(root[0] ?? null)).toEqual({
+    expect(record(root[0] ?? Option.none())).toEqual({
       title: "T",
       head: { n: 1 },
       row: [
@@ -1016,6 +1019,7 @@ describe("Xsd.generate", () => {
   test("types, the model and parsers", () => {
     expect(source).toContain(`import type * as BigDecimal from "effect/BigDecimal";`);
     expect(source).toContain(`import type { Xml } from "pkg";`);
+    expect(source).toContain(`import type * as Option from "effect/Option";`);
     expect(source).toContain(`export type Colour = "red" | "blue";`);
     expect(source).toContain(
       `export interface Base {\n  /** The attribute id. */\n  readonly id: bigint;\n}`,
@@ -1027,7 +1031,7 @@ describe("Xsd.generate", () => {
     expect(source).toContain(`export const model: Xsd.Model = {`);
     // `model` is taken by the module itself, so the parser for <model> is numbered.
     expect(source).toContain(
-      `export const model2 = Xsd.parser<Base | (Derived & { readonly $type: "{urn:t}Derived" }) | null>(model, "{urn:t}model");`,
+      `export const model2 = Xsd.parser<Option.Option<Base | (Derived & { readonly $type: "{urn:t}Derived" })>>(model, "{urn:t}model");`,
     );
     // A root with repeated children gets a stream for each.
     expect(source).toContain(

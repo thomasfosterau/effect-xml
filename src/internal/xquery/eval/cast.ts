@@ -10,6 +10,7 @@
  * form back as the target (so a derived type's facets are checked once, by
  * the XSD datatypes).
  */
+import { maybe } from "../../optional.ts";
 import * as BigDecimal from "effect/BigDecimal";
 import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
@@ -208,7 +209,8 @@ const read = (
   lexical: string,
   resolve: PrefixResolver | undefined,
   offset?: number,
-): AtomicValue => checked(unwrap(fromLexical(target, lexical, { resolve }), offset), offset);
+): AtomicValue =>
+  checked(unwrap(fromLexical(target, lexical, maybe("resolve", resolve)), offset), offset);
 
 /** The primitive type a cast goes through before restricting to `target`. */
 const via = (target: AtomicType): AtomicType =>

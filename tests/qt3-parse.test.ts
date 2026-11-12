@@ -38,6 +38,7 @@ import {
   type TestCase,
 } from "./support/qt3.ts";
 import { reportRequested } from "./support/report.ts";
+import { maybe } from "./support/maybe.ts";
 
 const Counts = Schema.Struct({
   runnable: Schema.Finite,
@@ -132,9 +133,12 @@ const optionsOf = (
       ),
     ),
   ],
-  baseUri: Option.getOrElse(
-    Option.getOrElse(environment.staticBaseUri, () => Option.some(testCase.base.href)),
-    () => undefined,
+  ...maybe(
+    "baseUri",
+    Option.getOrElse(
+      Option.getOrElse(environment.staticBaseUri, () => Option.some(testCase.base.href)),
+      () => undefined,
+    ),
   ),
   collations: environment.collations.map((c) => c.uri),
   modules,

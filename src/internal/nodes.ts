@@ -24,6 +24,7 @@
  * keeps validating; only parser-internal code whose inputs are well-typed by
  * construction uses these.
  */
+import * as Option from "effect/Option";
 import * as P from "effect/Predicate";
 import type * as Schema from "effect/Schema";
 import {
@@ -70,8 +71,12 @@ const blank = <C extends SchemaClass>(Class: C): Writable<C["prototype"]> =>
   // `new` would build it; `new` adds nothing else to the instance.
   Object.create(Class.prototype);
 
-/** A {@link QName} from its parts. */
-export const qname = (
+/** A {@link QName} from its parts, `null` for an absent prefix or namespace. */
+export const qname = (prefix: string | null, local: string, namespace: string | null): QName =>
+  qnameOf(Option.fromNullOr(prefix), local, Option.fromNullOr(namespace));
+
+/** A {@link QName} from its parts, as the public `Option`s. */
+export const qnameOf = (
   prefix: QName["prefix"],
   local: string,
   namespace: QName["namespace"],
@@ -187,18 +192,18 @@ export const document = (
   return node;
 };
 
-/** An {@link HtmlAttribute}. */
+/** An {@link HtmlAttribute}, `null` for an absent namespace or prefix. */
 export const htmlAttribute = (
   name: string,
   value: string,
-  namespace: HtmlAttribute["namespace"],
-  prefix: HtmlAttribute["prefix"],
+  namespace: Option.Option.Value<HtmlAttribute["namespace"]> | null,
+  prefix: string | null,
 ): HtmlAttribute => {
   const node = blank(HtmlAttribute);
   node.name = name;
   node.value = value;
-  node.namespace = namespace;
-  node.prefix = prefix;
+  node.namespace = Option.fromNullOr(namespace);
+  node.prefix = Option.fromNullOr(prefix);
   return node;
 };
 

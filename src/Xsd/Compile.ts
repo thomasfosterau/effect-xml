@@ -10,6 +10,7 @@ import type { XmlElement } from "../Xml/Node.ts";
 import { parse } from "../Xml/Xml.ts";
 import { XsdSchemaError } from "./Error.ts";
 import { XS, type Model } from "./Model.ts";
+import { maybe } from "../internal/optional.ts";
 
 /**
  * Where {@link compile} finds the documents a schema includes and imports.
@@ -26,11 +27,11 @@ import { XS, type Model } from "./Model.ts";
  */
 export interface CompileOptions<E = never, R = never> {
   /** The location of the schema being compiled, which relative locations are resolved against. */
-  readonly location?: string | undefined;
+  readonly location?: string;
   /** Schema documents known up front, by location. */
-  readonly documents?: Readonly<Record<string, string>> | undefined;
+  readonly documents?: Readonly<Record<string, string>>;
   /** Fetch a schema document by its resolved location. */
-  readonly resolve?: ((location: string) => Effect.Effect<string, E, R>) | undefined;
+  readonly resolve?: (location: string) => Effect.Effect<string, E, R>;
 }
 
 const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -46,34 +47,41 @@ const normalizePath = (path: string): string =>
   ).join("/");
 
 /** Resolve a `schemaLocation` against the location of the document that names it. */
-const resolveLocation = (base: string | null, relative: string): string => {
-  if (base === null || scheme.test(relative)) return relative;
-  if (scheme.test(base)) return new URL(relative, base).href;
-  if (relative.startsWith("/")) return normalizePath(relative);
-  return normalizePath(base.slice(0, base.lastIndexOf("/") + 1) + relative);
-};
+const resolveLocation = (base: Option.Option<string>, relative: string): string =>
+  Option.match(base, {
+    onNone: () => relative,
+    onSome: (from) => {
+      if (scheme.test(relative)) return relative;
+      if (scheme.test(from)) return new URL(relative, from).href;
+      if (relative.startsWith("/")) return normalizePath(relative);
+      return normalizePath(from.slice(0, from.lastIndexOf("/") + 1) + relative);
+    },
+  });
 
 interface Pending {
-  readonly location: string | null;
+  readonly location: Option.Option<string>;
   readonly text: Option.Option<string>;
-  readonly chameleon: string | undefined;
+  readonly chameleon?: string;
 }
 
 const ownNamespace = (root: XmlElement): string =>
-  Option.getOrElse(root.attributeNS(null, "targetNamespace"), () => "");
+  Option.getOrElse(root.attributeNS(Option.none(), "targetNamespace"), () => "");
 
 /** The documents a schema document includes and imports. */
 const referencesOf = (doc: SchemaDocument): ReadonlyArray<Pending> => {
   const own = ownNamespace(doc.root);
   const tns = own === "" ? (doc.chameleon ?? "") : own;
   return Arr.flatMap(doc.root.elements, (el): ReadonlyArray<Pending> => {
-    if (el.name.namespace !== XS || (el.name.local !== "include" && el.name.local !== "import"))
+    if (
+      !Option.contains(el.name.namespace, XS) ||
+      (el.name.local !== "include" && el.name.local !== "import")
+    )
       return [];
     return Arr.fromOption(
-      Option.map(el.attributeNS(null, "schemaLocation"), (location) => ({
-        location: resolveLocation(doc.location, location.trim()),
+      Option.map(el.attributeNS(Option.none(), "schemaLocation"), (location) => ({
+        location: Option.some(resolveLocation(doc.location, location.trim())),
         text: Option.none(),
-        chameleon: el.name.local === "include" && tns !== "" ? tns : undefined,
+        ...maybe("chameleon", el.name.local === "include" && tns !== "" ? tns : undefined),
       })),
     );
   });
@@ -123,7 +131,7 @@ export const compile = <E = never, R = never>(
       ? Effect.fail(
           new XsdSchemaError({
             reason: `the schema document ${location} was not given (pass it in \`documents\`, or a \`resolve\` function)`,
-            location: null,
+            location: Option.none(),
           }),
         )
       : resolve(location);
@@ -132,7 +140,7 @@ export const compile = <E = never, R = never>(
     Effect.flatMap(
       Option.match(pending.text, {
         onSome: Effect.succeed,
-        onNone: () => retrieve(pending.location ?? ""),
+        onNone: () => retrieve(Option.getOrElse(pending.location, () => "")),
       }),
       (text) =>
         parse(text).pipe(
@@ -142,11 +150,12 @@ export const compile = <E = never, R = never>(
           Effect.map((doc) => ({
             location: pending.location,
             root: doc.root,
-            chameleon: pending.chameleon,
+            ...maybe("chameleon", pending.chameleon),
           })),
         ),
     );
-  const keyOf = (p: Pending) => `${p.location ?? ""}\u0000${p.chameleon ?? ""}`;
+  const keyOf = (p: Pending) =>
+    `${Option.getOrElse(p.location, () => "")}\u0000${p.chameleon ?? ""}`;
   const gather = (
     todo: ReadonlyArray<Pending>,
     done: ReadonlyArray<SchemaDocument>,
@@ -166,9 +175,8 @@ export const compile = <E = never, R = never>(
             ),
     });
   const entry: Pending = {
-    location: options?.location ?? null,
+    location: Option.fromUndefinedOr(options?.location),
     text: Option.some(schema),
-    chameleon: undefined,
   };
   return Effect.flatMap(gather([entry], [], HashSet.empty()), (docs) =>
     Effect.fromResult(read(docs)),

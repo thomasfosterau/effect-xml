@@ -18,6 +18,7 @@
  * `?target data?`). A DOCTYPE is dropped.
  */
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import type * as Stream from "effect/Stream";
 import type { SaxError } from "../Error.ts";
 import { resolveLimits, type Limits } from "../Limits.ts";
@@ -66,7 +67,7 @@ class FragmentBuilder {
       Nodes.htmlAttribute(a.name.toLowerCase(), a.value, null, null),
     );
     if (ev.selfClosing || isIn(VOID, name)) {
-      this.append(Nodes.htmlElement("html", name, attributes, [], null));
+      this.append(Nodes.htmlElement("html", name, attributes, [], Option.none()));
       return;
     }
     const over = depthExceeded(this.limits, this.stack.length + 1, ev.span);
@@ -92,7 +93,9 @@ class FragmentBuilder {
     while (stack.length > depth) {
       const frame = stack.pop();
       if (frame === undefined) return;
-      this.append(Nodes.htmlElement("html", frame.name, frame.attributes, frame.children, null));
+      this.append(
+        Nodes.htmlElement("html", frame.name, frame.attributes, frame.children, Option.none()),
+      );
     }
   }
 
@@ -140,7 +143,7 @@ class FragmentBuilder {
  */
 export const buildFragment = <E, R>(
   events: Stream.Stream<SaxEvent, E, R>,
-  options?: { readonly limits?: Partial<Limits> | undefined },
+  options?: { readonly limits?: Partial<Limits> },
 ): Effect.Effect<ReadonlyArray<HtmlNode>, SaxError | E, R> =>
   Effect.gen(function* () {
     const builder = new FragmentBuilder(resolveLimits(options?.limits));

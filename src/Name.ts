@@ -10,6 +10,7 @@
  */
 import { Parser } from "@thomasfosterau/effect-parse";
 import * as Brand from "effect/Brand";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { NCName as NCNameGrammar, QNameGrammar } from "./internal/names.ts";
@@ -127,21 +128,27 @@ export const Namespaces = {
  * @category names
  */
 export class QName extends Schema.Class<QName, { readonly brand: unique symbol }>("QName")({
-  /** The prefix as written (`null` for the default / no namespace). */
-  prefix: Schema.NullOr(Schema.String),
+  /**
+   * The prefix as written (`Option.none()` for the default / no namespace).
+   * Encoded as `null` when absent.
+   */
+  prefix: Schema.OptionFromNullOr(Schema.String),
   /** The local part (`NCName`). */
   local: Schema.String,
-  /** The resolved namespace URI (`null` if unresolved / none). */
-  namespace: Schema.NullOr(Schema.String),
+  /**
+   * The resolved namespace URI (`Option.none()` if unresolved / none).
+   * Encoded as `null` when absent.
+   */
+  namespace: Schema.OptionFromNullOr(Schema.String),
 }) {
   /** The name as it appears in source, e.g. `svg:rect` or `div`. */
   get qualified(): string {
-    return this.prefix === null ? this.local : `${this.prefix}:${this.local}`;
+    return Option.isNone(this.prefix) ? this.local : `${this.prefix.value}:${this.local}`;
   }
 
   /** `{uri}local` Clark notation, handy for namespace-aware matching. */
   get clark(): string {
-    return this.namespace === null ? this.local : `{${this.namespace}}${this.local}`;
+    return Option.isNone(this.namespace) ? this.local : `{${this.namespace.value}}${this.local}`;
   }
 
   override toString(): string {
@@ -150,7 +157,7 @@ export class QName extends Schema.Class<QName, { readonly brand: unique symbol }
 
   /** A name with no namespace at all. */
   static simple(local: string): QName {
-    return new QName({ prefix: null, local, namespace: null });
+    return new QName({ prefix: Option.none(), local, namespace: Option.none() });
   }
 
   /**
@@ -160,12 +167,12 @@ export class QName extends Schema.Class<QName, { readonly brand: unique symbol }
   static fromRaw(raw: string): QName {
     const idx = raw.indexOf(":");
     if (idx <= 0 || idx === raw.length - 1) {
-      return new QName({ prefix: null, local: raw, namespace: null });
+      return new QName({ prefix: Option.none(), local: raw, namespace: Option.none() });
     }
     return new QName({
-      prefix: raw.slice(0, idx),
+      prefix: Option.some(raw.slice(0, idx)),
       local: raw.slice(idx + 1),
-      namespace: null,
+      namespace: Option.none(),
     });
   }
 }

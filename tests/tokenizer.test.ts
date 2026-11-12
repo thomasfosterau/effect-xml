@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import { assert, describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
@@ -77,8 +78,8 @@ describe("HTML tokenization follows WHATWG", () => {
     expect(dt).toMatchObject({
       _tag: "Doctype",
       name: "htmlPUBLIC",
-      publicId: null,
-      systemId: null,
+      publicId: Option.none(),
+      systemId: Option.none(),
     });
   });
 
@@ -88,9 +89,9 @@ describe("HTML tokenization follows WHATWG", () => {
       {
         _tag: "Doctype",
         name: "html",
-        publicId: "a",
-        systemId: null,
-        internalSubset: null,
+        publicId: Option.some("a"),
+        systemId: Option.none(),
+        internalSubset: Option.none(),
         forceQuirks: true,
       },
       { _tag: "Text", data: 'b">' },
@@ -124,7 +125,9 @@ describe("XML tokenization errors", () => {
     const events = await Effect.runPromise(
       Sax.collect(`<!DOCTYPE r [<!-- ] > --><!ENTITY a "]>">]><r/>`),
     );
-    expect(events.find(Sax.isDoctype)?.internalSubset).toBe(`<!-- ] > --><!ENTITY a "]>">`);
+    expect(events.find(Sax.isDoctype)?.internalSubset).toEqual(
+      Option.some(`<!-- ] > --><!ENTITY a "]>">`),
+    );
   });
 });
 

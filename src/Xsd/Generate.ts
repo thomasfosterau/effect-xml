@@ -33,11 +33,11 @@ import type { ComplexType, Model } from "./Model.ts";
  */
 export interface GenerateOptions {
   /** The module the generated code imports the library from (default `"@thomasfosterau/effect-xml"`). */
-  readonly importFrom?: string | undefined;
+  readonly importFrom?: string;
   /** The global elements (expanded names) to write parsers for; all of them by default. */
-  readonly roots?: ReadonlyArray<string> | undefined;
+  readonly roots?: ReadonlyArray<string>;
   /** A line saying where the schema came from, for the generated file's header. */
-  readonly source?: string | undefined;
+  readonly source?: string;
 }
 
 const reserved: ReadonlyArray<string> =
@@ -73,7 +73,7 @@ const propertyKey = (name: string): string =>
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }));
 
 /** The names a generated module binds itself, which no type or parser may take. */
-const moduleBindings = ["model", "Xsd", "Xml", "BigDecimal"];
+const moduleBindings = ["model", "Xsd", "Xml", "BigDecimal", "Option"];
 
 /** Uniquely named: each wanted name, numbered when it is taken. */
 const uniquely = (
@@ -123,10 +123,9 @@ const nameTypes = (model: Model): Readonly<Record<string, string>> => {
 const quoted = (normalized: string): Option.Option<string> => Option.some(quote(normalized));
 
 /** How an enumerated value of each kind is written as a TypeScript literal, where it can be. */
-interface Literals extends R.ReadonlyRecord<
-  string,
-  (normalized: string) => Option.Option<string>
-> {}
+interface Literals {
+  readonly [key: string]: (normalized: string) => Option.Option<string>;
+}
 
 const literals: Literals = {
   string: quoted,
@@ -220,9 +219,9 @@ export const generate = (
     return Effect.succeed(write(model, runtime, options));
   });
 
-const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefined): string => {
+const write = (model: Model, runtime: Runtime, options?: GenerateOptions): string => {
   const names = nameTypes(model);
-  const used = { bigDecimal: false, xml: false };
+  const used = { bigDecimal: false, xml: false, option: false };
 
   const simpleRef = (key: string): string => {
     const name = names[key];
@@ -243,7 +242,7 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
     });
   };
 
-  /** The type of an element's values: its type, or any named type derived from it, or `null` if nillable. */
+  /** The type of an element's values: its type, or any named type derived from it, as an `Option` if nillable. */
   const elementRef = (declKey: string): string =>
     Option.match(runtime.element(declKey), {
       onNone: () => "Xsd.XsdValue",
@@ -264,9 +263,10 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
         const alternatives = [
           ...(abstract && Arr.isReadonlyArrayNonEmpty(derived) ? [] : [typeRef(decl.type)]),
           ...Arr.map(derived, (k) => `(${typeRef(k)} & { readonly $type: ${quote(k)} })`),
-          ...(decl.nillable === true ? ["null"] : []),
-        ];
-        return alternatives.join(" | ");
+        ].join(" | ");
+        if (decl.nillable !== true) return alternatives;
+        used.option = true;
+        return `Option.Option<${alternatives}>`;
       },
     });
 
@@ -395,6 +395,7 @@ const write = (model: Model, runtime: Runtime, options: GenerateOptions | undefi
   ];
   const imports = [
     ...(used.bigDecimal ? [`import type * as BigDecimal from "effect/BigDecimal";`] : []),
+    ...(used.option ? [`import type * as Option from "effect/Option";`] : []),
     ...(used.xml ? [`import type { Xml } from ${quote(library)};`] : []),
     `import { Xsd } from ${quote(library)};`,
   ];

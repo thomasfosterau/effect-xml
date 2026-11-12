@@ -303,11 +303,11 @@ describe("QT3 harness", () => {
     fails(verdict(Assertion.Error({ code: "*" }), value()));
     expect(
       codeMatches("Q{http://www.example.com/}EXER3141", {
-        namespace: "http://www.example.com/",
+        namespace: Option.some("http://www.example.com/"),
         local: "EXER3141",
       }),
     ).toBe(true);
-    expect(codeMatches("Q{}USER9999", { namespace: null, local: "USER9999" })).toBe(true);
+    expect(codeMatches("Q{}USER9999", { namespace: Option.none(), local: "USER9999" })).toBe(true);
   });
 
   test("combinators", () => {

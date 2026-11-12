@@ -73,3 +73,9 @@ export class QNames {
     });
   }
 }
+
+/** A name's prefix, `null` for none, as the internal engines compare it. */
+export const prefixOf = (name: QName): string | null => Option.getOrNull(name.prefix);
+
+/** A name's namespace URI, `null` for none, as the internal engines compare it. */
+export const uriOf = (name: QName): string | null => Option.getOrNull(name.namespace);

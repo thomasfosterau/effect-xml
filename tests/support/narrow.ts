@@ -73,7 +73,13 @@ export const htmlDescendantOrFail = (root: Html.HtmlElement, name: string): Html
       onNonEmpty: ([el, ...rest]) =>
         Option.some([
           el,
-          [...(el.content?.children ?? el.children).filter(isHtmlElement), ...rest],
+          [
+            ...Option.match(el.content, {
+              onNone: () => el.children,
+              onSome: (content) => content.children,
+            }).filter(isHtmlElement),
+            ...rest,
+          ],
         ] as const),
     }),
   );
@@ -82,6 +88,7 @@ export const htmlDescendantOrFail = (root: Html.HtmlElement, name: string): Html
 
 /** The contents of a `<template>`, failing the test for any other element. */
 export const templateContent = (template: Html.HtmlElement): ReadonlyArray<Html.HtmlNode> => {
-  assert.isNotNull(template.content, `<${template.name}> has no template contents`);
-  return template.content.children;
+  const content = template.content;
+  assert(Option.isSome(content), `<${template.name}> has no template contents`);
+  return content.value.children;
 };

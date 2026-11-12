@@ -9,11 +9,12 @@ import { describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { Sax, Xml } from "../src/index.ts";
 import { documents } from "./support/documents.ts";
-import { at, failure, success } from "./support/narrow.ts";
+import { at, failure, some, success } from "./support/narrow.ts";
 import { plain } from "./support/plain.ts";
 
 const recovered = (input: string) =>
@@ -26,7 +27,7 @@ const textOf = (input: string) => success(recoverResult(`<a>${input}</a>`)).root
 /** The tag of a recovering parse's failure. */
 const failureTag = (input: string) => failure(recoverResult(input))._tag;
 /** A recovering parse's failure under `limits`. */
-const limited = (input: string, limits: Xml.ParseOptions["limits"]) =>
+const limited = (input: string, limits: NonNullable<Xml.ParseOptions["limits"]>) =>
   failure(Effect.runSync(Effect.result(Xml.parse(input, { recover: true, limits }))));
 const events = (input: string, options?: Sax.SaxOptions) =>
   Effect.runSync(Sax.collect(input, { recover: true, ...options }));
@@ -105,8 +106,8 @@ describe("recover: an `&` that starts no reference", () => {
 describe("recover: attributes", () => {
   test("an unquoted value runs to whitespace or `>`", () => {
     const root = success(recoverResult(`<a href=http://x/?a=1&b=2 n=3>t</a>`)).root;
-    expect(root.attribute("href")).toBe("http://x/?a=1&b=2");
-    expect(root.attribute("n")).toBe("3");
+    expect(root.attribute("href")).toEqual(Option.some("http://x/?a=1&b=2"));
+    expect(root.attribute("n")).toEqual(Option.some("3"));
   });
 
   test('a valueless attribute has the value `""`', () => {
@@ -156,8 +157,8 @@ describe("recover: markup out of place at the top level", () => {
     const doc = success(
       recoverResult(`<?xml version="1.1"?><a/><?xml version="1.0" encoding="x"?>`),
     );
-    expect(doc.declaration?.version).toBe("1.1");
-    expect(doc.declaration?.encoding).toBeNull();
+    expect(some(doc.declaration).version).toBe("1.1");
+    expect(some(doc.declaration).encoding).toEqual(Option.none());
     expect(Xml.serializeDocument(doc)).toBe(`<?xml version="1.1"?><a/>`);
     expect(events(`<a/><?xml version="1.0"?>`).map((e) => e._tag)).toStrictEqual(["StartElement"]);
     expect(recovered(` <?xml version="1.0"?><a/>`)).toBe("<a/>");
@@ -165,7 +166,7 @@ describe("recover: markup out of place at the top level", () => {
 
   test("a second DOCTYPE, or one after the root's start, is dropped", () => {
     const doc = success(recoverResult(`<!DOCTYPE a><!DOCTYPE b><a/><!DOCTYPE c>`));
-    expect(doc.doctype?.name).toBe("a");
+    expect(some(doc.doctype).name).toBe("a");
   });
 });
 

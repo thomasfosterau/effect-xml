@@ -19,6 +19,7 @@ import type { CompileOptions, Path, XPathError } from "../Xml/XPath.ts";
 import type { XsdSchemaError, XsdValidationError } from "./Error.ts";
 import type { Model } from "./Model.ts";
 import type { Validated, XsdValue } from "./Value.ts";
+import { maybe } from "../internal/optional.ts";
 
 /**
  * Everything schema-aware parsing can fail with: a parse error, a schema the
@@ -37,7 +38,7 @@ export type XsdError = SaxError | XsdSchemaError | XsdValidationError;
  */
 export interface ValidateOptions {
   /** The expanded name (`{namespace}local`) the document element must have; any global element otherwise. */
-  readonly root?: string | undefined;
+  readonly root?: string;
 }
 
 /**
@@ -48,21 +49,18 @@ export interface ValidateOptions {
  */
 export interface ParseOptions extends ValidateOptions {
   /** Named entity table override. */
-  readonly entities?: Record<string, string> | undefined;
+  readonly entities?: Record<string, string>;
   /** Resource limits; the ones left out keep their defaults (see {@link Limits}). */
-  readonly limits?: Partial<Limits> | undefined;
+  readonly limits?: Partial<Limits>;
   /** Interpret the DOCTYPE internal subset (see {@link Sax.SaxOptions.dtd}); default `"ignore"`. */
-  readonly dtd?: "ignore" | "internal" | undefined;
+  readonly dtd?: "ignore" | "internal";
   /** An external encoding hint for byte input, such as the `charset` of a `Content-Type`. */
-  readonly encoding?: string | undefined;
+  readonly encoding?: string;
 }
 
-const saxOptions = (options: ParseOptions | undefined): Sax.SaxBytesOptions => ({
+const saxOptions = (options?: ParseOptions): Sax.SaxBytesOptions => ({
+  ...options,
   mode: "xml",
-  entities: options?.entities,
-  limits: options?.limits,
-  dtd: options?.dtd,
-  encoding: options?.encoding,
 });
 
 /** Each model is compiled for validation once, however often it is used. */
@@ -76,11 +74,14 @@ const runtimeOf = (model: Model): Runtime => {
   return runtime;
 };
 
-const noFailure = (): Failure | null => null;
-
-/** Feed a chunk of events to a validator: the first failure, or `null`. */
-const acceptAll = (validator: Validator, events: ReadonlyArray<Sax.SaxEvent>): Failure | null =>
-  Arr.reduce(events, noFailure(), (failure, ev): Failure | null => failure ?? validator.accept(ev));
+/** Feed a chunk of events to a validator: the first failure, if any. */
+const acceptAll = (
+  validator: Validator,
+  events: ReadonlyArray<Sax.SaxEvent>,
+): Option.Option<Failure> =>
+  Arr.reduce(events, Option.none<Failure>(), (failure, ev) =>
+    Option.isSome(failure) ? failure : Option.fromNullOr(validator.accept(ev)),
+  );
 
 /**
  * Validate a stream of SAX events against a schema as they pass through,
@@ -95,8 +96,10 @@ export const validate =
     Stream.suspend(() => {
       const validator = new Validator(runtimeOf(model), options);
       const body = Stream.mapArrayEffect(events, (chunk) => {
-        const failure = acceptAll(validator, chunk);
-        return failure === null ? Effect.succeed(chunk) : Effect.fail(failure);
+        return Option.match(acceptAll(validator, chunk), {
+          onNone: () => Effect.succeed(chunk),
+          onSome: Effect.fail,
+        });
       });
       const tail = Stream.suspend(() => {
         const failure = validator.finish();
@@ -117,14 +120,19 @@ export const decode =
     Effect.suspend(() => {
       const validator = new Validator(runtimeOf(model), options);
       return Stream.runForEachArray(events, (chunk) => {
-        const failure = acceptAll(validator, chunk);
-        return failure === null ? Effect.void : Effect.fail(failure);
+        return Option.match(acceptAll(validator, chunk), {
+          onNone: () => Effect.void,
+          onSome: Effect.fail,
+        });
       }).pipe(
         Effect.flatMap(() => {
           const failure = validator.finish();
           return failure === null
             ? Effect.succeed(
-                Option.getOrElse(validator.result, (): Validated => ({ name: "", value: null })),
+                Option.getOrElse(validator.result, (): Validated => ({
+                  name: "",
+                  value: Option.none(),
+                })),
               )
             : Effect.fail(failure);
         }),
@@ -206,7 +214,7 @@ export const select =
       const steps = compileStreamable(path, options);
       if (Result.isFailure(steps)) return Stream.fail(steps.failure);
       const validator = new Validator(runtimeOf(model), {
-        root: options?.root,
+        ...maybe("root", options?.root),
         select: steps.success,
       });
       // Each chunk of events becomes the values it completed, then its failure if it has one.
@@ -215,9 +223,10 @@ export const select =
         return [{ values: validator.drain(), failure }] as const;
       }).pipe(
         Stream.flatMap(({ values, failure }) =>
-          failure === null
-            ? Stream.fromIterable(values)
-            : Stream.concat(Stream.fromIterable(values), Stream.fail(failure)),
+          Option.match(failure, {
+            onNone: () => Stream.fromIterable(values),
+            onSome: (f) => Stream.concat(Stream.fromIterable(values), Stream.fail(f)),
+          }),
         ),
       );
       const tail = Stream.suspend(() => {
@@ -393,7 +402,7 @@ export const parser = <A = XsdValue, S = Record<string, never>>(
   element: string,
   streams?: { readonly [K in keyof S]: string },
 ): Parser<A, S> => {
-  const rooted = (options: ParseOptions | undefined): ParseOptions => ({
+  const rooted = (options?: ParseOptions): ParseOptions => ({
     ...options,
     root: element,
   });

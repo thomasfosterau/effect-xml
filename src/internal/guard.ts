@@ -7,6 +7,7 @@
  * builders check depth against their stack of open elements instead.
  */
 import { absurd } from "effect/Function";
+import * as Option from "effect/Option";
 import { LimitExceeded, type LimitName } from "../Error.ts";
 import type { Limits } from "../Limits.ts";
 import type { Position } from "../Position.ts";
@@ -26,7 +27,11 @@ export class Guard {
   }
 
   private fail(limit: LimitName, position: Position | null): LimitExceeded {
-    return new LimitExceeded({ limit, max: this.limits[limit], position });
+    return new LimitExceeded({
+      limit,
+      max: this.limits[limit],
+      position: Option.fromNullOr(position),
+    });
   }
 
   /** Account for a chunk about to be written to `lexer`. */
@@ -104,5 +109,9 @@ export class Guard {
 /** The depth check for tree builders that keep their own stack of open elements. */
 export const depthExceeded = (limits: Limits, depth: number, at: Span): LimitExceeded | null =>
   depth > limits.maxDepth
-    ? new LimitExceeded({ limit: "maxDepth", max: limits.maxDepth, position: at.start })
+    ? new LimitExceeded({
+        limit: "maxDepth",
+        max: limits.maxDepth,
+        position: Option.some(at.start),
+      })
     : null;

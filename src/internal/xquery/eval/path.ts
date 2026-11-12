@@ -52,7 +52,8 @@ interface AxisStepC {
 
 const nameOf = (
   node: XdmNode,
-): Option.Option<{ readonly namespace: string | null; readonly local: string }> => node.name;
+): Option.Option<{ readonly namespace: Option.Option<string>; readonly local: string }> =>
+  node.name;
 
 /** The kind of node an axis selects by name: attributes on the attribute axis, elements elsewhere. */
 const principal = (axis: Axis): "attribute" | "element" =>
@@ -67,7 +68,10 @@ const nodeMatcher = (test: NodeTestT, axis: Axis, scope: Scope): NodeMatcher => 
       const uri = n.uri === "" ? null : n.uri;
       return (node) =>
         node.kind === kind &&
-        Option.exists(nameOf(node), (q) => q.local === n.local && q.namespace === uri);
+        Option.exists(
+          nameOf(node),
+          (q) => q.local === n.local && Option.getOrNull(q.namespace) === uri,
+        );
     },
     Wildcard: ({ wildcard }): NodeMatcher => {
       const uri = Option.match(wildcard.uri, {
@@ -91,7 +95,10 @@ const nodeMatcher = (test: NodeTestT, axis: Axis, scope: Scope): NodeMatcher => 
           nameOf(node),
           (q) =>
             (local === undefined || q.local === local) &&
-            Option.match(ns, { onNone: () => true, onSome: (u) => q.namespace === u }),
+            Option.match(ns, {
+              onNone: () => true,
+              onSome: (u) => Option.getOrNull(q.namespace) === u,
+            }),
         );
     },
     Kind: ({ test: t }): NodeMatcher => {

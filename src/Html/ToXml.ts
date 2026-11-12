@@ -5,6 +5,8 @@
 import * as Arr from "effect/Array";
 import * as Match from "effect/Match";
 import * as Iterable from "effect/Iterable";
+import * as Option from "effect/Option";
+import * as R from "effect/Record";
 import * as Nodes from "../internal/nodes.ts";
 import { isEnter, preorder } from "../internal/tree.ts";
 import type { XmlAttribute, XmlDocument, XmlElement, XmlNode } from "../Xml/Node.ts";
@@ -20,18 +22,29 @@ import {
 
 /** The children an element converts with: a template's contents stand in for its (empty) children. */
 const childrenOf = (el: HtmlElement): ReadonlyArray<HtmlNode> =>
-  el.content === null ? el.children : el.content.children;
+  Option.match(el.content, {
+    onNone: () => el.children,
+    onSome: (content) => content.children,
+  });
+
+/** Each namespace URI as an `Option`, shared by every name in it. */
+const ELEMENT_NAMESPACES = R.map(NAMESPACE_URIS, (uri) => Option.some(uri));
+const ATTRIBUTE_NAMESPACES = R.map(ATTRIBUTE_NAMESPACE_URIS, (uri) => Option.some(uri));
+
+/** A DOCTYPE identifier in the XML DOM: absent when the HTML DOM has `""`. */
+const identifier = (id: string): Option.Option<string> =>
+  id === "" ? Option.none() : Option.some(id);
 
 /** Converts nodes. */
 class Converter {
   private attribute(a: HtmlAttribute): XmlAttribute {
-    const ns = a.namespace === null ? null : ATTRIBUTE_NAMESPACE_URIS[a.namespace];
-    return Nodes.attribute(Nodes.qname(a.prefix, a.name, ns), a.value);
+    const ns = Option.flatMap(a.namespace, (n) => ATTRIBUTE_NAMESPACES[n]);
+    return Nodes.attribute(Nodes.qnameOf(a.prefix, a.name, ns), a.value);
   }
 
   private element(el: HtmlElement, children: ReadonlyArray<XmlNode>): XmlElement {
     return Nodes.element(
-      Nodes.qname(null, el.name, NAMESPACE_URIS[el.namespace]),
+      Nodes.qnameOf(Option.none(), el.name, ELEMENT_NAMESPACES[el.namespace]),
       Arr.map(el.attributes, (a) => this.attribute(a)),
       children,
     );
@@ -83,16 +96,17 @@ const leaf = (node: Exclude<HtmlNode, HtmlElement>): XmlNode =>
  * prefix; an adjusted foreign attribute keeps its prefix (`xlink:href`) in
  * its namespace URI (`Html.ATTRIBUTE_NAMESPACE_URIS`); a `<template>`'s
  * contents become its children. A document has no XML declaration, and a
- * DOCTYPE's absent (`""`) identifiers become `null`.
+ * DOCTYPE's absent (`""`) identifiers become `Option.none()`.
  *
  * @example
  * ```ts
  * import * as Effect from "effect/Effect"
+ * import * as Option from "effect/Option"
  * import { Html, Xml } from "@thomasfosterau/effect-xml"
  *
  * const doc = Effect.runSync(Html.parseDocument("<ul><li>a<li>b</ul>"))
  * const xml = Html.toXml(doc)
- * console.log(xml.root.name.namespace) // "http://www.w3.org/1999/xhtml"
+ * console.log(Option.getOrNull(xml.root.name.namespace)) // "http://www.w3.org/1999/xhtml"
  * console.log(Xml.serialize(xml.root))
  * // <html><head/><body><ul><li>a</li><li>b</li></ul></body></html>
  * ```
@@ -110,17 +124,11 @@ export function toXml(
   const converter = new Converter();
   if (isNodeList(input)) return Arr.map(input, (node) => converter.node(node));
   if (!isHtmlDocument(input)) return converter.node(input);
-  const doctype =
-    input.doctype === null
-      ? null
-      : Nodes.doctype(
-          input.doctype.name,
-          input.doctype.publicId === "" ? null : input.doctype.publicId,
-          input.doctype.systemId === "" ? null : input.doctype.systemId,
-          null,
-        );
+  const doctype = Option.map(input.doctype, (d) =>
+    Nodes.doctype(d.name, identifier(d.publicId), identifier(d.systemId), Option.none()),
+  );
   return Nodes.document(
-    null,
+    Option.none(),
     doctype,
     Arr.map(input.children, (node) => converter.node(node)),
   );
