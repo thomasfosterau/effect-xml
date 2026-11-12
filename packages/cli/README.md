@@ -1,6 +1,6 @@
 # @thomasfosterau/effect-xml-cli
 
-Command-line tools for [`@thomasfosterau/effect-xml`](https://github.com/thomasfosterau/effect-xml#readme). It ships one executable, `effect-xml-xsd`, which turns an XML Schema (XSD 1.0) into a TypeScript module: a type per schema type, the compiled schema as a literal, and a typed parser per global element (what `Xsd.generate` writes).
+Command-line tools for [`@thomasfosterau/effect-xml`](https://github.com/thomasfosterau/effect-xml/blob/trunk/README.md). It ships one executable, `effect-xml-xsd`, which turns an XML Schema (XSD 1.0) into a TypeScript module: a type per schema type, the compiled schema as a literal, and a typed parser per global element (what `Xsd.generate` writes; the [XML Schema guide](https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/xsd.md) has the details).
 
 It is a separate package so the library stays platform-neutral and side-effect free; this one runs on Node (≥ 22) through `@effect/platform-node`.
 

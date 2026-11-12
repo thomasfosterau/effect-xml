@@ -1,5 +1,6 @@
 /**
  * The `Xsd` module: XML Schema (XSD 1.0) compilation, validation and code generation.
+ * The guide is at https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/xsd.md.
  *
  * @since 0.1.0
  */

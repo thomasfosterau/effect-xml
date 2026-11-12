@@ -21,7 +21,7 @@
       "exports": ["select"]
     }
   ],
-  "ignorePatterns": ["**/dist/**", "**/docs/**", "**/coverage/**", "tests/fixtures/**"],
+  "ignorePatterns": ["**/dist/**", "**/docs/api/**", "**/coverage/**", "tests/fixtures/**"],
   "ignoreDependencies": [
     "@types/node",
     "@effect/docgen",

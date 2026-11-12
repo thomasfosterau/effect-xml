@@ -51,7 +51,7 @@ export default defineConfig({
   fmt: {
     ignorePatterns: [
       "**/dist/**",
-      "**/docs/**",
+      "**/docs/api/**",
       "**/coverage/**",
       // Vendored html5lib conformance fixtures: byte-exact upstream files.
       "tests/fixtures/**",
@@ -70,7 +70,7 @@ export default defineConfig({
     ],
   },
   lint: {
-    ignorePatterns: ["**/dist/**", "**/docs/**", "**/coverage/**", "**/node_modules/**"],
+    ignorePatterns: ["**/dist/**", "**/docs/api/**", "**/coverage/**", "**/node_modules/**"],
     extends: [recommended, effect.configs.recommended],
     // oxlint's own plugins beyond the defaults: `import`, `promise`,
     // `vitest` and `jsdoc` cover what the Effect presets don't (module
@@ -487,7 +487,7 @@ export default defineConfig({
       docgen: {
         command: "docgen",
         dependsOn: ["build"],
-        cache: { input: cacheInputs, output: ["docs/**"] },
+        cache: { input: cacheInputs, output: ["docs/api/**"] },
       },
       // The bundle-size budgets (#156): a consumer's `Sax.forEach` and
       // `Xml.parse` bundled from `dist/` with esbuild (bench/size.ts). A CI gate.

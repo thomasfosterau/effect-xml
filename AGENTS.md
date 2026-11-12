@@ -60,7 +60,7 @@ Before you report work as done, run the [gates](CONTRIBUTING.md#verification) in
 
 - The default branch is `trunk`. Branch off `trunk`; PR against `trunk`; squash-merge with a conventional prefix (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`). Rebase onto `origin/trunk` before opening or updating a PR; never merge `trunk` into your branch.
 - Open a pull request only when the owner asks for one; otherwise push the branch and report it. There is no standing approval to open PRs in this repo.
-- Every change to the published package's behaviour or its emitted `.d.ts` carries a changeset (`pnpm changeset`); doc-comment changes that reach the `.d.ts` take a `patch`. README, guidance, CI and tooling changes need none. Never publish or version by hand: the Release workflow opens the version PR (`chore: version packages`) and the owner merges it. Publishing is npm trusted publishing (OIDC) from the protected `release` environment; there is no `NPM_TOKEN` ([PUBLISHING.md](PUBLISHING.md)).
+- Every change to the published package's behaviour or its emitted `.d.ts` carries a changeset (`pnpm changeset`); doc-comment changes that reach the `.d.ts` take a `patch`. README, `docs/*.md` guides, guidance, CI and tooling changes need none. Never publish or version by hand: the Release workflow opens the version PR (`chore: version packages`) and the owner merges it. Publishing is npm trusted publishing (OIDC) from the protected `release` environment; there is no `NPM_TOKEN` ([PUBLISHING.md](PUBLISHING.md)).
 - GitHub writes go to `thomasfosterau/effect-xml` only. If another repo (effect-parse, say) needs a change, say so in the PR body or an issue here.
 
 ## Work tracker
@@ -79,7 +79,7 @@ Never guess at an Effect API: read the installed package — `node_modules/effec
 
 ## Documentation surfaces
 
-`README.md` is the landing page and the npm-facing API reference (it is what npm shows); `CONTRIBUTING.md` carries setup, hooks, commands, the gate list and what CI runs; `.claude/CLAUDE.md` the Claude Code specifics (hooks, settings, worktrees) and the imports of this file, CONTRIBUTING.md and README.md; `PUBLISHING.md` the release pipeline and its one-time owner setup; `SECURITY.md` the reporting channel and supply-chain posture; this file the architecture, invariants and conventions. No `docs/` tree is committed (`docs/` is docgen output); decisions go in issue comments.
+`README.md` is the short landing page npm shows: what it is, install, one example, a table of entry points and links, all absolute (npm renders it outside the repo); `docs/*.md` are the hand-written topic guides (SAX, XML, HTML, XSD, XQuery, errors, positions, performance), formatted and checked like any Markdown; the API reference is each export's doc comment (`vp run docgen` renders it); `CONTRIBUTING.md` carries setup, hooks, commands, the gate list and what CI runs; `.claude/CLAUDE.md` the Claude Code specifics (hooks, settings, worktrees) and the imports of this file, CONTRIBUTING.md and README.md; `PUBLISHING.md` the release pipeline and its one-time owner setup; `SECURITY.md` the reporting channel and supply-chain posture; this file the architecture, invariants and conventions. `docs/api/` is docgen output and git-ignored; the rest of `docs/` is committed. Decisions go in issue comments.
 
 ---
 
