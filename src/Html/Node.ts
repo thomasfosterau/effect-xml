@@ -85,7 +85,9 @@ export type HtmlDocumentMode = typeof HtmlDocumentMode.Type;
  * @since 0.1.0
  * @category models
  */
-export class HtmlAttribute extends Schema.Class<HtmlAttribute>("HtmlAttribute")({
+export class HtmlAttribute extends Schema.Class<HtmlAttribute, { readonly brand: unique symbol }>(
+  "HtmlAttribute",
+)({
   name: Schema.String,
   value: Schema.String,
   namespace: Schema.NullOr(HtmlAttributeNamespace),
@@ -103,9 +105,12 @@ export class HtmlAttribute extends Schema.Class<HtmlAttribute>("HtmlAttribute")(
  * @since 0.1.0
  * @category models
  */
-export class HtmlText extends Schema.TaggedClass<HtmlText>()("HtmlText", {
-  data: Schema.String,
-}) {}
+export class HtmlText extends Schema.TaggedClass<HtmlText, { readonly brand: unique symbol }>()(
+  "HtmlText",
+  {
+    data: Schema.String,
+  },
+) {}
 
 /**
  * A comment. The HTML parser also makes one of a processing instruction
@@ -114,7 +119,10 @@ export class HtmlText extends Schema.TaggedClass<HtmlText>()("HtmlText", {
  * @since 0.1.0
  * @category models
  */
-export class HtmlComment extends Schema.TaggedClass<HtmlComment>()("HtmlComment", {
+export class HtmlComment extends Schema.TaggedClass<
+  HtmlComment,
+  { readonly brand: unique symbol }
+>()("HtmlComment", {
   data: Schema.String,
 }) {}
 
@@ -152,10 +160,10 @@ const suspendedNode = Schema.suspend((): Schema.Codec<HtmlNode, HtmlNodeEncoded>
  * @since 0.1.0
  * @category models
  */
-export class HtmlTemplateContent extends Schema.TaggedClass<HtmlTemplateContent>()(
-  "HtmlTemplateContent",
-  { children: Schema.Array(suspendedNode) },
-) {}
+export class HtmlTemplateContent extends Schema.TaggedClass<
+  HtmlTemplateContent,
+  { readonly brand: unique symbol }
+>()("HtmlTemplateContent", { children: Schema.Array(suspendedNode) }) {}
 
 /**
  * An element: its namespace, local name (lowercase for HTML, case-adjusted
@@ -181,7 +189,10 @@ export class HtmlTemplateContent extends Schema.TaggedClass<HtmlTemplateContent>
  * @since 0.1.0
  * @category models
  */
-export class HtmlElement extends Schema.TaggedClass<HtmlElement>()("HtmlElement", {
+export class HtmlElement extends Schema.TaggedClass<
+  HtmlElement,
+  { readonly brand: unique symbol }
+>()("HtmlElement", {
   namespace: HtmlNamespace,
   name: Schema.String,
   attributes: Schema.Array(HtmlAttribute),
@@ -308,7 +319,9 @@ export const HtmlNode = Schema.Union([HtmlElement, HtmlText, HtmlComment]);
  * @since 0.1.0
  * @category models
  */
-export class HtmlDoctype extends Schema.Class<HtmlDoctype>("HtmlDoctype")({
+export class HtmlDoctype extends Schema.Class<HtmlDoctype, { readonly brand: unique symbol }>(
+  "HtmlDoctype",
+)({
   name: Schema.String,
   publicId: Schema.String,
   systemId: Schema.String,
@@ -331,7 +344,10 @@ export class HtmlDoctype extends Schema.Class<HtmlDoctype>("HtmlDoctype")({
  * @since 0.1.0
  * @category models
  */
-export class HtmlDocument extends Schema.TaggedClass<HtmlDocument>()("HtmlDocument", {
+export class HtmlDocument extends Schema.TaggedClass<
+  HtmlDocument,
+  { readonly brand: unique symbol }
+>()("HtmlDocument", {
   mode: HtmlDocumentMode,
   doctype: Schema.NullOr(HtmlDoctype),
   children: Schema.Array(HtmlNode),

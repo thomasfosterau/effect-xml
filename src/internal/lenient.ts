@@ -26,7 +26,6 @@ import type { Limits } from "../Limits.ts";
 import { origin, type Position } from "../Position.ts";
 import { unsafeAttrName, unsafeTagName } from "../Name.ts";
 import type { Attribute, ResolvedOptions, SaxEvent } from "../Sax.ts";
-import { endElement, startElement } from "./convert.ts";
 import { LazyPosition, LineIndex } from "./position.ts";
 import { namedReference, NO_SPAN, numericReference, type Ref, Reused } from "./scan.ts";
 import { grammars, type Tok } from "./tokens.ts";
@@ -472,7 +471,7 @@ class SaxVisitor implements Visitor {
   ): SaxError | null {
     for (let k = 0; k < count; k++) {
       const a = reused.attributes[k];
-      const n = attributes.names[k] ?? "";
+      const n = unsafeAttrName(attributes.names[k] ?? "");
       const v = attributes.values[k] ?? "";
       if (a === undefined) reused.attributes[k] = { name: n, value: v, span: NO_SPAN };
       else {
@@ -481,11 +480,11 @@ class SaxVisitor implements Visitor {
       }
     }
     const ev = reused.start;
-    ev.name = name;
+    ev.name = unsafeTagName(name);
     ev.attributes =
       count === 0 ? NO_ATTRIBUTES : (reused.lists[count] ??= reused.attributes.slice(0, count));
     ev.selfClosing = selfClosing;
-    return this.emit(startElement(ev), at);
+    return this.emit(ev, at);
   }
 
   start(
@@ -516,8 +515,8 @@ class SaxVisitor implements Visitor {
   end(name: string, at: number): SaxError | null {
     const reused = this.reused;
     if (reused !== undefined) {
-      reused.end.name = name;
-      return this.emit(endElement(reused.end), at);
+      reused.end.name = unsafeTagName(name);
+      return this.emit(reused.end, at);
     }
     // SAFETY: as above.
     return this.emit({ name: unsafeTagName(name), span: NO_SPAN, _tag: "EndElement" }, at);

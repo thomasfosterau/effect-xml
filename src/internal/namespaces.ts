@@ -15,7 +15,7 @@ import { declaredNames } from "./dtd.ts";
 import { isQName } from "./names.ts";
 
 const invalid = (name: string, reason: string, at: Span): Option.Option<InvalidNamespace> =>
-  Option.some(new InvalidNamespace({ name, reason, position: at.start }));
+  Option.some(new InvalidNamespace({ invalidName: name, reason, position: at.start }));
 
 /** A start tag's name is a `QName`, without the reserved `xmlns` prefix (§3). */
 const checkElementName = (name: string, at: Span): Option.Option<InvalidNamespace> => {

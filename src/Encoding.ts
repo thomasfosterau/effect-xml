@@ -100,7 +100,7 @@ export interface SniffOptions {
   readonly encoding?: string | undefined;
 }
 
-const bomOf = (b: Uint8Array): Detected | null => {
+const bomOf = (b: Uint8Array): (Detected & { readonly encoding: Family }) | null => {
   if (b[0] === 0x00 && b[1] === 0x00 && b[2] === 0xfe && b[3] === 0xff)
     return { encoding: "utf-32be", bomLength: 4, source: "bom" };
   if (b[0] === 0xff && b[1] === 0xfe && b[2] === 0x00 && b[3] === 0x00)
@@ -276,8 +276,7 @@ export const sniffXml = (
 ): Detected | NeedMore | UnsupportedEncoding => {
   if (head.length < 4 && !final) return NeedMore;
   const bom = bomOf(head);
-  // SAFETY: `bomOf` only ever reports one of the five `Family` encodings.
-  const family: Family | "ebcdic" = bom !== null ? (bom.encoding as Family) : familyOf(head);
+  const family: Family | "ebcdic" = bom !== null ? bom.encoding : familyOf(head);
   if (family === "ebcdic") return unsupported("EBCDIC", "EBCDIC encodings are not supported");
   if (bom === null && options?.encoding !== undefined) return resolveHint(options.encoding, family);
 

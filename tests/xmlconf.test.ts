@@ -13,11 +13,12 @@
  * freely, but a regression fails the build. Raise a baseline whenever a change
  * improves it. Set `XMLCONF_REPORT=1` to list the failing tests.
  */
-import { describe, expect, test } from "vite-plus/test";
+import { afterAll, describe, expect, test } from "vite-plus/test";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -90,13 +91,16 @@ const tally = (checks: ReadonlyArray<Check>, passing: boolean): Record<Count, nu
   };
 };
 
+/** One runtime for the file's fixture services (the file system), provided once. */
+const runtime = ManagedRuntime.make(Fixtures.layer);
+afterAll(() => runtime.dispose());
+
 describe("W3C XML conformance", () => {
   test("meets the pass-count baselines", async () => {
-    const checks = await Effect.runPromise(
+    const checks = await runtime.runPromise(
       readManifest(FIXTURES).pipe(
         Effect.flatMap((tests) => Effect.forEach(tests, run, { concurrency: 8 })),
         Effect.map(Arr.flatten),
-        Effect.provide(Fixtures.layer),
       ),
     );
     const passed = tally(checks, true);
