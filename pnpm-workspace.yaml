@@ -56,7 +56,7 @@ catalog:
   # on any other component version, failing `pnpm install` itself. Read the
   # `components` table in node_modules/@effect/tsgo/dist/effect-tsgo.cjs
   # before bumping any of the three.
-  "@effect/tsgo": 0.67.5
+  "@effect/tsgo": 0.69.0
   # The Effect lint rules (`effect/*`, the anti-slop set included; renamed
   # from `@mpsuesser/oxlint-plugin-effect`), loaded by the root
   # `vite.config.ts` as a JS plugin through `configs.recommended`. 0.9.0
@@ -98,7 +98,7 @@ catalog:
   # bump: move it by hand with vite-plus), and `vitest` must match vite-plus's
   # exact pin (1.5.0 → 5.1.0) because the `vitest@*` override forces every
   # resolution to the catalog singleton.
-  vite-plus: 1.5.0
+  vite-plus: 1.6.0
   vite: npm:@voidzero-dev/vite-plus-core@1.5.0
   vitest: 5.1.0
 
