@@ -62,7 +62,7 @@ describe("resource limits", () => {
   it.effect("deep HTML within the limit builds, serializes, converts and reads text", () =>
     Effect.gen(function* () {
       // Deeper than any call stack: tree construction's scope checks skip the
-      // walk when no open element bears the name, so this stays linear (#81).
+      // walk when no open element bears the name, so this stays linear.
       const input = "<div>".repeat(100_000) + "x";
       const doc = yield* Html.parseDocument(input, { limits: { maxDepth: Infinity } });
       expect(doc.documentElement.textContent).toBe("x");

@@ -1,19 +1,7 @@
 /**
- * The root Vite+ configuration: the repo-wide
- * format / lint / staged passes (read statically by `vp fmt` / `vp lint` /
- * `vp staged`), the task graph (`check`, `build`, `test:unit`,
- * `test:coverage`, `docgen`, `example`), the `vp pack` (tsdown) settings and
- * the vitest / coverage settings for the library at the root. The
- * command-line package in `packages/cli` has its own tasks and build in its
- * `vite.config.ts`, and shares the format and lint passes here.
- *
- * Adapted from the effect-web library's root `vite.config.ts` and
- * `vite.package.ts` (the family's library reference), collapsed into one file
- * because the package lives at the repository root: every comment that
- * explains a load-bearing decision is part of the standard and travels with
- * the config.
- *
- * @copyright Thomas Foster
+ * Format, lint, task graph, `vp pack` and Vitest settings for the library at
+ * the root. `packages/cli` has its own tasks and build in its `vite.config.ts`,
+ * and shares the format and lint passes here.
  */
 
 import { defineConfig } from "vite-plus";
@@ -106,15 +94,14 @@ export default defineConfig({
 
       // ---- Effect preset: rules this library's public surface cuts across --
       // `prefer-option-over-null`: the public API spells absence as `Option`
-      // (AGENTS.md, Conventions), but `src/internal/**` still returns and
+      // (docs/CONTRIBUTING.md), but `src/internal/**` still returns and
       // stores `null` / `undefined` on its per-token paths, where an
       // `Option` per token measurably costs throughput, and the hand-written
       // `*Encoded` wire shapes of the DOM keep `T | null` (their encoded
       // JSON). It stays a warning so those sites stay visible; a new one in
       // a public module is still a finding to read.
       "effect/prefer-option-over-null": "warn",
-      // Every `as` is a claim nothing checks. The library has none left
-      // (`Xsd.parser` decodes through a `Schema`, #181); `as const` is exempt.
+      // Every `as` is a claim nothing checks; `as const` is exempt.
       "effect/casting-awareness": "error",
       "typescript/no-unsafe-type-assertion": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
@@ -131,7 +118,7 @@ export default defineConfig({
       // smell here.
       "eslint/no-underscore-dangle": "off",
       // docgen's tags (`@since`, `@category`) and the module tags every file
-      // header carries are part of the doc-comment standard (AGENTS.md).
+      // header carries are part of the doc-comment standard.
       "jsdoc/check-tag-names": [
         "error",
         { definedTags: ["since", "category", "copyright", "module", "internal"] },
@@ -153,22 +140,11 @@ export default defineConfig({
       ],
       // Vitest's `expect(value, message)` takes the failure message second.
       "vitest/valid-expect": ["error", { maxArgs: 2 }],
-      // Adoption allowances (#61): sites that predate the `suspicious`
-      // category. A new site is a defect; when a count reaches zero, delete
-      // the line so the rule is back at `error`.
-      // Type-aware (tsgolint) rules. oxlint applies `overrides` to none of
-      // them, so each relaxation here is global and counted.
-      // 1 site: the CLI bin (`packages/cli/src/main.ts`), the application
-      // entry point the rule's own message exempts (it provides the composed
-      // platform layer once, to `NodeRuntime.runMain`). The tests provide
-      // their layers with `@effect/vitest`'s `layer`, and src/ has none; a
-      // site there is a defect (#80).
+      // Type-aware rules ignore `overrides`, so this is global. One site: the
+      // CLI bin provides its platform layer once, to `NodeRuntime.runMain`.
       "effecttsgo/strict-effect-provide": "warn",
-      // Off, the owner's decision: `effect/cli`, `FileSystem` and `Path` are
-      // unstable modules the CLI needs, `@effect/vitest` is what the tests
-      // run on, and the rule can't be scoped to them (oxlint applies no
-      // `overrides` to type-aware rules). The Effect language service's
-      // `unstableApiUsage` is off in `tsconfig.base.json` for the same reason.
+      // `effect/cli`, `FileSystem`, `Path` and `@effect/vitest` are unstable
+      // modules the CLI and tests need, and type-aware rules can't be scoped.
       "effecttsgo/unstable-api-usage": "off",
     },
     overrides: [
@@ -443,13 +419,17 @@ export default defineConfig({
   },
   run: {
     tasks: {
-      // Every CI gate, in CI's order (`.github/workflows/ci.yml` runs only
-      // this): format and lint, the type gate, the unit tests and conformance
-      // gates, the build, the bundle-size budgets, the docs examples, and the
-      // dependency audit. Fail-fast: the first failing gate stops the run.
+      // Every CI gate, in order, stopping at the first failure; CI runs only this.
       ci: {
-        command:
-          "vp check && vp run check && vp run test:unit && vp run build && vp run size && vp run docgen && pnpm audit --audit-level high",
+        command: [
+          "vp check",
+          "vp run check",
+          "vp run test:unit",
+          "vp run build",
+          "vp run size",
+          "vp run docgen",
+          "pnpm audit --audit-level high",
+        ],
         cache: false,
       },
       // The CI type gate: `src` under the native, Effect-patched `tsc`, then
@@ -473,16 +453,21 @@ export default defineConfig({
         dependsOn: [cli("test:unit")],
         cache: { env: ["VITEST_MAX_WORKERS", "NODE_OPTIONS"], input: cacheInputs, output: [] },
       },
-      // The unit suite under one Istanbul coverage map
-      // (`coverage/coverage-final.json`), which `fallow audit` reads for exact
-      // per-function CRAP scores (`health.coverage` in .fallowrc.json).
-      // Without it fallow estimates every function as uncovered, and any
-      // function with cyclomatic complexity ≥ 5 fails the gate on its own.
-      // Run this before `fallow audit`. The Claude Code PreToolUse fallow gate
-      // (`.claude/hooks/fallow-gate.sh`) runs it itself when the map is missing
-      // or older than the sources.
+      // Writes coverage/coverage-final.json, which `fallow audit` reads for
+      // per-function CRAP scores. Instrumentation slows the differential
+      // suites past the default timeout.
       "test:coverage": {
-        command: "vp test run --coverage",
+        command: "vp test run --coverage --testTimeout=180000",
+        cache: false,
+      },
+      // The pre-commit gate (`.vite-hooks/pre-commit`).
+      "fallow:audit": {
+        command: "vp exec fallow audit --base origin/trunk --quiet",
+        dependsOn: ["test:coverage"],
+        cache: false,
+      },
+      fallow: {
+        command: "vp exec fallow --summary",
         cache: false,
       },
       // Compiles AND RUNS every JSDoc `@example` (see docgen.json). Examples
@@ -493,7 +478,7 @@ export default defineConfig({
         dependsOn: ["build"],
         cache: { input: cacheInputs, output: ["docs/api/**"] },
       },
-      // The bundle-size budgets (#156): a consumer's `Sax.forEach` and
+      // The bundle-size budgets: a consumer's `Sax.forEach` and
       // `Xml.parse` bundled from `dist/` with esbuild (bench/size.ts). A CI gate.
       size: {
         command: "vpx bench/size.ts",
@@ -520,6 +505,8 @@ export default defineConfig({
       Html: "src/Html/index.ts",
       Xsd: "src/Xsd/index.ts",
       XQuery: "src/XQuery/index.ts",
+      Encoding: "src/Encoding.ts",
+      Limits: "src/Limits.ts",
     },
     format: "esm",
     platform: "neutral",
@@ -527,7 +514,7 @@ export default defineConfig({
     outDir: "dist",
     // One output module per source module, so a consumer's bundler drops the
     // modules a program never reaches (`sideEffects: false`): bundled into a
-    // chunk per entry, `Sax.forEach` alone carried XQuery and XSD along (#156).
+    // chunk per entry, `Sax.forEach` alone carried XQuery and XSD along.
     unbundle: true,
     // Unbundled, an imported constant that rolldown inlines leaves a bare
     // `import "./x.js"` behind, which esbuild warns about in every consumer's

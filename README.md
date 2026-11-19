@@ -1,8 +1,9 @@
 # @thomasfosterau/effect-xml
 
-Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.website). A chunk-boundary-safe SAX stream, a `Schema`-backed XML DOM, WHATWG HTML parsing, XML Schema validation and XPath / XQuery 3.1 (in progress), each layer a thin composition of the one below. Every failure is a typed `Schema.TaggedError`.
+Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.website): a chunk-boundary-safe SAX stream, a `Schema`-backed XML DOM, WHATWG HTML parsing, XML Schema validation and XPath / XQuery 3.1. Every failure is a typed error.
 
-> **Status:** pre-1.0; the API may change between minor versions.
+> [!CAUTION]
+> Experimental and pre-1.0, largely written with Claude Code. The API may change between minor versions.
 
 ## Install
 
@@ -10,7 +11,7 @@ Type-safe, streaming **XML and HTML parsing** for [Effect](https://effect.websit
 pnpm add @thomasfosterau/effect-xml effect @thomasfosterau/effect-parse
 ```
 
-`effect` (`^4.0.0`) and `@thomasfosterau/effect-parse` (`^0.4.1 || ^0.5.0`) are peer dependencies. The package is ESM-only, side-effect free, and runs anywhere Effect does (Node 22 or later, browsers, workers).
+`effect` and `@thomasfosterau/effect-parse` are peers. ESM-only, side-effect free, and runs anywhere Effect does.
 
 ## Example
 
@@ -50,11 +51,11 @@ Shared topics: [errors](https://github.com/thomasfosterau/effect-xml/blob/trunk/
 
 ## Links
 
-- [Guides](https://github.com/thomasfosterau/effect-xml/tree/trunk/docs), and the API reference in each export's doc comment (it shows in your editor; `vp run docgen` renders it to `docs/api/`)
+- [Guides](https://github.com/thomasfosterau/effect-xml/tree/trunk/docs); the API reference is in each export's doc comment
 - [examples/usage.ts](https://github.com/thomasfosterau/effect-xml/blob/trunk/examples/usage.ts), a tour of the layers
-- [CONTRIBUTING.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/CONTRIBUTING.md), [SECURITY.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/SECURITY.md), [CHANGELOG.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/CHANGELOG.md)
+- [Contributing](https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/CONTRIBUTING.md), [security](https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/SECURITY.md), [changelog](https://github.com/thomasfosterau/effect-xml/blob/trunk/CHANGELOG.md)
 - [`@thomasfosterau/effect-xml-cli`](https://github.com/thomasfosterau/effect-xml/tree/trunk/packages/cli), the `effect-xml-xsd` command
 
 ## License
 
-MIT, see [LICENSE](https://github.com/thomasfosterau/effect-xml/blob/trunk/LICENSE).
+MIT, see [LICENSE.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/LICENSE.md).

@@ -147,7 +147,7 @@ const eachKey = (
 /**
  * The table of a key or unique constraint over `scope`, or why it is violated.
  * Built in place, with a set for the uniqueness check: one step per selected
- * element, not a copy of the table so far (#130).
+ * element, not a copy of the table so far.
  */
 const table = (
   c: Compiled,

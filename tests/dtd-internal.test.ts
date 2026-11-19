@@ -1,8 +1,7 @@
 /**
  * `dtd: "internal"` reads with the grammars without a DTD, and the scanner,
- * until a DOCTYPE declares an entity (#99). The differential check: against
- * the DTD-aware grammars from the first token (`tokenizeEagerly`, as before),
- * the same events with the same spans, and the same failure, whole and in
+ * until a DOCTYPE declares an entity. The differential check: against the
+ * DTD-aware grammars from the first token (`tokenizeEagerly`), the same events with the same spans, and the same failure, whole and in
  * chunks, strictly and recovering, through `Sax.tokenize` (the lexer) and
  * `Sax.forEach` (the direct read, then the lexer); and on a document without
  * a DOCTYPE, the same as `dtd: "ignore"`. Over the W3C XML conformance suite
@@ -177,7 +176,7 @@ const fixtureFiles = Effect.fn("fixtureFiles")(function* () {
 });
 
 layer(Fixtures.layer)(
-  'dtd: "internal" without the DTD-aware grammars until a declaration (#99)',
+  'dtd: "internal" without the DTD-aware grammars until a declaration',
   (it) => {
     it.effect(
       "agrees on the generated documents, whole and chunked",

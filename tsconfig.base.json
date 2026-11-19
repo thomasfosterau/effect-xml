@@ -1,11 +1,8 @@
 {
   "$schema": "./node_modules/@effect/tsgo/schema.json",
   "compilerOptions": {
-    // The family's shared options (effect-web's tsconfig.base.json), plus the
-    // stricter flags this library has always compiled under
-    // (`noUncheckedIndexedAccess`, `noUnusedParameters`,
-    // `noFallthroughCasesInSwitch`). `erasableSyntaxOnly` because consumers
-    // may load TypeScript under Node's strip-only loader.
+    // `erasableSyntaxOnly`: consumers may load TypeScript under Node's
+    // strip-only loader.
     "erasableSyntaxOnly": true,
     "module": "preserve",
     "moduleResolution": "bundler",
@@ -21,8 +18,7 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
-    // Optional members are spelled `?: T | undefined` because of this flag: a
-    // consumer forwarding an optional of its own must still compile.
+    // Optional members are `?: T`; a caller holding `undefined` omits the key.
     "exactOptionalPropertyTypes": true,
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,

@@ -250,7 +250,7 @@ const textStopFrom = /[^<&]*/y;
  * `Token.takeTill("<&", { min: 1 })` reads, without its search. That one
  * finds each stop character with `indexOf`, and keeps where it found them in
  * the parse state, which the lexer resets for every token; so with an entity
- * declared (#191), each run of text searched for an `&` as far as the end of
+ * declared, each run of text searched for an `&` as far as the end of
  * the buffer, which is all of a document read whole. This reads the run once,
  * and no further than its end.
  */

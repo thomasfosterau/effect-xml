@@ -90,7 +90,7 @@ const pieces = [
   "<![cdata[x]]>",
   "text",
   "\u0001",
-  // What recovery reads (#52).
+  // What recovery reads.
   "< ",
   "a < b",
   "<=",

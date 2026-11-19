@@ -67,13 +67,13 @@ const FEATURES: HashMap.HashMap<string, boolean> = /*#__PURE__*/ HashMap.make(
   ["non_empty_sequence_collection", true],
   // XPath only: a test that depends on it is compiled in the mode (`xpath1Compatibility`).
   ["xpath-1.0-compatibility", true],
-  // UCA collations through `Intl.Collator` (#171): parameters without an
-  // equivalent fall back as `fallback=yes` says, and the stricter fallbacks
+  // UCA collations through `Intl.Collator`: parameters without an equivalent
+  // fall back as `fallback=yes` says, and the stricter fallbacks
   // (`advanced-uca-fallback`) behave as the specification describes.
   ["simple-uca-fallback", true],
   ["advanced-uca-fallback", true],
-  // Unsupported (#70): schema awareness, static typing, the namespace axis,
-  // typed data.
+  // Unsupported: schema awareness, static typing, the namespace axis, typed
+  // data.
   ["schemaImport", false],
   ["schemaValidation", false],
   ["schema-location-hint", false],

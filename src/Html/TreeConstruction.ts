@@ -15,8 +15,6 @@
  * {@link HtmlElement}s at the end. Everything else (attributes, text,
  * comments, the DOCTYPE) is built as its final node straight away. The result
  * is the HTML DOM of `./Node.ts`; `Html.toXml` converts it to the XML DOM.
- *
- * Remaining spec gaps are tracked in issue #12.
  */
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -851,7 +849,7 @@ class HtmlTreeBuilder {
 
   // `current` and `adjustedCurrent` stay `MElement | null`: they are read
   // several times per token, and as `Option`s (an `Option.some` per read)
-  // `Html.parseDocument` measured about a tenth slower (`vp run bench`, #68).
+  // `Html.parseDocument` measured about a tenth slower (`vp run bench`).
   private get current(): MElement | null {
     return this.open.at(-1) ?? null;
   }

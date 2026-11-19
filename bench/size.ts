@@ -1,5 +1,5 @@
 /**
- * Bundle-size budgets for the published `dist/` (#156). Run with `vp run
+ * Bundle-size budgets for the published `dist/`. Run with `vp run
  * size`, which builds first.
  *
  * Each case is a consumer's program that uses one part of the library,

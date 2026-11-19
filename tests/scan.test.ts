@@ -1,8 +1,8 @@
 /**
  * The hand-written XML scanner (`src/internal/scan.ts`) against the token
  * grammars it stands in for. Read with the DTD-aware grammars from the first
- * token (`tokenizeEagerly`, `dtd: "internal"` as before #99), the lexer reads
- * every token with the grammars, so on a document without a DOCTYPE the two
+ * token (`tokenizeEagerly`, `dtd: "internal"`), the lexer reads every token
+ * with the grammars, so on a document without a DOCTYPE the two
  * must agree exactly: the same events with the same spans, and the same
  * failure.
  * `Xml.parse` builds without positions first (rerunning with them to report
