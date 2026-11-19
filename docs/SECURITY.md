@@ -15,4 +15,4 @@ Every parser enforces resource limits (depth, attribute count, name and text len
 - No runtime dependencies: `effect` and `@thomasfosterau/effect-parse` are peers.
 - Publishing uses npm trusted publishing from a protected, approval-gated `release` environment; only that job holds `id-token: write`, and it installs and publishes with `--ignore-scripts`.
 - Workflows default to `permissions: {}`, pin actions by tag (locked to commits by `actions.lock`), and don't persist checkout credentials. CI holds no secrets.
-- Installs are frozen to `pnpm-lock.yaml`; `minimumReleaseAge` holds new third-party versions for 8 hours, and Dependabot waits a day.
+- Installs are frozen to `pnpm-lock.yaml`; `minimumReleaseAge` holds new third-party versions for 24 hours, and Dependabot waits a day.

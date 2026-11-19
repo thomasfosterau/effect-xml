@@ -72,8 +72,8 @@ peerDependencyRules:
     vitest: "*"
     typescript: "*"
 
-# Hold new releases for 8 hours (minutes); Dependabot's cooldown is 1 day.
-minimumReleaseAge: 480
+# Hold new releases for 24 hours (minutes); Dependabot's cooldown is 1 day.
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@thomasfosterau/*"
   - "@enfect/*"
