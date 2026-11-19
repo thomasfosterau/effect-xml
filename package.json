@@ -31,7 +31,7 @@
     "dist",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE.md"
   ],
   "type": "module",
   "sideEffects": false,
@@ -69,8 +69,6 @@
     "changeset": "changeset",
     "version": "changeset version && vp fmt && pnpm install --lockfile-only",
     "release": "bash scripts/release.sh",
-    "fallow": "fallow --summary",
-    "fallow:audit": "fallow audit",
     "prepare": "vp config && effect-tsgo patch --typescript --oxlint"
   },
   "devDependencies": {
@@ -98,6 +96,12 @@
   "peerDependencies": {
     "@thomasfosterau/effect-parse": "catalog:peers",
     "effect": "catalog:peers"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "lts"
+    }
   },
   "engines": {
     "node": ">=22"
