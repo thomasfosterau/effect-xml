@@ -51,7 +51,7 @@ describe("typed errors", () => {
     [`<a x='1>`, 8],
     [`<a x="1" y="2>text`, 18],
   ] as const)(
-    "an unclosed attribute quote in %s is reported where the input ends (#157)",
+    "an unclosed attribute quote in %s is reported where the input ends",
     ([input, offset]) =>
       Effect.gen(function* () {
         const fromParse = yield* parseError(input);
@@ -78,7 +78,7 @@ describe("typed errors", () => {
     }),
   );
 
-  it.effect("a DOCTYPE inside the root element is not well-formed (#118)", () =>
+  it.effect("a DOCTYPE inside the root element is not well-formed", () =>
     Effect.gen(function* () {
       const e = yield* parseError(`<w><!DOCTYPE html PUBLIC 'a' 'b'><a/></w>`);
       expect(e._tag).toBe("InvalidDocumentStructure");

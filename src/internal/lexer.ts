@@ -164,7 +164,7 @@ export interface LexerOptions {
   readonly dtd?: Dtd;
   /**
    * With {@link dtd}: read with the DTD-aware grammars from the first token,
-   * whatever the DTD declares, as before #99. Only the tests set it, to
+   * whatever the DTD declares. Only the tests set it, to
    * check that reading without them until a declaration changes nothing.
    */
   readonly eagerDtd?: boolean;

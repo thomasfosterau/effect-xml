@@ -206,7 +206,7 @@ describe("operators and comparisons", () => {
     }),
   );
 
-  it.effect("ranges are held by their bounds where their items aren't needed (#96)", () =>
+  it.effect("ranges are held by their bounds where their items aren't needed", () =>
     Effect.gen(function* () {
       expect(yield* values("count(1 to 100000000), count((1, 1 to 10000000, 2))")).toEqual([
         "100000000",
@@ -614,7 +614,7 @@ describe("evaluate", () => {
   );
 });
 
-describe("review findings (#94)", () => {
+describe("review findings", () => {
   it.effect("1: float promotion rounds operands to single precision", () =>
     Effect.gen(function* () {
       expect(yield* values("16777217 + xs:float(-16777216)")).toEqual(["0"]);

@@ -1145,7 +1145,7 @@ const allowsName = (wildcard: Wildcard, name: Expanded): boolean =>
  * Add a closing element's key tables to its parent's: appended in place, or
  * moved when the parent has none by that name (the child's frame is done
  * with them). Copying the parent's table for every child that closed made a
- * repeated constrained element quadratic (#130).
+ * repeated constrained element quadratic.
  */
 const merge = (into: Tables, from: Tables): void =>
   MutableHashMap.forEach(from, (rows, name) => {

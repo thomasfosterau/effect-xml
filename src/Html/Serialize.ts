@@ -7,8 +7,7 @@
  *
  * As the algorithm specifies, no extra newline is written at the start of a
  * `<pre>`, `<textarea>` or `<listing>`. The parser drops one leading newline
- * there, so text that really starts with a newline loses it on a round trip
- * (whatwg/html#944).
+ * there, so text that really starts with a newline loses it on a round trip.
  */
 import * as Iterable from "effect/Iterable";
 import * as Match from "effect/Match";

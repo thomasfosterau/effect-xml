@@ -1,14 +1,14 @@
 ## Summary
 
-Describe what changed and why. If this closes an issue, add `Closes #N` so it auto-closes on merge to `trunk`.
+Describe what changed and why, and link any issue it closes.
 
 ## Verification
 
-Run the gates in [CONTRIBUTING.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/CONTRIBUTING.md#verification) and list each command with its final pass/fail. If a gate could not run, say which and why.
+Run the gates in [CONTRIBUTING.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/CONTRIBUTING.md#before-pushing) and list each command with its final pass/fail. If a gate could not run, say which and why.
 
 ## Changeset
 
-Name the changeset(s) under `.changeset/`, or say why none is needed (see [AGENTS.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/AGENTS.md#branches-and-pull-requests)).
+Name the changeset(s) under `.changeset/`, or say why none is needed (see [docs/CONTRIBUTING.md](https://github.com/thomasfosterau/effect-xml/blob/trunk/docs/CONTRIBUTING.md#changesets)).
 
 ## Notes
 

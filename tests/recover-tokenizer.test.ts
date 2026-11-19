@@ -1,5 +1,5 @@
 /**
- * Tokenizer-level recovery (`recover: true` in XML mode, #52): a `<` or `&`
+ * Tokenizer-level recovery (`recover: true` in XML mode): a `<` or `&`
  * that starts nothing, unquoted and valueless attributes, and markup out of
  * place at the top level are read rather than failing; characters XML does
  * not allow, resource limits and encoding errors still fail. A strict parse

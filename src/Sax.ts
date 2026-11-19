@@ -364,7 +364,7 @@ export const tokenize =
 /**
  * @internal The events of `chunks` (or the failure), as {@link tokenize}
  * streams them, but with `dtd: "internal"` read by the DTD-aware grammars
- * from the first token, whatever the DOCTYPE declares, as before #99. The
+ * from the first token, whatever the DOCTYPE declares. The
  * reference the differential tests hold the faster reading to; not for use
  * outside them.
  */

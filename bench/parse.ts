@@ -17,7 +17,7 @@
  * choices and facets, which the worksheet's schema does not. HTML is measured with
  * `Html.parseDocument` and `Html.parseFragment` on a generated page that
  * exercises formatting elements, implied end tags, tables, foreign content,
- * entities and CRLF line ends (the input of #13).
+ * entities and CRLF line ends.
  *
  * Other parsers are compared when they are installed, without being
  * dependencies of this package: `pnpm add -D saxes sax htmlparser2 easysax
@@ -88,7 +88,7 @@ const input = sheet(megabytes * 1024 * 1024);
 const bytes = new TextEncoder().encode(input);
 const chunks = input.match(/[\s\S]{1,65536}/g) ?? [];
 
-/** `body` under a DOCTYPE that declares an entity the body never references (#191). */
+/** `body` under a DOCTYPE that declares an entity the body never references. */
 const withEntity = (body: string) =>
   body.replace("<worksheet", '<!DOCTYPE worksheet [<!ENTITY e "x">]>\n<worksheet');
 
@@ -348,7 +348,7 @@ const main = Effect.fn("bench")(function* () {
     );
   yield* time("effect-xml DOM (DOCTYPE + entities)", Xml.parse(declared, { dtd: "internal" }));
   // A DOCTYPE that declares an entity the body never references, read whole:
-  // the DTD-aware text grammar over one large string (#191). The sizes show it
+  // the DTD-aware text grammar over one large string. The sizes show it
   // is linear.
   const entityDoc = withEntity(input);
   yield* time(

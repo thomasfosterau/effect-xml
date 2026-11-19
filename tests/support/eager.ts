@@ -1,5 +1,5 @@
 /**
- * Tokenizing with `dtd: "internal"` the way it was before #99: the DTD-aware
+ * Tokenizing with `dtd: "internal"` eagerly: the DTD-aware
  * grammars from the first token, the scanner off, whatever the DTD declares
  * (`Sax.tokenizeEagerly`, internal). `Sax.tokenize` now reads with the
  * grammars without a DTD (and the scanner) until a DOCTYPE declares an

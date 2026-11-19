@@ -244,7 +244,7 @@ describe("Xml.parse — namespaces", () => {
     }),
   );
 
-  it.effect('xmlns="" undeclares the default namespace: no namespace is null (#109)', () =>
+  it.effect('xmlns="" undeclares the default namespace: no namespace is null', () =>
     Effect.gen(function* () {
       const input = `<a xmlns="urn:x"><p xmlns=""><q/></p><r/></a>`;
       const expected = ["urn:x", null, null, "urn:x"];
