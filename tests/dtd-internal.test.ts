@@ -1,8 +1,7 @@
 /**
  * `dtd: "internal"` reads with the grammars without a DTD, and the scanner,
- * until a DOCTYPE declares an entity. The differential check: against
- * the DTD-aware grammars from the first token (`tokenizeEagerly`),
- * the same events with the same spans, and the same failure, whole and in
+ * until a DOCTYPE declares an entity. The differential check: against the
+ * DTD-aware grammars from the first token (`tokenizeEagerly`), the same events with the same spans, and the same failure, whole and in
  * chunks, strictly and recovering, through `Sax.tokenize` (the lexer) and
  * `Sax.forEach` (the direct read, then the lexer); and on a document without
  * a DOCTYPE, the same as `dtd: "ignore"`. Over the W3C XML conformance suite

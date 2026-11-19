@@ -60,6 +60,14 @@
     "./XQuery": {
       "types": "./dist/XQuery.d.ts",
       "default": "./dist/XQuery.js"
+    },
+    "./Encoding": {
+      "types": "./dist/Encoding.d.ts",
+      "default": "./dist/Encoding.js"
+    },
+    "./Limits": {
+      "types": "./dist/Limits.d.ts",
+      "default": "./dist/Limits.js"
     }
   },
   "publishConfig": {

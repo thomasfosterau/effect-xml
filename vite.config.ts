@@ -1,7 +1,7 @@
 /**
  * Format, lint, task graph, `vp pack` and Vitest settings for the library at
- * the root. `packages/cli` has its own tasks and build in its
- * `vite.config.ts`, and shares the format and lint passes here.
+ * the root. `packages/cli` has its own tasks and build in its `vite.config.ts`,
+ * and shares the format and lint passes here.
  */
 
 import { defineConfig } from "vite-plus";
@@ -505,6 +505,8 @@ export default defineConfig({
       Html: "src/Html/index.ts",
       Xsd: "src/Xsd/index.ts",
       XQuery: "src/XQuery/index.ts",
+      Encoding: "src/Encoding.ts",
+      Limits: "src/Limits.ts",
     },
     format: "esm",
     platform: "neutral",

@@ -16,6 +16,22 @@ env:
   pnpm_config_verify_deps_before_run: "false"
 
 jobs:
+  verify-lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install gh-actions-lock
+        run: gh extension install github/gh-actions-lock --pin v0.4.1
+      - name: Verify the workflow lockfile
+        run: gh actions-lock --verify
+
   select:
     name: Select mode
     if: github.repository == 'thomasfosterau/effect-xml' && github.actor != 'dependabot[bot]'
@@ -41,7 +57,7 @@ jobs:
 
   version:
     name: Version packages
-    needs: select
+    needs: [verify-lockfile, select]
     if: needs.select.outputs.mode == 'version'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -60,7 +76,7 @@ jobs:
         with:
           version-file: pnpm-workspace.yaml
           node-version: lts
-          cache: true
+          cache: false
           run-install: |
             - args: ["--frozen-lockfile", "--ignore-scripts"]
       - id: version
@@ -79,7 +95,7 @@ jobs:
 
   publish:
     name: Publish to npm
-    needs: select
+    needs: [verify-lockfile, select]
     if: needs.select.outputs.mode == 'publish'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -99,7 +115,7 @@ jobs:
         with:
           version-file: pnpm-workspace.yaml
           node-version: lts
-          cache: true
+          cache: false
           run-install: |
             - args: ["--frozen-lockfile", "--ignore-scripts"]
       - uses: changesets/action/publish@v2.1.2

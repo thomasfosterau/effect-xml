@@ -520,8 +520,8 @@ describe("Html round trips", () => {
   );
 
   // WHATWG serializing HTML fragments: no extra U+000A is written for these
-  // elements, so the parser's dropped leading newline is not
-  // restored and the round trip loses one newline.
+  // elements, so the parser's dropped leading newline is not restored and the
+  // round trip loses one newline.
   it.effect.each(["pre", "textarea", "listing"])(
     "a leading newline in <%s> is not doubled on serialization",
     (name) =>

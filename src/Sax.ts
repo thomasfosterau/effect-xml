@@ -364,9 +364,8 @@ export const tokenize =
 /**
  * @internal The events of `chunks` (or the failure), as {@link tokenize}
  * streams them, but with `dtd: "internal"` read by the DTD-aware grammars
- * from the first token, whatever the DOCTYPE declares. The
- * reference the differential tests hold the faster reading to; not for use
- * outside them.
+ * from the first token, whatever the DOCTYPE declares. The reference the
+ * differential tests hold the faster reading to; not for use outside them.
  */
 export const tokenizeEagerly = (
   chunks: ReadonlyArray<string>,
