@@ -21,11 +21,11 @@ catalog:
   # oxlint-tsgolint versions in the `components` table of
   # node_modules/@effect/tsgo/dist/effect-tsgo.cjs; any other pairing fails
   # `pnpm install`. Move it with vite-plus and the TypeScript aliases.
-  "@effect/tsgo": 0.67.5
+  "@effect/tsgo": 0.70.0
   "@enfect/oxlint": ^0.10.0
   "@thomasfosterau/effect-parse": ^0.6.1
   "@types/node": ^26.6.6
-  "@vitest/coverage-istanbul": 5.1.0
+  "@vitest/coverage-istanbul": 5.1.1
   effect: 4.1.4
   # bench/size.ts only.
   esbuild: ^0.28.2
@@ -39,9 +39,9 @@ catalog:
   "@typescript/native": "npm:typescript@7.0.2"
   # `vite` must equal `vite-plus`, and `vitest` / `@vitest/coverage-istanbul`
   # the vitest it pins.
-  vite-plus: 1.5.0
+  vite-plus: 1.7.0
   vite: npm:@voidzero-dev/vite-plus-core@1.5.0
-  vitest: 5.1.0
+  vitest: 5.1.1
 
 # Peer ranges of the published package.
 catalogs:
