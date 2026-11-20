@@ -118,8 +118,10 @@ jobs:
           cache: false
           run-install: |
             - args: ["--frozen-lockfile", "--ignore-scripts"]
+      # `vp run release` (vite.config.ts): builds, publishes each unpublished
+      # version with `vp pm publish -r` (pnpm exchanges the OIDC token
+      # itself), then `changeset git-tag` reports the new tags through
+      # CHANGESETS_OUTPUT, and the action pushes them and creates the releases.
       - uses: changesets/action/publish@v2.1.2
         with:
-          script: pnpm run release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          script: vp run release

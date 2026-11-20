@@ -76,7 +76,6 @@
   "scripts": {
     "changeset": "changeset",
     "version": "changeset version && vp fmt && pnpm install --lockfile-only",
-    "release": "bash scripts/release.sh",
     "prepare": "vp config && effect-tsgo patch --typescript --oxlint"
   },
   "devDependencies": {
