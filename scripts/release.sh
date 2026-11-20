@@ -8,8 +8,8 @@
 # rather than failing the job.
 #
 # `pnpm publish` rewrites the `catalog:peers` specifiers to concrete ranges
-# in the published manifest and performs npm OIDC trusted publishing itself
-# (pnpm 11 no longer shells out to the npm CLI); there is no NPM_TOKEN.
+# in the published manifest and performs npm OIDC trusted publishing itself;
+# there is no NPM_TOKEN, and nothing here calls the npm CLI.
 # `--ignore-scripts` keeps the root `prepare` (git hooks + the tsc/oxlint
 # patch) and any lifecycle script out of the job holding `id-token: write`.
 # No `--provenance`: pnpm attaches it by itself once the repository and the
@@ -23,11 +23,16 @@ cd "$root"
 name="$(node -p "require('./package.json').name")"
 version="$(node -p "require('./package.json').version")"
 
-if npm view "$name@$version" version >/dev/null 2>&1; then
+# pnpm reports an unpublished version as ERR_PNPM_PACKAGE_NOT_FOUND and a
+# never-published package as ERR_PNPM_FETCH_404; any other failure stops here.
+if view="$(pnpm view "$name@$version" version 2>&1)"; then
   echo "skip: $name@$version is already published"
-else
+elif grep -qE 'ERR_PNPM_(PACKAGE_NOT_FOUND|FETCH_404)' <<<"$view"; then
   vp run build
   pnpm publish --access public --no-git-checks --ignore-scripts
+else
+  echo "$view" >&2
+  exit 1
 fi
 
 # Emits the `New tag:` lines the Changesets action parses to push the tags and
