@@ -23,7 +23,7 @@ catalog:
   # `pnpm install`. Move it with vite-plus and the TypeScript aliases.
   "@effect/tsgo": 0.67.5
   "@enfect/oxlint": ^0.10.0
-  "@thomasfosterau/effect-parse": ^0.5.0
+  "@thomasfosterau/effect-parse": ^0.6.1
   "@types/node": ^26.6.6
   "@vitest/coverage-istanbul": 5.1.0
   effect: 4.1.4
