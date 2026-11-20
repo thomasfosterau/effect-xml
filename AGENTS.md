@@ -9,3 +9,7 @@ Read [README.md](README.md) and [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) fir
 - `vp run docgen` executes every `@example` against `dist/`: complete programs, no `declare const`, no throwing.
 - `src/internal/htmlEntities.generated.ts` and `tests/fixtures/**` are generated or vendored; don't edit or reformat them.
 - `vp run test:unit` takes a few minutes; `vp test run <file>` while iterating.
+
+## Fallow
+
+- `vp install` links the `fallow` skill into `.claude/skills/fallow` from the installed package (approved under `permissions` in `pnpm-workspace.yaml`); the repository's own fallow rules are in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
