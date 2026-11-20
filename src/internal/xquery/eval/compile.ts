@@ -1455,17 +1455,18 @@ const withParams = (
   d: Extract<DeclT, { readonly _tag: "Function" }>,
   f: UserFunction,
   scope: Scope,
-): Scope =>
-  d.params.reduce<Scope>(
-    (s, p, i) => ({
-      ...s,
-      vars: HashMap.set(s.vars, clark(resolve(s, p.name, "variable")), {
+): Scope => ({
+  ...scope,
+  layout: f.layout,
+  vars: d.params.reduce(
+    (vars, p, i) =>
+      HashMap.set(vars, clark(resolve(scope, p.name, "variable")), {
         kind: "local",
         binding: { layout: f.layout, slot: f.slots[i] ?? 0 },
       }),
-    }),
-    { ...scope, layout: f.layout },
-  );
+    scope.vars,
+  ),
+});
 
 /** Compile a query: its prolog's globals and functions, and its body. */
 export const compileQuery = (query: Query, externals: ReadonlyArray<string>): Compiled => {

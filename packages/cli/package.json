@@ -42,6 +42,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@effect/vitest": "catalog:"
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:"
   }
 }
