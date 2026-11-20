@@ -1,5 +1,15 @@
 # @thomasfosterau/effect-xml
 
+## 0.3.0
+
+### Minor Changes
+
+- [#209](https://github.com/thomasfosterau/effect-xml/pull/209) [`2f0efe2`](https://github.com/thomasfosterau/effect-xml/commit/2f0efe2c301d051f6a1efb7621d7683d2460c9a2) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Add the `./Encoding` and `./Limits` subpaths.
+
+### Patch Changes
+
+- [#209](https://github.com/thomasfosterau/effect-xml/pull/209) [`ff02eb5`](https://github.com/thomasfosterau/effect-xml/commit/ff02eb5cf2445fb014c9e07961babb52dc3817ba) Thanks [@thomasfosterau](https://github.com/thomasfosterau)! - Ship the licence as `LICENSE.md` and drop issue references from doc comments.
+
 ## 0.2.0
 
 ### Minor Changes
