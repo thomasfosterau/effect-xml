@@ -18,10 +18,10 @@ catalog:
   # Released in lockstep with `effect`: same version.
   "@effect/vitest": 4.1.4
   # `effect-tsgo patch` supports only the `@typescript/native`, oxlint and
-  # oxlint-tsgolint versions in the `components` table of
+  # tsrs versions in the `components` table of
   # node_modules/@effect/tsgo/dist/effect-tsgo.cjs; any other pairing fails
   # `pnpm install`. Move it with vite-plus and the TypeScript aliases.
-  "@effect/tsgo": 0.67.5
+  "@effect/tsgo": 0.73.2
   "@enfect/oxlint": ^0.10.0
   "@thomasfosterau/effect-parse": ^0.6.1
   "@types/node": ^26.6.6
@@ -37,10 +37,11 @@ catalog:
   # `@typescript/native` must match @effect/tsgo's bundled binary.
   typescript: "npm:@typescript/typescript6@6.0.2"
   "@typescript/native": "npm:typescript@7.0.2"
-  # `vite` must equal `vite-plus`, and `vitest` / `@vitest/coverage-istanbul`
-  # the vitest it pins.
-  vite-plus: 1.5.0
-  vite: npm:@voidzero-dev/vite-plus-core@1.5.0
+  # `vite`, `vitest` and `@vitest/coverage-istanbul` must equal what vite-plus
+  # itself depends on (`npm view vite-plus@<v> dependencies`); `vite` no
+  # longer equals vite-plus.
+  vite-plus: 1.7.0
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
   vitest: 5.1.0
 
 # Peer ranges of the published package.
@@ -75,12 +76,10 @@ skills:
 
 peerDependencyRules:
   allowAny:
-    - vite
     - vitest
     # @effect/docgen declares `typescript: ^5`.
     - typescript
   allowedVersions:
-    vite: "*"
     vitest: "*"
     typescript: "*"
 

@@ -399,11 +399,11 @@ export default defineConfig({
         },
       },
     ],
-    // Type-aware linting through oxlint-tsgolint (bundled with vite-plus and
-    // patched by `effect-tsgo patch --oxlint`), which also enables
+    // Type-aware linting through tsrs (bundled with vite-plus and patched by
+    // `effect-tsgo patch --tsrs`), which also enables
     // `@effect/tsgo`'s `effecttsgo/*` preset rules. `typeCheck` reports
     // TypeScript errors in `vp check` too; `vp run check` stays the gate of
-    // record (the Effect-patched tsc). tsgolint reads each file's nearest
+    // record (the Effect-patched tsc). tsrs reads each file's nearest
     // tsconfig.json, so `tests/`, `examples/` and `bench/` each carry one that
     // extends tsconfig.test.json.
     options: {
@@ -520,6 +520,12 @@ export default defineConfig({
     },
   },
   pack: {
+    deps: {
+      // tsdown <0.23 compatibility: resolve external dependency subpaths.
+      // Remove to preserve subpath imports as written (the new default).
+      // https://tsdown.dev/options/dependencies#deps-resolvedepsubpath
+      resolveDepSubpath: true,
+    },
     entry: {
       index: "src/index.ts",
       Sax: "src/Sax.ts",
