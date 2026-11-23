@@ -14,9 +14,9 @@ catalog:
   "@effect/docgen": ^4.1.2
   "@effect/language-service": ^0.87.5
   # Released in lockstep with `effect`: same version.
-  "@effect/platform-node": 4.1.4
+  "@effect/platform-node": 4.1.5
   # Released in lockstep with `effect`: same version.
-  "@effect/vitest": 4.1.4
+  "@effect/vitest": 4.1.5
   # `effect-tsgo patch` supports only the `@typescript/native`, oxlint and
   # tsrs versions in the `components` table of
   # node_modules/@effect/tsgo/dist/effect-tsgo.cjs; any other pairing fails
@@ -26,7 +26,7 @@ catalog:
   "@thomasfosterau/effect-parse": ^0.6.1
   "@types/node": ^26.6.6
   "@vitest/coverage-istanbul": 5.1.0
-  effect: 4.1.4
+  effect: 4.1.5
   # bench/size.ts only.
   esbuild: ^0.28.2
   fallow: 3.46.0
