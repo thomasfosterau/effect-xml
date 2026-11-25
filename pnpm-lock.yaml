@@ -198,7 +198,7 @@ catalogs:
       specifier: ^0.10.0
       version: 0.10.0
     '@thomasfosterau/effect-parse':
-      specifier: ^0.4.1 || ^0.5.0
+      specifier: ^0.4.1 || ^0.5.0 || ^0.6.2
       version: 0.5.0
     '@types/node':
       specifier: ^26.6.6
