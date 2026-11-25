@@ -29,7 +29,7 @@ catalog:
   effect: 4.1.5
   # bench/size.ts only.
   esbuild: ^0.28.2
-  fallow: 3.46.0
+  fallow: 3.48.0
   # Only because docgen spawns it to run the examples.
   tsx: ^4.23.15
   # TS6 (JS API, bin `tsc6`) for docgen, tsdown and the language service;
