@@ -474,7 +474,7 @@ export default defineConfig({
       // import the package by name exactly as a consumer would, which
       // resolves through `exports` to `dist/` — hence the build edge.
       docgen: {
-        command: "docgen",
+        command: 'PATH="$(cd scripts/bin && pwd):$PATH" docgen',
         dependsOn: ["build"],
         cache: { input: cacheInputs, output: ["docs/api/**"] },
       },
