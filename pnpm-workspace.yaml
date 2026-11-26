@@ -30,8 +30,6 @@ catalog:
   # bench/size.ts only.
   esbuild: ^0.28.2
   fallow: 3.48.0
-  # Only because docgen spawns it to run the examples.
-  tsx: ^4.23.15
   # TS6 (JS API, bin `tsc6`) for docgen, tsdown and the language service;
   # TS7 (`@typescript/native`, bin `tsc`) for type checking. Exact pins:
   # `@typescript/native` must match @effect/tsgo's bundled binary.
@@ -40,8 +38,8 @@ catalog:
   # `vite`, `vitest` and `@vitest/coverage-istanbul` must equal what vite-plus
   # itself depends on (`npm view vite-plus@<v> dependencies`); `vite` no
   # longer equals vite-plus.
-  vite-plus: 1.7.0
-  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
+  vite-plus: 1.8.0
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8001
   vitest: 5.1.1
 
 # Peer ranges of the published package.
@@ -75,16 +73,23 @@ skills:
   dirs: [.claude/skills]
 
 peerDependencyRules:
-  allowAny:
-    - vitest
-    # @effect/docgen declares `typescript: ^5`.
-    - typescript
   allowedVersions:
-    vitest: "*"
-    typescript: "*"
+    # docgen's `tsconfck` never calls the API that needs this optional peer.
+    "tsconfck>typescript": "6"
 
 # Hold new releases for 24 hours (minutes); Dependabot's cooldown is 1 day.
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@thomasfosterau/*"
   - "@enfect/*"
+# Vite+ selects Node.js (.node-version) and pnpm (packageManager); pnpm
+# must not download or switch to its own.
+runtimeOnFail: ignore
+pmOnFail: ignore
+# docgen runs its examples with `tsx`, which scripts/bin/tsx stands in for
+# (through vpx), so its `tsx` peer is optional and never installed.
+packageExtensions:
+  "@effect/docgen":
+    peerDependenciesMeta:
+      tsx:
+        optional: true

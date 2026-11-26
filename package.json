@@ -94,7 +94,6 @@
     "effect": "catalog:",
     "esbuild": "catalog:",
     "fallow": "catalog:",
-    "tsx": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:",
@@ -103,12 +102,6 @@
   "peerDependencies": {
     "@thomasfosterau/effect-parse": "catalog:peers",
     "effect": "catalog:peers"
-  },
-  "devEngines": {
-    "runtime": {
-      "name": "node",
-      "version": "lts"
-    }
   },
   "engines": {
     "node": ">=22"
